@@ -1,3 +1,16 @@
+# 환경 변수
 .env
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# 로그 / 임시 파일
+*.log
+
+# OS
+.DS_Store

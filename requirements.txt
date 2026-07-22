@@ -1,0 +1,22 @@
+# 베어글스 카페 AI 비서 - 의존성 목록
+
+# 크롤링
+selenium==4.21.0
+webdriver-manager==4.0.1
+beautifulsoup4==4.12.3
+requests==2.32.3
+
+# 데이터베이스 (Supabase)
+supabase==2.5.0
+
+# 텔레그램 봇
+python-telegram-bot==21.4
+
+# 스케줄러
+APScheduler==3.10.4
+
+# AI 비서 (LLM)
+openai==1.35.0
+
+# 환경 변수
+python-dotenv==1.0.1
