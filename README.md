@@ -31,13 +31,29 @@ cp .env.example .env   # 값 채우기
 기존 베어글스 비서 프로젝트의 Supabase SQL Editor에서
 `supabase/migrations/001_create_sns_posts.sql`을 실행합니다.
 
-### 2. Google Drive 서비스 계정
+### 2. Google Drive (OAuth 로그인 방식)
+
+서비스 계정 키 생성이 조직 정책으로 차단되는 경우가 많아, 본인 계정으로
+한 번만 로그인하는 OAuth 방식을 사용합니다.
 
 1. Google Cloud Console에서 프로젝트 생성 → **Drive API 활성화**
-2. 서비스 계정 생성 → JSON 키 다운로드 → `service_account.json`으로 저장
-3. 모니터링할 드라이브 폴더를 서비스 계정 이메일(`...@...iam.gserviceaccount.com`)에 **편집자로 공유**
-   (승인 시 파일을 링크 공개로 전환해 Buffer가 이미지를 가져가야 하므로 편집자 권한 필요)
-4. 폴더 URL의 ID를 `GOOGLE_DRIVE_FOLDER_ID`에 입력
+2. **OAuth 동의 화면** 구성
+   - Workspace(회사 도메인) 계정이면 **내부(Internal)** 선택 권장 (토큰 만료 없음)
+   - 개인 Gmail이면 **외부(External)** → 게시 상태를 **프로덕션(In production)**으로 게시
+     (테스트 모드로 두면 7일마다 재로그인 필요)
+3. **사용자 인증 정보 → OAuth 클라이언트 ID → 애플리케이션 유형: 데스크톱 앱** 생성
+   → JSON 다운로드 → `client_secret.json`으로 프로젝트 폴더에 저장
+4. 폴더 URL의 ID를 `.env`의 `GOOGLE_DRIVE_FOLDER_ID`에 입력
+5. 최초 1회 로그인:
+   ```bash
+   python authorize_drive.py
+   ```
+   브라우저가 열리면 사진 폴더를 소유한 구글 계정으로 로그인 → 허용.
+   `token.json`이 생성되며, 이후 봇은 이 파일로 자동 로그인/갱신합니다.
+
+> 서비스 계정과 달리 폴더를 별도로 공유할 필요가 없습니다 — 로그인한 계정이
+> 접근 가능한 폴더면 됩니다. 토큰이 만료돼 봇이 재인증을 요청하면
+> `python authorize_drive.py`를 다시 실행하세요.
 
 ### 3. Buffer
 
@@ -54,7 +70,8 @@ cp .env.example .env   # 값 채우기
 ## 실행
 
 ```bash
-python main.py
+python authorize_drive.py   # 최초 1회 구글 로그인 (token.json 생성)
+python main.py              # 봇 실행
 ```
 
 시작하면 즉시 한 번 폴링하고, 이후 `POLL_INTERVAL_MINUTES`(기본 5분)마다 폴더를 확인합니다.
@@ -69,6 +86,7 @@ python main.py
 
 ```
 main.py                          # 진입점 (스케줄러 + 텔레그램 봇)
+authorize_drive.py               # 최초 1회 구글 로그인 스크립트
 sns_automation/
 ├── config.py                    # 환경변수 로드
 ├── db.py                        # Supabase sns_posts 저장소

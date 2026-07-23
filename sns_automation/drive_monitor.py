@@ -1,10 +1,12 @@
-"""Google Drive 폴더 모니터링 (서비스 계정 + 폴링)."""
+"""Google Drive 폴더 모니터링 (OAuth 로그인 + 폴링)."""
 
 import io
 import logging
+import os
 
 import httpx
-from google.oauth2 import service_account
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
@@ -16,11 +18,30 @@ IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "imag
 VIDEO_MIME_PREFIX = "video/"
 
 
-class DriveClient:
-    def __init__(self, service_account_file: str, folder_id: str):
-        credentials = service_account.Credentials.from_service_account_file(
-            service_account_file, scopes=SCOPES
+def load_oauth_credentials(token_file: str) -> Credentials:
+    """authorize_drive.py로 저장해둔 token.json을 읽고, 만료됐으면 자동 갱신한다."""
+    if not os.path.exists(token_file):
+        raise RuntimeError(
+            f"인증 파일이 없습니다: {token_file}\n"
+            "먼저 `python authorize_drive.py`를 실행해 구글 로그인을 완료하세요."
         )
+    creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+    if not creds.valid:
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            with open(token_file, "w") as f:
+                f.write(creds.to_json())
+            logger.info("구글 액세스 토큰을 갱신했습니다.")
+        else:
+            raise RuntimeError(
+                "구글 인증이 만료됐습니다. `python authorize_drive.py`를 다시 실행하세요."
+            )
+    return creds
+
+
+class DriveClient:
+    def __init__(self, token_file: str, folder_id: str):
+        credentials = load_oauth_credentials(token_file)
         self.service = build("drive", "v3", credentials=credentials, cache_discovery=False)
         self.folder_id = folder_id
 

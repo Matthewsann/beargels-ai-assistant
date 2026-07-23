@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 async def run() -> None:
     settings = load_settings()
 
-    drive = DriveClient(settings.google_service_account_file, settings.google_drive_folder_id)
+    drive = DriveClient(settings.google_oauth_token_file, settings.google_drive_folder_id)
     repo = PostRepository(settings.supabase_url, settings.supabase_key)
     generator = CaptionGenerator(settings.anthropic_api_key)
     buffer = BufferClient(settings.buffer_access_token, settings.instagram_profile_id)

@@ -15,7 +15,8 @@ class Settings:
     telegram_chat_id: str
     supabase_url: str
     supabase_key: str
-    google_service_account_file: str
+    google_oauth_client_file: str
+    google_oauth_token_file: str
     google_drive_folder_id: str
     buffer_access_token: str
     instagram_profile_id: str
@@ -28,7 +29,6 @@ REQUIRED_VARS = [
     "TELEGRAM_CHAT_ID",
     "SUPABASE_URL",
     "SUPABASE_KEY",
-    "GOOGLE_SERVICE_ACCOUNT_FILE",
     "GOOGLE_DRIVE_FOLDER_ID",
     "BUFFER_ACCESS_TOKEN",
     "INSTAGRAM_PROFILE_ID",
@@ -46,7 +46,8 @@ def load_settings() -> Settings:
         telegram_chat_id=os.environ["TELEGRAM_CHAT_ID"],
         supabase_url=os.environ["SUPABASE_URL"],
         supabase_key=os.environ["SUPABASE_KEY"],
-        google_service_account_file=os.environ["GOOGLE_SERVICE_ACCOUNT_FILE"],
+        google_oauth_client_file=os.getenv("GOOGLE_OAUTH_CLIENT_FILE", "client_secret.json"),
+        google_oauth_token_file=os.getenv("GOOGLE_OAUTH_TOKEN_FILE", "token.json"),
         google_drive_folder_id=os.environ["GOOGLE_DRIVE_FOLDER_ID"],
         buffer_access_token=os.environ["BUFFER_ACCESS_TOKEN"],
         instagram_profile_id=os.environ["INSTAGRAM_PROFILE_ID"],
