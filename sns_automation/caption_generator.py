@@ -18,18 +18,24 @@ MODEL = "claude-opus-4-8"
 MAX_DIMENSION = 2000
 JPEG_QUALITY = 85
 
-# 브랜드·전략 지식 파일 (있으면 프롬프트에 붙인다)
-_KNOWLEDGE_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "knowledge", "beargels_songdo.md"
-)
+# 브랜드·전략·템플릿 지식 폴더 (안의 모든 .md를 프롬프트에 붙인다)
+_KNOWLEDGE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "knowledge")
 
 
 def _load_knowledge() -> str:
+    """knowledge 폴더의 모든 .md 파일을 하나로 합친다 (파일명 순)."""
     try:
-        with open(_KNOWLEDGE_PATH, encoding="utf-8") as f:
-            return f.read()
+        names = sorted(f for f in os.listdir(_KNOWLEDGE_DIR) if f.endswith(".md"))
     except OSError:
         return ""
+    parts = []
+    for name in names:
+        try:
+            with open(os.path.join(_KNOWLEDGE_DIR, name), encoding="utf-8") as f:
+                parts.append(f"### {name}\n{f.read()}")
+        except OSError:
+            continue
+    return "\n\n".join(parts)
 
 
 SYSTEM_PROMPT = """\
