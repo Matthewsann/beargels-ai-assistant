@@ -43,15 +43,26 @@ def _crawl_baemin():
 
 
 def _crawl_coupang():
-    """쿠팡 리뷰 수집(주문 API 미구현). 실패해도 삼켜 reviews 반환."""
+    """쿠팡 주문·리뷰 수집. 실패해도 예외를 삼켜 (orders, reviews) 반환.
+
+    한 세션에서 주문·리뷰를 함께 긁는다(주문 먼저). 주문 수집이 실패해도
+    리뷰는 이어서 시도한다.
+    """
+    orders, reviews = [], []
     try:
         with CoupangCrawler() as c:
-            return c.fetch_reviews(days=2)
+            try:
+                orders = c.fetch_orders(days=1)
+            except SessionExpiredError:
+                raise
+            except Exception:
+                logger.exception("쿠팡 주문 수집 실패")
+            reviews = c.fetch_reviews(days=2)
     except SessionExpiredError:
         logger.warning("쿠팡 세션 만료 — 재로그인 필요(알림 전송됨)")
     except Exception:
         logger.exception("쿠팡 수집 실패")
-    return []
+    return orders, reviews
 
 
 def crawl_job():
@@ -60,7 +71,9 @@ def crawl_job():
     배민·쿠팡을 각각 독립적으로 수집한다(한 플랫폼 실패가 다른 쪽을 막지 않음).
     """
     orders, reviews = _crawl_baemin()
-    reviews = list(reviews) + _crawl_coupang()
+    cp_orders, cp_reviews = _crawl_coupang()
+    orders = list(orders) + cp_orders
+    reviews = list(reviews) + cp_reviews
 
     # Supabase 저장(테이블 미생성 등 실패해도 수집 결과는 반환)
     try:
