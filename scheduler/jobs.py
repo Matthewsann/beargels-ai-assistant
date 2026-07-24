@@ -11,11 +11,14 @@
 전제: attach 모드로 로그인된 Chrome(launch_chrome.bat)이 켜져 있어야 한다.
 """
 
+import json
 import logging
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from assistant.beargels import generate_daily_report
+from assistant.beargels import (
+    format_complaint_report, generate_daily_report, is_serious_review,
+)
 from bot.notify import send_message
 from crawler.baemin import BaeminCrawler
 from crawler.browser import SessionExpiredError
@@ -81,6 +84,36 @@ def report_job():
     logger.info("report_job 완료: 리포트 전송")
 
 
+def check_complaint_reviews(label=""):
+    """심각(불만) 리뷰를 수집·필터해 텔레그램으로 보고한다.
+
+    같은 날 이미 보고한 리뷰는 제외(daily_summaries 에 review_no 로그).
+    신규가 없으면 '이상 없음'을 짧게 보낸다.
+    """
+    _, reviews = crawl_job()
+    serious = [r for r in reviews if is_serious_review(r)]
+
+    logrow = supabase_client.get_summary("complaint_alert_log")
+    try:
+        alerted = set(json.loads(logrow["content"])) if logrow else set()
+    except Exception:  # noqa: BLE001
+        alerted = set()
+    new = [r for r in serious
+           if r.get("review_no") and r["review_no"] not in alerted]
+
+    if not new:
+        send_message(f"✅ 심각 리뷰 체크{(' — ' + label) if label else ''}: "
+                     "신규 불만 리뷰 없음.")
+        return
+    send_message(format_complaint_report(new, label))
+    alerted |= {r["review_no"] for r in new if r.get("review_no")}
+    try:
+        supabase_client.save_summary("complaint_alert_log", json.dumps(list(alerted)))
+    except Exception:
+        logger.exception("심각 리뷰 로그 저장 실패")
+    logger.info("심각 리뷰 보고: 신규 %d건", len(new))
+
+
 def main():
     """스케줄러를 시작한다(blocking)."""
     logging.basicConfig(
@@ -92,7 +125,13 @@ def main():
     sched.add_job(crawl_job, "interval", hours=2, id="crawl")
     # 일일 리포트: 매일 09:00
     sched.add_job(report_job, "cron", hour=9, minute=0, id="daily_report")
-    logger.info("스케줄러 시작 (수집 2h, 리포트 매일 09:00 %s)", TIMEZONE)
+    # 심각 리뷰 보고: 매일 14:00, 22:00
+    sched.add_job(lambda: check_complaint_reviews("오후 2시"),
+                  "cron", hour=14, minute=0, id="complaint_2pm")
+    sched.add_job(lambda: check_complaint_reviews("저녁 10시"),
+                  "cron", hour=22, minute=0, id="complaint_10pm")
+    logger.info("스케줄러 시작 (수집 2h, 리포트 09:00, 심각리뷰 14:00·22:00 %s)",
+                TIMEZONE)
     try:
         sched.start()
     except (KeyboardInterrupt, SystemExit):

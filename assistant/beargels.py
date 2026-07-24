@@ -27,7 +27,9 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-opus-4-8"
+# 분석용 모델 — .env BEARGELS_MODEL 로 교체 가능(비용/품질 조절).
+#   claude-haiku-4-5(~$2/월) < claude-sonnet-5(~$4) < claude-opus-4-8(~$11)
+MODEL = os.getenv("BEARGELS_MODEL", "claude-opus-4-8")
 _client = None
 
 # 비서 페르소나 — 모든 Claude 호출의 기본 system 프롬프트.
@@ -325,6 +327,58 @@ _TYPE_GUIDE = {
                   "(3)구체적인 개선·재발방지 약속 (4)다시 기회를 청하거나 필요시 "
                   "고객센터/DM 안내. 절대 방어적이지 않게, 낮은 자세로."),
 }
+
+
+# 불만 사유 분류 — 심각 리뷰 보고에서 사유를 함께 알려주기 위함.
+_COMPLAINT_REASONS = (
+    ("이물질", ("이물질", "머리카락", "머리카", "벌레", "곰팡이", "곰팡",
+               "플라스틱", "비닐", "철사", "돌이", "역겨")),
+    ("누락/오배송", ("누락", "안왔", "안 왔", "빠졌", "덜왔", "덜 왔",
+                   "안나왔", "안 나왔", "안옴", "다른 게", "다른게", "잘못")),
+    ("조리", ("덜익", "덜 익", "설익", "탔", "안익", "조리", "짜요", "싱거",
+             "비려", "비린", "질겨")),
+    ("상태/포장", ("식었", "차갑", "눅눅", "녹아", "녹음", "포장", "젖", "쏟",
+                 "뭉개", "상했", "상한", "냄새", "터졌")),
+    ("배달", ("배달", "늦게", "지연", "오래", "한참")),
+)
+
+
+def complaint_reason(review):
+    """불만 리뷰의 사유 라벨을 반환한다(내용 기반, 없으면 '기타 불만')."""
+    t = review.get("content") or ""
+    for label, kws in _COMPLAINT_REASONS:
+        if any(k in t for k in kws):
+            return label
+    return "기타 불만"
+
+
+def is_serious_review(review):
+    """심각(불만) 리뷰인지 판별한다: 컴플레인/에스컬레이션 또는 별점 ≤3."""
+    if classify_review(review) in ("complaint", "escalate"):
+        return True
+    r = review.get("rating")
+    return r is not None and r <= 3
+
+
+_PLAT_LABEL = {"baemin": "배민", "coupang": "쿠팡"}
+
+
+def format_complaint_report(reviews, label=""):
+    """심각 리뷰 목록을 텔레그램 보고 텍스트로 포맷한다."""
+    title = f"🚨 심각 리뷰 보고{(' — ' + label) if label else ''} · {len(reviews)}건"
+    lines = [title, "─────────"]
+    for rv in reviews:
+        esc = classify_review(rv) == "escalate"
+        plat = _PLAT_LABEL.get(rv.get("platform"), rv.get("platform") or "")
+        reason = "이물질/민감(직접확인)" if esc else complaint_reason(rv)
+        mark = "🚨🚨" if esc else "🔸"
+        body = (rv.get("content") or "(사진/무텍스트)").replace("\n", " ")[:90]
+        lines.append(
+            f"{mark} [{plat} ★{rv.get('rating')}] {rv.get('author')} · {reason}\n"
+            f"   \"{body}\"")
+    lines.append("─────────")
+    lines.append("답글은 봇에서 확인 후 대응하세요.")
+    return "\n".join(lines)
 
 
 def classify_review(review):
