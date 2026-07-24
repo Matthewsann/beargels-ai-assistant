@@ -39,3 +39,15 @@ def test_high_rating_no_text_is_photo_only():
 
 def test_question_detected():
     assert cr("혹시 글루텐프리 베이글도 판매하나요?", 5) == "question"
+
+
+@pytest.mark.parametrize("bad", ["2026년 7월 24일", "2026-07-24", "7월 24일", "", None, "12345"])
+def test_clean_author_rejects_non_names(bad):
+    from assistant.beargels import _clean_author
+    assert _clean_author(bad) == "고객"
+
+
+@pytest.mark.parametrize("good", ["김**", "KIM***", "박손님", "이영*"])
+def test_clean_author_keeps_masked_names(good):
+    from assistant.beargels import _clean_author
+    assert _clean_author(good) == good

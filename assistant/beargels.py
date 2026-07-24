@@ -403,6 +403,23 @@ def classify_review(review):
     return "praise_detail" if len(content) >= 15 else "neutral"
 
 
+def _clean_author(name):
+    """작성자명을 답글 호칭용으로 안전화한다.
+
+    배민 파서 변동 등으로 날짜/숫자가 작성자로 잘못 들어오면(예: '2026년 7월
+    24일') 실고객 답글에 그대로 나가면 안 되므로 '고객'으로 대체한다. 마스킹된
+    실명(예: '김**', 'KIM***')은 그대로 둔다.
+    """
+    name = (name or "").strip()
+    if not name:
+        return "고객"
+    if re.search(r"\d{4}\s*년|\d{4}[-.]\d{1,2}|\d{1,2}\s*월\s*\d{1,2}\s*일", name):
+        return "고객"          # 날짜가 이름으로 잘못 파싱됨
+    if not re.search(r"[가-힣A-Za-z]", name):
+        return "고객"          # 숫자/기호뿐이면 이름 아님
+    return name
+
+
 def generate_review_reply(review):
     """리뷰 하나에 대한 답글 초안을 생성한다(고객에게 게시할 후보).
 
@@ -420,7 +437,7 @@ def generate_review_reply(review):
 
     rating = review.get("rating")
     content = (review.get("content") or "").strip()
-    author = review.get("author") or "고객"
+    author = _clean_author(review.get("author"))
     menus = ", ".join(review.get("menus") or []) or "주문 메뉴"
     oc = review.get("order_count")
     cfg = PLATFORM_REPLY.get(review.get("platform"), {"label": "", "max_len": 500})

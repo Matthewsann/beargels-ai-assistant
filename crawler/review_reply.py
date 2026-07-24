@@ -22,7 +22,9 @@
 import json
 import logging
 
-from assistant.beargels import classify_review, generate_review_reply
+from assistant.beargels import (
+    _clean_author, classify_review, generate_review_reply,
+)
 from crawler.browser import (
     BrowserSession, SessionExpiredError, human_pause, is_session_expired,
 )
@@ -78,7 +80,7 @@ class ReplyToReviewAction(WriteAction):
         plat = _PLAT_LABEL.get(self.review.get("platform"),
                                self.review.get("platform") or "?")
         rid = self.review.get("review_no")
-        author = self.review.get("author") or "고객"
+        author = _clean_author(self.review.get("author"))
         rating = self.review.get("rating")
         content = (self.review.get("content") or "(사진/무텍스트)").strip()
         reply = self.draft()
