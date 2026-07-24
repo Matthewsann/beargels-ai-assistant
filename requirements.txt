@@ -23,3 +23,6 @@ anthropic>=0.40.0
 
 # 환경 변수
 python-dotenv==1.0.1
+
+# 테스트 (개발용) — 순수 로직/안전계약 회귀 테스트. `python -m pytest tests/`
+pytest>=8.0
