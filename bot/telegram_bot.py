@@ -9,6 +9,7 @@ Matthew 가 텔레그램으로 비서와 대화한다.
   /evening  저녁 리뷰 (오늘 완료/미완료 + 매출 + 내일 챙길 것)
   /tasks    오늘 할 일 목록(완료/미완료)
   /done ..  할 일 완료 처리
+  /sales    오늘 매출 즉시(DB 조회, 재크롤링 없음) — 플랫폼별+합계
   /report   즉시 일일 리포트(수집→분석)
   /reviews  최근 리뷰 AI 요약
   /drafts   미답변 리뷰 답글 초안 제시 → 버튼 승인으로 게시
@@ -36,7 +37,8 @@ from telegram.ext import (
 )
 
 from assistant.beargels import (
-    evening_review, generate_daily_report, morning_briefing, summarize_reviews,
+    compute_order_stats, evening_review, generate_daily_report,
+    morning_briefing, summarize_reviews,
 )
 from crawler.review_reply import ReplyToReviewAction, propose_replies
 from crawler.write_guard import _default_dry_run
@@ -59,8 +61,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"이 대화 chat_id: {update.effective_chat.id}\n\n"
         "• 아침에 할 일 보내면 우선순위 정리해드려요\n"
         "• \"재료 주문 완료\" 처럼 보내면 체크됩니다\n"
-        "• /morning /evening /tasks /report /reviews /drafts\n"
-        "• /drafts: 미답변 리뷰 답글 초안 → 버튼으로 승인 게시"
+        "• /morning /evening /tasks /sales /report /reviews /drafts\n"
+        "• /sales: 오늘 매출 즉시(DB) · /drafts: 리뷰 답글 승인 게시"
     )
 
 
@@ -120,6 +122,37 @@ async def cmd_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _, reviews = await asyncio.to_thread(crawl_job)
     summary = await asyncio.to_thread(summarize_reviews, reviews)
     await update.message.reply_text(summary)
+
+
+_PLAT_KO = {"baemin": "배민", "coupang": "쿠팡"}
+
+
+async def cmd_sales(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """오늘 매출을 즉시 보여준다(DB 조회, 재크롤링 없음 → 빠름).
+
+    스케줄러가 2시간마다 수집해 둔 DB 데이터를 읽으므로 최근값 기준이다.
+    실시간 최신값이 필요하면 /report(수집+분석)를 쓴다.
+    """
+    orders = await asyncio.to_thread(db.get_orders_by_date, date.today())
+    if not orders:
+        await update.message.reply_text(
+            "오늘 저장된 주문이 아직 없어요. (스케줄러 수집 전이면 /report 로 즉시 수집)")
+        return
+    total = compute_order_stats(orders)
+    lines = [f"💰 오늘 매출 ({date.today():%m/%d}, DB 기준)",
+             f"• 합계: {total['order_count']}건 / {total['revenue']:,}원 "
+             f"(건단가 {total['avg_order_value']:,}원)"]
+    by_plat = {}
+    for o in orders:
+        by_plat.setdefault(o.get("platform"), []).append(o)
+    for plat, os_ in sorted(by_plat.items()):
+        s = compute_order_stats(os_)
+        lines.append(f"  – {_PLAT_KO.get(plat, plat)}: "
+                     f"{s['order_count']}건 / {s['revenue']:,}원")
+    if total["top_menus"]:
+        top = ", ".join(f"{m}({c})" for m, c in total["top_menus"][:3])
+        lines.append(f"• 인기: {top}")
+    await update.message.reply_text("\n".join(lines))
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +299,7 @@ def main():
     app.add_handler(CommandHandler("done", cmd_done))
     app.add_handler(CommandHandler("report", cmd_report))
     app.add_handler(CommandHandler("reviews", cmd_reviews))
+    app.add_handler(CommandHandler("sales", cmd_sales))
     app.add_handler(CommandHandler("drafts", cmd_drafts))
     app.add_handler(CallbackQueryHandler(on_reply_action, pattern=r"^rp\|"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
