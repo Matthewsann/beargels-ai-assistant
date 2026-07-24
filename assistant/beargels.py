@@ -1,25 +1,427 @@
 """
 베어글스 AI 비서
 
-Supabase 에 저장된 데이터를 분석하고, LLM 을 활용해
-매출 리포트/인사이트/리뷰 요약을 생성한다.
+수집된 주문/리뷰 데이터를 분석해 Claude(Anthropic API)로 사장님용 리포트를
+생성한다.
+
+설계 원칙:
+  - 숫자(주문 수·매출·평점 분포)는 파이썬에서 결정론적으로 계산한다.
+    LLM 에게 산수를 시키지 않는다(환각/오차 방지).
+  - Claude 는 그 숫자와 리뷰 원문을 받아 "인사이트·리뷰 요약·주의 리뷰"
+    같은 자연어 판단만 담당한다.
+  - 결과는 텔레그램으로 그대로 보낼 수 있는 한국어 텍스트다.
+
+모델: claude-opus-4-8 (adaptive thinking). ANTHROPIC_API_KEY 는 .env 에서 로드.
 """
 
-# TODO: .env 에서 OPENAI_API_KEY 불러오기 (python-dotenv)
-# TODO: database.supabase_client 로 최근 데이터 조회
-# TODO: 일일/주간 매출 요약 생성 함수 구현
-# TODO: LLM 프롬프트 구성 (매출 추이, 인기 메뉴, 리뷰 감성 분석)
-# TODO: 리뷰 요약 및 부정 리뷰 알림 로직 구현
-# TODO: 분석 결과를 텔레그램 전송용 텍스트로 포맷팅
+import logging
+import os
+import random
+import re
+from collections import Counter
+
+from anthropic import Anthropic
+from dotenv import load_dotenv
+
+load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+MODEL = "claude-opus-4-8"
+_client = None
+
+# 비서 페르소나 — 모든 Claude 호출의 기본 system 프롬프트.
+PERSONA = (
+    "너는 인천 송도 베이글카페 '베어글스'(@beargels_songdo) 사장님 Matthew의 "
+    "운영 비서다. 메뉴는 베이글·샌드위치·음료, 채널은 배민·쿠팡이츠·매장.\n"
+    "말투 규칙: 친근하지만 직설적이고 간결하게. 불필요한 칭찬·인사치레 금지. "
+    "데이터에 근거해서만 말하고 솔직하게 피드백한다. 핵심만. 한국어."
+)
+
+# 고객 답글 페르소나 — 베어글스의 '실제' 답글 스타일을 학습해 반영(2026-07).
+REPLY_PERSONA = (
+    "너는 인천 송도 베이글카페 '베어글스' 사장님이다. 고객 리뷰에 직접 답글을 단다.\n"
+    "아래는 베어글스가 실제로 쓰는 답글 스타일이다. 이 톤과 형식을 그대로 따른다:\n"
+    "- 항상 \"{닉네임}님,\" 으로 시작하고 줄바꿈 후 본문.\n"
+    "- 따뜻하고 진심 어린 존댓말. 정성껏 쓴 느낌으로 2~4문장.\n"
+    "- 주문 횟수로 개인화: 첫 주문이면 '처음 찾아주셔서 감사합니다', 재주문이면 "
+    "'벌써 N번째 찾아주셔서... 큰 힘이 됩니다' 처럼 단골임을 알아봐 준다.\n"
+    "- 베이글·디저트 등 메뉴/경험에 구체적으로 반응하고, 만족스러웠길 바라는 마음을 전한다.\n"
+    "- 날씨·건강 같은 안부 한마디, '다음에도/앞으로도' 로 자연스럽게 마무리.\n"
+    "- 😊 정도의 이모지는 가끔만. 과용·영혼없는 복붙 금지.\n"
+    "저평점이면 이 톤을 유지하되 변명 없이 진심으로 사과하고 개선 의지를 밝힌다.\n"
+    "[예시]\n"
+    "★5 첫주문 → \"KIM님,\\n처음 주문해 주셔서 정말 감사합니다. 저희 베이글과 "
+    "디저트가 즐거운 시간이 되었으면 좋겠어요. 앞으로도 정성껏 준비하겠습니다!\"\n"
+    "★5 3번째 → \"이우님,\\n벌써 세 번째 찾아주셔서 정말 감사합니다. 꾸준히 "
+    "찾아주시는 마음이 큰 힘이 됩니다. 더운 날씨에 건강 챙기시고 다음에도 기분 "
+    "좋은 맛으로 기다릴게요 😊\""
+)
+
+# 플랫폼별 답글 규정 — 글자수 한도·기준이 다르다.
+#  ⚠️ max_len 은 안전 상한(실제 답글은 ~150자라 여유 있음). 실게시 구현 시 각
+#     플랫폼 입력창 maxlength 로 최종 확정할 것.
+PLATFORM_REPLY = {
+    "baemin":  {"label": "배민",     "max_len": 1000},
+    "coupang": {"label": "쿠팡이츠", "max_len": 500},
+}
 
 
-def generate_daily_report():
-    """일일 매출/리뷰 리포트를 생성해 문자열로 반환한다."""
-    # TODO: 구현
-    raise NotImplementedError
+def get_client():
+    """Anthropic 클라이언트(싱글턴)."""
+    global _client
+    if _client is None:
+        if not os.getenv("ANTHROPIC_API_KEY"):
+            raise RuntimeError(".env 에 ANTHROPIC_API_KEY 를 설정하세요.")
+        _client = Anthropic()
+    return _client
 
 
-def summarize_reviews(reviews):
-    """리뷰 목록을 LLM 으로 요약한다."""
-    # TODO: 구현
-    raise NotImplementedError
+# ---------------------------------------------------------------------------
+# 결정론적 통계 (LLM 에 넘기지 않는다)
+# ---------------------------------------------------------------------------
+
+def compute_order_stats(orders):
+    """주문 리스트에서 매출 지표를 계산한다."""
+    total = sum(o.get("price") or 0 for o in orders)
+    n = len(orders)
+    # 인기 메뉴 상위 (메뉴 문자열 기준 단순 집계)
+    menu_counter = Counter(
+        (o.get("menu") or "").strip() for o in orders if o.get("menu"))
+    top_menus = menu_counter.most_common(5)
+    return {
+        "order_count": n,
+        "revenue": total,
+        "avg_order_value": round(total / n) if n else 0,
+        "top_menus": top_menus,
+    }
+
+
+def compute_review_stats(reviews):
+    """리뷰 리스트에서 평점 분포/부정 리뷰를 계산한다."""
+    ratings = [r.get("rating") for r in reviews if r.get("rating") is not None]
+    dist = Counter(ratings)
+    avg = round(sum(ratings) / len(ratings), 2) if ratings else None
+    # 별점 3 이하 또는 본문이 있는 저평점 = 주의 리뷰 후보
+    negatives = [r for r in reviews
+                 if (r.get("rating") is not None and r["rating"] <= 3)]
+    return {
+        "review_count": len(reviews),
+        "avg_rating": avg,
+        "distribution": {s: dist.get(s, 0) for s in range(5, 0, -1)},
+        "negatives": negatives,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Claude 호출
+# ---------------------------------------------------------------------------
+
+class LLMUnavailable(RuntimeError):
+    """Claude 호출 실패(크레딧 부족·네트워크 등)."""
+
+
+def _ask_claude(system, user, max_tokens=1500):
+    """Claude 에 질의한다. 실패 시 LLMUnavailable 로 감싸 던진다.
+
+    호출부는 이를 잡아 '숫자 리포트는 그대로, AI 부분만 생략' 형태로
+    graceful degrade 한다(LLM 장애가 리포트 전체를 막지 않도록).
+    """
+    try:
+        resp = get_client().messages.create(
+            model=MODEL,
+            max_tokens=max_tokens,
+            thinking={"type": "adaptive"},
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Claude 호출 실패: %s", str(e)[:200])
+        raise LLMUnavailable(str(e)) from e
+    return "".join(b.text for b in resp.content if b.type == "text").strip()
+
+
+def summarize_reviews(reviews, max_reviews=40):
+    """리뷰 목록을 Claude 로 요약한다. 부정 리뷰는 별도로 짚어준다."""
+    if not reviews:
+        return "리뷰가 없습니다."
+    stats = compute_review_stats(reviews)
+
+    lines = []
+    for r in reviews[:max_reviews]:
+        body = (r.get("content") or "(사진/무텍스트)").replace("\n", " ")
+        lines.append(f"- ★{r.get('rating')} [{r.get('author')}] {body}")
+    review_block = "\n".join(lines)
+
+    system = (
+        "너는 베어글스라는 베이글 카페의 리뷰 분석가다. 사장님이 빠르게 읽을 수 "
+        "있게 한국어로 간결하게 답한다. 과장 없이 사실 기반으로, 실행 가능한 "
+        "포인트 위주로 정리한다."
+    )
+    user = (
+        f"평점 평균 {stats['avg_rating']}, 분포 {stats['distribution']}.\n"
+        f"아래는 최근 리뷰다:\n{review_block}\n\n"
+        "다음을 정리해줘:\n"
+        "1) 칭찬 포인트 (반복 언급되는 강점)\n"
+        "2) 개선 포인트 (불만·아쉬움)\n"
+        "3) 즉시 대응이 필요한 리뷰 (있으면 작성자와 이유)"
+    )
+    try:
+        return _ask_claude(system, user)
+    except LLMUnavailable:
+        neg = stats["negatives"]
+        note = (f"⚠️ AI 요약 실패(크레딧/네트워크 확인). "
+                f"평균 ★{stats['avg_rating']}, 저평점 리뷰 {len(neg)}건.")
+        return note
+
+
+def generate_daily_report(orders, reviews):
+    """일일 매출/리뷰 리포트(텔레그램 전송용 한국어 텍스트)를 생성한다."""
+    ostat = compute_order_stats(orders)
+    rstat = compute_review_stats(reviews)
+
+    # 숫자 요약(코드로 확정) — 헤더
+    top_menu_txt = "\n".join(
+        f"   {i}. {m} ({c}건)" for i, (m, c) in enumerate(ostat["top_menus"], 1)
+    ) or "   (데이터 없음)"
+    header = (
+        "📊 베어글스 일일 리포트\n"
+        f"─────────────\n"
+        f"• 주문 {ostat['order_count']}건 / 매출 {ostat['revenue']:,}원 "
+        f"(건단가 {ostat['avg_order_value']:,}원)\n"
+        f"• 리뷰 {rstat['review_count']}건 / 평균 ★{rstat['avg_rating']}\n"
+        f"  별점분포 {rstat['distribution']}\n"
+        f"• 인기 메뉴\n{top_menu_txt}\n"
+        f"─────────────"
+    )
+
+    # Claude 인사이트 — 숫자와 리뷰를 함께 주고 자연어 판단
+    review_lines = "\n".join(
+        f"- ★{r.get('rating')} [{r.get('author')}] "
+        f"{(r.get('content') or '(사진)').replace(chr(10), ' ')}"
+        for r in reviews[:30]
+    ) or "(리뷰 없음)"
+    system = (
+        "너는 베어글스 베이글 카페 사장님의 AI 비서다. 매출·리뷰 데이터를 보고 "
+        "오늘 사장님이 알아야 할 것을 3~5줄로 요약한다. 한국어, 간결, 실행 "
+        "가능한 조언 위주. 숫자는 주어진 값을 그대로 쓰고 새로 계산하지 마라."
+    )
+    user = (
+        f"[매출]\n주문 {ostat['order_count']}건, 매출 {ostat['revenue']:,}원, "
+        f"건단가 {ostat['avg_order_value']:,}원\n인기메뉴 {ostat['top_menus']}\n\n"
+        f"[리뷰] 평균 ★{rstat['avg_rating']}, 분포 {rstat['distribution']}\n"
+        f"{review_lines}\n\n"
+        "오늘의 핵심 인사이트와 주의할 리뷰를 요약해줘."
+    )
+    try:
+        insight = _ask_claude(system, user, max_tokens=1200)
+    except LLMUnavailable:
+        # LLM 장애 시에도 숫자 리포트는 그대로 전달(핵심 지표 손실 방지)
+        neg = rstat["negatives"]
+        neg_txt = ", ".join(
+            f"{r.get('author')}(★{r.get('rating')})" for r in neg[:5]
+        ) or "없음"
+        insight = ("⚠️ AI 인사이트를 생성하지 못했습니다 "
+                   "(Anthropic 크레딧/네트워크 확인 필요).\n"
+                   f"저평점(★≤3) 리뷰: {neg_txt}")
+
+    return f"{header}\n\n🤖 오늘의 인사이트\n{insight}"
+
+
+# ---------------------------------------------------------------------------
+# 아침 브리핑 / 저녁 리뷰 (핵심 기능)
+# ---------------------------------------------------------------------------
+
+def morning_briefing(task_texts, yesterday_orders):
+    """아침 브리핑: 어제 매출 요약 + 오늘 할 일 우선순위 정리.
+
+    task_texts: 사장님이 보낸 오늘 할 일 문자열 리스트.
+    yesterday_orders: 어제 주문 리스트(DB).
+    """
+    ystat = compute_order_stats(yesterday_orders)
+    header = (
+        "☀️ 좋은 아침이에요, Matthew.\n"
+        f"어제 매출: {ystat['order_count']}건 / {ystat['revenue']:,}원"
+    )
+    if not task_texts:
+        return header + "\n\n오늘 할 일을 보내주세요. 우선순위 정리해드릴게요."
+
+    try:
+        user = (
+            f"어제 매출은 {ystat['revenue']:,}원({ystat['order_count']}건). "
+            f"오늘 사장님이 보낸 할 일 목록: {task_texts}\n"
+            "카페 운영 관점에서 우선순위를 정해 번호 매겨 정리하고, 각 항목에 "
+            "왜 그 순서인지 아주 짧게(한 구절). 마지막에 오늘 꼭 챙길 것 1개만 "
+            "콕 집어줘."
+        )
+        body = _ask_claude(PERSONA, user, max_tokens=800)
+    except LLMUnavailable:
+        body = "오늘 할 일:\n" + "\n".join(
+            f"{i}. {t}" for i, t in enumerate(task_texts, 1))
+    return f"{header}\n\n📋 오늘 할 일\n{body}"
+
+
+def evening_review(done_tasks, undone_tasks, today_orders, reviews):
+    """저녁 리뷰: 오늘 완료/미완료 + 매출 분석 + 내일 챙길 것."""
+    ostat = compute_order_stats(today_orders)
+    rstat = compute_review_stats(reviews)
+    header = (
+        "🌙 오늘 마감 정리\n"
+        f"매출: {ostat['order_count']}건 / {ostat['revenue']:,}원 "
+        f"(건단가 {ostat['avg_order_value']:,}원)\n"
+        f"할 일: 완료 {len(done_tasks)} · 미완료 {len(undone_tasks)}\n"
+        f"리뷰: {rstat['review_count']}건 / ★{rstat['avg_rating']}"
+    )
+    done = [t.get("description") for t in done_tasks]
+    undone = [t.get("description") for t in undone_tasks]
+    try:
+        neg = [(r.get("author"), r.get("rating")) for r in rstat["negatives"]]
+        user = (
+            f"오늘 매출 {ostat['revenue']:,}원({ostat['order_count']}건), "
+            f"인기메뉴 {ostat['top_menus']}.\n"
+            f"완료한 일: {done}\n미완료: {undone}\n"
+            f"저평점 리뷰: {neg}\n"
+            "오늘 하루 짧게 총평하고, 미완료 중 내일 꼭 챙길 것과 저평점 리뷰 "
+            "대응을 정리해줘. 잔소리 말고 실행할 것만."
+        )
+        body = _ask_claude(PERSONA, user, max_tokens=900)
+    except LLMUnavailable:
+        undone_txt = ", ".join(undone) or "없음"
+        neg_txt = ", ".join(
+            f"{r.get('author')}(★{r.get('rating')})"
+            for r in rstat["negatives"][:5]) or "없음"
+        body = (f"내일 챙길 것(미완료): {undone_txt}\n"
+                f"주의 리뷰(★≤3): {neg_txt}\n"
+                "⚠️ (AI 총평은 Anthropic 크레딧 충전 후 제공)")
+    return f"{header}\n\n{body}"
+
+
+# 🚨 자동 답글 금지 — 사장님이 직접 대응해야 하는 민감 키워드.
+ESCALATION_KEYWORDS = (
+    "이물질", "머리카락", "머리카", "벌레", "곰팡이", "곰팡", "식중독", "배탈",
+    "토했", "구토", "설사", "알레르기", "환불", "신고", "고소", "법적", "위생",
+    "상했", "상한", "플라스틱", "비닐", "철사", "돌이", "역겨",
+)
+
+# 사진/무텍스트 고평점용 클로징 변형 풀(복붙 느낌 방지 — 리뷰별로 다르게).
+_THANKS_VARIANTS = (
+    "맛있게 드셨길 바라요. 다음에도 정성껏 준비하겠습니다.",
+    "즐거운 한 끼 되셨으면 좋겠어요. 또 뵙길 기다릴게요.",
+    "찾아주신 것만으로 힘이 납니다. 다음에도 기분 좋은 맛으로 보답할게요.",
+    "정성 담아 준비했어요. 맛있게 드셨다면 더 바랄 게 없습니다.",
+    "좋은 하루의 한 끼가 되었길 바랍니다. 또 오세요!",
+    "덕분에 오늘도 힘내서 굽습니다. 다음에도 맛있게 준비할게요.",
+)
+
+# 리뷰 유형별 AI 대응 지침.
+_TYPE_GUIDE = {
+    "praise_detail": ("리뷰에서 칭찬한 구체적 포인트(메뉴·식감·맛·서비스)를 그대로 "
+                      "짚어 반응하고, 정성껏 답한다."),
+    "photo_only": "사진만 남긴 고평점이다. 짧고 산뜻하게 감사. 억지로 길게 쓰지 마라.",
+    "neutral": "짧은 리뷰다. 따뜻하되 간결하게 2문장 내외.",
+    "question": "리뷰에 담긴 질문·요청에 실제로 답하거나 안내한다. 감사 인사는 짧게.",
+    "complaint": ("서비스 리커버리 4단계로: (1)무엇이 잘못됐는지 리뷰 내용을 "
+                  "구체적으로 짚어 인정 (2)변명·고객탓·배달탓 없이 진심으로 사과 "
+                  "(3)구체적인 개선·재발방지 약속 (4)다시 기회를 청하거나 필요시 "
+                  "고객센터/DM 안내. 절대 방어적이지 않게, 낮은 자세로."),
+}
+
+
+def classify_review(review):
+    """리뷰를 대응 유형으로 분류한다.
+
+    반환: escalate | complaint | question | praise_detail | photo_only | neutral
+    """
+    if any(k in (review.get("content") or "") for k in ESCALATION_KEYWORDS):
+        return "escalate"
+    rating = review.get("rating")
+    content = (review.get("content") or "").strip()
+    if rating is not None and rating <= 3:
+        return "complaint"
+    if not content:
+        return "photo_only"
+    if any(q in content for q in ("?", "되나요", "있나요", "가능", "문의", "언제")):
+        return "question"
+    return "praise_detail" if len(content) >= 15 else "neutral"
+
+
+def generate_review_reply(review):
+    """리뷰 하나에 대한 답글 초안을 생성한다(고객에게 게시할 후보).
+
+    - 리뷰를 유형 분류 후 유형별 지침으로 답한다.
+    - 🚨 민감 리뷰(이물질·건강·환불·법적 등)는 답글을 만들지 않고 '직접 대응
+      필요'를 반환한다. 절대 자동 게시 대상이 아니다.
+    - 플랫폼별 글자수 한도·주문 횟수(단골)를 반영한다.
+
+    ⚠️ '초안'만 만든다. 실제 게시는 반드시 사장님 승인을 거친다.
+    """
+    typ = classify_review(review)
+    if typ == "escalate":
+        return ("⚠️ [직접 대응 필요] 이물질·건강·환불·법적 언급 등 민감 리뷰입니다. "
+                "자동 답글 대신 사장님이 직접 확인해 주세요.")
+
+    rating = review.get("rating")
+    content = (review.get("content") or "").strip()
+    author = review.get("author") or "고객"
+    menus = ", ".join(review.get("menus") or []) or "주문 메뉴"
+    oc = review.get("order_count")
+    cfg = PLATFORM_REPLY.get(review.get("platform"), {"label": "", "max_len": 500})
+    max_len = cfg["max_len"]
+    if oc == 1:
+        visit = "첫 주문 고객"
+    elif isinstance(oc, int) and oc > 1:
+        visit = f"{oc}번째 재주문(단골) 고객"
+    else:
+        visit = "고객"
+
+    try:
+        user = (
+            f"[{cfg['label']}] {visit} '{author}'가 {menus} 주문 후 "
+            f"별점 {rating}점으로 남긴 리뷰:\n"
+            f"\"{content or '(사진만, 텍스트 없음)'}\"\n\n"
+            f"[이 리뷰 유형 대응 지침] {_TYPE_GUIDE.get(typ, '')}\n"
+            f"위 지침대로 답글을 써줘. 반드시 {max_len}자 이내, 다른 답글과 "
+            f"겹치지 않게 자연스럽게."
+        )
+        return _ask_claude(REPLY_PERSONA, user, max_tokens=400)[:max_len]
+    except LLMUnavailable:
+        return _template_reply(typ, review, author, oc, rating, max_len)
+
+
+def _template_reply(typ, review, author, oc, rating, max_len):
+    """크레딧 없을 때 템플릿 폴백 — 유형별 + 리뷰별 변형(복붙 방지)."""
+    seed = str(review.get("review_no") or author)
+
+    # 컴플레인은 감사 인사보다 '사과'가 먼저 나가야 한다.
+    if typ == "complaint":
+        loyal = ("늘 찾아주시는데 이런 일이 생겨 더 죄송합니다. "
+                 if isinstance(oc, int) and oc > 1 else "")
+        return (f"{author}님,\n불편을 드려 진심으로 죄송합니다. {loyal}"
+                "말씀 주신 부분 바로 점검해 개선하고, 다시 기회를 주시면 "
+                "제대로 된 맛으로 꼭 보답하겠습니다.")[:max_len]
+
+    if isinstance(oc, int) and oc > 1:
+        opener = (f"벌써 {oc}번째 찾아주셔서 정말 감사합니다. "
+                  "꾸준히 찾아주시는 마음이 큰 힘이 됩니다.")
+    else:
+        opener = "처음 찾아주셔서 정말 감사합니다."
+
+    if typ == "question":
+        body = (" 문의 주신 부분은 확인 후 꼼꼼히 챙기겠습니다. 편하게 물어봐 "
+                "주셔서 감사해요.")
+    else:
+        body = " " + random.Random(seed).choice(_THANKS_VARIANTS)
+    return f"{author}님,\n{opener}{body}"[:max_len]
+
+
+if __name__ == "__main__":
+    # 단독 실행: attach 세션으로 실데이터를 긁어 리포트 생성까지 시연
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    from crawler.baemin import BaeminCrawler
+
+    with BaeminCrawler() as c:
+        orders = c.fetch_orders()
+        reviews = c.fetch_reviews(max_scroll=1)
+    print(generate_daily_report(orders, reviews))
