@@ -1,28 +1,34 @@
-# 베어글스 카페 AI 비서 - 의존성 목록
+# 베어글스 AI 비서 - 통합 의존성 (매출·리뷰 봇 + 인스타 파이프라인)
+# 블로그 자동화(automation/)는 automation/requirements.txt 를 따로 사용합니다.
 
-# 크롤링 (Playwright — 로그인된 Chrome 에 CDP attach)
-# attach 모드는 실행 중인 Chrome 에 붙으므로 별도 브라우저 다운로드 불필요.
-# profile 모드는 channel="chrome"(시스템 Chrome) 사용.
+# --- 크롤링 (Playwright — 로그인된 Chrome 에 CDP attach) ---
 playwright>=1.49
 beautifulsoup4==4.12.3
 requests==2.32.3
 
-# 데이터베이스 (Supabase)
-# 2.31+ : 신형 sb_publishable_/sb_secret_ 키 형식 지원
+# --- 데이터베이스 (Supabase) ---
 supabase>=2.31.0
 websockets>=13
 
-# 텔레그램 봇
-python-telegram-bot==21.4
+# --- 텔레그램 봇 ---
+python-telegram-bot>=21.4
 
-# 스케줄러
-APScheduler==3.10.4
+# --- 스케줄러 ---
+APScheduler>=3.10.4
 
-# AI 비서 (LLM) - Anthropic Claude
-anthropic>=0.40.0
+# --- AI (Anthropic Claude) ---
+anthropic>=0.49.0
 
-# 환경 변수
-python-dotenv==1.0.1
+# --- 환경 변수 ---
+python-dotenv>=1.0.1
 
-# 테스트 (개발용) — 순수 로직/안전계약 회귀 테스트. `python -m pytest tests/`
+# --- 인스타 파이프라인: 구글 드라이브 OAuth + 미디어 처리 ---
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+google-auth-oauthlib>=1.2.0
+httpx>=0.27.0
+Pillow>=10.0.0
+imageio-ffmpeg>=0.5.1
+
+# --- 테스트 (개발용) ---
 pytest>=8.0

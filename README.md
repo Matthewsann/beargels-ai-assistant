@@ -6,7 +6,7 @@
 |----|---------|------|------|
 | 📊 **매출·리뷰 봇** | 배민·쿠팡 주문/리뷰 수집 → AI 분석 → 텔레그램 리포트 + 리뷰 답글 | `assistant/ bot/ crawler/ database/ scheduler/ scripts/` | 아래 "매출·리뷰 봇" |
 | ✍️ **블로그 자동화** | 네이버 SEO 규칙대로 글·이미지 자동 적재 → 골라서 예약 발행 | `automation/` | [`automation/README.md`](automation/README.md) |
-| 📷 **인스타 파이프라인** | 콘텐츠 → 캡션 생성 → 예약 발행 | `sns_automation/` | (병합 예정) |
+| 📷 **인스타 파이프라인** | 구글드라이브 폴더 → 캡션·해시태그 생성 → 텔레그램 승인 → Buffer 발행 | `sns_automation/ main.py` | 아래 "인스타 파이프라인" |
 
 > 공통 원칙: **발행·게시 등 대외 작업은 사장님 승인 후에만.** 로그인은 사람이 직접(계정 안전).
 
@@ -85,7 +85,15 @@ scripts\install_autostart.bat                 # PC 로그인 시 자동 실행 �
 
 ## 📷 인스타 파이프라인
 
-콘텐츠 → 캡션 생성 → 예약 발행 (`sns_automation/`). *(별도 브랜치, 통합 병합 예정)*
+구글 드라이브 "콘텐츠 생성/[주제]" 폴더의 사진·영상을 텔레그램에서 주제명으로 부르면, Claude가 캡션·해시태그를 만들고 승인 후 Buffer로 인스타에 발행합니다 (`main.py`, `sns_automation/`).
+
+```
+드라이브 폴더 → Claude 캡션/해시태그 → 텔레그램 승인(✅/✏️/❌) → Buffer 큐 → 인스타 발행
+```
+
+- 영상 있으면 릴스, 사진만 있으면 게시물. 브랜드 톤은 `sns_automation` 지식 파일 기반.
+- 구글 드라이브는 OAuth 1회 로그인(`python authorize_drive.py` → `token.json`).
+- 텔레그램·Supabase·Anthropic 값은 매출봇과 **동일**하게 공유.
 
 ---
 
