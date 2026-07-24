@@ -86,7 +86,7 @@ def _render_reel(
             target_seconds=template.target_seconds,
             hook=hook or None,
             menu=menu or None,
-            watermark="베어글스 송도",
+            watermark="",  # 워터마크 미사용 (인스타 계정명으로 충분)
             music_path=music,
         )
         with open(out, "rb") as f:
