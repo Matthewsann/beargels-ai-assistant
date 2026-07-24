@@ -11,6 +11,8 @@ Matthew 가 텔레그램으로 비서와 대화한다.
   /done ..  할 일 완료 처리
   /report   즉시 일일 리포트(수집→분석)
   /reviews  최근 리뷰 AI 요약
+  /drafts   미답변 리뷰 답글 초안 제시 → 버튼 승인으로 게시
+            (⚠️ WRITE_DRY_RUN=false 여야 실제 게시. 기본은 미리보기)
 
 자유 대화(명령 아닌 일반 메시지):
   - "…완료" 포함 → 해당 할 일 완료 처리 (예: "재료 주문 완료")
@@ -27,14 +29,17 @@ import os
 from datetime import date, timedelta
 
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
-    Application, CommandHandler, ContextTypes, MessageHandler, filters,
+    Application, CallbackQueryHandler, CommandHandler, ContextTypes,
+    MessageHandler, filters,
 )
 
 from assistant.beargels import (
     evening_review, generate_daily_report, morning_briefing, summarize_reviews,
 )
+from crawler.review_reply import ReplyToReviewAction, propose_replies
+from crawler.write_guard import _default_dry_run
 from database import supabase_client as db
 from scheduler.jobs import crawl_job
 
@@ -54,7 +59,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"이 대화 chat_id: {update.effective_chat.id}\n\n"
         "• 아침에 할 일 보내면 우선순위 정리해드려요\n"
         "• \"재료 주문 완료\" 처럼 보내면 체크됩니다\n"
-        "• /morning /evening /tasks /report /reviews"
+        "• /morning /evening /tasks /report /reviews /drafts\n"
+        "• /drafts: 미답변 리뷰 답글 초안 → 버튼으로 승인 게시"
     )
 
 
@@ -114,6 +120,81 @@ async def cmd_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _, reviews = await asyncio.to_thread(crawl_job)
     summary = await asyncio.to_thread(summarize_reviews, reviews)
     await update.message.reply_text(summary)
+
+
+# ---------------------------------------------------------------------------
+# 리뷰 답글 승인 게이트 (/drafts → 초안 제시 → 버튼 승인 → 게시)
+# ---------------------------------------------------------------------------
+
+def _draft_key(review):
+    """리뷰를 식별하는 짧은 콜백 키(플랫폼:리뷰번호)."""
+    return f"{review.get('platform')}:{review.get('review_no')}"
+
+
+async def cmd_drafts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """미답변 리뷰를 모아 답글 초안을 하나씩 버튼과 함께 제시한다.
+
+    ⚠️ 게시는 WRITE_DRY_RUN 이 false 여야만 실제로 나간다(기본 true=미리보기).
+    에스컬레이션(민감) 리뷰는 게시 버튼 없이 '직접 대응' 안내만 한다.
+    """
+    dry = _default_dry_run()
+    mode = "🧪 dry-run(미리보기)" if dry else "🔴 실게시 모드"
+    await update.message.reply_text(
+        f"💬 미답변 리뷰 답글 초안 준비 중… ({mode})")
+    _, reviews = await asyncio.to_thread(crawl_job)
+    proposals = await asyncio.to_thread(propose_replies, reviews, 10)
+    if not proposals:
+        await update.message.reply_text("미답변 리뷰가 없어요. 👍")
+        return
+
+    store = context.bot_data.setdefault("drafts", {})
+    for p in proposals:
+        review, draft = p["review"], p["draft"]
+        key = _draft_key(review)
+        store[key] = {"review": review, "draft": draft}
+        if p["escalate"]:
+            await update.message.reply_text(
+                p["preview"] + "\n\n→ 게시 버튼 없음. 사장님이 직접 대응하세요.")
+            continue
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ 게시", callback_data=f"rp|post|{key}"),
+            InlineKeyboardButton("⏭️ 넘기기", callback_data=f"rp|skip|{key}"),
+        ]])
+        await update.message.reply_text(p["preview"], reply_markup=kb)
+
+
+async def on_reply_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """답글 게시/넘기기 버튼 콜백."""
+    q = update.callback_query
+    await q.answer()
+    try:
+        _, action, key = q.data.split("|", 2)
+    except ValueError:
+        return
+    store = context.bot_data.get("drafts", {})
+    item = store.get(key)
+    if not item:
+        await q.edit_message_text(q.message.text + "\n\n⚠️ 만료된 초안입니다. /drafts 다시.")
+        return
+
+    if action == "skip":
+        await q.edit_message_text(q.message.text + "\n\n⏭️ 넘김.")
+        return
+
+    # 게시(승인). WRITE_DRY_RUN=true 면 실제로는 미리보기만 반환된다.
+    act = ReplyToReviewAction(item["review"], reply_text=item["draft"])
+    try:
+        res = await asyncio.to_thread(act.run, True)  # confirm=True
+    except Exception as e:  # noqa: BLE001
+        await q.edit_message_text(q.message.text + f"\n\n❌ 게시 실패: {str(e)[:120]}")
+        return
+    if res.get("applied"):
+        store.pop(key, None)
+        await q.edit_message_text(q.message.text + "\n\n✅ 게시 완료.")
+    else:
+        await q.edit_message_text(
+            q.message.text + "\n\n🧪 dry-run 모드라 실제 게시는 안 됐어요. "
+            "실게시하려면 .env 의 WRITE_DRY_RUN=false 로 바꾸고 봇 재시작 후 다시 눌러주세요.")
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +266,8 @@ def main():
     app.add_handler(CommandHandler("done", cmd_done))
     app.add_handler(CommandHandler("report", cmd_report))
     app.add_handler(CommandHandler("reviews", cmd_reviews))
+    app.add_handler(CommandHandler("drafts", cmd_drafts))
+    app.add_handler(CallbackQueryHandler(on_reply_action, pattern=r"^rp\|"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     app.add_error_handler(on_error)
     logger.info("텔레그램 봇 시작(폴링). @beargels_assistant_bot")
