@@ -6,3 +6,5 @@ __pycache__/
 automation/config.yaml
 automation/chrome_profile/
 automation/posts/
+automation/library/
+automation/cron.log

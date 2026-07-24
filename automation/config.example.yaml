@@ -16,11 +16,29 @@ naver:
   # false 를 강력 권장 (발행은 사장님이 사진 확인 후 직접). true 는 위험.
   auto_publish: false
 
+  # (선택) 예약 발행 최종 단계 자동화 수준
+  #  assist = 시스템이 글 입력+발행창 열기+'예약' 선택까지, 시간 확인/최종 클릭은 사장님(안정적·기본)
+  #  full   = 최종 '예약 발행' 클릭까지 자동 시도 (화면 구조 튜닝 필요할 수 있음)
+  # (아래 publish 섹션에서 설정)
+
 # 글 생성(Claude) 설정
 generate:
   # 사용할 모델. 블로그 글은 sonnet 으로 충분하고 빠릅니다.
   model: "claude-sonnet-5"
-  max_tokens: 4000
+  max_tokens: 5000
+
+# 1단계 자동 적재 설정
+stockpile:
+  per_run: 3          # 한 번 실행할 때 새로 쌓을 상시 글 개수
+
+# 이미지/영상 설정
+images:
+  provider: "none"    # none = 촬영목록+AI프롬프트만 저장 / openai = AI 보조이미지 실제 생성(OPENAI_API_KEY 필요)
+  per_post_ai: 1      # 글당 AI 보조이미지(썸네일/배경) 개수. 음식 실물은 직접 촬영 권장.
+
+# 2단계 예약 발행 설정
+publish:
+  mode: "assist"      # assist(권장) | full  — 위 설명 참고
 
 # 브랜드 정보 — 프롬프트에 자동으로 채워집니다. 실제 정보로 바꿔주세요.
 brand:

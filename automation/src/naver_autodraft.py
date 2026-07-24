@@ -69,6 +69,29 @@ DEFAULT_SELECTORS = {
         "button:has-text('저장')",
         ".btn_save",
     ],
+    # 발행(게시) 버튼 — 발행 설정 레이어를 연다
+    "publish_open": [
+        "button.publish_btn__m9KHH",
+        "button:has-text('발행')",
+        ".btn_publish",
+    ],
+    # 발행 설정 레이어의 '예약' 라디오/탭
+    "reserve_radio": [
+        "label:has-text('예약')",
+        "input[type='radio'][value='reserve']",
+        ".radio_time:has-text('예약')",
+    ],
+    # 예약 레이어의 날짜 입력
+    "reserve_date": [
+        "input.input_date",
+        ".se-popup input[placeholder*='날짜']",
+    ],
+    # 최종 확정(예약 발행) 버튼
+    "reserve_confirm": [
+        "button.confirm_btn__WEaBq",
+        "button:has-text('예약 발행')",
+        "button:has-text('발행')",
+    ],
 }
 
 
@@ -153,8 +176,11 @@ def save_debug(page: Page, tag: str) -> None:
         pass
 
 
-def draft_one(page: Page, cfg: dict, post: dict) -> bool:
-    """글 하나를 에디터에 입력하고 임시저장한다. 성공 시 True."""
+def fill_editor(page: Page, cfg: dict, post: dict) -> Frame | None:
+    """에디터를 열고 제목·본문을 입력한다. 성공 시 에디터 frame 을 반환(저장/발행은 호출자가).
+
+    임시저장과 예약발행이 공통으로 쓰는 핵심 입력 로직입니다.
+    """
     selectors = cfg["_selectors"]
     blog_id = cfg["naver"]["blog_id"]
     title = post.get("title", "")
@@ -168,28 +194,35 @@ def draft_one(page: Page, cfg: dict, post: dict) -> bool:
     except PWTimeout:
         save_debug(page, "no_editor")
         print("    ✗ 에디터를 찾지 못했습니다. --inspect 로 화면을 확인해 selectors 를 맞춰주세요.")
-        return False
+        return None
 
     dismiss_popup(frame, selectors)
 
-    # 제목
     title_loc = first_working(frame, selectors["title"])
     if not title_loc:
         save_debug(page, "no_title")
         print("    ✗ 제목 입력 영역을 찾지 못했습니다.")
-        return False
+        return None
     title_loc.click()
     frame.wait_for_timeout(300)
     page.keyboard.type(title, delay=10)
 
-    # 본문
     body_loc = first_working(frame, selectors["body"])
     if not body_loc:
         save_debug(page, "no_body")
         print("    ✗ 본문 입력 영역을 찾지 못했습니다.")
-        return False
+        return None
     type_body(frame, body_loc, body)
     frame.wait_for_timeout(500)
+    return frame
+
+
+def draft_one(page: Page, cfg: dict, post: dict) -> bool:
+    """글 하나를 에디터에 입력하고 임시저장한다. 성공 시 True."""
+    selectors = cfg["_selectors"]
+    frame = fill_editor(page, cfg, post)
+    if frame is None:
+        return False
 
     # 임시저장
     save_loc = first_working(frame, selectors["save"])
@@ -242,16 +275,17 @@ def cmd_inspect(cfg: dict) -> None:
 
 
 def load_posts(args) -> list[dict]:
-    posts_dir = ROOT / "posts"
-    if args.post:
+    """--post 는 특정 파일, --all 은 라이브러리의 ready 항목 전체를 임시저장."""
+    if getattr(args, "post", None):
         p = pathlib.Path(args.post)
         if not p.is_absolute():
             p = ROOT / args.post
         return [json.loads(p.read_text(encoding="utf-8"))]
-    files = sorted(posts_dir.glob("*.json"))
-    if not files:
-        sys.exit("posts/ 에 초안(.json)이 없습니다. 먼저 generate_post.py 를 실행하세요.")
-    return [json.loads(f.read_text(encoding="utf-8")) for f in files]
+    import library
+    metas = library.list_items(status=library.STATUS_READY)
+    if not metas:
+        sys.exit("라이브러리에 ready 상태 글이 없습니다. 먼저 generate_post.py 를 실행하세요.")
+    return [library.load_post(m["id"]) for m in metas]
 
 
 def main() -> None:

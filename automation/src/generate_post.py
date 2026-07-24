@@ -1,14 +1,20 @@
 """
-글 초안 자동 생성기.
+글 초안 자동 생성기 (네이버 SEO 전문가 모드).
 
-content-plan.yaml 의 각 글에 대해 Claude 를 호출하여
-제목/본문/태그가 담긴 초안(JSON + 사람이 읽는 md)을 posts/ 에 저장합니다.
+- 상위(레포) 폴더의 '네이버-SEO-지식.md' 를 학습 자료로 읽어, C-Rank/D.I.A. 기준을
+  지키는 상위 노출용 글을 생성합니다.
+- 생성 결과는 콘텐츠 라이브러리(library/)에 status=ready 로 '재고'처럼 쌓입니다.
 
-이 스크립트는 네이버에 접속하지 않습니다. 순수하게 '글 만들기'만 담당합니다.
+사용법
+------
+  python src/generate_post.py --plan          # content-plan.yaml 의 지정 글(신메뉴/이벤트 등) 생성
+  python src/generate_post.py --stockpile 5   # 상시 소재(정보성/일상 등) 5개를 새로 쌓기
+  python src/generate_post.py --images        # 생성과 함께 이미지 계획/생성까지 (generate_image 연동)
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import pathlib
 import re
@@ -16,40 +22,54 @@ import re
 import yaml
 from anthropic import Anthropic
 
-# ── 경로 ─────────────────────────────────────────────────────────────
-ROOT = pathlib.Path(__file__).resolve().parent.parent      # automation/
-POSTS_DIR = ROOT / "posts"
+import library
 
-# 글 유형별 작성 지침. README/프롬프트 폴더의 5종과 1:1 대응됩니다.
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+SEO_DOC = ROOT.parent / "네이버-SEO-지식.md"
+
 TYPE_GUIDE = {
-    "신메뉴": (
-        "신메뉴/대표메뉴 소개 글. 흐름: 소개 계기 스토리 → 재료·과정을 감각적으로 "
-        "(냄새·식감·온도) → 추천 먹는 법/어울리는 음료 → 방문 유도. 800~1200자."
-    ),
-    "이벤트": (
-        "이벤트/프로모션 홍보 글. 혜택·기간·참여법이 한눈에 보이게. 서두르게 만드는 "
-        "마무리. 과장 광고 문구 금지. 600~900자."
-    ),
-    "일상": (
-        "일상/비하인드 에세이. 판매보다 사람 냄새로 단골과 소통. 마지막 2~3줄에서만 "
-        "자연스럽게 매장으로 연결. 700~1000자."
-    ),
-    "후기": (
-        "고객후기 재구성 글. 실제 손님 반응을 인용하듯 담백하게, 자화자찬 금지. "
-        "'직접 드셔보시라'는 초대 마무리. 700~1000자."
-    ),
-    "정보성": (
-        "정보성 글(베이글/빵 상식). 진짜 유용한 정보를 소제목·번호로 정리하고 구체적 "
-        "숫자(온도·시간)를 포함. 마지막에 '베어글스에서는 이렇게 해요'로 연결. 900~1300자."
-    ),
+    "신메뉴": "신메뉴/대표메뉴 소개. 소개 계기 스토리 → 재료·과정을 감각적으로 → 추천 먹는 법 → 방문 유도.",
+    "이벤트": "이벤트/프로모션 홍보. 혜택·기간·참여법이 한눈에. 서두르게 만드는 마무리. 과장 문구 금지.",
+    "일상": "일상/비하인드 에세이. 사람 냄새로 단골과 소통. 마지막에만 자연스럽게 매장 연결.",
+    "후기": "고객후기 재구성. 실제 손님 반응을 인용하듯 담백하게, 자화자찬 금지. 초대 마무리.",
+    "정보성": "정보성 글(베이글/빵/커피 상식). 소제목·번호로 정리, 구체적 숫자 포함. 끝에 매장 연결.",
 }
 
+# --stockpile 모드에서 상시로 돌려 쌓을 수 있는 '에버그린' 소재 풀
+EVERGREEN_TOPICS = [
+    ("정보성", "베이글 가장 맛있게 데우는 법 (에어프라이어/오븐/팬)"),
+    ("정보성", "크림치즈 스프레드 종류와 어울리는 베이글 조합"),
+    ("정보성", "베이글 vs 일반 빵, 칼로리와 포만감 비교"),
+    ("정보성", "베이글 신선하게 보관하는 법과 냉동 후 데우기"),
+    ("정보성", "아침 대용으로 베이글이 좋은 이유"),
+    ("일상", "새벽 반죽부터 첫 오븐까지, 베이커리의 하루"),
+    ("일상", "재료 고르는 이야기 — 우리가 이 밀가루를 쓰는 이유"),
+    ("일상", "곰돌이 캐릭터와 베어글스라는 이름의 뒷이야기"),
+    ("후기", "요즘 손님들이 가장 많이 찾는 시그니처 베이글"),
+    ("정보성", "베이글에 커피, 어떤 조합이 잘 어울릴까"),
+]
 
-def build_prompt(brand: dict, post_type: str, variables: dict) -> str:
-    """브랜드 정보 + 글 유형 + 이번 주 변수로 최종 프롬프트를 조립한다."""
+
+def load_config() -> dict:
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env")
+    cfg_path = ROOT / "config.yaml"
+    if not cfg_path.exists():
+        raise SystemExit("config.yaml 이 없습니다. config.example.yaml 을 복사해 만들어주세요.")
+    return yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+
+
+def seo_knowledge() -> str:
+    if SEO_DOC.exists():
+        return SEO_DOC.read_text(encoding="utf-8")
+    return "(네이버-SEO-지식.md 를 찾지 못했습니다. 기본 SEO 원칙으로 작성합니다.)"
+
+
+def build_prompt(brand: dict, post_type: str, variables: dict, avoid_titles: list[str]) -> str:
     region = brand.get("region", "")
-    guide = TYPE_GUIDE.get(post_type, TYPE_GUIDE["신메뉴"])
+    guide = TYPE_GUIDE.get(post_type, TYPE_GUIDE["정보성"])
     var_lines = "\n".join(f"- {k}: {v}" for k, v in (variables or {}).items())
+    avoid = "\n".join(f"- {t}" for t in avoid_titles[-30:]) or "(없음)"
 
     footer = (
         f"📍 베어글스 {region}점 / {brand.get('address','')} / "
@@ -57,37 +77,48 @@ def build_prompt(brand: dict, post_type: str, variables: dict) -> str:
         f"📷 인스타그램 {brand.get('instagram','')}"
     )
 
-    return f"""당신은 베어글스 베이커리 카페(Bear+Bagels, 곰 캐릭터 수제 베이글 카페)의
-다정한 사장님이자 블로그 운영자입니다. 지역은 '{region}' 입니다.
+    return f"""당신은 네이버 블로그 상위 노출을 전문으로 하는 SEO 카피라이터이자,
+베어글스 베이커리 카페(Bear+Bagels, 곰 캐릭터 수제 베이글 카페, 지역: {region})의
+다정한 사장님 목소리를 완벽히 구사하는 전문가입니다.
 
-[톤] 다정하고 따뜻하게, 과장 없이 솔직하게. 이모지는 🐻🥯☕️ 위주로 문단당 1~2개.
-짧고 리듬감 있는 문장. "국내 최고" 같은 과장 광고 문구 금지.
+아래 '네이버 상위 노출 지식'을 반드시 지켜 글을 작성하세요.
 
-[이번 글 유형] {post_type}
-{guide}
+===== 네이버 상위 노출 지식 (필독·준수) =====
+{seo_knowledge()}
+===== 지식 끝 =====
 
-[이번 글에 반영할 정보]
-{var_lines or "(별도 변수 없음 — 유형에 맞게 자연스럽게 작성)"}
+[톤] 다정하고 따뜻하게, 과장 없이 솔직하게. 1인칭 경험 서술. 이모지 🐻🥯☕️ 문단당 1~2개.
 
-[검색 노출 규칙]
-- 제목과 본문 첫 문단에 '{region}'과 핵심 키워드(메뉴/주제)를 자연스럽게 넣을 것.
-- 본문 곳곳에 [📷 사진: 무엇을 찍으면 좋은지] 형식으로 사진 위치를 4~5군데 표시.
-- 본문 맨 아래에 다음 정보 블록을 그대로 넣을 것:
+[이번 글 유형] {post_type} — {guide}
+
+[반영할 정보]
+{var_lines or "(별도 변수 없음 — 유형과 브랜드에 맞게 사실 기반으로 자연스럽게 작성)"}
+
+[제목·본문 필수 규칙 — 위 지식 기반]
+1) 대표 키워드 1개(예: "{region} 베이글")와 세부 키워드 2~3개를 먼저 정한다.
+2) 제목: 대표 키워드를 앞쪽에, 25자 내외, 클릭 유도. 낚시 금지.
+3) 본문 첫 문단(2~3줄)에 대표 키워드를 자연스럽게 1회 포함.
+4) 글자 수 1,500자 이상. 소제목 2~4개로 구조화.
+5) 키워드는 자연스럽게 3~5회만(도배 금지). 구체적 숫자(가격·시간·온도) 포함.
+6) 사진 위치를 본문에 5~8군데 [📷 사진: 무엇을 어떻게 찍을지]로 안내(실물 촬영용).
+7) 본문 맨 아래에 이 정보 블록을 그대로 넣는다:
 {footer}
-- 그리고 지역+메뉴+브랜드가 섞인 해시태그 6~10개.
 
-[출력 형식] 반드시 아래 JSON 하나만 출력하세요. 다른 말·코드블록 표시 없이 순수 JSON.
+[출력 형식] 아래 JSON 하나만, 순수 JSON 으로 출력(코드블록/설명 금지).
 {{
-  "title": "검색이 잘 되는 제목 (25자 내외)",
-  "body": "네이버 블로그에 그대로 붙여넣을 본문 전체. 사진 위치 표시와 정보 블록 포함. 줄바꿈은 \\n 으로.",
-  "tags": ["태그1", "태그2", "..."]
-}}"""
+  "main_keyword": "대표 키워드",
+  "sub_keywords": ["세부1", "세부2", "세부3"],
+  "title": "제목",
+  "body": "네이버에 그대로 붙여넣을 본문 전체(사진 위치·정보 블록 포함). 줄바꿈은 \\n.",
+  "tags": ["태그10개내외", "..."]
+}}
+
+[이미 창고에 있는 제목 — 주제/제목 중복 금지]
+{avoid}"""
 
 
 def _extract_json(text: str) -> dict:
-    """모델이 혹시 코드블록/설명을 붙여도 JSON 부분만 안전하게 파싱한다."""
     text = text.strip()
-    # ```json ... ``` 제거
     fence = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
     if fence:
         text = fence.group(1)
@@ -102,60 +133,78 @@ def generate_one(client: Anthropic, cfg: dict, post_type: str, variables: dict) 
     gen = cfg.get("generate", {})
     msg = client.messages.create(
         model=gen.get("model", "claude-sonnet-5"),
-        max_tokens=gen.get("max_tokens", 4000),
+        max_tokens=gen.get("max_tokens", 5000),
         messages=[{
             "role": "user",
-            "content": build_prompt(cfg.get("brand", {}), post_type, variables),
+            "content": build_prompt(
+                cfg.get("brand", {}), post_type, variables, library.existing_titles()
+            ),
         }],
     )
-    raw = "".join(block.text for block in msg.content if block.type == "text")
+    raw = "".join(b.text for b in msg.content if b.type == "text")
     data = _extract_json(raw)
     data.setdefault("tags", [])
+    data.setdefault("sub_keywords", [])
+    data.setdefault("main_keyword", "")
     return data
 
 
-def save_post(index: int, post_type: str, data: dict) -> pathlib.Path:
-    """생성 결과를 posts/ 에 JSON(자동화용) + MD(사람 확인용)로 저장."""
-    POSTS_DIR.mkdir(exist_ok=True)
-    stem = f"{index:02d}-{post_type}"
-
-    (POSTS_DIR / f"{stem}.json").write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-
-    tags = " ".join(f"#{t.lstrip('#')}" for t in data.get("tags", []))
-    md = f"# {data.get('title','(제목 없음)')}\n\n{data.get('body','')}\n\n{tags}\n"
-    md_path = POSTS_DIR / f"{stem}.md"
-    md_path.write_text(md, encoding="utf-8")
-    return md_path
+def run_plan(client, cfg) -> list[int]:
+    plan = yaml.safe_load((ROOT / "content-plan.yaml").read_text(encoding="utf-8"))
+    made = []
+    for item in plan.get("posts", []):
+        ptype = item.get("type", "신메뉴")
+        print(f"  · '{ptype}' 생성 중…")
+        data = generate_one(client, cfg, ptype, item.get("vars", {}))
+        item_id = library.create_item(ptype, data)
+        made.append(item_id)
+        print(f"    ✓ 라이브러리 #{item_id:04d}  | {data.get('title','')}")
+    return made
 
 
-def load_config() -> dict:
-    from dotenv import load_dotenv
-    load_dotenv(ROOT / ".env")
-    cfg_path = ROOT / "config.yaml"
-    if not cfg_path.exists():
-        raise SystemExit("config.yaml 이 없습니다. config.example.yaml 을 복사해 만들어주세요.")
-    return yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+def run_stockpile(client, cfg, count: int) -> list[int]:
+    made = []
+    for i in range(count):
+        ptype, topic = EVERGREEN_TOPICS[(library.next_id() + i) % len(EVERGREEN_TOPICS)]
+        print(f"  · [{i+1}/{count}] '{ptype}' 생성 중… ({topic})")
+        data = generate_one(client, cfg, ptype, {"주제": topic})
+        item_id = library.create_item(ptype, data)
+        made.append(item_id)
+        print(f"    ✓ 라이브러리 #{item_id:04d}  | {data.get('title','')}")
+    return made
 
 
 def main() -> None:
-    cfg = load_config()
-    plan_path = ROOT / "content-plan.yaml"
-    plan = yaml.safe_load(plan_path.read_text(encoding="utf-8"))
-    posts = plan.get("posts", [])
-    if not posts:
-        raise SystemExit("content-plan.yaml 에 posts 가 비어 있습니다.")
+    ap = argparse.ArgumentParser(description="네이버 SEO 전문가 모드 글 생성")
+    ap.add_argument("--plan", action="store_true", help="content-plan.yaml 의 지정 글 생성")
+    ap.add_argument("--stockpile", type=int, metavar="N", help="상시 소재 N개 쌓기")
+    ap.add_argument("--images", action="store_true", help="생성 후 이미지 계획/생성까지 실행")
+    args = ap.parse_args()
 
-    client = Anthropic()  # ANTHROPIC_API_KEY 를 .env 에서 읽음
-    print(f"총 {len(posts)}개 글 생성 시작…\n")
-    for i, item in enumerate(posts, start=1):
-        ptype = item.get("type", "신메뉴")
-        print(f"[{i}/{len(posts)}] '{ptype}' 글 생성 중…")
-        data = generate_one(client, cfg, ptype, item.get("vars", {}))
-        path = save_post(i, ptype, data)
-        print(f"    ✓ 저장: {path.name}  | 제목: {data.get('title','')}\n")
-    print("완료! posts/ 폴더에서 초안을 확인하세요.")
+    cfg = load_config()
+    client = Anthropic()
+    made: list[int] = []
+
+    if args.plan:
+        print("[content-plan.yaml 기반 생성]")
+        made += run_plan(client, cfg)
+    if args.stockpile:
+        print(f"[상시 소재 {args.stockpile}개 쌓기]")
+        made += run_stockpile(client, cfg, args.stockpile)
+    if not (args.plan or args.stockpile):
+        print("[기본: 상시 소재 3개 쌓기]  (옵션: --plan, --stockpile N)")
+        made += run_stockpile(client, cfg, 3)
+
+    if args.images and made:
+        try:
+            import generate_image
+            print("\n[이미지 생성/계획]")
+            for item_id in made:
+                generate_image.process_item(cfg, item_id)
+        except Exception as e:
+            print(f"  이미지 단계 건너뜀: {e}")
+
+    print(f"\n완료! {len(made)}개를 라이브러리에 적재(status=ready). 창고: automation/library/")
 
 
 if __name__ == "__main__":
