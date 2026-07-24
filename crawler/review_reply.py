@@ -192,9 +192,10 @@ class ReplyToReviewAction(WriteAction):
         3) textarea 를 답글로 채우고 '등록' 버튼을 클릭한다.
         4) 답글 텍스트가 카드에 반영됐는지 확인.
 
-        ⚠️ 배민은 CSS-module 해시 클래스가 배포마다 바뀌므로 버튼 텍스트/컴포넌트
-           접두사(CEOCommentCreator-module__)로만 잡는다. 첫 실게시 감독 시 등록
-           버튼 텍스트('등록' 등)가 맞는지 확인.
+        ⚠️ 배민은 CSS-module 해시 클래스가 배포마다 바뀌므로 접두사/버튼 텍스트로만
+           잡는다. 리뷰 카드는 'ReviewContent-module__' 이고 그 안에 '사장님 댓글
+           등록하기' 버튼·textarea 가 있다. 제출 버튼은 '등록'(정확 매칭). 실계정
+           게시로 검증됨(2026-07-24).
         """
         from playwright.sync_api import TimeoutError as PWTimeout
 
@@ -202,12 +203,22 @@ class ReplyToReviewAction(WriteAction):
         human_pause(2.0, 3.0)
         if is_session_expired(page):
             raise SessionExpiredError("[배민] 세션 만료 — 재로그인 필요.")
+        # 지연 로딩 대비 스크롤
+        for _ in range(4):
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            human_pause(1.2, 2.0)
 
         card = self._find_baemin_card(page)
         if card is None:
             raise ReplyPostError("대상 배민 리뷰 카드를 찾지 못했습니다.")
 
-        # 작성기 열기: '사장님 댓글 등록하기' 버튼
+        # 안전: 대상 리뷰가 정확히 1건인지 + 본문 일치 확인
+        content = (self.review.get("content") or "").strip()
+        card_txt = card.inner_text()
+        if content and content[:15] not in card_txt:
+            raise ReplyPostError("대상 리뷰 본문이 일치하지 않습니다 — 게시 중단.")
+
+        # 작성기 열기
         open_btn = card.get_by_text(BAEMIN_REPLY_BTN_TEXT, exact=False)
         if open_btn.count() == 0:
             raise ReplyPostError(
@@ -215,7 +226,7 @@ class ReplyToReviewAction(WriteAction):
         open_btn.first.click()
         human_pause(0.8, 1.5)
 
-        # textarea 채우기
+        # textarea 채우기 + 입력값 검증
         ta = card.locator("textarea")
         try:
             ta.wait_for(timeout=5000)
@@ -223,19 +234,15 @@ class ReplyToReviewAction(WriteAction):
             raise ReplyPostError("답글 입력창(textarea)이 나타나지 않았습니다.")
         ta.fill(reply)
         human_pause(0.5, 1.0)
+        if (ta.input_value() or "").strip() != reply.strip():
+            raise ReplyPostError("입력값이 답글과 불일치 — 게시 중단.")
 
-        # 등록 버튼 클릭(작성기 컨테이너 안에서 텍스트로 탐색)
-        submit = None
-        creator = card.locator(BAEMIN_CREATOR_SEL)
-        for t in BAEMIN_SUBMIT_TEXTS:
-            cand = creator.get_by_role("button", name=t, exact=False)
-            if cand.count() > 0:
-                submit = cand.first
-                break
-        if submit is None:
-            raise ReplyPostError("등록 버튼을 찾지 못했습니다(텍스트 확인 필요).")
-        submit.click()
-        human_pause(1.5, 2.5)
+        # '등록' 버튼(정확 매칭 — '사장님 댓글 등록하기' 와 구분)
+        submit = card.get_by_role("button", name="등록", exact=True)
+        if submit.count() == 0:
+            raise ReplyPostError("'등록' 버튼을 찾지 못했습니다(텍스트 확인 필요).")
+        submit.first.click()
+        human_pause(1.8, 2.8)
 
         logger.info("배민 답글 게시 완료 (리뷰 #%s)",
                     self.review.get("review_no"))
@@ -243,13 +250,20 @@ class ReplyToReviewAction(WriteAction):
                 "review_no": self.review.get("review_no")}
 
     def _find_baemin_card(self, page):
-        """대상 배민 리뷰 카드 Locator 를 반환한다(없으면 None)."""
-        cards = page.locator('[class*="ReviewItem-module__"]')
-        n = cards.count()
+        """대상 배민 리뷰 카드(ReviewContent) Locator 를 반환한다(없으면 None).
+
+        리뷰번호 우선, 없으면 작성자+본문으로 매칭. 검증됨(2026-07).
+        """
         rid = self.review.get("review_no")
+        if rid:
+            hit = page.locator('[class*="ReviewContent-module__"]').filter(
+                has_text=str(rid))
+            if hit.count() == 1:
+                return hit.first
+        cards = page.locator('[class*="ReviewContent-module__"]')
         author = self.review.get("author")
         content = (self.review.get("content") or "").strip()[:20]
-        for i in range(n):
+        for i in range(cards.count()):
             c = cards.nth(i)
             txt = c.inner_text()
             if rid and f"리뷰번호 {rid}" in txt.replace("\n", " "):

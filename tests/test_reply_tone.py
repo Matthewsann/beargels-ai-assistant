@@ -40,3 +40,15 @@ def test_thanks_variants_clean():
     joined = " ".join(_THANKS_VARIANTS)
     for bad in BANNED:
         assert bad not in joined, f"_THANKS_VARIANTS 에 금지 표현 '{bad}'"
+
+
+def test_persona_forbids_unkeepable_promises():
+    # 사장님 피드백: 지킬 수 없는 약속(공짜 증정 등) 금지 규칙이 페르소나에 있어야.
+    from assistant.beargels import REPLY_PERSONA
+    assert "지킬 수 없는 약속" in REPLY_PERSONA
+
+
+def test_persona_has_delivery_and_nofabrication_rules():
+    from assistant.beargels import REPLY_PERSONA
+    assert "주문 주세요" in REPLY_PERSONA           # 배달 표현
+    assert "지어내지 않는다" in REPLY_PERSONA         # 없는 사실 금지
