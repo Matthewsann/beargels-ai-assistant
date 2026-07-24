@@ -19,3 +19,13 @@ debug/
 
 # OS
 .DS_Store
+
+# 자동화(블로그): 개인 설정·세션·생성물은 올리지 않음
+automation/config.yaml
+automation/chrome_profile/
+automation/posts/
+automation/library/
+automation/cron.log
+# 로그인 세션·쿠키(민감정보) — 절대 커밋 금지
+automation/naver_state.json
+automation/login_status.txt
