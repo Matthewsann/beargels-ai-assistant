@@ -19,6 +19,7 @@
 
 import json
 import logging
+import re
 from datetime import date
 from pathlib import Path
 
@@ -57,8 +58,31 @@ def collect_coupang(days=90, max_pages=8):
     return out
 
 
+def _clean_baemin_reply(text):
+    """배민 답글박스 innerText 에서 헤더('사장님'/날짜)와 버튼('삭제'/'수정'/
+    '신고')을 제거해 실제 답글 본문만 남긴다. 본문 없으면 None.
+
+    예: '사장님\\n2026년 7월 10일\\n폼키님,\\n...감사합니다!\\n삭제'
+        → '폼키님,\\n...감사합니다!'
+    """
+    if not text:
+        return None
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    drop = {"사장님", "삭제", "수정", "신고", "답글",
+            "사장님 댓글 등록하기", "사장님 댓글 추가하기"}
+    body = [ln for ln in lines
+            if ln not in drop
+            and not re.fullmatch(r"\d{4}년\s*\d{1,2}월\s*\d{1,2}일", ln)]
+    return "\n".join(body).strip() or None
+
+
 def collect_baemin(max_scroll=8):
-    """배민 (리뷰, 사장님 답글) 쌍을 수집한다(답글=CeoCMSContentViewer)."""
+    """배민 (리뷰, 사장님 답글) 쌍을 수집한다.
+
+    리뷰 본문(ReviewContent)과 사장님 댓글(ReviewCommentBox)이 형제 컨테이너라
+    문서 순서로 페어링한다. 리뷰는 baemin.py 파서로 정확히 파싱하고, 답글은
+    박스 innerText 에서 헤더/버튼을 벗겨 본문만 남긴다.
+    """
     out = []
     with BaeminCrawler() as c:
         page = c.page
@@ -72,49 +96,42 @@ def collect_baemin(max_scroll=8):
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             human_pause(1.5, 2.5)
             cur = len(page.query_selector_all(
-                '[class*="ReviewItem-module__"]'))
+                '[class*="ReviewContent-module__"]'))
             if cur == prev:
                 break
             prev = cur
-        # 배민은 리뷰 본문(ReviewContent)과 사장님 댓글(ReviewCommentBox)이
-        # 형제 컨테이너다. 문서 순서로 훑어 리뷰 뒤에 오는 댓글박스를 짝짓는다.
-        cards = page.evaluate(r"""() => {
+        # 문서 순서로 리뷰(HTML) ↔ 답글(innerText) 페어링.
+        pairs = page.evaluate(r"""() => {
             const nodes=document.querySelectorAll(
               '[class*="ReviewContent-module__"], [class*="ReviewCommentBox-module__"]');
-            const pairs=[]; let cur=null;
+            const out=[]; let cur=null;
             nodes.forEach(n=>{
                 const cls=n.className.toString();
                 if(/ReviewContent-module__/.test(cls)){
-                    cur={text:(n.innerText||'').slice(0,1200), owner_reply:null};
-                    pairs.push(cur);
-                } else if(/ReviewCommentBox-module__/.test(cls) && cur){
-                    let t=(n.innerText||'').trim();
-                    // '사장님 댓글 등록하기'(미답변 버튼)면 답글 없음 처리
-                    if(/등록하기|추가하기/.test(t) && t.length<20) t='';
-                    if(t) cur.owner_reply=t;
+                    cur={html:n.outerHTML, reply:null}; out.push(cur);
+                } else if(/ReviewCommentBox-module__/.test(cls) && cur
+                          && cur.reply===null){
+                    cur.reply=(n.innerText||'');
                 }
             });
-            return pairs;
+            return out;
         }""")
-    import re as _re
-    for card in cards:
-        reply = card["owner_reply"]
-        # '사장님 + 날짜' 헤더만 있고 본문이 없는 경우는 답글 없음으로 처리.
-        if reply:
-            body = _re.sub(r"사장님|\d{4}년\s*\d{1,2}월\s*\d{1,2}일|\s+", "", reply)
-            if len(body) < 5:
-                reply = None
+
+    from bs4 import BeautifulSoup
+    for pr in pairs:
+        soup = BeautifulSoup(pr["html"], "html.parser")
+        item = soup.select_one('[class*="ReviewContent-module__"]') or soup
+        rev = BaeminCrawler._parse_review_item(item) or {}
         out.append({
             "platform": "baemin",
-            "review_no": None,
-            "author": None,
-            "rating": None,
-            "content": None,
-            "menus": None,
-            "order_count": None,
-            "written_date": None,
-            "owner_reply": reply,
-            "_card_text": card["text"],
+            "review_no": rev.get("review_no"),
+            "author": rev.get("author"),
+            "rating": rev.get("rating"),
+            "content": rev.get("content"),
+            "menus": rev.get("menus"),
+            "order_count": rev.get("order_count"),
+            "written_date": rev.get("written_at"),
+            "owner_reply": _clean_baemin_reply(pr["reply"]),
         })
     logger.info("배민 수집 %d건(답변 %d)", len(out),
                 sum(1 for x in out if x["owner_reply"]))
