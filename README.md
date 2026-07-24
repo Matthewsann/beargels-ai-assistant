@@ -26,10 +26,15 @@ pip install -r requirements.txt
 cp .env.example .env   # 값 채우기
 ```
 
-### 1. Supabase 테이블 생성
+### 1. Supabase 테이블 + 미디어 버킷 생성
 
-기존 베어글스 비서 프로젝트의 Supabase SQL Editor에서
-`supabase/migrations/001_create_sns_posts.sql`을 실행합니다.
+기존 베어글스 비서 프로젝트의 Supabase SQL Editor에서 아래 두 개를 실행합니다.
+
+1. `supabase/migrations/001_create_sns_posts.sql` — 게시물 상태 추적 테이블
+2. `supabase/migrations/002_media_bucket.sql` — 발행용 이미지 임시 호스팅 버킷(`sns-media`)
+
+> 인스타그램/Buffer는 파일을 직접 받지 않고 **공개 URL**만 받습니다. 그래서 승인 시
+> 사진을 이 공개 버킷에 잠깐 올려 URL을 만들어 Buffer에 전달합니다.
 
 ### 2. Google Drive (OAuth 로그인 방식)
 
@@ -55,13 +60,16 @@ cp .env.example .env   # 값 채우기
 > 접근 가능한 폴더면 됩니다. 토큰이 만료돼 봇이 재인증을 요청하면
 > `python authorize_drive.py`를 다시 실행하세요.
 
-### 3. Buffer
+### 3. Buffer (새 Public API / GraphQL)
 
-1. https://publish.buffer.com 에서 인스타그램 계정 연결
-2. https://buffer.com/developers/apps 에서 앱 생성 → Access Token 발급 → `BUFFER_ACCESS_TOKEN`
-3. `GET https://api.bufferapp.com/1/profiles.json?access_token=...` 으로 인스타그램 프로필 ID 확인 → `INSTAGRAM_PROFILE_ID`
+Buffer의 옛 REST API는 신규 발급이 중단되어, 새 Public API(GraphQL)를 사용합니다.
 
-승인된 게시물은 Buffer **큐**에 추가되어, Buffer에 설정된 발행 스케줄에 따라 자동 발행됩니다.
+1. https://publish.buffer.com 에서 인스타그램 계정(채널) 연결
+2. Buffer 로그인 → **Settings → API** → **Create API Key**로 토큰 발급 → `BUFFER_ACCESS_TOKEN`
+3. 인스타그램 **채널 ID**는 토큰을 채운 뒤 `get_instagram_id.bat`(또는 `python get_instagram_id.py`)를
+   실행하면 자동으로 찾아 `.env`의 `BUFFER_CHANNEL_ID`에 넣어줍니다.
+
+승인된 게시물은 Buffer **큐(addToQueue)**에 추가되어, Buffer에 설정된 발행 스케줄에 따라 자동 발행됩니다.
 
 ### 4. 텔레그램
 
