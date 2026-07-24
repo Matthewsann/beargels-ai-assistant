@@ -4,3 +4,8 @@ __pycache__/
 service_account.json
 client_secret.json
 token.json
+
+# 로컬 샘플/테스트 산출물
+sample_output/
+sample/
+sample_frames/

@@ -142,16 +142,29 @@ def build_reel(
     font = font_path or find_korean_font()
 
     with tempfile.TemporaryDirectory() as tmp:
-        # ── 1단계: 9:16 정규화 + 이어붙이기 (영상만) ──
+        # ── 1단계: 각 클립을 개별적으로 9:16 정규화 ──
+        # 폰 영상은 "가로로 저장 + 회전 플래그"인 경우가 많다. filter_complex로
+        # 여러 입력을 한 번에 처리하면 이 회전 보정이 적용되지 않아 영상이 눕는다.
+        # → 클립마다 단일 -i 로 처리하면 회전 자동보정이 적용되고,
+        #   출력에서 회전 메타데이터를 제거해 이후 단계로 새어나가지 않게 한다.
+        n = len(clip_paths)
+        norm_paths: list[str] = []
+        for i, p in enumerate(clip_paths):
+            np_ = os.path.join(tmp, f"norm{i}.mp4")
+            _run([ff, "-y", "-i", p, "-vf", _NORMALIZE, "-an",
+                  "-map_metadata", "-1", "-metadata:s:v:0", "rotate=0",
+                  "-c:v", "libx264", "-preset", "veryfast", np_])
+            norm_paths.append(np_)
+
+        # ── 1-b단계: 정규화된(업라이트) 클립 이어붙이기 ──
         concat = os.path.join(tmp, "concat.mp4")
         inputs: list[str] = []
-        for p in clip_paths:
-            inputs += ["-i", p]
-        n = len(clip_paths)
-        norm = "".join(f"[{i}:v]{_NORMALIZE}[v{i}];" for i in range(n))
-        chain = "".join(f"[v{i}]" for i in range(n))
+        for np_ in norm_paths:
+            inputs += ["-i", np_]
+        chain = "".join(f"[{i}:v]" for i in range(n))
         _run([ff, "-y", *inputs, "-filter_complex",
-              f"{norm}{chain}concat=n={n}:v=1:a=0[v]", "-map", "[v]", "-an", concat])
+              f"{chain}concat=n={n}:v=1:a=0[v]", "-map", "[v]", "-an",
+              "-map_metadata", "-1", concat])
 
         # ── 2단계: 오버레이 PNG 준비 (Pillow) ──
         overlays: list[dict] = []  # {path, x, y, enable}
@@ -201,7 +214,7 @@ def build_reel(
         if target_seconds:
             cmd += ["-t", str(target_seconds)]
         cmd += ["-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart", output_path]
+                "-map_metadata", "-1", "-movflags", "+faststart", output_path]
         _run(cmd)
 
     logger.info("릴스 생성 완료: %s", output_path)
