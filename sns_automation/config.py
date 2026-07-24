@@ -19,7 +19,7 @@ class Settings:
     google_oauth_token_file: str
     google_drive_folder_id: str
     buffer_access_token: str
-    instagram_profile_id: str
+    buffer_channel_id: str
     poll_interval_minutes: int
 
 
@@ -31,7 +31,7 @@ REQUIRED_VARS = [
     "SUPABASE_KEY",
     "GOOGLE_DRIVE_FOLDER_ID",
     "BUFFER_ACCESS_TOKEN",
-    "INSTAGRAM_PROFILE_ID",
+    "BUFFER_CHANNEL_ID",
 ]
 
 
@@ -50,6 +50,6 @@ def load_settings() -> Settings:
         google_oauth_token_file=os.getenv("GOOGLE_OAUTH_TOKEN_FILE", "token.json"),
         google_drive_folder_id=os.environ["GOOGLE_DRIVE_FOLDER_ID"],
         buffer_access_token=os.environ["BUFFER_ACCESS_TOKEN"],
-        instagram_profile_id=os.environ["INSTAGRAM_PROFILE_ID"],
+        buffer_channel_id=os.environ["BUFFER_CHANNEL_ID"],
         poll_interval_minutes=int(os.getenv("POLL_INTERVAL_MINUTES", "5")),
     )

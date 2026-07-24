@@ -1,6 +1,6 @@
 """베어글스 인스타그램 SNS 자동화 파이프라인 진입점.
 
-구글 드라이브 폴더 모니터링 → Claude 캡션 생성 → 텔레그램 승인 → Buffer 발행
+구글 드라이브 폴더 모니터링 → Claude 캡션 생성 → 텔레그램 승인 → Buffer로 인스타그램 발행
 """
 
 import asyncio
@@ -13,6 +13,7 @@ from sns_automation.caption_generator import CaptionGenerator
 from sns_automation.config import load_settings
 from sns_automation.db import PostRepository
 from sns_automation.drive_monitor import DriveClient
+from sns_automation.media_host import MediaHost
 from sns_automation.pipeline import Pipeline
 from sns_automation.telegram_bot import build_application
 
@@ -30,7 +31,8 @@ async def run() -> None:
     drive = DriveClient(settings.google_oauth_token_file, settings.google_drive_folder_id)
     repo = PostRepository(settings.supabase_url, settings.supabase_key)
     generator = CaptionGenerator(settings.anthropic_api_key)
-    buffer = BufferClient(settings.buffer_access_token, settings.instagram_profile_id)
+    buffer = BufferClient(settings.buffer_access_token, settings.buffer_channel_id)
+    media_host = MediaHost(repo.client)
 
     app = build_application(settings.telegram_bot_token, settings.telegram_chat_id)
     pipeline = Pipeline(
@@ -38,6 +40,7 @@ async def run() -> None:
         repo=repo,
         generator=generator,
         buffer=buffer,
+        media_host=media_host,
         bot=app.bot,
         chat_id=settings.telegram_chat_id,
     )

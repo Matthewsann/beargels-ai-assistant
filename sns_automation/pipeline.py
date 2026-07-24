@@ -1,6 +1,6 @@
 """파이프라인 오케스트레이션.
 
-드라이브 폴링 → 캡션 생성 → 텔레그램 승인 요청 → (승인 시) Buffer 발행
+드라이브 폴링 → 캡션 생성 → 텔레그램 승인 요청 → (승인 시) Buffer로 인스타그램 발행
 """
 
 import asyncio
@@ -13,6 +13,7 @@ from .buffer_client import BufferClient
 from .caption_generator import CaptionGenerator, CaptionResult
 from .db import PostRepository
 from .drive_monitor import DriveClient
+from .media_host import MediaHost
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ class Pipeline:
         repo: PostRepository,
         generator: CaptionGenerator,
         buffer: BufferClient,
+        media_host: MediaHost,
         bot: Bot,
         chat_id: str,
     ):
@@ -54,6 +56,7 @@ class Pipeline:
         self.repo = repo
         self.generator = generator
         self.buffer = buffer
+        self.media_host = media_host
         self.bot = bot
         self.chat_id = chat_id
         self._poll_lock = asyncio.Lock()
@@ -156,7 +159,7 @@ class Pipeline:
     # ── 4단계: 승인/수정/취소 처리 (telegram_bot.py에서 호출) ──
 
     async def approve(self, post_id: str) -> str:
-        """승인 → Buffer 발행. 결과 메시지를 반환."""
+        """승인 → 인스타그램 발행. 결과 메시지를 반환."""
         post = await asyncio.to_thread(self.repo.get_post, post_id)
         if not post:
             return "게시물을 찾을 수 없습니다."
@@ -167,24 +170,33 @@ class Pipeline:
         is_video = (post.get("mime_type") or "").startswith("video/")
 
         try:
-            media_url = await asyncio.to_thread(self.drive.make_public, post["drive_file_id"])
-            update = await self.buffer.create_update(
-                text=full_text,
-                photo_url=None if is_video else media_url,
-                video_url=media_url if is_video else None,
-            )
+            if is_video:
+                # 영상: 드라이브 파일을 링크 공개로 전환해 Buffer에 전달
+                video_url = await asyncio.to_thread(
+                    self.drive.make_public, post["drive_file_id"]
+                )
+                bp = await self.buffer.create_post(full_text, video_url=video_url)
+            else:
+                # 사진: JPEG 변환 후 Supabase 공개 버킷에 잠깐 올려서 전달
+                image_bytes = await asyncio.to_thread(
+                    self.drive.download_file, post["drive_file_id"]
+                )
+                image_url = await asyncio.to_thread(
+                    self.media_host.upload_image, post_id, image_bytes
+                )
+                bp = await self.buffer.create_post(full_text, image_url=image_url)
         except Exception as e:
             logger.exception("Buffer 발행 실패: post=%s", post_id)
             await asyncio.to_thread(
                 self.repo.update_post, post_id, status=db.STATUS_FAILED, error=str(e)
             )
-            return f"⚠️ Buffer 발행 실패: {e}"
+            return f"⚠️ 발행 실패: {e}"
 
         await asyncio.to_thread(
             self.repo.update_post,
             post_id,
             status=db.STATUS_PUBLISHED,
-            buffer_update_id=update.get("id"),
+            buffer_update_id=bp["id"],
         )
         return f"✅ 승인 완료! Buffer 큐에 등록됐습니다.\n({post['file_name']})"
 

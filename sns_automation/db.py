@@ -12,7 +12,7 @@ from supabase import Client, create_client
 STATUS_PENDING = "pending"                # 파일 감지, 캡션 생성 전
 STATUS_AWAITING_APPROVAL = "awaiting_approval"  # 텔레그램 승인 대기
 STATUS_AWAITING_FEEDBACK = "awaiting_feedback"  # 수정 내용 입력 대기
-STATUS_PUBLISHED = "published"            # Buffer 발행 완료
+STATUS_PUBLISHED = "published"            # 인스타그램 발행 완료
 STATUS_CANCELLED = "cancelled"
 STATUS_FAILED = "failed"
 
