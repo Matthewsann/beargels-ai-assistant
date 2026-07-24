@@ -253,6 +253,17 @@ def launch(cfg: dict, headful: bool):
         viewport={"width": 1280, "height": 900},
         args=["--disable-blink-features=AutomationControlled"],
     )
+    # 저장된 로그인 세션(쿠키)을 주입 — 세션 쿠키가 디스크에 보존되지 않는 문제 우회.
+    state_file = ROOT / "naver_state.json"
+    if state_file.exists():
+        try:
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+            cookies = state.get("cookies", [])
+            if cookies:
+                ctx.add_cookies(cookies)
+        except Exception as e:
+            print(f"  · 저장된 세션 주입 경고: {e}")
+
     page = ctx.pages[0] if ctx.pages else ctx.new_page()
     return pw, ctx, page
 
