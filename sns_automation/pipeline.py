@@ -1,25 +1,32 @@
 """파이프라인 오케스트레이션 (폴더 기반 on-demand).
 
-텔레그램에서 주제 폴더명 호출 → 그 폴더 분석 → 캡션 생성 → 승인 요청
+텔레그램에서 주제 폴더명 호출 → 그 폴더 분석 → 캡션 생성
+→ (릴스면) 자동 편집 → 승인 요청(편집된 릴스 미리보기)
 → (승인) Supabase 임시 호스팅 → Buffer로 인스타그램 발행(릴스/게시물).
 """
 
 import asyncio
 import logging
+import os
+import tempfile
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 
-from . import db
+from . import db, video_editor
 from .buffer_client import BufferClient
 from .caption_generator import CaptionGenerator, CaptionResult
 from .db import PostRepository
 from .drive_monitor import DriveClient
 from .media_host import MediaHost
+from .templates import Template, get_template
 
 logger = logging.getLogger(__name__)
 
 # 분석에 사용할 대표 이미지 최대 장수 (사진 게시물일 때)
 _MAX_ANALYSIS_IMAGES = 3
+
+# 텔레그램 봇 영상 업로드 한도(50MB). 넘으면 미리보기는 썸네일로 대체.
+_TELEGRAM_VIDEO_LIMIT = 48 * 1024 * 1024
 
 
 def _approval_keyboard(post_id: str) -> InlineKeyboardMarkup:
@@ -43,6 +50,47 @@ def _edit_choice_keyboard(post_id: str) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def _render_reel(
+    drive: DriveClient,
+    videos: list[dict],
+    template: Template,
+    hook: str,
+    menu: str,
+) -> bytes:
+    """폴더의 영상 클립들을 편집기로 릴스 mp4(bytes)로 만든다. (블로킹)
+
+    hook: 첫 2.5초 상단 자막(AI 제안) / menu: 하단 상시 자막(메뉴명).
+    이 함수는 동기(블로킹)라 pipeline에서 asyncio.to_thread로 감싸 호출한다.
+    """
+    music = os.getenv("REEL_MUSIC_PATH") or None
+    if music and not os.path.exists(music):
+        logger.warning("REEL_MUSIC_PATH 파일이 없어 음악 없이 편집: %s", music)
+        music = None
+
+    with tempfile.TemporaryDirectory() as tmp:
+        clip_paths = []
+        for i, v in enumerate(videos):
+            data = drive.download_file(v["id"])
+            ext = ".mov" if "quicktime" in (v.get("mimeType") or "") else ".mp4"
+            p = os.path.join(tmp, f"clip{i}{ext}")
+            with open(p, "wb") as f:
+                f.write(data)
+            clip_paths.append(p)
+
+        out = os.path.join(tmp, "reel.mp4")
+        video_editor.build_reel(
+            clip_paths,
+            out,
+            target_seconds=template.target_seconds,
+            hook=hook or None,
+            menu=menu or None,
+            watermark="베어글스 송도",
+            music_path=music,
+        )
+        with open(out, "rb") as f:
+            return f.read()
 
 
 def _preview_text(topic: str, result: CaptionResult, is_reel: bool, media_count: int) -> str:
@@ -150,18 +198,67 @@ class Pipeline:
             await self.bot.send_message(chat_id=self.chat_id, text=f"⚠️ 캡션 생성 실패: {e}")
             return
 
-        await asyncio.to_thread(
-            self.repo.update_post,
-            post["id"],
-            status=db.STATUS_AWAITING_APPROVAL,
-            menu=result.menu,
-            caption=result.caption,
-            hashtags=result.hashtags,
-            overlay_text=result.overlay_text,
-        )
-        preview_bytes = images[0] if images else None
+        await self._finalize_and_request(post["id"], topic, result, media, is_reel, images)
+
+    async def _finalize_and_request(
+        self,
+        post_id: str,
+        topic: str,
+        result: CaptionResult,
+        media: list[dict],
+        is_reel: bool,
+        images: list[bytes],
+        feedback: str | None = None,
+    ) -> None:
+        """캡션(+릴스 편집) 결과를 저장하고 승인 요청을 보낸다.
+
+        릴스면 편집기로 실제 릴스를 만들어 Supabase에 올리고, 그 영상을
+        미리보기로 함께 보낸다. 편집 실패 시 원본으로 graceful degrade.
+        """
+        video_bytes: bytes | None = None
+        edited_url: str | None = None
+        if is_reel:
+            videos = [m for m in media if (m.get("mimeType") or "").startswith("video/")]
+            template = get_template(None)  # 기본 T1 (추후 주제별 선택 지원)
+            try:
+                await self.bot.send_message(
+                    chat_id=self.chat_id,
+                    text="🎬 릴스 자동 편집 중이에요… (영상 길이에 따라 1~2분 걸릴 수 있어요)",
+                )
+                video_bytes = await asyncio.to_thread(
+                    _render_reel,
+                    self.drive,
+                    videos,
+                    template,
+                    result.overlay_text or result.menu,  # hook (상단 자막)
+                    result.menu,                          # 하단 상시 자막
+                )
+                edited_url = await asyncio.to_thread(
+                    self.media_host.upload_video, post_id, video_bytes
+                )
+            except Exception as e:
+                logger.exception("릴스 편집 실패: %s", topic)
+                await self.bot.send_message(
+                    chat_id=self.chat_id,
+                    text=f"⚠️ 릴스 자동 편집에 실패했어요. 원본 영상으로 진행할게요.\n({e})",
+                )
+
+        fields: dict = {
+            "status": db.STATUS_AWAITING_APPROVAL,
+            "menu": result.menu,
+            "caption": result.caption,
+            "hashtags": result.hashtags,
+            "overlay_text": result.overlay_text,
+        }
+        if edited_url:
+            fields["edited_media_url"] = edited_url
+        if feedback is not None:
+            fields["feedback"] = feedback
+        await asyncio.to_thread(self.repo.update_post, post_id, **fields)
+
+        thumb = images[0] if images else None
         await self._send_approval_request(
-            post["id"], topic, result, preview_bytes, is_reel, len(media)
+            post_id, topic, result, thumb, is_reel, len(media), video_bytes
         )
 
     async def _fetch_analysis_images(self, media: list[dict], is_reel: bool) -> list[bytes]:
@@ -189,9 +286,30 @@ class Pipeline:
         preview_bytes: bytes | None,
         is_reel: bool,
         media_count: int,
+        video_bytes: bytes | None = None,
     ) -> None:
         text = _preview_text(topic, result, is_reel, media_count)
         keyboard = _approval_keyboard(post_id)
+
+        # 편집된 릴스가 있으면 영상 자체를 미리보기로 보낸다 (실제 결과 확인용)
+        if video_bytes and len(video_bytes) <= _TELEGRAM_VIDEO_LIMIT:
+            if len(text) <= 1024:
+                await self.bot.send_video(
+                    chat_id=self.chat_id,
+                    video=video_bytes,
+                    caption=text,
+                    reply_markup=keyboard,
+                )
+            else:
+                await self.bot.send_video(chat_id=self.chat_id, video=video_bytes)
+                await self.bot.send_message(chat_id=self.chat_id, text=text, reply_markup=keyboard)
+            return
+        if video_bytes:  # 편집은 됐지만 텔레그램 전송 한도 초과
+            await self.bot.send_message(
+                chat_id=self.chat_id,
+                text="(편집된 릴스가 커서 미리보기는 생략했어요. 승인하면 그대로 발행됩니다.)",
+            )
+
         if preview_bytes:
             if len(text) <= 1024:
                 await self.bot.send_photo(
@@ -220,9 +338,14 @@ class Pipeline:
 
         try:
             if is_video:
-                video_url = await asyncio.to_thread(
-                    self.drive.make_public, post["drive_file_id"]
-                )
+                # 편집된 릴스가 있으면 그걸 발행, 없으면(편집 실패) 원본 영상
+                edited = post.get("edited_media_url")
+                if edited:
+                    video_url = edited
+                else:
+                    video_url = await asyncio.to_thread(
+                        self.drive.make_public, post["drive_file_id"]
+                    )
                 bp = await self.buffer.create_post(full_text, video_url=video_url)
             else:
                 image_bytes = await asyncio.to_thread(
@@ -291,19 +414,8 @@ class Pipeline:
             await self.bot.send_message(chat_id=self.chat_id, text=f"⚠️ 재생성 실패: {e}")
             return
 
-        await asyncio.to_thread(
-            self.repo.update_post,
-            post_id,
-            status=db.STATUS_AWAITING_APPROVAL,
-            menu=result.menu,
-            caption=result.caption,
-            hashtags=result.hashtags,
-            overlay_text=result.overlay_text,
-            feedback=feedback,
-        )
-        preview = images[0] if images else None
-        await self._send_approval_request(
-            post_id, post["file_name"], result, preview, is_reel, len(media)
+        await self._finalize_and_request(
+            post_id, post["file_name"], result, media, is_reel, images, feedback=feedback
         )
 
     async def set_manual_caption(self, post_id: str, text: str) -> None:
