@@ -13,6 +13,7 @@
 
 import json
 import logging
+import re
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
@@ -127,6 +128,62 @@ def check_complaint_reviews(label=""):
     logger.info("심각 리뷰 보고: 신규 %d건", len(new))
 
 
+_PLAT_KO = {"coupang": "쿠팡", "baemin": "배민"}
+
+
+def _format_news(items, heading, label, total=None):
+    """공지 목록을 텔레그램 보고 텍스트로 포맷한다."""
+    head = f"📢 {heading}{(' — ' + label) if label else ''}"
+    if total is not None:
+        head += f" (현재 총 {total}건)"
+    lines = [head, "─────────"]
+    for it in items:
+        date = f" ({it['date']})" if it.get("date") else ""
+        title = re.sub(r"\s*\d+일 전 업데이트", "", it["title"]).strip()
+        lines.append(
+            f"[{_PLAT_KO.get(it['platform'], it['platform'])}·"
+            f"{it['category']}] {title}{date}\n  {it['url']}")
+    return "\n".join(lines)
+
+
+def check_platform_news(label=""):
+    """쿠팡·배민 공지·정책·혜택 소식을 점검해 신규만 텔레그램으로 보고한다.
+
+    글 URL 기준으로 dedup(daily_summaries 'platform_news_seen'). 첫 실행은 과거
+    전체를 스팸하지 않도록 현재 목록을 시드하고 최근 몇 건만 요약해 알린다.
+    매월 1·15일 스케줄로 실행(정책 개정·이벤트·혜택 놓치지 않게).
+    """
+    from crawler.platform_news import fetch_all
+    items = fetch_all()
+    if not items:
+        logger.warning("플랫폼 공지 수집 0건 — 건너뜀")
+        return
+
+    logrow = supabase_client.get_summary("platform_news_seen")
+    first_run = logrow is None
+    try:
+        seen = set(json.loads(logrow["content"])) if logrow else set()
+    except Exception:  # noqa: BLE001
+        seen = set()
+    new = [it for it in items if it["url"] not in seen]
+
+    if first_run:
+        send_message(_format_news(
+            items[:8], "플랫폼 소식 점검 시작(현재 공지)", label, total=len(items)))
+    elif new:
+        send_message(_format_news(new, "신규 공지/정책/혜택", label))
+    else:
+        send_message(f"✅ 플랫폼 공지 점검{(' — ' + label) if label else ''}: "
+                     "신규 없음.")
+
+    seen |= {it["url"] for it in items}
+    try:
+        supabase_client.save_summary("platform_news_seen", json.dumps(list(seen)))
+    except Exception:
+        logger.exception("플랫폼 공지 로그 저장 실패")
+    logger.info("플랫폼 공지 점검: 신규 %d건(첫실행=%s)", len(new), first_run)
+
+
 def main():
     """스케줄러를 시작한다(blocking)."""
     logging.basicConfig(
@@ -143,8 +200,12 @@ def main():
                   "cron", hour=14, minute=0, id="complaint_2pm")
     sched.add_job(lambda: check_complaint_reviews("저녁 10시"),
                   "cron", hour=22, minute=0, id="complaint_10pm")
-    logger.info("스케줄러 시작 (수집 2h, 리포트 09:00, 심각리뷰 14:00·22:00 %s)",
-                TIMEZONE)
+    # 플랫폼 공지·정책·혜택 점검: 매월 1일·15일 10:00
+    sched.add_job(lambda: check_platform_news("정기점검"),
+                  "cron", day="1,15", hour=10, minute=0, id="platform_news")
+    logger.info(
+        "스케줄러 시작 (수집 2h, 리포트 09:00, 심각리뷰 14·22시, "
+        "플랫폼공지 매월 1·15일 10시 %s)", TIMEZONE)
     try:
         sched.start()
     except (KeyboardInterrupt, SystemExit):
