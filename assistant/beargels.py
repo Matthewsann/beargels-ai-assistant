@@ -46,7 +46,9 @@ REPLY_PERSONA = (
     "진짜 사장님이 손으로 쓴 것처럼 자연스럽고 편한 '해요체'로 쓴다. 답글이 "
     "AI/자동응답/공지처럼 보이면 실패다.\n"
     "규칙:\n"
-    "- \"{닉네임}님,\" 으로 시작, 줄바꿈 후 본문. 2~3문장, 짧고 담백하게.\n"
+    "- \"{닉네임}님,\" 으로 시작, 줄바꿈 후 본문. 길이는 넉넉하게(주어진 글자수를 "
+    "잘 채우도록) 쓰되, 억지로 늘리거나 같은 말을 반복하지 않는다. 모든 문장이 "
+    "진짜 내용(구체적 메뉴 반응·감사·재방문·안부)이어야 한다.\n"
     "- 편한 구어체. 가끔 ㅎㅎ, ~, ! 나 😊🥹🐻 같은 이모지 하나 정도는 자연스럽게.\n"
     "- 주문 횟수 개인화: 첫 주문이면 '처음 오셨는데 입맛에 맞으셨다니 좋네요' 류, "
     "재주문이면 '벌써 N번째네요, 늘 감사해요' 처럼 단골을 알아봐 준다.\n"
@@ -65,12 +67,14 @@ REPLY_PERSONA = (
     "ㅎㅎ 담에도 맛있게 구워둘게요!\""
 )
 
-# 플랫폼별 답글 규정 — 글자수 한도·기준이 다르다.
-#  ⚠️ max_len 은 안전 상한(실제 답글은 ~150자라 여유 있음). 실게시 구현 시 각
-#     플랫폼 입력창 maxlength 로 최종 확정할 것.
+# 플랫폼별 답글 규정 — 실제 입력창 maxlength 로 확정(2026-07-24 편집창 확인).
+#  · 쿠팡: 답글 textarea maxlength=300 (하드 제한, 확인됨) → 300 초과 불가.
+#  · 배민: 답글 textarea 에 maxlength 미설정(-1). 하드 제한은 없으나 정책 통상
+#    ~500자 → 안전하게 500 을 목표 상한으로 둔다.
+#  target_len: '꽉 채워' 생성 시 목표 길이(사장님 요청). max_len 은 절대 상한.
 PLATFORM_REPLY = {
-    "baemin":  {"label": "배민",     "max_len": 1000},
-    "coupang": {"label": "쿠팡이츠", "max_len": 500},
+    "baemin":  {"label": "배민",     "max_len": 500, "target_len": 480},
+    "coupang": {"label": "쿠팡이츠", "max_len": 300, "target_len": 290},
 }
 
 
@@ -447,8 +451,10 @@ def generate_review_reply(review):
     author = _clean_author(review.get("author"))
     menus = ", ".join(review.get("menus") or []) or "주문 메뉴"
     oc = review.get("order_count")
-    cfg = PLATFORM_REPLY.get(review.get("platform"), {"label": "", "max_len": 500})
+    cfg = PLATFORM_REPLY.get(review.get("platform"),
+                             {"label": "", "max_len": 300, "target_len": 290})
     max_len = cfg["max_len"]
+    target = cfg.get("target_len", max_len)
     if oc == 1:
         visit = "첫 주문 고객"
     elif isinstance(oc, int) and oc > 1:
@@ -462,10 +468,12 @@ def generate_review_reply(review):
             f"별점 {rating}점으로 남긴 리뷰:\n"
             f"\"{content or '(사진만, 텍스트 없음)'}\"\n\n"
             f"[이 리뷰 유형 대응 지침] {_TYPE_GUIDE.get(typ, '')}\n"
-            f"위 지침대로 답글을 써줘. 반드시 {max_len}자 이내, 다른 답글과 "
-            f"겹치지 않게 자연스럽게."
+            f"위 지침대로 답글을 써줘. 글자수를 넉넉히 활용해 {target}자 내외로 "
+            f"정성껏 길게(최대 {max_len}자 초과 금지). 단 억지로 늘리거나 같은 말을 "
+            f"반복하지 말고, 주문 메뉴·사진·경험을 구체적으로 여러 개 짚어 "
+            f"진짜 내용으로 채운다. 다른 답글과 겹치지 않게 자연스럽게."
         )
-        return _ask_claude(REPLY_PERSONA, user, max_tokens=400)[:max_len]
+        return _ask_claude(REPLY_PERSONA, user, max_tokens=600)[:max_len]
     except LLMUnavailable:
         return _template_reply(typ, review, author, oc, rating, max_len)
 
