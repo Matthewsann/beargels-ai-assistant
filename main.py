@@ -1,12 +1,11 @@
-"""베어글스 인스타그램 SNS 자동화 파이프라인 진입점.
+"""베어글스 송도 인스타그램 SNS 봇 진입점 (폴더 기반 on-demand).
 
-구글 드라이브 폴더 모니터링 → Claude 캡션 생성 → 텔레그램 승인 → Buffer로 인스타그램 발행
+텔레그램에서 주제 폴더명 호출 → 그 폴더 분석 → Claude 캡션 생성
+→ 승인 → Buffer로 인스타그램 발행(릴스/게시물).
 """
 
 import asyncio
 import logging
-
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from sns_automation.buffer_client import BufferClient
 from sns_automation.caption_generator import CaptionGenerator
@@ -46,29 +45,14 @@ async def run() -> None:
     )
     app.bot_data["pipeline"] = pipeline
 
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        pipeline.poll_drive,
-        "interval",
-        minutes=settings.poll_interval_minutes,
-        max_instances=1,
-    )
-
     async with app:
         await app.start()
         await app.updater.start_polling(drop_pending_updates=True)
-        scheduler.start()
-        logger.info(
-            "파이프라인 시작 — 드라이브 폴링 주기: %d분", settings.poll_interval_minutes
-        )
-
-        # 시작 직후 한 번 즉시 폴링
-        await pipeline.poll_drive()
+        logger.info("봇 시작 — 텔레그램에서 주제명을 보내면 작업을 시작합니다. (/목록 으로 폴더 확인)")
 
         try:
             await asyncio.Event().wait()  # 종료 시그널까지 대기
         finally:
-            scheduler.shutdown(wait=False)
             await app.updater.stop()
             await app.stop()
 

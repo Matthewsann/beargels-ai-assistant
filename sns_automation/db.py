@@ -31,7 +31,14 @@ class PostRepository:
         )
         return len(res.data) > 0
 
-    def create_post(self, drive_file_id: str, file_name: str, mime_type: str) -> dict:
+    def create_post(
+        self,
+        drive_file_id: str,
+        file_name: str,
+        mime_type: str,
+        folder_id: str | None = None,
+        is_reel: bool = False,
+    ) -> dict:
         res = (
             self.client.table("sns_posts")
             .insert(
@@ -39,6 +46,8 @@ class PostRepository:
                     "drive_file_id": drive_file_id,
                     "file_name": file_name,
                     "mime_type": mime_type,
+                    "folder_id": folder_id,
+                    "is_reel": is_reel,
                     "status": STATUS_PENDING,
                 }
             )

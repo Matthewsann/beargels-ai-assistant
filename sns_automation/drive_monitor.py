@@ -45,10 +45,14 @@ class DriveClient:
         self.service = build("drive", "v3", credentials=credentials, cache_discovery=False)
         self.folder_id = folder_id
 
-    def list_media_files(self) -> list[dict]:
-        """폴더 안의 이미지/영상 파일 목록 (오래된 것부터)."""
+    def list_media_files(self, folder_id: str | None = None) -> list[dict]:
+        """폴더 안의 이미지/영상 파일 목록 (오래된 것부터).
+
+        folder_id 미지정 시 self.folder_id(콘텐츠 루트) 기준.
+        """
+        target = folder_id or self.folder_id
         query = (
-            f"'{self.folder_id}' in parents"
+            f"'{target}' in parents"
             " and trashed = false"
             " and (mimeType contains 'image/' or mimeType contains 'video/')"
         )
@@ -71,6 +75,51 @@ class DriveClient:
             if not page_token:
                 break
         return files
+
+    def list_topic_folders(self) -> list[dict]:
+        """콘텐츠 루트(self.folder_id) 바로 아래의 주제 폴더 목록 (이름순)."""
+        query = (
+            f"'{self.folder_id}' in parents"
+            " and trashed = false"
+            " and mimeType = 'application/vnd.google-apps.folder'"
+        )
+        folders: list[dict] = []
+        page_token = None
+        while True:
+            res = (
+                self.service.files()
+                .list(
+                    q=query,
+                    fields="nextPageToken, files(id, name)",
+                    orderBy="name",
+                    pageSize=100,
+                    pageToken=page_token,
+                )
+                .execute()
+            )
+            folders.extend(res.get("files", []))
+            page_token = res.get("nextPageToken")
+            if not page_token:
+                break
+        return folders
+
+    def find_topic_folder(self, name: str) -> dict | None:
+        """주제명으로 하위 폴더를 찾는다. 정확 일치 우선, 없으면 부분 일치."""
+        safe = name.strip().replace("\\", "\\\\").replace("'", "\\'")
+        base = (
+            f"'{self.folder_id}' in parents and trashed = false"
+            " and mimeType = 'application/vnd.google-apps.folder'"
+        )
+        for clause in (f"name = '{safe}'", f"name contains '{safe}'"):
+            res = (
+                self.service.files()
+                .list(q=f"{base} and {clause}", fields="files(id, name)", pageSize=10)
+                .execute()
+            )
+            files = res.get("files", [])
+            if files:
+                return files[0]
+        return None
 
     def get_file(self, file_id: str) -> dict:
         return (
