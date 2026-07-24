@@ -52,16 +52,37 @@ python -m scripts.setup_login        # 로그인 상태 검증
 ## 실행
 
 ```bash
-python -m scheduler.jobs      # 정기 크롤링(2h) + 매일 09시 리포트
-python -m bot.telegram_bot    # 텔레그램 봇 (/report, /reviews, /start)
+python -m scheduler.jobs      # 정기 크롤링(2h) + 매일 09시 리포트 + 심각리뷰 14/22시
+python -m bot.telegram_bot    # 텔레그램 봇 (/report /reviews /drafts /start …)
 python -m assistant.beargels  # 단독: 지금 수집→리포트 1회 출력
 ```
+
+### 24시간 무중단 (자동 재시작)
+
+봇이 죽어도 자동으로 되살리고, 붙을 Chrome(포트 9222)이 꺼져 있으면 먼저
+되살린다. 재시작 이력은 `logs/supervisor.log` 에 남는다.
+
+```bash
+scripts\run_bot_forever.bat          # 봇 감시(자동 재시작). 창은 켜둔 채로
+scripts\run_bot_forever.bat scheduler.jobs   # 스케줄러도 같은 방식으로 감시
+scripts\install_autostart.bat        # PC 로그인 시 자동 실행 등록(관리자 불필요)
+```
+
+### 리뷰 답글 승인 게이트 (`/drafts`)
+
+`/drafts` → 미답변 리뷰의 답글 초안을 하나씩 버튼(✅게시/⏭️넘기기)과 함께 제시.
+- ⚠️ **기본은 dry-run**(`.env` `WRITE_DRY_RUN=true`) — 버튼을 눌러도 미리보기만.
+  실제 게시는 `WRITE_DRY_RUN=false` 로 바꾸고 봇 재시작 후에만 나간다.
+- 🚨 이물질·환불·법적 등 **에스컬레이션 리뷰는 자동 게시 차단**(사장님 직접 대응).
+- 첫 실게시는 반드시 사장님 승인·감독 하에(잘못된 답글이 실고객에 노출되므로).
 
 ## 개발 상태 (2026-07)
 
 - ✅ 배민 크롤러: 로그인 세션 재사용(attach), 주문·리뷰 파싱 — 실계정 검증 완료
+- ✅ 쿠팡이츠 크롤러: 리뷰 + **주문(매출)** — 내부 JSON API 인터셉트(Akamai 우회), 실검증
 - ✅ AI 비서: Claude 리포트/리뷰요약 (LLM 장애 시 숫자 리포트로 graceful degrade)
 - ✅ Supabase 저장 계층 + 스키마 (`schema.sql` 실행 필요)
-- ✅ 텔레그램 봇/알림, 스케줄러
-- 🚧 쿠팡이츠 크롤러(`browser.py` 재사용 예정)
-- 🚧 쓰기 작업(리뷰 답글·프로모션) — `crawler/write_guard.py` 에 dry-run+승인 골격
+- ✅ 텔레그램 봇/알림, 스케줄러, 심각리뷰 자동보고(14/22시)
+- ✅ 리뷰 답글: 생성기 + **승인 게이트(`/drafts`)** + dry-run 게시 코드
+  (`crawler/review_reply.py`, `write_guard.py`). 실게시는 승인+비-dry-run 필요
+- ✅ 봇 24h 자동 재시작 감시자(`scripts/supervisor.py`)
