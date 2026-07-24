@@ -19,11 +19,29 @@ import os
 import random
 import re
 from collections import Counter
+from pathlib import Path
 
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# 답글 생성 백데이터(사실/맥락) — reference/reply_context.md (crawler.reply_history
+# 가 생성). 실제 메뉴명·서비스·배달 맥락을 참고해 없는 사실을 지어내지 않게 한다.
+_REPLY_CONTEXT_PATH = (
+    Path(__file__).resolve().parent.parent / "reference" / "reply_context.md")
+_REPLY_CONTEXT_CACHE = None
+
+
+def _reply_context():
+    """reply_context.md(사실 백데이터)를 읽어 캐시한다. 없으면 빈 문자열."""
+    global _REPLY_CONTEXT_CACHE
+    if _REPLY_CONTEXT_CACHE is None:
+        try:
+            _REPLY_CONTEXT_CACHE = _REPLY_CONTEXT_PATH.read_text(encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            _REPLY_CONTEXT_CACHE = ""
+    return _REPLY_CONTEXT_CACHE
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +71,10 @@ REPLY_PERSONA = (
     "- 주문 횟수 개인화: 첫 주문이면 '처음 오셨는데 입맛에 맞으셨다니 좋네요' 류, "
     "재주문이면 '벌써 N번째네요, 늘 감사해요' 처럼 단골을 알아봐 준다.\n"
     "- 리뷰에 언급된 메뉴/사진/경험에 구체적으로 반응한다(뭉뚱그리지 말 것).\n"
+    "- 배민·쿠팡이츠는 '배달'이다. '방문/오세요/들러주세요' 대신 '주문 주세요/"
+    "시켜주세요'로 쓴다.\n"
+    "- 없는 사실을 지어내지 않는다(예: 확인 안 된 조리 과정·수제 여부). 주어진 "
+    "[참고 사실]과 리뷰에 있는 내용으로만 반응한다.\n"
     "🚫 절대 쓰지 마라(AI·공지 말투): '~바라요/바랍니다', '되셨으면 좋겠어요', "
     "'되었길 바랍니다', '즐거운 한 끼', '정성껏 준비하겠습니다', '정성을 다하겠습니다', "
     "'큰 힘이 됩니다', '보답하겠습니다', '항상 최선을'. 딱딱한 격식체 금지.\n"
@@ -463,7 +485,10 @@ def generate_review_reply(review):
         visit = "고객"
 
     try:
+        ctx = _reply_context()
+        ctx_block = f"[참고 사실(백데이터)]\n{ctx}\n\n" if ctx else ""
         user = (
+            f"{ctx_block}"
             f"[{cfg['label']}] {visit} '{author}'가 {menus} 주문 후 "
             f"별점 {rating}점으로 남긴 리뷰:\n"
             f"\"{content or '(사진만, 텍스트 없음)'}\"\n\n"
