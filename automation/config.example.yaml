@@ -1,0 +1,32 @@
+# 이 파일을 복사해서 config.yaml 로 저장하고 값을 채우세요.  (cp config.example.yaml config.yaml)
+# config.yaml 은 깃에 올라가지 않습니다(.gitignore).
+
+naver:
+  # 네이버 블로그 아이디 (blog.naver.com/여기부분)
+  blog_id: "여기에_블로그아이디"
+
+  # 자동화 전용 크롬 프로필이 저장될 폴더 (한 번 로그인하면 세션이 여기 유지됨).
+  # 일상용 크롬과 분리하기 위해 전용 폴더를 씁니다. 처음 그대로 두어도 됩니다.
+  profile_dir: "./chrome_profile"
+
+  # true 면 브라우저 창을 띄워서(headful) 동작 — 처음엔 반드시 true 로 두고 눈으로 확인하세요.
+  headful: true
+
+  # 임시저장 후 자동으로 '발행'까지 할지 여부.
+  # false 를 강력 권장 (발행은 사장님이 사진 확인 후 직접). true 는 위험.
+  auto_publish: false
+
+# 글 생성(Claude) 설정
+generate:
+  # 사용할 모델. 블로그 글은 sonnet 으로 충분하고 빠릅니다.
+  model: "claude-sonnet-5"
+  max_tokens: 4000
+
+# 브랜드 정보 — 프롬프트에 자동으로 채워집니다. 실제 정보로 바꿔주세요.
+brand:
+  name: "베어글스"
+  region: "여기에_지역명"          # 예: 망원동
+  address: "여기에_도로명주소"
+  hours: "여기에_영업시간"          # 예: 매일 08:00-21:00
+  phone: "여기에_전화번호"
+  instagram: "여기에_인스타계정"    # 예: @beargels

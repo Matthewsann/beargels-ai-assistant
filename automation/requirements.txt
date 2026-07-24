@@ -1,0 +1,6 @@
+# 베어글스 블로그 자동화 의존성
+# 설치: pip install -r requirements.txt  그리고  python -m playwright install chromium
+playwright>=1.44
+anthropic>=0.40
+PyYAML>=6.0
+python-dotenv>=1.0

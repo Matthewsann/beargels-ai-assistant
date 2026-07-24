@@ -1,3 +1,8 @@
 .env
 __pycache__/
 *.pyc
+
+# 자동화: 개인 설정·세션·생성물은 올리지 않음
+automation/config.yaml
+automation/chrome_profile/
+automation/posts/
