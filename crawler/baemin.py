@@ -287,8 +287,18 @@ class BaeminCrawler:
                  for el in item.find_all(True)
                  if not el.find(True) and el.get_text(strip=True)]
 
-        delivery_type = parts[0] if parts else None
-        author = parts[1] if len(parts) > 1 else None
+        # 잎 순서: [배달유형?, 닉네임, 날짜, 리뷰번호 N, ...]. 배달유형 badge 는
+        # 있을 때/없을 때가 있어 위치가 밀리므로 고정 인덱스로 잡으면 닉네임 대신
+        # 날짜가 잡힌다. → 닉네임 = '날짜 잎' 바로 앞 잎 으로 안정적으로 잡는다.
+        _date_leaf = re.compile(r"^\d{4}년\s*\d{1,2}월\s*\d{1,2}일$")
+        date_idx = next((i for i, x in enumerate(parts)
+                         if _date_leaf.match(x)), None)
+        if date_idx is not None and date_idx >= 1:
+            author = parts[date_idx - 1]
+            delivery_type = parts[0] if date_idx >= 2 else None
+        else:
+            delivery_type = parts[0] if parts else None
+            author = parts[1] if len(parts) > 1 else None
 
         written_at = None
         m = re.search(r"\d{4}년\s*\d{1,2}월\s*\d{1,2}일", raw)
