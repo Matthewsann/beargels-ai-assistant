@@ -8,7 +8,17 @@
   </div>
   <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
     <a class="btn primary" href="/post/{{ '%04d'|format(item_id) }}/edit">✏️ 고치기</a>
+    <form method="post" action="/post/{{ '%04d'|format(item_id) }}/prepare" style="display:inline;">
+      <button type="submit" class="btn">🚀 네이버에 초안 넣기</button>
+    </form>
   </div>
+
+  {% if prepared %}
+  <div class="note" style="background:var(--ok-bg); color:var(--ok);">
+    ✅ 집 PC가 네이버에 초안(임시저장)을 넣는 중이에요. 네이버 블로그 → 저장 목록에서 확인하고,
+    사진 넣은 뒤 <b>발행 버튼은 사장님이 직접</b> 눌러주세요.
+  </div>
+  {% endif %}
 
   <div style="border:1px solid var(--line); background:var(--card); border-radius:12px; padding:16px 18px; margin-bottom:16px;">
     {% if meta.status == 'scheduled' %}

@@ -65,7 +65,8 @@ def view_post(item_id: int):
         meta = yaml.safe_load((d / "meta.yaml").read_text(encoding="utf-8")) or {}
     meta["_status_meta"] = STATUS_META.get(meta.get("status", "ready"), STATUS_META["ready"])
     body = (d / "post.md").read_text(encoding="utf-8")
-    return render_template("post.html", meta=meta, body=body, item_id=item_id)
+    return render_template("post.html", meta=meta, body=body, item_id=item_id,
+                           prepared=request.args.get("prepared"))
 
 
 def _item_date(it: dict):
@@ -82,6 +83,7 @@ def _item_date(it: dict):
 
 RANK_CHECKER = pathlib.Path(__file__).resolve().parent / "rank_checker.py"
 RANK_HISTORY = pathlib.Path(__file__).resolve().parent / "rank_history.json"
+NAVER_AUTODRAFT = ROOT / "automation" / "src" / "naver_autodraft.py"
 
 
 def tracked_keywords() -> list[str]:
@@ -201,6 +203,22 @@ def calendar_view():
         "calendar.html", weeks=weeks, byday=byday, year=year, month=month, today=today,
         prev_ym=f"{prev.year}-{prev.month:02d}", next_ym=f"{nxt.year}-{nxt.month:02d}",
     )
+
+
+@app.route("/post/<int:item_id>/prepare", methods=["POST"])
+def prepare_naver(item_id: int):
+    """집 PC 일꾼이 이 글을 네이버에 임시저장(초안)으로 넣는다. 최종 발행은 사장님이 직접."""
+    post_json = LIB / f"{item_id:04d}" / "post.json"
+    if not post_json.exists():
+        abort(404)
+    try:
+        subprocess.Popen(
+            [sys.executable, str(NAVER_AUTODRAFT), "--post", str(post_json)],
+            cwd=str(NAVER_AUTODRAFT.parent),
+        )
+    except Exception:
+        pass
+    return redirect(url_for("view_post", item_id=item_id, prepared=1))
 
 
 @app.route("/post/<int:item_id>/schedule", methods=["POST"])
