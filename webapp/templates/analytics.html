@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="sec" style="margin-bottom:6px;">
+    <b>🎯 순위 추적</b><small>{% if last_date %}마지막 확인 {{ last_date }}{% else %}아직 확인 전{% endif %}</small>
+  </div>
+  <div style="font-size:13px; color:var(--muted); margin-bottom:14px;">
+    타겟 키워드로 네이버 검색 시 우리 블로그가 몇 페이지 몇 위인지. (10위 = 약 1페이지)
+  </div>
+
+  <form method="post" action="/analytics/check" style="margin-bottom:16px;">
+    <button type="submit" class="btn primary">🔄 지금 순위 확인</button>
+    <span style="font-size:12px; color:var(--muted); margin-left:8px;">추적 키워드 {{ tracked|length }}개 · 30초쯤 걸려요</span>
+  </form>
+
+  {% if checking %}
+  <div class="note" style="margin-bottom:16px;">⏳ 일꾼이 네이버에서 순위를 확인 중이에요. 30초쯤 뒤 <a href="/analytics">새로고침</a> 하면 결과가 떠요.</div>
+  {% endif %}
+
+  {% if rows %}
+  <div class="list">
+    {% for r in rows %}
+    <div class="row" style="cursor:default;">
+      <div class="t">
+        <b>{{ r.keyword }}</b>
+        <small>{% if r.found %}상위 노출 중{% else %}상위 {{ r.scanned }}위 밖{% endif %}</small>
+      </div>
+      <div style="text-align:right; white-space:nowrap;">
+        {% if r.found %}
+          <div style="font-size:15px; font-weight:600;">
+            <span style="color:{{ '#3b6d11' if r.page == 1 else ('#854f0b' if r.page == 2 else '#5f5e5a') }};">{{ r.page }}페이지</span> {{ r.pos }}위
+          </div>
+        {% else %}
+          <div style="font-size:15px; font-weight:600; color:var(--muted);">순위권 밖</div>
+        {% endif %}
+        {% if r.trend == 'new' %}
+          <div style="font-size:12px; color:var(--accent); margin-top:2px;">신규</div>
+        {% elif r.trend and r.trend > 0 %}
+          <div style="font-size:12px; color:#3b6d11; margin-top:2px;">▲ {{ r.trend }}칸</div>
+        {% elif r.trend and r.trend < 0 %}
+          <div style="font-size:12px; color:#a32d2d; margin-top:2px;">▼ {{ -r.trend }}칸</div>
+        {% elif r.trend == 0 %}
+          <div style="font-size:12px; color:var(--muted); margin-top:2px;">변동 없음</div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="list"><div class="empty">아직 순위 데이터가 없어요.<br>위 '지금 순위 확인'을 눌러보세요.</div></div>
+  {% endif %}
+
+  <div class="note" style="margin-top:16px;">💡 매일 자동 확인은 <code>webapp\rank_check.bat</code> 을 작업 스케줄러에 걸면 돼요. 순위가 떨어진 글은 기획실에서 다시 손봐 올리세요.</div>
+{% endblock %}

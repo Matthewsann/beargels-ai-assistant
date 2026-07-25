@@ -64,6 +64,7 @@
       <a href="/plan" class="{{ 'on' if request.path.startswith('/plan') else '' }}">🧭 기획실</a>
       <a href="/" class="{{ 'on' if request.path == '/' else '' }}">📚 글 창고</a>
       <a href="/calendar" class="{{ 'on' if request.path.startswith('/calendar') else '' }}">📅 캘린더</a>
+      <a href="/analytics" class="{{ 'on' if request.path.startswith('/analytics') else '' }}">📊 분석</a>
     </div>
     {% block content %}{% endblock %}
   </div>

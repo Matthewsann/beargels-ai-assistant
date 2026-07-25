@@ -39,3 +39,6 @@ token.json
 sample_output/
 sample/
 sample_frames/
+
+# 웹앱: 순위 추적 결과(생성 데이터)
+webapp/rank_history.json

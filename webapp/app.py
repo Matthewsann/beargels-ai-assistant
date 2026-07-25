@@ -8,7 +8,10 @@
 from __future__ import annotations
 
 import calendar as calmod
+import json
 import pathlib
+import subprocess
+import sys
 from datetime import date, datetime, timedelta
 
 import yaml
@@ -77,6 +80,22 @@ def _item_date(it: dict):
         return None
 
 
+RANK_CHECKER = pathlib.Path(__file__).resolve().parent / "rank_checker.py"
+RANK_HISTORY = pathlib.Path(__file__).resolve().parent / "rank_history.json"
+
+
+def tracked_keywords() -> list[str]:
+    kws = []
+    for it in load_items():
+        k = (it.get("main_keyword") or "").strip()
+        if k and k not in kws:
+            kws.append(k)
+    for d in ("송도 베이글", "송도 카페"):
+        if d not in kws:
+            kws.append(d)
+    return kws
+
+
 def _friendly_error(e: Exception) -> str:
     msg = str(e).lower()
     if "credit" in msg or "billing" in msg:
@@ -112,6 +131,51 @@ def plan_draft():
         return redirect(url_for("view_post", item_id=item_id))
     except Exception as e:  # noqa: BLE001
         return render_template("plan.html", plan=None, error=_friendly_error(e), hint=topic)
+
+
+@app.route("/analytics")
+def analytics():
+    hist = {}
+    if RANK_HISTORY.exists():
+        try:
+            hist = json.loads(RANK_HISTORY.read_text(encoding="utf-8"))
+        except Exception:
+            hist = {}
+    checks = hist.get("checks", {})
+    dates = sorted(checks.keys())
+    latest = checks.get(dates[-1], []) if dates else []
+    prev = checks.get(dates[-2], []) if len(dates) >= 2 else []
+    prev_rank = {r["keyword"]: r.get("rank") for r in prev}
+
+    rows = []
+    for r in latest:
+        kw = r["keyword"]
+        cur = r.get("rank")
+        old = prev_rank.get(kw)
+        trend = None
+        if cur and old:
+            trend = old - cur  # +면 상승(순위 숫자 작아짐)
+        elif cur and old is None and len(dates) >= 2:
+            trend = "new"
+        rows.append({
+            "keyword": kw, "found": r.get("found"),
+            "page": r.get("page"), "pos": r.get("pos_in_page"),
+            "rank": cur, "scanned": r.get("scanned"), "trend": trend,
+        })
+    return render_template(
+        "analytics.html", rows=rows, last_date=(dates[-1] if dates else None),
+        checking=request.args.get("checking"), tracked=tracked_keywords(),
+    )
+
+
+@app.route("/analytics/check", methods=["POST"])
+def analytics_check():
+    kws = tracked_keywords()
+    try:
+        subprocess.Popen([sys.executable, str(RANK_CHECKER), *kws], cwd=str(RANK_CHECKER.parent))
+    except Exception:
+        pass
+    return redirect(url_for("analytics", checking=1))
 
 
 @app.route("/calendar")
