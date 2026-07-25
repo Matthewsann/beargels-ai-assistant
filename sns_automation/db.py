@@ -59,6 +59,17 @@ class PostRepository:
         res = self.client.table("sns_posts").select("*").eq("id", post_id).limit(1).execute()
         return res.data[0] if res.data else None
 
+    def list_recent(self, limit: int = 50) -> list[dict]:
+        """최근 게시물 목록 (대시보드용, 최신순)."""
+        res = (
+            self.client.table("sns_posts")
+            .select("*")
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return res.data
+
     def update_post(self, post_id: str, **fields: Any) -> dict:
         res = self.client.table("sns_posts").update(fields).eq("id", post_id).execute()
         return res.data[0]
