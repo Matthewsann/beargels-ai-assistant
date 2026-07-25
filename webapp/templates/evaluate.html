@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+  <a class="back" href="/post/{{ '%04d'|format(item_id) }}">← 글로 돌아가기</a>
+  <div class="sec" style="margin-bottom:14px;">
+    <b>🔍 블로그 전문가 평가</b><small>{{ meta.title }}</small>
+  </div>
+
+  <div style="background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin-bottom:16px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+      <b style="font-size:14px;">① 기계 점검 (SEO 기준)</b>
+      <span style="font-size:14px; font-weight:600; color:{{ '#3b6d11' if ok >= total-1 else ('#854f0b' if ok >= total//2 else '#a32d2d') }};">{{ ok }}/{{ total }} 통과</span>
+    </div>
+    {% for c in checks %}
+    <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--line);">
+      <span style="font-size:16px;">{{ '✅' if c.status == 'ok' else '⚠️' }}</span>
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:14px;">{{ c.label }} · <b style="color:{{ '#3b6d11' if c.status=='ok' else '#854f0b' }};">{{ c.value }}</b></div>
+        <div style="font-size:12px; color:var(--muted);">{{ c.hint }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div style="background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px;">
+    <b style="font-size:14px;">② AI 전문가 평가</b>
+    {% if review %}
+      <div style="display:flex; align-items:baseline; gap:10px; margin:12px 0;">
+        <span style="font-size:32px; font-weight:600; color:var(--accent);">{{ review.score }}</span>
+        <span style="font-size:14px; color:var(--muted);">/ 100</span>
+        <span style="font-size:14px; margin-left:6px;">{{ review.one_line }}</span>
+      </div>
+      {% if review.strengths %}
+      <div style="font-size:13px; font-weight:600; margin:12px 0 4px;">👍 잘한 점</div>
+      <ul style="margin:0; padding-left:20px; font-size:14px;">{% for s in review.strengths %}<li>{{ s }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if review.improvements %}
+      <div style="font-size:13px; font-weight:600; margin:12px 0 4px;">🔧 개선 제안</div>
+      <ul style="margin:0; padding-left:20px; font-size:14px;">{% for s in review.improvements %}<li>{{ s }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if review.brand_fit %}
+      <div style="font-size:13px; color:var(--muted); margin-top:12px;">🐻 브랜드 부합도: {{ review.brand_fit }}</div>
+      {% endif %}
+    {% elif review_error %}
+      <div style="margin-top:12px; padding:14px 16px; background:#faeeda; color:#854f0b; border-radius:8px; font-size:14px;">⚠️ {{ review_error }}</div>
+    {% else %}
+      <div style="font-size:13px; color:var(--muted); margin:10px 0 14px;">전문가가 금고(철학·톤)·SEO 기준으로 점수와 개선점을 매겨줘요.</div>
+      <a class="btn primary" href="/post/{{ '%04d'|format(item_id) }}/evaluate?ai=1">🤖 AI 전문가 평가 받기</a>
+    {% endif %}
+  </div>
+{% endblock %}

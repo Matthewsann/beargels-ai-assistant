@@ -50,4 +50,21 @@
   {% endif %}
 
   <div class="note" style="margin-top:16px;">💡 매일 자동 확인은 <code>webapp\rank_check.bat</code> 을 작업 스케줄러에 걸면 돼요. 순위가 떨어진 글은 기획실에서 다시 손봐 올리세요.</div>
+
+  <div class="sec" style="margin:26px 0 10px;"><b>🔍 게시글 평가</b><small>SEO·브랜드 기준 전문가 평가</small></div>
+  {% if items %}
+  <div class="list">
+    {% for it in items %}
+    <a class="row" href="/post/{{ '%04d'|format(it.id) }}/evaluate">
+      <div class="t">
+        <b>{{ it.title or '(제목 없음)' }}</b>
+        <small>{{ it.type or '글' }} · {{ it._status_meta.label }}</small>
+      </div>
+      <span class="tag accent">평가 →</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="list"><div class="empty">평가할 글이 아직 없어요.</div></div>
+  {% endif %}
 {% endblock %}

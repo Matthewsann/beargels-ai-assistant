@@ -208,6 +208,7 @@ def analytics():
     return render_template(
         "analytics.html", rows=rows, last_date=(dates[-1] if dates else None),
         checking=request.args.get("checking"), tracked=tracked_keywords(),
+        items=load_items(),
     )
 
 
@@ -280,6 +281,34 @@ def schedule_post(item_id: int):
             meta["scheduled_time"] = f"{dt} {tm}"
     mp.write_text(yaml.safe_dump(meta, allow_unicode=True, sort_keys=False), encoding="utf-8")
     return redirect(url_for("view_post", item_id=item_id))
+
+
+@app.route("/post/<int:item_id>/evaluate")
+def evaluate_post(item_id: int):
+    d = LIB / f"{item_id:04d}"
+    if not (d / "post.md").exists():
+        abort(404)
+    meta = {}
+    if (d / "meta.yaml").exists():
+        meta = yaml.safe_load((d / "meta.yaml").read_text(encoding="utf-8")) or {}
+    body = (d / "post.md").read_text(encoding="utf-8")
+    title = meta.get("title", "")
+    main_keyword = meta.get("main_keyword", "")
+
+    import evaluator
+    checks = evaluator.mechanical_check(body, title, main_keyword)
+    ok = sum(1 for c in checks if c["status"] == "ok")
+    review = None
+    review_error = None
+    if request.args.get("ai"):
+        try:
+            review = evaluator.expert_review(body, title, main_keyword)
+        except Exception as e:  # noqa: BLE001
+            review_error = _friendly_error(e)
+    return render_template(
+        "evaluate.html", item_id=item_id, meta=meta, checks=checks,
+        ok=ok, total=len(checks), review=review, review_error=review_error,
+    )
 
 
 @app.route("/post/<int:item_id>/edit", methods=["GET", "POST"])
