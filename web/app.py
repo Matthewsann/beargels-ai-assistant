@@ -11,13 +11,14 @@
 
 import logging
 import threading
-from datetime import date, timedelta
+from collections import OrderedDict
+from datetime import date, datetime, timedelta
 
 from flask import Flask, jsonify, render_template, request
 
 from assistant.beargels import (
-    classify_review, compute_order_stats, compute_review_stats,
-    generate_review_reply, is_serious_review,
+    classify_review, complaint_reason, compute_order_stats,
+    compute_review_stats, generate_review_reply, is_serious_review,
 )
 from crawler.review_reply import ReplyToReviewAction
 from crawler.write_guard import _default_dry_run
@@ -30,6 +31,18 @@ app = Flask(__name__)
 _collect = {"running": False, "msg": "", "at": None}
 
 _PLAT_KO = {"baemin": "배민", "coupang": "쿠팡"}
+
+# 답글 등록 기한(일). 배민=30일(무응답 30일 게시중단 기준). 쿠팡은 공식 수치 불명확
+# → 보수적으로 30일. 실제 게시 가능 여부는 플랫폼 답글 버튼이 최종 기준.
+REPLY_DEADLINE_DAYS = {"baemin": 30, "coupang": 30}
+
+
+def _days_since(written_date):
+    try:
+        d = datetime.strptime(str(written_date), "%Y-%m-%d").date()
+        return (date.today() - d).days
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _safe(fn, default):
@@ -52,13 +65,29 @@ def dashboard():
     ostat_yday = compute_order_stats(o_yday)
     rstat = compute_review_stats(reviews)
 
-    serious = [r for r in reviews if is_serious_review(r)]
-    unanswered = [r for r in reviews
-                  if (r.get("reply_status") in (None, "none", ""))][:20]
-    # 초안(generate_review_reply)은 느릴 수 있어 페이지 로드 시 만들지 않고,
-    # 브라우저가 /draft 로 리뷰별로 지연 요청한다. 여기선 빠른 분류만.
-    for r in unanswered:
+    # 리뷰별 파생 정보: 문제사유·경과일·답글기한.
+    for r in reviews:
+        r["_reason"] = complaint_reason(r) if is_serious_review(r) else None
         r["_escalate"] = classify_review(r) == "escalate"
+        dd = _days_since(r.get("written_date"))
+        dl = REPLY_DEADLINE_DAYS.get(r.get("platform"), 30)
+        r["_days"] = dd
+        r["_expired"] = (dd is not None and dd > dl)   # 답글 기한 만료
+        r["_remain"] = (dl - dd) if dd is not None else None
+
+    serious = [r for r in reviews if is_serious_review(r)]
+
+    unanswered = [r for r in reviews
+                  if r.get("reply_status") in (None, "none", "")]
+    # ⚠️ 기한 만료 리뷰는 답글 불가 → 답글 대상에서 제외(참고용으로 개수만).
+    repliable = [r for r in unanswered if not r["_expired"]]
+    expired_cnt = sum(1 for r in unanswered if r["_expired"])
+
+    # 날짜별 그룹(최신순). 답글 대상만 날짜별로 묶어 보여준다.
+    by_date = OrderedDict()
+    for r in sorted(repliable, key=lambda x: x.get("written_date") or "",
+                    reverse=True):
+        by_date.setdefault(r.get("written_date") or "날짜미상", []).append(r)
 
     return render_template(
         "dashboard.html",
@@ -66,9 +95,9 @@ def dashboard():
         dry_run=_default_dry_run(),
         ostat_today=ostat_today, ostat_yday=ostat_yday,
         rstat=rstat, plat_ko=_PLAT_KO,
-        serious=serious, unanswered=unanswered,
-        collect=_collect,
-        review_count=len(reviews),
+        serious=serious, by_date=by_date,
+        repliable_cnt=len(repliable), expired_cnt=expired_cnt,
+        collect=_collect, review_count=len(reviews),
     )
 
 

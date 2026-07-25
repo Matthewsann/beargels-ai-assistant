@@ -37,7 +37,13 @@
   .rev .meta{font-size:13px;color:var(--sub);margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .pill{font-size:11px;padding:2px 8px;border-radius:99px;background:var(--soft);color:var(--sub);font-weight:700}
   .pill.bad{background:#ffe3e3;color:#c92a2a}
-  .pill.plat{background:#eef4ff;color:#1c5fd6}
+  .pill.reason{background:#fff0e0;color:#b7590a}
+  /* 플랫폼 색 구분: 배민=민트, 쿠팡=코랄 */
+  .pill.baemin{background:#2ac1bc;color:#fff}
+  .pill.coupang{background:#ff5a5f;color:#fff}
+  .datehdr{font-size:14px;font-weight:800;margin:16px 2px 8px;color:var(--brand);
+           display:flex;align-items:center;gap:8px}
+  .datehdr .cnt2{font-size:12px;color:var(--sub);font-weight:600}
   .rev .body{font-size:14px;margin:2px 0 8px;white-space:pre-wrap}
   textarea{width:100%;min-height:76px;border:1px solid var(--line);border-radius:9px;
            padding:9px;font:inherit;resize:vertical}
@@ -96,8 +102,9 @@
       {% for r in serious %}
       <div class="rev">
         <div class="meta">
-          <span class="pill plat">{{ plat_ko.get(r.platform, r.platform) }}</span>
+          <span class="pill {{ r.platform }}">{{ plat_ko.get(r.platform, r.platform) }}</span>
           <span class="pill bad">★{{ r.rating }}</span>
+          {% if r._reason %}<span class="pill reason">{{ '이물질/민감' if r._escalate else r._reason }}</span>{% endif %}
           <b>{{ r.author }}</b>
           <span>{{ r.written_date or '' }}</span>
         </div>
@@ -108,33 +115,40 @@
     {% else %}<div class="empty">문제 리뷰 없음 👍</div>{% endif %}
   </div>
 
-  <h3 class="sec">✍️ 미답변 리뷰 답글 ({{ unanswered|length }})</h3>
+  <h3 class="sec">✍️ 미답변 리뷰 답글 · 날짜별 ({{ repliable_cnt }})
+    {% if expired_cnt %}<span class="sub" style="font-weight:600">· 기한만료 {{ expired_cnt }}건 제외</span>{% endif %}
+  </h3>
   <div class="card">
-    {% if unanswered %}
-    <div class="list">
-      {% for r in unanswered %}
-      <div class="rev {{ 'esc' if r._escalate else '' }}" data-plat="{{ r.platform }}" data-no="{{ r.review_no }}">
-        <div class="meta">
-          <span class="pill plat">{{ plat_ko.get(r.platform, r.platform) }}</span>
-          <span class="pill">★{{ r.rating }}</span>
-          <b>{{ r.author }}</b>
-          {% if r.menus %}<span class="sub">· {{ r.menus|join(', ') }}</span>{% endif %}
-        </div>
-        <div class="body">{{ r.content or '(사진/무텍스트)' }}</div>
-        {% if r._escalate %}
-          <div class="msg" style="color:var(--warn)">🚨 민감(에스컬레이션) 리뷰 — 자동 게시 차단. 사장님이 직접 대응하세요.</div>
-        {% else %}
-          <textarea placeholder="초안 생성 중…"></textarea>
-          <div class="act">
-            <button class="ghost" onclick="loadDraft(this)">↻ 초안 다시</button>
-            <button class="primary" onclick="postReply(this)">게시</button>
-            <span class="msg out"></span>
+    {% if by_date %}
+      {% for d, revs in by_date.items() %}
+      <div class="datehdr">📅 {{ d }} <span class="cnt2">{{ revs|length }}건</span></div>
+      <div class="list">
+        {% for r in revs %}
+        <div class="rev {{ 'esc' if r._escalate else '' }}" data-plat="{{ r.platform }}" data-no="{{ r.review_no }}">
+          <div class="meta">
+            <span class="pill {{ r.platform }}">{{ plat_ko.get(r.platform, r.platform) }}</span>
+            <span class="pill">★{{ r.rating }}</span>
+            {% if r._reason %}<span class="pill reason">{{ r._reason }}</span>{% endif %}
+            <b>{{ r.author }}</b>
+            {% if r._remain is not none %}<span class="sub">· 기한 {{ r._remain }}일 남음</span>{% endif %}
           </div>
-        {% endif %}
+          {% if r.menus %}<div class="sub" style="margin-bottom:6px">🧺 {{ r.menus|join(', ') }}</div>{% endif %}
+          <div class="body">{{ r.content or '(사진/무텍스트)' }}</div>
+          {% if r._escalate %}
+            <div class="msg" style="color:var(--warn)">🚨 민감(에스컬레이션) 리뷰 — 자동 게시 차단. 사장님이 직접 대응하세요.</div>
+          {% else %}
+            <textarea placeholder="초안 생성 중…"></textarea>
+            <div class="act">
+              <button class="ghost" onclick="loadDraft(this)">↻ 초안 다시</button>
+              <button class="primary" onclick="postReply(this)">게시</button>
+              <span class="msg out"></span>
+            </div>
+          {% endif %}
+        </div>
+        {% endfor %}
       </div>
       {% endfor %}
-    </div>
-    {% else %}<div class="empty">미답변 리뷰 없음 👍 (DB 기준 — 최신은 수집 후)</div>{% endif %}
+    {% else %}<div class="empty">답글 대상 미답변 리뷰 없음 👍 (DB 기준 — 최신은 수집 후)</div>{% endif %}
   </div>
 </main>
 
