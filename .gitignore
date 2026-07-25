@@ -9,3 +9,7 @@ token.json
 sample_output/
 sample/
 sample_frames/
+
+# 파이프라인 런타임 산출물
+projects/
+완성본/
