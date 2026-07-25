@@ -168,6 +168,11 @@ class CoupangCrawler:
             "menus": menus or None,
             "delivery_type": r.get("orderType"),
             "order_count": r.get("orderCount"),  # 첫/재주문 판별(답글 개인화)
+            # 문제리뷰 보고용 — 어떤 '주문'에 대한 리뷰인지(직원 단톡 공유).
+            "order_no": r.get("abbrOrderId") or (
+                str(r.get("orderId")) if r.get("orderId") else None),
+            "ordered_at": (r.get("orderedAt") or "").replace("T", " ")[:16]
+                          or None,
             # replies 가 있으면 이미 답변한 리뷰
             "reply_status": "posted" if r.get("replies") else "none",
             "raw": json.dumps(r, ensure_ascii=False),

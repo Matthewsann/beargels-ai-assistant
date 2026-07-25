@@ -51,3 +51,26 @@ def test_clean_author_rejects_non_names(bad):
 def test_clean_author_keeps_masked_names(good):
     from assistant.beargels import _clean_author
     assert _clean_author(good) == good
+
+
+def test_complaint_report_includes_order_info():
+    # 직원 단톡 공유용 — 주문시각·주문번호·문제내용 필수(사장님 요청 2026-07-26).
+    from assistant.beargels import format_complaint_report
+    rv = {"platform": "coupang", "review_no": "111", "author": "김*진",
+          "rating": 2, "content": "포장이 젖어서 왔어요",
+          "menus": ["잠봉뵈르"], "order_no": "0E2C6A",
+          "ordered_at": "2026-07-21 18:07"}
+    out = format_complaint_report([rv], "오후 2시")
+    assert "주문번호: 0E2C6A" in out
+    assert "주문시각: 2026-07-21 18:07" in out
+    assert "문제내용" in out and "포장이 젖어서" in out
+
+
+def test_complaint_report_baemin_fallback_to_review_id():
+    # 배민은 주문번호가 없어 리뷰번호/작성일로 식별.
+    from assistant.beargels import format_complaint_report
+    rv = {"platform": "baemin", "review_no": "20260726123", "author": "박고객",
+          "rating": 1, "content": "메뉴가 누락됐어요",
+          "written_at": "2026년 7월 26일"}
+    out = format_complaint_report([rv])
+    assert "#20260726123" in out and "2026년 7월 26일" in out
