@@ -525,13 +525,15 @@ def _template_reply(typ, review, author, oc, rating, max_len):
     """크레딧 없을 때 템플릿 폴백 — 유형별 + 리뷰별 변형(복붙 방지)."""
     seed = str(review.get("review_no") or author)
 
-    # 컴플레인은 감사 인사보다 '사과'가 먼저 나가야 한다.
+    # 컴플레인: 감사보다 '사과'가 먼저. 정중한 격식체 + 다짐형(사장님 확정
+    # 2026-07-26). 환불·보상 안내 금지, 캐주얼(ㅎㅎ·이모지) 금지.
     if typ == "complaint":
-        loyal = ("늘 주문 주시는데 이런 일이 생겨서 더 죄송해요. "
+        loyal = ("늘 주문해 주시는데 이런 일이 생겨 더 죄송합니다. "
                  if isinstance(oc, int) and oc > 1 else "")
-        return (f"{author}님,\n불편을 드려서 정말 죄송해요. {loyal}"
-                "말씀해주신 부분 바로 확인하고 고칠게요. 다시 한 번 주문 주시면 "
-                "제대로 보여드릴게요.")[:max_len]
+        return (f"{author}님,\n불편을 드린 점 진심으로 사과드립니다. {loyal}"
+                "말씀해 주신 내용은 무겁게 받아들이고, 같은 일이 반복되지 않도록 "
+                "바로 점검하고 개선하겠습니다. 알려주셔서 감사합니다. 다음에 주문 "
+                "주시면 그때는 제대로 챙겨서 보내드리겠습니다.")[:max_len]
 
     if isinstance(oc, int) and oc > 1:
         opener = f"벌써 {oc}번째네요, 기억해주고 또 주문해주셔서 진짜 감사해요."
