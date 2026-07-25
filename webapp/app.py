@@ -77,6 +77,43 @@ def _item_date(it: dict):
         return None
 
 
+def _friendly_error(e: Exception) -> str:
+    msg = str(e).lower()
+    if "credit" in msg or "billing" in msg:
+        return ("AI 크레딧이 부족해요. console.anthropic.com 에서 충전하면 "
+                "여기서 바로 기획·초안이 나와요. (그 전까지는 화면·흐름만 확인 가능)")
+    if "api_key" in msg or "authentication" in msg or "x-api-key" in msg:
+        return "API 키가 설정되지 않았어요. automation/.env 의 ANTHROPIC_API_KEY 를 확인해주세요."
+    return f"기획 중 문제가 생겼어요: {e}"
+
+
+@app.route("/plan", methods=["GET", "POST"])
+def plan_room():
+    plan = None
+    error = None
+    hint = ""
+    if request.method == "POST":
+        hint = request.form.get("hint", "").strip()
+        try:
+            import planner
+            plan = planner.make_plan(hint)
+        except Exception as e:  # noqa: BLE001 — 사용자에게 친절 메시지로 변환
+            error = _friendly_error(e)
+    return render_template("plan.html", plan=plan, error=error, hint=hint)
+
+
+@app.route("/plan/draft", methods=["POST"])
+def plan_draft():
+    topic = request.form.get("topic", "").strip()
+    post_type = request.form.get("post_type", "정보성").strip() or "정보성"
+    try:
+        import planner
+        item_id = planner.make_draft(topic, post_type)
+        return redirect(url_for("view_post", item_id=item_id))
+    except Exception as e:  # noqa: BLE001
+        return render_template("plan.html", plan=None, error=_friendly_error(e), hint=topic)
+
+
 @app.route("/calendar")
 def calendar_view():
     today = date.today()

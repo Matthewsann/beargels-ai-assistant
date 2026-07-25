@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="sec" style="margin-bottom:14px;">
+    <b>🧭 기획실</b><small>금고를 읽고 전문가가 기획해요</small>
+  </div>
+
+  <form method="post" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:18px;">
+    <input type="text" name="hint" value="{{ hint }}" placeholder="주제 힌트 (선택) 예: 신메뉴 소금빵"
+           style="flex:1; min-width:180px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px;">
+    <button type="submit" class="btn primary">🧭 AI 전문가에게 기획 시키기</button>
+  </form>
+
+  {% if error %}
+  <div style="border:1px solid #f0c9a8; background:#faeeda; color:#854f0b; border-radius:12px; padding:16px 18px; margin-bottom:16px; font-size:14px;">
+    ⚠️ {{ error }}
+  </div>
+  {% endif %}
+
+  {% if plan %}
+  <div class="post" style="padding:20px 22px;">
+    <div style="font-size:13px; color:var(--muted); margin-bottom:4px;">이번 주 기획안</div>
+    <div style="font-size:18px; font-weight:600; margin-bottom:4px;">{{ plan.topic }}</div>
+    <div style="font-size:13px; color:var(--muted); margin-bottom:16px;">왜: {{ plan.why }}</div>
+
+    <div style="font-size:13px; font-weight:600; margin-bottom:6px;">🔑 키워드</div>
+    <div style="margin-bottom:16px;">
+      <span class="tag accent" style="margin-right:6px;">{{ plan.main_keyword }}</span>
+      {% for k in plan.sub_keywords %}<span class="tag" style="background:#f1efe8; color:#5f5e5a; margin-right:4px;">{{ k }}</span>{% endfor %}
+    </div>
+
+    <div style="font-size:13px; font-weight:600; margin-bottom:6px;">📝 제목 후보</div>
+    <ul style="margin:0 0 16px; padding-left:20px; font-size:14px;">
+      {% for t in plan.titles %}<li>{{ t }}</li>{% endfor %}
+    </ul>
+
+    <div style="font-size:13px; font-weight:600; margin-bottom:6px;">🧱 글 구성</div>
+    <ol style="margin:0 0 16px; padding-left:20px; font-size:14px;">
+      {% for o in plan.outline %}<li>{{ o }}</li>{% endfor %}
+    </ol>
+
+    <div style="font-size:13px; font-weight:600; margin-bottom:6px;">📷 촬영 리스트</div>
+    <ul style="margin:0 0 8px; padding-left:20px; font-size:14px;">
+      {% for s in plan.shotlist %}<li>{{ s }}</li>{% endfor %}
+    </ul>
+  </div>
+
+  <form method="post" action="/plan/draft" style="margin-top:14px;">
+    <input type="hidden" name="topic" value="{{ plan.topic }}">
+    <input type="hidden" name="post_type" value="{{ plan.post_type }}">
+    <button type="submit" class="btn primary">✍️ 이 기획으로 초안 만들기 → 창고에 저장</button>
+    <div style="font-size:12px; color:var(--muted); margin-top:8px;">초안이 만들어지면 창고에 '발행 대기'로 쌓여요. 발행은 사장님이 확인 후 직접.</div>
+  </form>
+  {% elif not error %}
+  <div class="note">💡 위 버튼을 누르면 전문가가 금고(브랜드·메뉴·고객)와 SEO 지식을 읽고 이번 주 글을 기획해줘요.</div>
+  {% endif %}
+{% endblock %}
