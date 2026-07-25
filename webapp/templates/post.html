@@ -6,6 +6,9 @@
       <small>{{ meta.type or '글' }} · {{ meta.created or '' }}</small></div></div>
     <span class="tag {{ meta._status_meta.cls }}">{{ meta._status_meta.label }}</span>
   </div>
+  <div style="display:flex; gap:8px; margin-bottom:14px;">
+    <a class="btn primary" href="/post/{{ '%04d'|format(item_id) }}/edit">✏️ 고치기</a>
+  </div>
   <div class="post"><pre>{{ body }}</pre></div>
-  <div class="note">✏️ 다음 단계에서 여기서 바로 '고치기'와 '예약 발행'을 할 수 있게 만들어요.</div>
+  <div class="note">📅 다음 단계에서 여기서 바로 '예약 발행'까지 할 수 있게 만들어요.</div>
 {% endblock %}

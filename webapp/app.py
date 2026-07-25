@@ -10,7 +10,7 @@ from __future__ import annotations
 import pathlib
 
 import yaml
-from flask import Flask, abort, render_template
+from flask import Flask, abort, redirect, render_template, request, url_for
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LIB = ROOT / "automation" / "library"
@@ -61,6 +61,28 @@ def view_post(item_id: int):
     meta["_status_meta"] = STATUS_META.get(meta.get("status", "ready"), STATUS_META["ready"])
     body = (d / "post.md").read_text(encoding="utf-8")
     return render_template("post.html", meta=meta, body=body, item_id=item_id)
+
+
+@app.route("/post/<int:item_id>/edit", methods=["GET", "POST"])
+def edit_post(item_id: int):
+    d = LIB / f"{item_id:04d}"
+    md_path = d / "post.md"
+    if not md_path.exists():
+        abort(404)
+    if request.method == "POST":
+        new_body = request.form.get("body", "")
+        # 편집 전 원본을 .bak 으로 한 번 백업(실수 되돌리기용)
+        try:
+            (d / "post.md.bak").write_text(md_path.read_text(encoding="utf-8"), encoding="utf-8")
+        except Exception:
+            pass
+        md_path.write_text(new_body.replace("\r\n", "\n"), encoding="utf-8")
+        return redirect(url_for("view_post", item_id=item_id))
+    meta = {}
+    if (d / "meta.yaml").exists():
+        meta = yaml.safe_load((d / "meta.yaml").read_text(encoding="utf-8")) or {}
+    body = md_path.read_text(encoding="utf-8")
+    return render_template("edit.html", meta=meta, body=body, item_id=item_id)
 
 
 if __name__ == "__main__":

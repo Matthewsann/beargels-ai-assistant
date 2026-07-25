@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+  <a class="back" href="/post/{{ '%04d'|format(item_id) }}">← 취소하고 돌아가기</a>
+  <div class="sec" style="margin-bottom:14px;">
+    <b>글 고치기</b><small>저장하면 창고의 글이 바뀌어요</small>
+  </div>
+  <form method="post">
+    <textarea name="body" style="width:100%; min-height:460px; padding:16px; border:1px solid var(--line);
+      border-radius:12px; font-family:inherit; font-size:15px; line-height:1.7; resize:vertical;
+      background:var(--card); color:var(--ink);">{{ body }}</textarea>
+    <div style="margin-top:14px; display:flex; gap:8px;">
+      <button type="submit" class="btn primary">💾 저장</button>
+      <a class="btn" href="/post/{{ '%04d'|format(item_id) }}">취소</a>
+    </div>
+  </form>
+  <div class="note">✏️ 사진 자리 <code>[📷 사진: …]</code> 는 그대로 두세요. 실물 사진은 네이버에서 넣어요.</div>
+{% endblock %}
