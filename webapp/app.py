@@ -44,6 +44,41 @@ def load_items() -> list[dict]:
     return items
 
 
+def _upcoming_schedule(items: list[dict], limit: int = 3) -> list[dict]:
+    today = date.today()
+    up = []
+    for it in items:
+        if it.get("status") == "scheduled" and it.get("scheduled_time"):
+            try:
+                dt = datetime.strptime(str(it["scheduled_time"]).split(" ")[0], "%Y-%m-%d").date()
+            except Exception:
+                continue
+            if dt >= today:
+                up.append({"id": it.get("id"), "title": it.get("title"),
+                           "when": it.get("scheduled_time"), "dt": dt})
+    up.sort(key=lambda x: x["dt"])
+    return up[:limit]
+
+
+def _rank_summary() -> dict | None:
+    if not RANK_HISTORY.exists():
+        return None
+    try:
+        checks = json.loads(RANK_HISTORY.read_text(encoding="utf-8")).get("checks", {})
+    except Exception:
+        return None
+    dates = sorted(checks)
+    if not dates:
+        return None
+    latest = checks[dates[-1]]
+    found = [r for r in latest if r.get("found")]
+    best = min((r["rank"] for r in found), default=None)
+    return {
+        "date": dates[-1], "total": len(latest), "found": len(found),
+        "page1": sum(1 for r in found if r.get("page") == 1), "best": best,
+    }
+
+
 @app.route("/")
 def dashboard():
     items = load_items()
@@ -52,7 +87,10 @@ def dashboard():
         "scheduled": sum(1 for i in items if i.get("status") == "scheduled"),
         "published": sum(1 for i in items if i.get("status") == "published"),
     }
-    return render_template("dashboard.html", items=items, counts=counts)
+    return render_template(
+        "dashboard.html", items=items, counts=counts,
+        upcoming=_upcoming_schedule(items), rank=_rank_summary(),
+    )
 
 
 @app.route("/post/<int:item_id>")

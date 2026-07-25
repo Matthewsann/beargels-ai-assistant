@@ -14,6 +14,30 @@
     <div class="stat"><div class="l">발행 완료</div><div class="n">{{ counts.published }}</div></div>
   </div>
 
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:24px;">
+    <a href="/calendar" style="text-decoration:none; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px;">
+      <div style="font-size:13px; color:var(--muted); margin-bottom:8px;">📅 다가오는 예약</div>
+      {% if upcoming %}
+        {% for u in upcoming %}
+        <div style="font-size:13px; margin-bottom:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+          <b style="color:var(--accent);">{{ u.when[5:] }}</b> {{ u.title }}
+        </div>
+        {% endfor %}
+      {% else %}
+        <div style="font-size:13px; color:var(--muted);">예약된 글이 없어요</div>
+      {% endif %}
+    </a>
+    <a href="/analytics" style="text-decoration:none; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px;">
+      <div style="font-size:13px; color:var(--muted); margin-bottom:8px;">🎯 순위 요약</div>
+      {% if rank %}
+        <div style="font-size:20px; font-weight:600;">1페이지 {{ rank.page1 }}<span style="font-size:13px; color:var(--muted);"> / 노출 {{ rank.found }}·추적 {{ rank.total }}</span></div>
+        <div style="font-size:12px; color:var(--muted); margin-top:4px;">{% if rank.best %}최고 {{ rank.best }}위 · {% endif %}{{ rank.date }}</div>
+      {% else %}
+        <div style="font-size:13px; color:var(--muted);">아직 순위 확인 전<br>분석에서 '지금 확인'</div>
+      {% endif %}
+    </a>
+  </div>
+
   <div class="sec"><b>글 창고</b><small>AI가 쌓아둔 글 {{ items|length }}편</small></div>
 
   {% if items %}
