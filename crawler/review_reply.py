@@ -306,6 +306,59 @@ def propose_replies(reviews, limit=10):
     return proposals
 
 
+def fetch_repliable():
+    """지금 실제로 답글을 달 수 있는(기한 안 지난) 미답변 리뷰만 라이브로 반환한다.
+
+    답글 기한이 지나면 답글을 못 달기에, '버튼이 살아있는지'로 판별한다:
+      - 배민: 리뷰 카드에 '사장님 댓글 등록하기' 버튼이 있는 것만(만료 시 버튼 사라짐).
+      - 쿠팡: reviews API 의 미답변(replies 없음). 만료·이미답변은 제외됨.
+
+    Returns: 공용 스키마 리뷰 dict 리스트(+_repliable=True).
+    """
+    from bs4 import BeautifulSoup
+
+    from crawler.baemin import BaeminCrawler
+    from crawler.coupang import CoupangCrawler
+
+    out = []
+    # 쿠팡 — API 미답변
+    try:
+        with CoupangCrawler() as c:
+            for r in c.fetch_reviews(days=30, max_pages=8):
+                if r.get("reply_status") in (None, "none", ""):
+                    r["_repliable"] = True
+                    out.append(r)
+    except Exception:  # noqa: BLE001
+        logger.exception("쿠팡 답글가능 리뷰 조회 실패")
+    # 배민 — '사장님 댓글 등록하기' 버튼이 있는 카드만
+    try:
+        with BaeminCrawler() as c:
+            page = c.page
+            page.goto(BAEMIN_REVIEWS_URL, wait_until="domcontentloaded")
+            human_pause(2.0, 3.0)
+            if not is_session_expired(page):
+                for _ in range(6):
+                    page.evaluate(
+                        "window.scrollTo(0, document.body.scrollHeight)")
+                    human_pause(1.2, 2.0)
+                htmls = page.evaluate(
+                    r"""() => [...document.querySelectorAll(
+                        '[class*="ReviewContent-module__"]')]
+                        .filter(e => /사장님 댓글 등록하기/.test(e.innerText||''))
+                        .map(e => e.outerHTML)""")
+                for h in htmls:
+                    el = BeautifulSoup(h, "html.parser").select_one(
+                        '[class*="ReviewContent-module__"]')
+                    rv = BaeminCrawler._parse_review_item(el)
+                    if rv:
+                        rv["_repliable"] = True
+                        out.append(rv)
+    except Exception:  # noqa: BLE001
+        logger.exception("배민 답글가능 리뷰 조회 실패")
+    logger.info("답글 가능한 미답변 리뷰 %d건", len(out))
+    return out
+
+
 if __name__ == "__main__":
     # 단독 실행: 실크롤 → 미답변 리뷰 초안 제안까지 (dry-run, 게시 없음).
     import logging as _l

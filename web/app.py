@@ -29,6 +29,8 @@ app = Flask(__name__)
 
 # 백그라운드 수집 상태(간단 인메모리).
 _collect = {"running": False, "msg": "", "at": None}
+# 실제 답글 가능한(버튼 살아있는) 미답변 리뷰 캐시 — 수집 시 갱신.
+_repliable = {"reviews": [], "at": None}
 
 _PLAT_KO = {"baemin": "배민", "coupang": "쿠팡"}
 
@@ -65,25 +67,19 @@ def dashboard():
     ostat_yday = compute_order_stats(o_yday)
     rstat = compute_review_stats(reviews)
 
-    # 리뷰별 파생 정보: 문제사유·경과일·답글기한.
+    # 문제 리뷰(보고): DB 기준으로 사유 라벨 부여.
     for r in reviews:
         r["_reason"] = complaint_reason(r) if is_serious_review(r) else None
         r["_escalate"] = classify_review(r) == "escalate"
-        dd = _days_since(r.get("written_date"))
-        dl = REPLY_DEADLINE_DAYS.get(r.get("platform"), 30)
-        r["_days"] = dd
-        r["_expired"] = (dd is not None and dd > dl)   # 답글 기한 만료
-        r["_remain"] = (dl - dd) if dd is not None else None
-
     serious = [r for r in reviews if is_serious_review(r)]
 
-    unanswered = [r for r in reviews
-                  if r.get("reply_status") in (None, "none", "")]
-    # ⚠️ 기한 만료 리뷰는 답글 불가 → 답글 대상에서 제외(참고용으로 개수만).
-    repliable = [r for r in unanswered if not r["_expired"]]
-    expired_cnt = sum(1 for r in unanswered if r["_expired"])
+    # 답글 대상: '실제 답글 가능한(버튼 살아있는)' 미답변 리뷰 캐시 사용.
+    # → 기한 만료·이미 답변한 리뷰는 자동으로 빠진다(수집 시 라이브 판별).
+    repliable = list(_repliable["reviews"])
+    for r in repliable:
+        r["_reason"] = complaint_reason(r) if is_serious_review(r) else None
+        r["_escalate"] = classify_review(r) == "escalate"
 
-    # 날짜별 그룹(최신순). 답글 대상만 날짜별로 묶어 보여준다.
     by_date = OrderedDict()
     for r in sorted(repliable, key=lambda x: x.get("written_date") or "",
                     reverse=True):
@@ -96,16 +92,24 @@ def dashboard():
         ostat_today=ostat_today, ostat_yday=ostat_yday,
         rstat=rstat, plat_ko=_PLAT_KO,
         serious=serious, by_date=by_date,
-        repliable_cnt=len(repliable), expired_cnt=expired_cnt,
+        repliable_cnt=len(repliable),
+        repliable_at=_repliable["at"],
         collect=_collect, review_count=len(reviews),
     )
 
 
 def _run_collect():
+    from datetime import datetime as _dt
+
+    from crawler.review_reply import fetch_repliable
     from scheduler.jobs import crawl_job
     try:
-        orders, reviews = crawl_job()
-        _collect["msg"] = f"수집 완료: 주문 {len(orders)}건, 리뷰 {len(reviews)}건"
+        orders, reviews = crawl_job()          # 매출·평점용 DB 저장
+        rep = fetch_repliable()                # 실제 답글 가능한 미답변(라이브)
+        _repliable["reviews"] = rep
+        _repliable["at"] = _dt.now().strftime("%m/%d %H:%M")
+        _collect["msg"] = (f"수집 완료: 주문 {len(orders)}건, 리뷰 {len(reviews)}건, "
+                           f"답글 가능 {len(rep)}건")
     except Exception as e:  # noqa: BLE001
         logger.exception("수집 실패")
         _collect["msg"] = f"수집 실패: {str(e)[:100]}"
@@ -127,15 +131,23 @@ def collect_status():
     return jsonify(running=_collect["running"], msg=_collect["msg"])
 
 
+def _find_review(platform, review_no):
+    """답글 대상 캐시 우선, 없으면 DB 에서 리뷰를 찾는다."""
+    for r in _repliable["reviews"]:
+        if str(r.get("review_no")) == str(review_no) and r.get("platform") == platform:
+            return r
+    return _safe(
+        lambda: next(r for r in db.get_reviews(limit=100)
+                     if str(r.get("review_no")) == str(review_no)
+                     and r.get("platform") == platform),
+        None)
+
+
 @app.route("/draft", methods=["POST"])
 def draft():
     """리뷰 하나의 답글 초안을 생성해 반환(브라우저가 지연 요청)."""
     data = request.get_json(force=True)
-    review = _safe(
-        lambda: next(r for r in db.get_reviews(limit=100)
-                     if str(r.get("review_no")) == str(data.get("review_no"))
-                     and r.get("platform") == data.get("platform")),
-        None)
+    review = _find_review(data.get("platform"), data.get("review_no"))
     if not review:
         return jsonify({"ok": False, "text": ""})
     return jsonify({"ok": True, "text": generate_review_reply(review)})
@@ -145,11 +157,7 @@ def draft():
 def reply():
     """답글 게시(WRITE_DRY_RUN 준수). body: platform, review_no, text."""
     data = request.get_json(force=True)
-    review = _safe(
-        lambda: next(r for r in db.get_reviews(limit=100)
-                     if str(r.get("review_no")) == str(data.get("review_no"))
-                     and r.get("platform") == data.get("platform")),
-        None)
+    review = _find_review(data.get("platform"), data.get("review_no"))
     if not review:
         return jsonify({"ok": False, "msg": "리뷰를 찾지 못했습니다(수집 후 재시도)."})
     text = (data.get("text") or "").strip()

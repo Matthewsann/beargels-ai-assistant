@@ -115,8 +115,10 @@
     {% else %}<div class="empty">문제 리뷰 없음 👍</div>{% endif %}
   </div>
 
-  <h3 class="sec">✍️ 미답변 리뷰 답글 · 날짜별 ({{ repliable_cnt }})
-    {% if expired_cnt %}<span class="sub" style="font-weight:600">· 기한만료 {{ expired_cnt }}건 제외</span>{% endif %}
+  <h3 class="sec">✍️ 답글 가능한 미답변 · 날짜별 ({{ repliable_cnt }})
+    <span class="sub" style="font-weight:600">
+      {% if repliable_at %}· 실제 답글 버튼 살아있는 리뷰만 · {{ repliable_at }} 기준
+      {% else %}· '수집'을 눌러 불러오기{% endif %}</span>
   </h3>
   <div class="card">
     {% if by_date %}
@@ -130,7 +132,6 @@
             <span class="pill">★{{ r.rating }}</span>
             {% if r._reason %}<span class="pill reason">{{ r._reason }}</span>{% endif %}
             <b>{{ r.author }}</b>
-            {% if r._remain is not none %}<span class="sub">· 기한 {{ r._remain }}일 남음</span>{% endif %}
           </div>
           {% if r.menus %}<div class="sub" style="margin-bottom:6px">🧺 {{ r.menus|join(', ') }}</div>{% endif %}
           <div class="body">{{ r.content or '(사진/무텍스트)' }}</div>
@@ -148,7 +149,8 @@
         {% endfor %}
       </div>
       {% endfor %}
-    {% else %}<div class="empty">답글 대상 미답변 리뷰 없음 👍 (DB 기준 — 최신은 수집 후)</div>{% endif %}
+    {% elif repliable_at %}<div class="empty">답글 가능한 미답변 리뷰 없음 👍 (모두 답변했거나 기한 만료)</div>
+    {% else %}<div class="empty">상단 '🔄 리뷰·매출 수집'을 눌러 답글 가능한 리뷰를 불러오세요.</div>{% endif %}
   </div>
 </main>
 
