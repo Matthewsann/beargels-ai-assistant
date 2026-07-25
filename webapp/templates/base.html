@@ -43,10 +43,27 @@
   .post { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:22px 24px; }
   .post pre { white-space:pre-wrap; word-break:break-word; font-family:inherit; font-size:15px; margin:0; }
   .back { color:var(--muted); text-decoration:none; font-size:14px; display:inline-block; margin-bottom:14px; }
+  .nav { display:flex; gap:6px; margin-bottom:18px; }
+  .nav a { font-size:14px; padding:7px 14px; border-radius:20px; text-decoration:none; color:var(--muted); }
+  .nav a.on { background:var(--accent-bg); color:var(--accent); font-weight:600; }
+  .cal { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+  .cal .h { text-align:center; font-size:11px; color:var(--muted); padding-bottom:2px; }
+  .cell { min-height:58px; border:1px solid var(--line); border-radius:6px; padding:4px; background:var(--card); }
+  .cell.pad { background:transparent; border:none; }
+  .cell.today { border:2px solid var(--accent); }
+  .cell .d { font-size:11px; color:var(--muted); }
+  .chip { font-size:10px; margin-top:2px; padding:1px 4px; border-radius:4px; display:block;
+          white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-decoration:none; }
+  .chip.accent { background:var(--accent-bg); color:var(--accent); }
+  .chip.success { background:var(--ok-bg); color:var(--ok); }
 </style>
 </head>
 <body>
   <div class="wrap">
+    <div class="nav">
+      <a href="/" class="{{ 'on' if request.path == '/' else '' }}">📚 글 창고</a>
+      <a href="/calendar" class="{{ 'on' if request.path.startswith('/calendar') else '' }}">📅 캘린더</a>
+    </div>
     {% block content %}{% endblock %}
   </div>
 </body>

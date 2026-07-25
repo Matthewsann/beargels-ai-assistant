@@ -6,9 +6,28 @@
       <small>{{ meta.type or '글' }} · {{ meta.created or '' }}</small></div></div>
     <span class="tag {{ meta._status_meta.cls }}">{{ meta._status_meta.label }}</span>
   </div>
-  <div style="display:flex; gap:8px; margin-bottom:14px;">
+  <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
     <a class="btn primary" href="/post/{{ '%04d'|format(item_id) }}/edit">✏️ 고치기</a>
   </div>
+
+  <div style="border:1px solid var(--line); background:var(--card); border-radius:12px; padding:16px 18px; margin-bottom:16px;">
+    {% if meta.status == 'scheduled' %}
+      <div style="font-size:14px; margin-bottom:10px;">📅 <b>예약됨</b> · {{ meta.scheduled_time }}</div>
+      <form method="post" action="/post/{{ '%04d'|format(item_id) }}/schedule">
+        <input type="hidden" name="action" value="unschedule">
+        <button class="btn" type="submit">예약 취소</button>
+      </form>
+    {% else %}
+      <div style="font-size:14px; font-weight:600; margin-bottom:10px;">📅 예약 걸기</div>
+      <form method="post" action="/post/{{ '%04d'|format(item_id) }}/schedule"
+            style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <input type="date" name="date" required style="padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px;">
+        <input type="time" name="time" value="08:00" style="padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px;">
+        <button class="btn primary" type="submit">예약 걸기</button>
+      </form>
+      <div style="font-size:12px; color:var(--muted); margin-top:8px;">예약을 걸면 캘린더에 떠요. 실제 발행 버튼은 네이버에서 사장님이 직접 누릅니다.</div>
+    {% endif %}
+  </div>
+
   <div class="post"><pre>{{ body }}</pre></div>
-  <div class="note">📅 다음 단계에서 여기서 바로 '예약 발행'까지 할 수 있게 만들어요.</div>
 {% endblock %}

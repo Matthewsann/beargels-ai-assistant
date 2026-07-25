@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="sec" style="margin-bottom:14px;">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <a class="btn" href="/calendar?ym={{ prev_ym }}">‹</a>
+      <b style="font-size:18px;">{{ year }}년 {{ month }}월</b>
+      <a class="btn" href="/calendar?ym={{ next_ym }}">›</a>
+    </div>
+    <small><span style="color:var(--accent);">● 예약</span>&nbsp;&nbsp;<span style="color:var(--ok);">● 발행</span></small>
+  </div>
+
+  <div class="cal">
+    <div class="h">일</div><div class="h">월</div><div class="h">화</div><div class="h">수</div>
+    <div class="h">목</div><div class="h">금</div><div class="h">토</div>
+    {% for week in weeks %}
+      {% for day in week %}
+        {% if day == 0 %}
+          <div class="cell pad"></div>
+        {% else %}
+          <div class="cell {{ 'today' if (day == today.day and month == today.month and year == today.year) else '' }}">
+            <div class="d">{{ day }}</div>
+            {% for it in byday.get(day, []) %}
+              <a class="chip {{ 'success' if it.status == 'published' else 'accent' }}"
+                 href="/post/{{ '%04d'|format(it.id) }}">{{ it.title }}</a>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endfor %}
+    {% endfor %}
+  </div>
+
+  <div class="note" style="margin-top:18px;">📅 글 하나를 열어 '예약 걸기'를 하면 여기 달력에 떠요. 실제 발행 버튼은 사장님이 직접 누릅니다.</div>
+{% endblock %}
