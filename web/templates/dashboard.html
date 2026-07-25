@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>🐻 베어글스 운영 대시보드</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--line:#e6e8eb;--ink:#1c2024;--sub:#69707a;
+        --brand:#6b4423;--accent:#2b7fff;--warn:#e5484d;--ok:#30a46c;--soft:#f0f2f4}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+  header{background:var(--brand);color:#fff;padding:16px 20px;display:flex;
+         align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:10}
+  header h1{font-size:18px;margin:0}
+  header .sp{flex:1}
+  .badge{font-size:12px;padding:3px 9px;border-radius:999px;font-weight:700}
+  .badge.dry{background:#fff3bf;color:#845200}
+  .badge.live{background:#ffe3e3;color:#c92a2a}
+  main{max-width:1080px;margin:0 auto;padding:18px}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .card h2{font-size:13px;color:var(--sub);margin:0 0 10px;font-weight:700;letter-spacing:.02em}
+  .big{font-size:30px;font-weight:800}
+  .sub{color:var(--sub);font-size:13px}
+  .row{display:flex;justify-content:space-between;align-items:baseline;margin:4px 0}
+  button{font:inherit;cursor:pointer;border:0;border-radius:9px;padding:8px 14px;font-weight:700}
+  button.primary{background:var(--accent);color:#fff}
+  button.ghost{background:var(--soft);color:var(--ink)}
+  button:disabled{opacity:.5;cursor:default}
+  .bar{height:9px;background:var(--soft);border-radius:99px;overflow:hidden;flex:1;margin:0 8px}
+  .bar>i{display:block;height:100%;background:var(--brand)}
+  .star{width:42px;color:var(--sub);font-size:13px}
+  .cnt{width:34px;text-align:right;color:var(--sub);font-size:13px}
+  .list{display:flex;flex-direction:column;gap:10px}
+  .rev{border:1px solid var(--line);border-radius:12px;padding:12px}
+  .rev .meta{font-size:13px;color:var(--sub);margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .pill{font-size:11px;padding:2px 8px;border-radius:99px;background:var(--soft);color:var(--sub);font-weight:700}
+  .pill.bad{background:#ffe3e3;color:#c92a2a}
+  .pill.plat{background:#eef4ff;color:#1c5fd6}
+  .rev .body{font-size:14px;margin:2px 0 8px;white-space:pre-wrap}
+  textarea{width:100%;min-height:76px;border:1px solid var(--line);border-radius:9px;
+           padding:9px;font:inherit;resize:vertical}
+  .rev .act{display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap}
+  .msg{font-size:13px;color:var(--sub)}
+  .empty{color:var(--sub);font-size:14px;padding:8px 0}
+  .esc{background:#fff5f5;border-color:#ffc9c9}
+  h3.sec{font-size:15px;margin:22px 4px 10px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🐻 베어글스 운영 대시보드</h1>
+  {% if dry_run %}<span class="badge dry">🧪 DRY-RUN (게시 안 됨)</span>
+  {% else %}<span class="badge live">🔴 실게시 모드</span>{% endif %}
+  <span class="sp"></span>
+  <span id="cmsg" class="msg" style="color:#ffe;">{{ collect.msg }}</span>
+  <button id="collectBtn" class="ghost" onclick="collect()">🔄 리뷰·매출 수집</button>
+</header>
+<main>
+  <div class="grid">
+    <div class="card">
+      <h2>오늘 매출 · {{ today }}</h2>
+      <div class="big">{{ '{:,}'.format(ostat_today.revenue) }}<span class="sub"> 원</span></div>
+      <div class="sub">{{ ostat_today.order_count }}건 · 건단가 {{ '{:,}'.format(ostat_today.avg_order_value) }}원</div>
+    </div>
+    <div class="card">
+      <h2>어제 매출</h2>
+      <div class="big">{{ '{:,}'.format(ostat_yday.revenue) }}<span class="sub"> 원</span></div>
+      <div class="sub">{{ ostat_yday.order_count }}건 · 건단가 {{ '{:,}'.format(ostat_yday.avg_order_value) }}원</div>
+    </div>
+    <div class="card">
+      <h2>인기 메뉴 (오늘)</h2>
+      {% if ostat_today.top_menus %}
+        {% for m, c in ostat_today.top_menus[:5] %}
+        <div class="row"><span class="sub" style="max-width:78%">{{ m }}</span><b>{{ c }}</b></div>
+        {% endfor %}
+      {% else %}<div class="empty">데이터 없음 — 수집을 눌러보세요.</div>{% endif %}
+    </div>
+    <div class="card">
+      <h2>리뷰 평점 ({{ rstat.review_count }}건 · 평균 {{ rstat.avg_rating or '–' }})</h2>
+      {% for s, c in rstat.distribution.items() %}
+      <div class="row" style="align-items:center">
+        <span class="star">★{{ s }}</span>
+        <span class="bar"><i style="width:{{ (c / (rstat.review_count or 1) * 100)|round }}%"></i></span>
+        <span class="cnt">{{ c }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <h3 class="sec">🚨 문제 리뷰 ({{ serious|length }})</h3>
+  <div class="card">
+    {% if serious %}
+    <div class="list">
+      {% for r in serious %}
+      <div class="rev">
+        <div class="meta">
+          <span class="pill plat">{{ plat_ko.get(r.platform, r.platform) }}</span>
+          <span class="pill bad">★{{ r.rating }}</span>
+          <b>{{ r.author }}</b>
+          <span>{{ r.written_date or '' }}</span>
+        </div>
+        <div class="body">{{ r.content or '(사진/무텍스트)' }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}<div class="empty">문제 리뷰 없음 👍</div>{% endif %}
+  </div>
+
+  <h3 class="sec">✍️ 미답변 리뷰 답글 ({{ unanswered|length }})</h3>
+  <div class="card">
+    {% if unanswered %}
+    <div class="list">
+      {% for r in unanswered %}
+      <div class="rev {{ 'esc' if r._escalate else '' }}" data-plat="{{ r.platform }}" data-no="{{ r.review_no }}">
+        <div class="meta">
+          <span class="pill plat">{{ plat_ko.get(r.platform, r.platform) }}</span>
+          <span class="pill">★{{ r.rating }}</span>
+          <b>{{ r.author }}</b>
+          {% if r.menus %}<span class="sub">· {{ r.menus|join(', ') }}</span>{% endif %}
+        </div>
+        <div class="body">{{ r.content or '(사진/무텍스트)' }}</div>
+        {% if r._escalate %}
+          <div class="msg" style="color:var(--warn)">🚨 민감(에스컬레이션) 리뷰 — 자동 게시 차단. 사장님이 직접 대응하세요.</div>
+        {% else %}
+          <textarea placeholder="초안 생성 중…"></textarea>
+          <div class="act">
+            <button class="ghost" onclick="loadDraft(this)">↻ 초안 다시</button>
+            <button class="primary" onclick="postReply(this)">게시</button>
+            <span class="msg out"></span>
+          </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}<div class="empty">미답변 리뷰 없음 👍 (DB 기준 — 최신은 수집 후)</div>{% endif %}
+  </div>
+</main>
+
+<script>
+async function collect(){
+  const b=document.getElementById('collectBtn'); b.disabled=true;
+  const m=document.getElementById('cmsg');
+  const r=await fetch('/collect',{method:'POST'}); const j=await r.json();
+  m.textContent=j.msg;
+  const t=setInterval(async()=>{
+    const s=await (await fetch('/collect/status')).json();
+    m.textContent=s.msg;
+    if(!s.running){clearInterval(t); b.disabled=false; setTimeout(()=>location.reload(),900);}
+  },2000);
+}
+async function loadDraft(btnOrBox){
+  const box=btnOrBox.closest? btnOrBox.closest('.rev'):btnOrBox;
+  const ta=box.querySelector('textarea'); if(!ta) return;
+  ta.value=''; ta.placeholder='초안 생성 중…';
+  try{
+    const r=await fetch('/draft',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({platform:box.dataset.plat, review_no:box.dataset.no})});
+    const j=await r.json(); ta.value=j.text||''; ta.placeholder='초안 없음';
+  }catch(e){ ta.placeholder='초안 생성 실패'; }
+}
+// 페이지 로드 시 각 미답변 초안 지연 로딩
+window.addEventListener('DOMContentLoaded',()=>{
+  document.querySelectorAll('.rev textarea').forEach(ta=>loadDraft(ta.closest('.rev')));
+});
+async function postReply(btn){
+  const box=btn.closest('.rev'); const out=box.querySelector('.out');
+  const text=box.querySelector('textarea').value;
+  if(!confirm('이 답글을 게시할까요?\\n\\n'+text)) return;
+  btn.disabled=true; out.textContent='게시 중…';
+  const r=await fetch('/reply',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({platform:box.dataset.plat, review_no:box.dataset.no, text})});
+  const j=await r.json(); out.textContent=j.msg; if(!j.ok) btn.disabled=false;
+}
+</script>
+</body>
+</html>

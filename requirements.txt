@@ -21,6 +21,9 @@ APScheduler==3.10.4
 # AI 비서 (LLM) - Anthropic Claude
 anthropic>=0.40.0
 
+# 웹 대시보드 (로컬 운영 UI)
+flask>=3.0
+
 # 환경 변수
 python-dotenv==1.0.1
 
