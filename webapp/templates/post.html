@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+  <a class="back" href="/">← 글 창고로</a>
+  <div class="top" style="margin-bottom:14px;">
+    <div class="brand"><div><b style="font-size:18px;">{{ meta.title or '(제목 없음)' }}</b>
+      <small>{{ meta.type or '글' }} · {{ meta.created or '' }}</small></div></div>
+    <span class="tag {{ meta._status_meta.cls }}">{{ meta._status_meta.label }}</span>
+  </div>
+  <div class="post"><pre>{{ body }}</pre></div>
+  <div class="note">✏️ 다음 단계에서 여기서 바로 '고치기'와 '예약 발행'을 할 수 있게 만들어요.</div>
+{% endblock %}

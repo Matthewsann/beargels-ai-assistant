@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="top">
+    <div class="brand">
+      <div class="logo">🥯</div>
+      <div><b>베어글스 블로그</b><small>사장님 전용 · 글 창고</small></div>
+    </div>
+    <a class="btn primary" href="#" onclick="alert('다음 단계에서 만들 기획실이에요 🐻'); return false;">＋ 새 글 만들기</a>
+  </div>
+
+  <div class="cards">
+    <div class="stat"><div class="l">발행 대기</div><div class="n">{{ counts.ready }}</div></div>
+    <div class="stat"><div class="l">예약됨</div><div class="n">{{ counts.scheduled }}</div></div>
+    <div class="stat"><div class="l">발행 완료</div><div class="n">{{ counts.published }}</div></div>
+  </div>
+
+  <div class="sec"><b>글 창고</b><small>AI가 쌓아둔 글 {{ items|length }}편</small></div>
+
+  {% if items %}
+  <div class="list">
+    {% for it in items %}
+    <a class="row" href="/post/{{ '%04d'|format(it.id) }}">
+      <div class="t">
+        <b>{{ it.title or '(제목 없음)' }}</b>
+        <small>{{ it.type or '글' }} · {{ it.created or '' }}</small>
+      </div>
+      <span class="tag {{ it._status_meta.cls }}">{{ it._status_meta.label }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="list"><div class="empty">아직 창고가 비어있어요.<br>새 글을 만들면 여기 쌓여요.</div></div>
+  {% endif %}
+
+  <div class="note">💡 지금은 '글 창고' 화면이에요. 다음 단계에서 기획실·캘린더·분석·순위추적을 여기 붙여요.</div>
+{% endblock %}
