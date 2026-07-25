@@ -85,8 +85,13 @@ def dashboard():
                     reverse=True):
         by_date.setdefault(r.get("written_date") or "날짜미상", []).append(r)
 
+    from assistant.reply_learning import _load_examples, learned_rules
+    rules_text = learned_rules()
+    learned_cnt = len(_load_examples())
+
     return render_template(
         "dashboard.html",
+        rules_text=rules_text, learned_cnt=learned_cnt,
         today=today.isoformat(),
         dry_run=_default_dry_run(),
         ostat_today=ostat_today, ostat_yday=ostat_yday,
@@ -102,19 +107,28 @@ def _run_collect():
     from datetime import datetime as _dt
 
     from crawler.review_reply import fetch_repliable
-    from scheduler.jobs import crawl_job
     try:
-        orders, reviews = crawl_job()          # 매출·평점용 DB 저장
-        rep = fetch_repliable()                # 실제 답글 가능한 미답변(라이브)
+        # 리뷰 답글 집중 모드: 매출 크롤 없이 '답글 가능한 미답변'만 라이브 조회.
+        rep = fetch_repliable()
         _repliable["reviews"] = rep
         _repliable["at"] = _dt.now().strftime("%m/%d %H:%M")
-        _collect["msg"] = (f"수집 완료: 주문 {len(orders)}건, 리뷰 {len(reviews)}건, "
-                           f"답글 가능 {len(rep)}건")
+        _collect["msg"] = f"답글 가능한 미답변 {len(rep)}건 불러옴"
     except Exception as e:  # noqa: BLE001
-        logger.exception("수집 실패")
-        _collect["msg"] = f"수집 실패: {str(e)[:100]}"
+        logger.exception("답글 대상 조회 실패")
+        _collect["msg"] = f"실패: {str(e)[:100]}"
     finally:
         _collect["running"] = False
+
+
+@app.route("/rule", methods=["POST"])
+def add_rule_route():
+    """사장님이 답글 규칙/취향을 추가한다(학습 누적)."""
+    from assistant.reply_learning import add_rule
+    text = (request.get_json(force=True).get("text") or "").strip()
+    if not text:
+        return jsonify({"ok": False, "msg": "규칙 내용을 입력하세요."})
+    add_rule(text)
+    return jsonify({"ok": True, "msg": "규칙 추가됨 ✅ (다음 답글부터 반영)"})
 
 
 @app.route("/collect", methods=["POST"])
@@ -167,7 +181,13 @@ def reply():
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "msg": f"게시 실패: {str(e)[:150]}"})
     if res.get("applied"):
-        return jsonify({"ok": True, "msg": "게시 완료 ✅"})
+        # 학습: 사장님이 승인·게시한 답글을 좋은 예시로 저장(다음 생성에 반영).
+        try:
+            from assistant.reply_learning import record_example
+            record_example(review, text or action.draft(), "posted")
+        except Exception:  # noqa: BLE001
+            logger.exception("학습 예시 저장 실패")
+        return jsonify({"ok": True, "msg": "게시 완료 ✅ (학습에 반영됨)"})
     return jsonify({"ok": True, "dry_run": True,
                     "msg": "🧪 dry-run 모드 — 실제 게시 안 됨 "
                            "(.env WRITE_DRY_RUN=false 필요)"})

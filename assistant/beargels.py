@@ -493,18 +493,24 @@ def generate_review_reply(review):
         visit = "고객"
 
     try:
+        # 내장 학습: 누적 규칙 + 사장님이 승인한 실제 답글 예시(few-shot) 주입.
+        from assistant.reply_learning import examples_block, learned_rules
+        rules = learned_rules()
+        rules_block = f"[반드시 지킬 규칙]\n{rules}\n\n" if rules else ""
+        ex_block = examples_block(review, k=3)
+        ex_block = (ex_block + "\n\n") if ex_block else ""
         ctx = _reply_context()
         ctx_block = f"[참고 사실(백데이터)]\n{ctx}\n\n" if ctx else ""
         user = (
-            f"{ctx_block}"
+            f"{rules_block}{ex_block}{ctx_block}"
             f"[{cfg['label']}] {visit} '{author}'가 {menus} 주문 후 "
             f"별점 {rating}점으로 남긴 리뷰:\n"
             f"\"{content or '(사진만, 텍스트 없음)'}\"\n\n"
             f"[이 리뷰 유형 대응 지침] {_TYPE_GUIDE.get(typ, '')}\n"
-            f"위 지침대로 답글을 써줘. 글자수를 넉넉히 활용해 {target}자 내외로 "
-            f"정성껏 길게(최대 {max_len}자 초과 금지). 단 억지로 늘리거나 같은 말을 "
-            f"반복하지 말고, 주문 메뉴·사진·경험을 구체적으로 여러 개 짚어 "
-            f"진짜 내용으로 채운다. 다른 답글과 겹치지 않게 자연스럽게."
+            f"위 규칙·예시·사실을 지켜 답글을 써줘. 글자수를 넉넉히 활용해 "
+            f"{target}자 내외(최대 {max_len}자 초과 금지). 억지로 늘리거나 같은 말을 "
+            f"반복하지 말고, 이 리뷰가 언급한 메뉴·경험에 구체적으로 반응해 "
+            f"다른 답글과 겹치지 않게 자연스럽게."
         )
         return _ask_claude(REPLY_PERSONA, user, max_tokens=600)[:max_len]
     except LLMUnavailable:

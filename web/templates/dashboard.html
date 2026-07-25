@@ -61,7 +61,7 @@
   {% else %}<span class="badge live">🔴 실게시 모드</span>{% endif %}
   <span class="sp"></span>
   <span id="cmsg" class="msg" style="color:#ffe;">{{ collect.msg }}</span>
-  <button id="collectBtn" class="ghost" onclick="collect()">🔄 리뷰·매출 수집</button>
+  <button id="collectBtn" class="ghost" onclick="collect()">🔄 답글 대상 불러오기</button>
 </header>
 <main>
   <div class="grid">
@@ -150,7 +150,22 @@
       </div>
       {% endfor %}
     {% elif repliable_at %}<div class="empty">답글 가능한 미답변 리뷰 없음 👍 (모두 답변했거나 기한 만료)</div>
-    {% else %}<div class="empty">상단 '🔄 리뷰·매출 수집'을 눌러 답글 가능한 리뷰를 불러오세요.</div>{% endif %}
+    {% else %}<div class="empty">상단 '🔄 답글 대상 불러오기'를 눌러 답글 가능한 리뷰를 불러오세요.</div>{% endif %}
+  </div>
+
+  <h3 class="sec">📚 답글 학습 — 규칙 & 승인 예시 ({{ learned_cnt }}건 학습됨)</h3>
+  <div class="card">
+    <div class="msg" style="margin-bottom:10px">답글이 마음에 안 들면 <b>취향·규칙을 한 줄로 추가</b>하세요. 게시할 때마다 그 답글이 예시로 학습돼요. → 쓸수록 취향에 가까워집니다.</div>
+    <div class="act" style="margin-bottom:12px">
+      <input id="ruleInput" type="text" placeholder="예: 이모지는 하나만 / 더 짧게 / '뿌듯해요' 표현 자주 쓰기"
+             style="flex:1;min-width:220px;border:1px solid var(--line);border-radius:9px;padding:9px;font:inherit">
+      <button class="primary" onclick="addRule()">규칙 추가</button>
+      <span id="ruleMsg" class="msg"></span>
+    </div>
+    <details>
+      <summary class="sub" style="cursor:pointer">현재 규칙 보기</summary>
+      <pre style="white-space:pre-wrap;font:inherit;font-size:13px;color:var(--sub);margin:8px 0 0">{{ rules_text }}</pre>
+    </details>
   </div>
 </main>
 
@@ -165,6 +180,13 @@ async function collect(){
     m.textContent=s.msg;
     if(!s.running){clearInterval(t); b.disabled=false; setTimeout(()=>location.reload(),900);}
   },2000);
+}
+async function addRule(){
+  const inp=document.getElementById('ruleInput'); const m=document.getElementById('ruleMsg');
+  const text=inp.value.trim(); if(!text){m.textContent='내용을 입력하세요';return;}
+  m.textContent='추가 중…';
+  const r=await fetch('/rule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+  const j=await r.json(); m.textContent=j.msg; if(j.ok){inp.value=''; setTimeout(()=>location.reload(),1000);}
 }
 async function loadDraft(btnOrBox){
   const box=btnOrBox.closest? btnOrBox.closest('.rev'):btnOrBox;
