@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "블로그 웹앱",
+      "runtimeExecutable": "C:\\Users\\명구\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+      "runtimeArgs": ["C:\\Users\\명구\\Claude\\beargels-ai-assistant\\webapp\\app.py"],
+      "port": 5050
+    }
+  ]
+}
