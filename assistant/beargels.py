@@ -425,20 +425,35 @@ _PLAT_LABEL = {"baemin": "배민", "coupang": "쿠팡"}
 
 
 def format_complaint_report(reviews, label=""):
-    """심각 리뷰 목록을 텔레그램 보고 텍스트로 포맷한다."""
-    title = f"🚨 심각 리뷰 보고{(' — ' + label) if label else ''} · {len(reviews)}건"
-    lines = [title, "─────────"]
+    """심각 리뷰 목록을 보고 텍스트로 포맷한다.
+
+    직원 단톡방에 그대로 복사·공유해 조치할 수 있도록 **주문시각·주문번호·
+    문제내용**을 항목별로 명확히 적는다(사장님 요청 2026-07-26).
+    배민은 리뷰에 주문번호가 없어 리뷰번호·작성일로 대신 식별한다.
+    """
+    title = f"🚨 문제 리뷰 보고{(' — ' + label) if label else ''} · 신규 {len(reviews)}건"
+    lines = [title]
     for rv in reviews:
         esc = classify_review(rv) == "escalate"
         plat = _PLAT_LABEL.get(rv.get("platform"), rv.get("platform") or "")
-        reason = "이물질/민감(직접확인)" if esc else complaint_reason(rv)
+        reason = "이물질/민감(사장님 직접확인)" if esc else complaint_reason(rv)
         mark = "🚨🚨" if esc else "🔸"
-        body = (rv.get("content") or "(사진/무텍스트)").replace("\n", " ")[:90]
-        lines.append(
-            f"{mark} [{plat} ★{rv.get('rating')}] {rv.get('author')} · {reason}\n"
-            f"   \"{body}\"")
+        body = (rv.get("content") or "(사진/무텍스트)").replace("\n", " ")[:120]
+        lines.append("─────────")
+        lines.append(f"{mark} [{plat} ★{rv.get('rating')}] {reason}")
+        if rv.get("ordered_at"):
+            lines.append(f"· 주문시각: {rv['ordered_at']}")
+        if rv.get("order_no"):
+            lines.append(f"· 주문번호: {rv['order_no']}")
+        if not rv.get("order_no"):   # 배민 등 — 리뷰 기준 식별정보로 대체
+            lines.append(f"· 리뷰: {rv.get('written_at') or rv.get('written_date') or '?'}"
+                         f" / #{rv.get('review_no') or '?'}")
+        if rv.get("menus"):
+            lines.append(f"· 메뉴: {', '.join(rv['menus'])[:80]}")
+        lines.append(f"· 작성자: {rv.get('author')}")
+        lines.append(f"· 문제내용: \"{body}\"")
     lines.append("─────────")
-    lines.append("답글은 봇에서 확인 후 대응하세요.")
+    lines.append("→ 위 주문 건 확인 후 조치 부탁드려요. (답글은 대시보드/봇에서)")
     return "\n".join(lines)
 
 
