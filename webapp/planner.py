@@ -92,9 +92,62 @@ def make_plan(hint: str = "") -> dict:
     return data
 
 
-def make_draft(topic: str, post_type: str = "정보성") -> int:
-    """기획 주제로 실제 초안을 생성해 라이브러리에 적재. 검증된 generate_post 재사용."""
+DRAFT_PROMPT = """너는 베어글스 송도점의 네이버 블로그 마케팅 전문가다.
+아래 '정보 금고'(철학·톤·메뉴·고객)와 'SEO 지식', 그리고 '확정 기획'을 바탕으로
+네이버에 그대로 붙여넣을 블로그 글 본문을 완성하라.
+
+===== 정보 금고 =====
+{knowledge}
+===== SEO 지식 =====
+{seo}
+=====================
+
+[확정 기획]
+- 주제: {topic}
+- 글 유형: {post_type}
+- 제목: {title}
+- 대표 키워드: {main_keyword}
+- 세부 키워드: {sub_keywords}
+
+[작성 규칙]
+- 금고의 '톤앤보이스'와 '브랜드 철학'을 반드시 지킨다(따뜻·담백, 과장 금지, 자연스러운 ~요체).
+- 글자 수 1,500자 이상. 첫 문단에 대표 키워드 1회, 본문 전체 3~5회(도배 금지).
+- 소제목 2~4개로 구조화. 1인칭 경험. 구체적 숫자(가격·시간·온도)는 금고에 있는 것만, 없으면 비워둔다.
+- 사진 위치를 본문에 5~8군데 [📷 사진: 무엇을 어떻게]로 안내.
+- 사실(메뉴명·주소 등)은 금고 표기를 그대로 쓴다. 지어내지 않는다. 없는 정보는 비운다.
+- 맨 아래에 매장정보(주소·영업시간 등, 금고에 있는 것만) 블록을 넣는다.
+
+[출력] 아래 JSON 하나만 순수 출력(코드블록/설명 금지):
+{{
+  "main_keyword": "{main_keyword}",
+  "sub_keywords": {sub_keywords_json},
+  "title": "{title}",
+  "body": "네이버에 붙여넣을 본문 전체(사진 위치·정보 블록 포함, 줄바꿈 \\n)",
+  "tags": ["태그10개내외"]
+}}"""
+
+
+def make_draft(topic: str, post_type: str = "정보성", title: str = "",
+               main_keyword: str = "", sub_keywords: list[str] | None = None) -> int:
+    """확정 기획 + 금고 전체를 근거로 초안을 생성해 라이브러리에 적재."""
     client, cfg, gp = _client_cfg()
     import library
-    data = gp.generate_one(client, cfg, post_type, {"주제": topic})
+    knowledge, seo = load_knowledge()
+    subs = sub_keywords or []
+    prompt = DRAFT_PROMPT.format(
+        knowledge=knowledge, seo=seo, topic=topic, post_type=post_type,
+        title=title or topic, main_keyword=main_keyword,
+        sub_keywords=", ".join(subs), sub_keywords_json=json.dumps(subs, ensure_ascii=False),
+    )
+    msg = client.messages.create(
+        model=cfg.get("generate", {}).get("model", "claude-sonnet-5"),
+        max_tokens=cfg.get("generate", {}).get("max_tokens", 5000),
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw = "".join(b.text for b in msg.content if b.type == "text")
+    data = gp._extract_json(raw)
+    data.setdefault("tags", [])
+    data.setdefault("sub_keywords", subs)
+    data.setdefault("main_keyword", main_keyword)
+    data.setdefault("title", title or topic)
     return library.create_item(post_type, data)

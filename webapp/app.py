@@ -127,9 +127,12 @@ def plan_room():
 def plan_draft():
     topic = request.form.get("topic", "").strip()
     post_type = request.form.get("post_type", "정보성").strip() or "정보성"
+    title = request.form.get("title", "").strip()
+    main_keyword = request.form.get("main_keyword", "").strip()
+    subs = [s.strip() for s in request.form.get("sub_keywords", "").split(",") if s.strip()]
     try:
         import planner
-        item_id = planner.make_draft(topic, post_type)
+        item_id = planner.make_draft(topic, post_type, title, main_keyword, subs)
         return redirect(url_for("view_post", item_id=item_id))
     except Exception as e:  # noqa: BLE001
         return render_template("plan.html", plan=None, error=_friendly_error(e), hint=topic)

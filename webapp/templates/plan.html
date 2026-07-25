@@ -28,11 +28,6 @@
       {% for k in plan.sub_keywords %}<span class="tag" style="background:#f1efe8; color:#5f5e5a; margin-right:4px;">{{ k }}</span>{% endfor %}
     </div>
 
-    <div style="font-size:13px; font-weight:600; margin-bottom:6px;">📝 제목 후보</div>
-    <ul style="margin:0 0 16px; padding-left:20px; font-size:14px;">
-      {% for t in plan.titles %}<li>{{ t }}</li>{% endfor %}
-    </ul>
-
     <div style="font-size:13px; font-weight:600; margin-bottom:6px;">🧱 글 구성</div>
     <ol style="margin:0 0 16px; padding-left:20px; font-size:14px;">
       {% for o in plan.outline %}<li>{{ o }}</li>{% endfor %}
@@ -45,10 +40,20 @@
   </div>
 
   <form method="post" action="/plan/draft" style="margin-top:14px;">
+    <div style="font-size:13px; font-weight:600; margin-bottom:8px;">📝 제목 고르기 (초안에 쓸 제목)</div>
+    <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:14px;">
+      {% for t in plan.titles %}
+      <label style="display:flex; gap:8px; align-items:center; font-size:14px; cursor:pointer;">
+        <input type="radio" name="title" value="{{ t }}" {{ 'checked' if loop.first else '' }}> {{ t }}
+      </label>
+      {% endfor %}
+    </div>
     <input type="hidden" name="topic" value="{{ plan.topic }}">
     <input type="hidden" name="post_type" value="{{ plan.post_type }}">
+    <input type="hidden" name="main_keyword" value="{{ plan.main_keyword }}">
+    <input type="hidden" name="sub_keywords" value="{{ plan.sub_keywords|join(', ') }}">
     <button type="submit" class="btn primary">✍️ 이 기획으로 초안 만들기 → 창고에 저장</button>
-    <div style="font-size:12px; color:var(--muted); margin-top:8px;">초안이 만들어지면 창고에 '발행 대기'로 쌓여요. 발행은 사장님이 확인 후 직접.</div>
+    <div style="font-size:12px; color:var(--muted); margin-top:8px;">금고(철학·톤·메뉴)를 반영해 씁니다. 초안은 창고에 '발행 대기'로 쌓여요. 발행은 사장님이 확인 후 직접.</div>
   </form>
   {% elif not error %}
   <div class="note">💡 위 버튼을 누르면 전문가가 금고(브랜드·메뉴·고객)와 SEO 지식을 읽고 이번 주 글을 기획해줘요.</div>
