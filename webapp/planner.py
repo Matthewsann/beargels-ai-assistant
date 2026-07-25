@@ -17,16 +17,23 @@ SRC = ROOT / "automation" / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-KNOWLEDGE_FILES = ["브랜드.md", "메뉴.md", "고객.md", "매장정보.md"]
+# 금고에서 제외할 파일(색인/인스타 전용 채널 문서 — 블로그 기획엔 불필요)
+KNOWLEDGE_EXCLUDE = {"README.md", "beargels_songdo.md", "growth_strategy.md", "reel_templates.md"}
+# 철학 문서를 앞쪽에 오게 하는 우선순위(있으면 먼저 붙임). 없으면 무시.
+KNOWLEDGE_ORDER = [
+    "브랜드철학.md", "브랜드아이덴티티.md", "비전.md", "핵심가치.md", "의사결정원칙.md",
+    "고객철학.md", "톤앤보이스.md", "AI행동지침.md", "브랜드.md",
+    "매장정보.md", "메뉴.md", "고객.md", "운영시스템.md", "플랫폼운영.md",
+]
 
 
 def load_knowledge() -> tuple[str, str]:
-    parts = []
+    """knowledge/ 금고의 모든 .md 를 읽는다(철학 우선 정렬). 파일을 추가하면 자동 반영."""
     kdir = ROOT / "knowledge"
-    for name in KNOWLEDGE_FILES:
-        p = kdir / name
-        if p.exists():
-            parts.append(f"### {name}\n{p.read_text(encoding='utf-8')}")
+    found = {p.name: p for p in kdir.rglob("*.md") if p.name not in KNOWLEDGE_EXCLUDE}
+    ordered_names = [n for n in KNOWLEDGE_ORDER if n in found]
+    ordered_names += sorted(n for n in found if n not in KNOWLEDGE_ORDER)
+    parts = [f"### {n}\n{found[n].read_text(encoding='utf-8')}" for n in ordered_names]
     seo_path = ROOT / "네이버-SEO-지식.md"
     seo = seo_path.read_text(encoding="utf-8") if seo_path.exists() else ""
     return "\n\n".join(parts), seo
