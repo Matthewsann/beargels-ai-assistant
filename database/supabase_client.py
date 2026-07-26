@@ -223,6 +223,103 @@ def get_summary(kind, summary_date=None):
     return (resp.data or [None])[0]
 
 
+# ---------------------------------------------------------------------------
+# 직원용 웹서비스 ↔ 집 PC 일꾼 연결 (jobs / worker_status / 답글 초안)
+#   먼저 database/schema_v2.sql 을 Supabase SQL Editor 에서 실행해야 한다.
+# ---------------------------------------------------------------------------
+
+WORKER_NAME = "home-pc"
+
+
+def request_collect(by=None):
+    """직원이 '리뷰수집'을 눌렀다 → 대기열에 요청 1건 추가. 만든 행 반환.
+
+    이미 대기/진행 중인 요청이 있으면 새로 만들지 않고 그걸 돌려준다
+    (버튼 연타로 크롤링이 여러 번 도는 걸 막는다).
+    """
+    live = (get_client().table("jobs").select("*")
+            .in_("status", ["pending", "running"])
+            .order("requested_at", desc=True).limit(1).execute().data)
+    if live:
+        return live[0]
+    row = {"kind": "collect", "status": "pending", "requested_by": by or ""}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
+def latest_job():
+    """가장 최근 수집 요청 1건(없으면 None). 웹에서 진행 상황 표시용."""
+    rows = (get_client().table("jobs").select("*")
+            .order("requested_at", desc=True).limit(1).execute().data)
+    return rows[0] if rows else None
+
+
+def claim_next_job():
+    """집 PC 일꾼이 부른다: 대기 중인 요청 1건을 잡아 running 으로 바꾼다.
+
+    없으면 None. (일꾼이 1대뿐이라 경합은 고려하지 않는다.)
+    """
+    rows = (get_client().table("jobs").select("*").eq("status", "pending")
+            .order("requested_at").limit(1).execute().data)
+    if not rows:
+        return None
+    job = rows[0]
+    (get_client().table("jobs")
+     .update({"status": "running", "started_at": datetime.now().astimezone().isoformat()})
+     .eq("id", job["id"]).execute())
+    return job
+
+
+def finish_job(job_id, status="done", message=None, result_count=None):
+    """요청 처리 종료(done/error) 기록."""
+    (get_client().table("jobs").update({
+        "status": status,
+        "finished_at": datetime.now().astimezone().isoformat(),
+        "message": (message or "")[:500],
+        "result_count": result_count,
+    }).eq("id", job_id).execute())
+
+
+def worker_ping(state="idle", message=None):
+    """집 PC 일꾼이 살아있음을 알린다(주기적으로 호출)."""
+    (get_client().table("worker_status").upsert({
+        "name": WORKER_NAME,
+        "last_seen": datetime.now().astimezone().isoformat(),
+        "state": state,
+        "message": (message or "")[:300],
+    }, on_conflict="name").execute())
+
+
+def worker_status():
+    """집 PC 일꾼 상태(dict) 또는 None. 웹에서 'PC 꺼짐' 표시용."""
+    rows = (get_client().table("worker_status").select("*")
+            .eq("name", WORKER_NAME).limit(1).execute().data)
+    return rows[0] if rows else None
+
+
+def save_reply_draft(review_id, text, status="drafted"):
+    """리뷰 1건의 답글 초안을 저장한다(직원이 고친 것도 여기로)."""
+    (get_client().table("reviews").update({
+        "reply_draft": text,
+        "draft_updated_at": datetime.now().astimezone().isoformat(),
+        "reply_status": status,
+    }).eq("id", review_id).execute())
+
+
+def mark_replied(review_id):
+    """'답글 등록함' 표시 → 목록에서 내려간다."""
+    (get_client().table("reviews").update({"reply_status": "posted"})
+     .eq("id", review_id).execute())
+
+
+def get_pending_reviews(limit=50):
+    """답글이 아직 안 끝난 리뷰(none/drafted)를 최신순으로 가져온다."""
+    return (get_client().table("reviews").select("*")
+            .in_("reply_status", ["none", "drafted"])
+            .order("written_date", desc=True)
+            .order("collected_at", desc=True)
+            .limit(limit).execute().data)
+
+
 if __name__ == "__main__":
     # 단독 실행: 연결 및 테이블 존재 확인
     logging.basicConfig(level=logging.INFO)

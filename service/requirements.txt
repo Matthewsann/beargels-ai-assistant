@@ -1,0 +1,6 @@
+# 직원용 리뷰 답글 웹서비스(클라우드) 의존성 — 최소한만.
+# 답글 생성은 집 PC 일꾼이 하므로 anthropic·playwright 는 필요 없다.
+Flask>=3.0
+python-dotenv>=1.0
+supabase>=2.0
+gunicorn>=21.0

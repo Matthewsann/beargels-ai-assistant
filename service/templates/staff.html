@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>베어글스 리뷰 답글</title>
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
+          --ok:#3b6d11; --ok-bg:#eaf3de; --bad:#a3271f; --bad-bg:#fbe9e7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px 14px 64px; }
+  .head { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .logo { width:36px; height:36px; border-radius:10px; background:var(--accent-bg);
+          color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:19px; }
+  .head b { font-size:16px; } .head small { display:block; color:var(--muted); font-size:12px; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px;
+           padding:14px; margin-bottom:16px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .dot.on { background:#3b6d11; } .dot.off { background:#a3271f; } .dot.busy { background:#c98a12; }
+  .status { font-size:13px; color:var(--muted); margin-bottom:10px; }
+  .btn { border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:9px;
+         padding:11px 14px; font-size:14px; font-family:inherit; cursor:pointer;
+         display:inline-flex; align-items:center; justify-content:center; gap:6px; text-decoration:none; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  .btn.primary[disabled] { opacity:.5; }
+  .btn.wide { width:100%; }
+  .row { display:flex; gap:8px; }
+  select, textarea { font-family:inherit; font-size:14px; border:1px solid var(--line);
+                     border-radius:9px; padding:10px 11px; background:var(--card); color:var(--ink); width:100%; }
+  textarea { resize:vertical; line-height:1.65; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:14px; margin-bottom:12px; }
+  .card.esc { border-color:#e8bdb7; background:#fffaf9; }
+  .meta { display:flex; align-items:center; gap:7px; flex-wrap:wrap; font-size:12px;
+          color:var(--muted); margin-bottom:8px; }
+  .tag { font-size:11px; padding:2px 9px; border-radius:20px; }
+  .tag.b { background:var(--accent-bg); color:var(--accent); }
+  .tag.c { background:var(--warn-bg); color:var(--warn); }
+  .tag.bad { background:var(--bad-bg); color:var(--bad); }
+  .stars { color:#c98a12; letter-spacing:1px; }
+  .rv { font-size:14px; background:#f6f5f1; border-radius:9px; padding:10px 12px; margin-bottom:11px;
+        white-space:pre-wrap; word-break:break-word; }
+  .lbl { font-size:12px; color:var(--muted); margin-bottom:5px; display:block; }
+  .acts { display:flex; gap:7px; margin-top:9px; }
+  .acts .btn { flex:1; padding:10px 8px; font-size:13px; }
+  .empty { text-align:center; color:var(--muted); padding:44px 16px; font-size:14px; }
+  .note { font-size:12px; padding:11px 12px; border-radius:9px; margin-bottom:14px;
+          background:var(--accent-bg); color:var(--accent); }
+  .note.bad { background:var(--bad-bg); color:var(--bad); }
+  .copied { color:var(--ok); font-size:12px; text-align:center; margin-top:6px; display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="head">
+    <div class="logo">🐻</div>
+    <div><b>베어글스 리뷰 답글</b>
+      <small>답글 초안을 복사해서 배민·쿠팡에 붙여넣으세요</small></div>
+  </div>
+
+  {% if error %}<div class="note bad">{{ error }}</div>{% endif %}
+
+  <div class="panel">
+    <div class="status" id="wstat">
+      <span class="dot {{ 'busy' if worker.state == 'working' else ('on' if worker.alive else 'off') }}"></span>
+      집 PC: {{ worker.text }}
+    </div>
+    <form method="post" action="{{ url_for('collect', path_key=key) }}">
+      <div class="row">
+        <select name="who" style="max-width:110px;">
+          {% for s in staff %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+        </select>
+        <button class="btn primary" type="submit" style="flex:1;"
+                {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>
+          🔄 리뷰수집
+        </button>
+      </div>
+    </form>
+    {% if job %}
+      <div class="status" id="jstat" style="margin:10px 0 0;">{{ job.text }}</div>
+    {% endif %}
+    {% if not worker.alive %}
+      <div class="status" style="margin:10px 0 0; color:var(--bad);">
+        집 PC가 켜져 있어야 새 리뷰를 가져올 수 있어요. 아래 목록은 그대로 쓸 수 있습니다.
+      </div>
+    {% endif %}
+  </div>
+
+  {% if reviews %}
+    {% for r in reviews %}
+    <div class="card {{ 'esc' if r.escalate else '' }}" id="r{{ r.id }}">
+      <div class="meta">
+        <span class="tag {{ 'b' if r.platform == '배민' else 'c' }}">{{ r.platform }}</span>
+        <span class="stars">{{ '★' * (r.rating or 0) }}</span>
+        <span>{{ r.author }}</span>
+        {% if r.date %}<span>· {{ r.date }}</span>{% endif %}
+        {% if r.menus %}<span>· {{ r.menus }}</span>{% endif %}
+        {% if r.escalate %}<span class="tag bad">🚨 직접 대응</span>{% endif %}
+      </div>
+
+      <div class="rv">{{ r.content or '(사진만, 텍스트 없음)' }}</div>
+
+      {% if r.escalate %}
+        <div class="note bad" style="margin:0;">
+          이물질·건강·환불·법적 언급이 있는 리뷰예요. 답글을 만들지 않았습니다 —
+          <b>사장님께 바로 알려주세요.</b>
+        </div>
+        <form method="post" action="{{ url_for('done', path_key=key, review_id=r.id) }}" class="acts">
+          <button class="btn" type="submit">확인함 · 목록에서 내리기</button>
+        </form>
+      {% elif r.has_draft %}
+        <form method="post" action="{{ url_for('save_draft', path_key=key, review_id=r.id) }}">
+          <label class="lbl">답글 초안 (고쳐도 됩니다)</label>
+          <textarea name="draft" id="d{{ r.id }}" rows="6">{{ r.draft }}</textarea>
+          <div class="acts">
+            <button class="btn primary" type="button" onclick="copyIt({{ r.id }})">📋 복사</button>
+            <button class="btn" type="submit">💾 저장</button>
+          </div>
+        </form>
+        <div class="copied" id="c{{ r.id }}">복사됐어요! 배민·쿠팡에 붙여넣으세요</div>
+        <form method="post" action="{{ url_for('done', path_key=key, review_id=r.id) }}" class="acts">
+          <button class="btn" type="submit" style="width:100%;">✅ 답글 등록함 · 목록에서 내리기</button>
+        </form>
+      {% else %}
+        <div class="status" style="margin:0;">답글 초안이 아직 없어요 — 리뷰수집을 눌러주세요.</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty">
+      답글을 기다리는 리뷰가 없어요.<br>
+      새 리뷰를 가져오려면 위 <b>리뷰수집</b>을 눌러주세요.
+    </div>
+  {% endif %}
+
+</div>
+
+<script>
+function copyIt(id) {
+  const t = document.getElementById('d' + id);
+  const done = () => {
+    const c = document.getElementById('c' + id);
+    c.style.display = 'block';
+    setTimeout(() => { c.style.display = 'none'; }, 2500);
+  };
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(t.value).then(done).catch(() => { t.select(); document.execCommand('copy'); done(); });
+  } else {
+    t.select(); document.execCommand('copy'); done();
+  }
+}
+
+// 수집 중이면 5초마다 진행 상황을 확인하고, 끝나면 화면을 새로 그린다.
+{% if job and job.busy %}
+(function poll() {
+  setTimeout(async () => {
+    try {
+      const r = await fetch('{{ url_for("status", path_key=key) }}');
+      const d = await r.json();
+      if (d.job && !d.job.busy) { location.reload(); return; }
+      if (d.job) document.getElementById('jstat').textContent = d.job.text;
+      if (d.worker) document.getElementById('wstat').innerHTML =
+        '<span class="dot busy"></span> 집 PC: ' + d.worker.text;
+    } catch (e) {}
+    poll();
+  }, 5000);
+})();
+{% endif %}
+</script>
+</body>
+</html>
