@@ -151,12 +151,16 @@ RECOMMENDATIONS = pathlib.Path(__file__).resolve().parent / "recommendations.jso
 
 
 def load_recommendations() -> dict:
-    if RECOMMENDATIONS.exists():
-        try:
-            return json.loads(RECOMMENDATIONS.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-    return {}
+    if not RECOMMENDATIONS.exists():
+        return {}
+    try:
+        data = json.loads(RECOMMENDATIONS.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    items = data.get("items", [])
+    items.sort(key=lambda x: x.get("priority", 999))
+    data["items"] = items
+    return data
 
 
 @app.route("/plan", methods=["GET", "POST"])

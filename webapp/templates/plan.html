@@ -4,21 +4,27 @@
     <b>🧭 기획실</b><small>금고를 읽고 전문가가 기획해요</small>
   </div>
 
-  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-    <div style="font-size:14px; font-weight:600;">🎯 베어글스 맞춤 글감</div>
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+    <div style="font-size:14px; font-weight:600;">🎯 베어글스 맞춤 글감 <span style="font-weight:400; color:var(--muted); font-size:12px;">· 발행 순서 추천</span></div>
     <form method="post" action="/plan/recommend" style="display:inline;">
       <button type="submit" class="btn" style="font-size:13px; padding:6px 12px;">🔄 새 글감 추천받기</button>
     </form>
   </div>
+  <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">
+    🟢 지금 승산 높음(먼저)&nbsp;&nbsp;🟡 장기전(경쟁 셈)&nbsp;&nbsp;🔴 브랜드용(검색 기대 낮음)
+  </div>
   {% if recs and recs['items'] %}
   <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:22px;">
     {% for r in recs['items'] %}
+    {% set dot = '🟢' if r.tier == 'green' else ('🟡' if r.tier == 'yellow' else ('🔴' if r.tier == 'red' else '⚪')) %}
     <div style="background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px;">
       <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
         <div style="min-width:0;">
-          <div style="font-size:14px; font-weight:600;">{{ r.title }}</div>
+          <div style="font-size:14px; font-weight:600;">
+            {% if r.priority %}<span style="color:var(--muted); font-weight:400;">{{ r.priority }}.</span> {% endif %}{{ dot }} {{ r.title }}
+          </div>
           <div style="font-size:12px; color:var(--muted); margin-top:2px;">
-            {{ r.type }} · {{ r.main_keyword }}{% if r.timing %} · {{ r.timing }}{% endif %}
+            {{ r.type }} · {{ r.main_keyword }}{% if r.competition %} · 경쟁 {{ r.competition }}{% endif %}{% if r.search_intent %} · {{ r.search_intent }}{% endif %}
           </div>
           {% if r.why %}<div style="font-size:12px; color:var(--muted); margin-top:4px;">💡 {{ r.why }}</div>{% endif %}
         </div>

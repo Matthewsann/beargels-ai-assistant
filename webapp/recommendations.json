@@ -1,14 +1,14 @@
 {
   "items": [
-    {"title":"베이글 데우는 법, 에어프라이어 몇 분이 정답","type":"정보성","main_keyword":"베이글 데우는법","sub_keywords":["에어프라이어 베이글","냉동 베이글 데우기","베이글 오븐"],"why":"쫀득 식감이 리뷰 최대 강점 — 집에서도 그 식감 살리는 법으로 '베이글 한 우물' C-Rank 쌓기","timing":"상시"},
-    {"title":"송도 베이글 세트 후기, 샌드위치+음료 구성","type":"후기","main_keyword":"송도 베이글","sub_keywords":["송도 베이글 세트","송도 베이글 맛집","송도 배달 베이글"],"why":"리뷰 1위가 세트(샌드위치+음료+베이글 하나더, 90회) — 실물로 양·맛 증명","timing":"상시"},
-    {"title":"송도 샐러드, 탄단지 한 끼 다이어트 후기","type":"정보성","main_keyword":"송도 샐러드","sub_keywords":["탄단지 샐러드","송도 다이어트 도시락","송도 샐러드 배달"],"why":"타겟이 건강·단백질 지향 — 탄.단.지 샐러드 세트 구성·칼로리로 검색의도 완결","timing":"여름"},
-    {"title":"송도 수제 베이글, 매일 새벽 굽는 이야기","type":"일상","main_keyword":"송도 수제 베이글","sub_keywords":["수제 베이글","송도 베이커리","송도 베이글"],"why":"매일 직접 반죽·굽는 수제가 핵심 정체성 — 1인칭 경험이 D.I.A. 점수에 유리","timing":"상시"},
-    {"title":"송도 카페 여름 음료, 우베 밀크티 딸기라떼","type":"신메뉴","main_keyword":"송도 카페","sub_keywords":["송도 여름 음료","우베 폼 밀크티","송도 딸기라떼"],"why":"실판매 음료(우베 폼 밀크티·딸기라떼)를 베이글과 페어링해 여름 시즌 유입","timing":"여름"},
-    {"title":"송도 아침 베이글, 직장인 출근 루틴 후기","type":"후기","main_keyword":"송도 아침 베이글","sub_keywords":["송도 아침식사","송도 직장인 카페","송도 브런치"],"why":"직장인이 출근 전 아침 세트 주문 핵심 타겟 + 브랜드 본질 '루틴'과 정합","timing":"평일 상시"},
-    {"title":"베이글 크림치즈 조합, 종류별 추천 3가지","type":"정보성","main_keyword":"베이글 크림치즈","sub_keywords":["크림치즈 베이글","송도 베이글","크림치즈 추천"],"why":"실판매 크림치즈 3종(베이직·카프레제·대파베이컨)을 표로 정리해 정보 밀도 확보","timing":"상시"},
-    {"title":"송도 브런치, 커플세트로 둘이 나눠 먹기","type":"이벤트","main_keyword":"송도 브런치","sub_keywords":["송도 커플 카페","송도 데이트","베이글 커플세트"],"why":"[COUPLE] 실판매 세트 + '혼자보다 함께' 브랜드 철학과 정합한 주말 유입","timing":"주말/상시"},
-    {"title":"베어글스 곰, 송도 베이글 카페 이야기","type":"일상","main_keyword":"송도 베이글 카페","sub_keywords":["베어글스","송도 곰 카페","송도 디저트"],"why":"곰 캐릭터는 브랜드 각인·SNS 저장 유도 자산 — 따뜻한 톤으로 브랜드 노출","timing":"상시"},
-    {"title":"송도 카공 카페, 콘센트 좌석 이용 안내","type":"정보성","main_keyword":"송도 카공 카페","sub_keywords":["연수구 카페","송도 스터디 카페","송도 타임스페이스 카페"],"why":"학생 타겟은 콘센트·와이파이·오래 머물 공간을 원함 + 로컬 지도 첨부로 지역 검색 부스터","timing":"상시"}
+    {"priority":1,"tier":"green","title":"송도 배달 베이글, 세트로 든든한 한 끼","type":"지역세부","main_keyword":"송도 배달 베이글","sub_keywords":["송도 베이글 세트 배달","송도 아침 배달"],"competition":"낮음","search_intent":"지역방문","why":"고객.md—송도 배달 중심·재주문 56%, 세트가 주문 대다수라 배달 검색 유입이 매출 직결","timing":"상시"},
+    {"priority":2,"tier":"green","title":"송도 아침 베이글, 출근길 든든한 루틴","type":"지역세부","main_keyword":"송도 아침 베이글","sub_keywords":["송도 아침 카페","송도 출근길 베이글"],"competition":"낮음","search_intent":"지역방문","why":"고객철학.md—직장인 아침 한 끼 타겟, 브랜드 정체성 '매일 들르는 루틴'과 정확히 일치","timing":"상시"},
+    {"priority":3,"tier":"green","title":"송도 베이글 세트, 뭘 고를지 총정리","type":"정보성","main_keyword":"송도 베이글 세트","sub_keywords":["베어글스 세트 추천","송도 베이글 샌드위치"],"competition":"낮음","search_intent":"지역방문","why":"메뉴.md—세트 1위 90회로 압도적, 세트 비교표로 검색의도 완결시켜 전환 유도","timing":"상시"},
+    {"priority":4,"tier":"green","title":"송도 다이어트 샐러드, 탄단지 도시락 후기","type":"지역세부","main_keyword":"송도 다이어트 샐러드","sub_keywords":["송도 탄단지 샐러드","송도 닭가슴살 샐러드"],"competition":"낮음","search_intent":"지역방문","why":"고객.md—건강·단백질 지향 타겟(탄단지·닭가슴살), 경쟁 적은 건강 롱테일","timing":"여름"},
+    {"priority":5,"tier":"green","title":"송도 브런치 카페, 주말 베이글 브런치","type":"지역세부","main_keyword":"송도 브런치","sub_keywords":["송도 브런치 카페","연수구 브런치"],"competition":"중간","search_intent":"지역방문","why":"SEO지식—상황 키워드는 의도 뚜렷한 손님 유입, 주말 방문 수요로 배달 외 매장 유입 보강","timing":"상시"},
+    {"priority":6,"tier":"green","title":"베이글 데우는 법, 에어프라이어 몇 분?","type":"정보성","main_keyword":"베이글 데우는 법","sub_keywords":["베이글 에어프라이어","베이글 데우기 시간"],"competition":"낮음","search_intent":"정보","why":"네이버-SEO-지식.md—검색의도 완결형 정보글로 C-Rank·쫀득 식감 강점 증명, 신생 블로그 신뢰도 축적","timing":"상시"},
+    {"priority":7,"tier":"green","title":"베이글 크림치즈 조합, 뭐랑 먹지","type":"정보성","main_keyword":"베이글 크림치즈 조합","sub_keywords":["수제 크림치즈","베이글 크림치즈 추천"],"competition":"낮음","search_intent":"정보","why":"메뉴.md—크림치즈·베이글 종류 다수, 조합 정보글로 재방문·단골 메뉴 탐색 유도","timing":"상시"},
+    {"priority":8,"tier":"yellow","title":"송도 베이글 맛집, 쫀득 수제 베이글","type":"지역헤드","main_keyword":"송도 베이글","sub_keywords":["송도 베이글 맛집","송도 수제 베이글"],"competition":"높음","search_intent":"지역방문","why":"고객.md—맛 언급 80회·쫀득 식감 강점이나 헤드 키워드라 초기엔 밀림, 자산 쌓인 뒤 도전","timing":"상시"},
+    {"priority":9,"tier":"yellow","title":"송도 카페 추천, 조용한 동네 베이글집","type":"지역헤드","main_keyword":"송도 카페","sub_keywords":["송도 카페 추천","연수구 카페"],"competition":"높음","search_intent":"지역방문","why":"브랜드아이덴티티.md—'동네 베이스캠프' 포지션이나 검색량 크고 경쟁 최상위라 장기전","timing":"상시"},
+    {"priority":10,"tier":"red","title":"베어글스 곰 베이글, 매일 굽는 이야기","type":"브랜드","main_keyword":"베어글스","sub_keywords":["베어글스 송도","곰 캐릭터 베이글"],"competition":"낮음","search_intent":"브랜드","why":"브랜드철학.md—수제·곰 캐릭터 스토리로 단골 유대 강화, SEO 유입보단 브랜드 자산용","timing":"상시"}
   ]
 }
