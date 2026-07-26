@@ -147,6 +147,18 @@ def _friendly_error(e: Exception) -> str:
     return f"기획 중 문제가 생겼어요: {e}"
 
 
+RECOMMENDATIONS = pathlib.Path(__file__).resolve().parent / "recommendations.json"
+
+
+def load_recommendations() -> dict:
+    if RECOMMENDATIONS.exists():
+        try:
+            return json.loads(RECOMMENDATIONS.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
 @app.route("/plan", methods=["GET", "POST"])
 def plan_room():
     plan = None
@@ -159,7 +171,23 @@ def plan_room():
             plan = planner.make_plan(hint)
         except Exception as e:  # noqa: BLE001 — 사용자에게 친절 메시지로 변환
             error = _friendly_error(e)
-    return render_template("plan.html", plan=plan, error=error, hint=hint)
+    return render_template("plan.html", plan=plan, error=error, hint=hint,
+                           recs=load_recommendations())
+
+
+@app.route("/plan/recommend", methods=["POST"])
+def plan_recommend():
+    error = None
+    try:
+        import planner
+        items = planner.make_recommendations()
+        RECOMMENDATIONS.write_text(
+            json.dumps({"items": items}, ensure_ascii=False, indent=2), encoding="utf-8")
+        return redirect(url_for("plan_room"))
+    except Exception as e:  # noqa: BLE001
+        error = _friendly_error(e)
+    return render_template("plan.html", plan=None, error=error, hint="",
+                           recs=load_recommendations())
 
 
 @app.route("/plan/draft", methods=["POST"])

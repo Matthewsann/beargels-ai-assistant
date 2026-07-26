@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -125,6 +126,51 @@ DRAFT_PROMPT = """너는 베어글스 송도점의 네이버 블로그 마케팅
   "body": "네이버에 붙여넣을 본문 전체(사진 위치·정보 블록 포함, 줄바꿈 \\n)",
   "tags": ["태그10개내외"]
 }}"""
+
+
+REC_PROMPT = """너는 베어글스 송도점의 네이버 블로그 마케팅 전문가다.
+아래 '정보 금고'(철학·톤·메뉴·고객)와 'SEO 지식'을 근거로만 판단한다(지어내지 말 것).
+
+===== 정보 금고 =====
+{knowledge}
+===== SEO 지식 =====
+{seo}
+=====================
+
+베어글스답고(루틴·Basecamp·따뜻함) SEO 상위노출에 유리하며, 실제 인기메뉴·타겟(단골·직장인·건강지향)을
+노리는 블로그 글감 10개를 추천하라. 유형(정보성·신메뉴·일상·후기·이벤트)을 다양하게 섞어라.
+
+아래 JSON 배열 하나만 순수 출력(설명·코드블록 금지):
+[
+  {{"title":"제목안(25자내외)","type":"정보성","main_keyword":"대표키워드","sub_keywords":["세부1","세부2"],"why":"금고 근거 한 줄","timing":"여름/상시 등"}}
+]
+정확히 10개."""
+
+
+def _extract_json_array(text: str) -> list:
+    text = text.strip()
+    m = re.search(r"```(?:json)?\s*(\[.*\])\s*```", text, re.DOTALL)
+    if m:
+        text = m.group(1)
+    else:
+        m = re.search(r"\[.*\]", text, re.DOTALL)
+        if m:
+            text = m.group(0)
+    return json.loads(text)
+
+
+def make_recommendations() -> list[dict]:
+    """금고 전체를 읽고 베어글스 맞춤 글감 10개를 추천(JSON 배열)."""
+    client, cfg, gp = _client_cfg()
+    knowledge, seo = load_knowledge()
+    prompt = REC_PROMPT.format(knowledge=knowledge, seo=seo)
+    msg = client.messages.create(
+        model=cfg.get("generate", {}).get("model", "claude-sonnet-5"),
+        max_tokens=2500,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw = "".join(b.text for b in msg.content if b.type == "text")
+    return _extract_json_array(raw)
 
 
 def make_draft(topic: str, post_type: str = "정보성", title: str = "",

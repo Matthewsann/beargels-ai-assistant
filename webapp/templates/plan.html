@@ -4,6 +4,37 @@
     <b>🧭 기획실</b><small>금고를 읽고 전문가가 기획해요</small>
   </div>
 
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+    <div style="font-size:14px; font-weight:600;">🎯 베어글스 맞춤 글감</div>
+    <form method="post" action="/plan/recommend" style="display:inline;">
+      <button type="submit" class="btn" style="font-size:13px; padding:6px 12px;">🔄 새 글감 추천받기</button>
+    </form>
+  </div>
+  {% if recs and recs['items'] %}
+  <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:22px;">
+    {% for r in recs['items'] %}
+    <div style="background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px;">
+      <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+        <div style="min-width:0;">
+          <div style="font-size:14px; font-weight:600;">{{ r.title }}</div>
+          <div style="font-size:12px; color:var(--muted); margin-top:2px;">
+            {{ r.type }} · {{ r.main_keyword }}{% if r.timing %} · {{ r.timing }}{% endif %}
+          </div>
+          {% if r.why %}<div style="font-size:12px; color:var(--muted); margin-top:4px;">💡 {{ r.why }}</div>{% endif %}
+        </div>
+        <form method="post" style="flex-shrink:0;">
+          <input type="hidden" name="hint" value="{{ r.title }}">
+          <button type="submit" class="btn primary" style="font-size:13px; padding:6px 12px; white-space:nowrap;">이걸로 기획 →</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="note" style="margin-bottom:22px;">아직 추천 글감이 없어요. 위 '새 글감 추천받기'를 누르면 전문가가 금고를 읽고 10개를 뽑아줘요.</div>
+  {% endif %}
+
+  <div style="font-size:14px; font-weight:600; margin-bottom:8px;">✍️ 직접 주제로 기획</div>
   <form method="post" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:18px;">
     <input type="text" name="hint" value="{{ hint }}" placeholder="주제 힌트 (선택) 예: 신메뉴 소금빵"
            style="flex:1; min-width:180px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px;">
