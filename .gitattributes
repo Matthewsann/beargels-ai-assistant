@@ -1,0 +1,3 @@
+# 배치파일은 반드시 CRLF — LF 로 저장되면 cmd 가 각 줄 첫 단어를 먹어 깨진다.
+*.bat text eol=crlf
+*.cmd text eol=crlf
