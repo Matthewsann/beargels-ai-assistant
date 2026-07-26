@@ -71,15 +71,10 @@
       집 PC: {{ worker.text }}
     </div>
     <form method="post" action="{{ url_for('collect', path_key=key) }}">
-      <div class="row">
-        <select name="who" style="max-width:110px;">
-          {% for s in staff %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
-        </select>
-        <button class="btn primary" type="submit" style="flex:1;"
-                {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>
-          🔄 리뷰수집
-        </button>
-      </div>
+      <button class="btn primary wide" type="submit"
+              {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>
+        🔄 리뷰수집
+      </button>
     </form>
     {% if job %}
       <div class="status" id="jstat" style="margin:10px 0 0;">{{ job.text }}</div>
@@ -114,14 +109,14 @@
           <button class="btn" type="submit">확인함 · 목록에서 내리기</button>
         </form>
       {% elif r.has_draft %}
-        <form method="post" action="{{ url_for('save_draft', path_key=key, review_id=r.id) }}">
-          <label class="lbl">답글 초안 (고쳐도 됩니다)</label>
-          <textarea name="draft" id="d{{ r.id }}" rows="6">{{ r.draft }}</textarea>
-          <div class="acts">
-            <button class="btn primary" type="button" onclick="copyIt({{ r.id }})">📋 복사</button>
-            <button class="btn" type="submit">💾 저장</button>
-          </div>
-        </form>
+        <label class="lbl">답글 초안 (마음에 안 들면 여기서 바로 고치세요)</label>
+        <textarea name="draft" id="d{{ r.id }}" rows="6">{{ r.draft }}</textarea>
+        <div class="acts">
+          <button class="btn primary wide" type="button"
+                  onclick="copyIt({{ r.id }}, '{{ url_for('save_draft', path_key=key, review_id=r.id) }}')">
+            📋 복사하기
+          </button>
+        </div>
         <div class="copied" id="c{{ r.id }}">복사됐어요! 배민·쿠팡에 붙여넣으세요</div>
         <form method="post" action="{{ url_for('done', path_key=key, review_id=r.id) }}" class="acts">
           <button class="btn" type="submit" style="width:100%;">✅ 답글 등록함 · 목록에서 내리기</button>
@@ -146,15 +141,20 @@
 </div>
 
 <script>
-function copyIt(id) {
+// 복사 = 클립보드에 넣기 + 고친 내용 서버에 저장(따로 저장 버튼을 두면 안 누르고
+// 나가서 수정이 날아간다).
+function copyIt(id, saveUrl) {
   const t = document.getElementById('d' + id);
   const done = () => {
     const c = document.getElementById('c' + id);
     c.style.display = 'block';
     setTimeout(() => { c.style.display = 'none'; }, 2500);
   };
+  const body = new URLSearchParams({draft: t.value});
+  fetch(saveUrl, {method: 'POST', body: body}).catch(() => {});
   if (navigator.clipboard) {
-    navigator.clipboard.writeText(t.value).then(done).catch(() => { t.select(); document.execCommand('copy'); done(); });
+    navigator.clipboard.writeText(t.value).then(done)
+      .catch(() => { t.select(); document.execCommand('copy'); done(); });
   } else {
     t.select(); document.execCommand('copy'); done();
   }

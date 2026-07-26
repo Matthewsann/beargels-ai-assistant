@@ -53,7 +53,6 @@ SERVICE_PATH = (os.getenv("SERVICE_PATH") or "").strip().strip("/")
 WORKER_ALIVE_SECONDS = 90
 
 PLAT = {"baemin": "배민", "coupang": "쿠팡이츠"}
-STAFF = ["사장님", "점장", "매니저", "직원"]
 
 
 # ---------------------------------------------------------------------------
@@ -158,16 +157,15 @@ def home(path_key):
         job = None
     return render_template(
         "staff.html", key=path_key, reviews=reviews, worker=_worker_view(),
-        job=job, staff=STAFF, error=error, waiting=waiting,
+        job=job, error=error, waiting=waiting,
     )
 
 
 @app.route("/<path_key>/collect", methods=["POST"])
 def collect(path_key):
     check(path_key)
-    who = (request.form.get("who") or "").strip()[:20]
     try:
-        db.request_collect(who)
+        db.request_collect()
     except Exception:  # noqa: BLE001 — 화면에서 상태로 보여주므로 조용히 넘긴다
         pass
     return redirect(url_for("home", path_key=path_key))
