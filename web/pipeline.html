@@ -153,6 +153,7 @@ const $ = s => document.querySelector(s);
 let TOPICS = [], CURRENT = null;
 
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),2600); }
+function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 async function api(url, opts){ const r=await fetch(url,opts); if(!r.ok){ let m=r.statusText; try{m=(await r.json()).detail||m}catch(e){} throw new Error(m); } return r.json(); }
 
 // ── 초기 로드 ──
@@ -208,6 +209,7 @@ function renderDetail(){
   const p = CURRENT; const si = stepIndex(p.status);
   const steps = ["주제·가이드","영상 업로드","릴스 편집","확인·피드백","완성본 저장"];
   const hasVideo = (p.files||[]).some(f=>f.kind==="video");
+  const captionText = p.caption ? (p.caption + ((p.hashtags&&p.hashtags.length)?("\n\n"+p.hashtags.join(" ")):"")) : "";
   $("#detail").innerHTML = `
   <div class="section">
     <div class="eyebrow">작업 공간</div>
@@ -234,6 +236,10 @@ function renderDetail(){
       <!-- ④⑤ 편집 + 자막 -->
       <div class="block">
         <h3>④ 릴스 자동 편집 <span class="muted" style="font-weight:600;font-size:.82rem">— 9:16·자막·원본소리</span></h3>
+        <div class="row" style="margin-bottom:12px">
+          <button class="btn" onclick="genCaption()">✨ AI가 자막·캡션 추천</button>
+          <span class="muted" style="font-size:.8rem">영상 보고 훅·메뉴·캡션·해시태그를 자동으로 채워줘요</span>
+        </div>
         <div class="grid2">
           <div class="field"><label>상단 훅 자막 (첫 3초)</label><input id="hook" type="text" value="${(p.hook||'').replace(/"/g,'&quot;')}"></div>
           <div class="field"><label>하단 자막 (메뉴·키워드)</label><input id="menu" type="text" value="${(p.menu||'').replace(/"/g,'&quot;')}"></div>
@@ -254,7 +260,7 @@ function renderDetail(){
       <!-- ⑥ 완성본 -->
       <div class="block">
         <h3>⑥ 완성본으로 저장</h3>
-        <div class="field"><label>캡션 (인스타에 붙일 글 — 나중에 수정 가능)</label><textarea id="caption" placeholder="예: 송도 카페에서 크림치즈 듬뿍 베이글 어때요 …"></textarea></div>
+        <div class="field"><label>캡션 (인스타에 붙일 글 — ✨버튼으로 자동 생성, 수정 가능)</label><textarea id="caption" placeholder="예: 송도 카페에서 크림치즈 듬뿍 베이글 어때요 …">${esc(captionText)}</textarea></div>
         <button class="btn pri" onclick="finalize()">📁 완성본 폴더에 저장</button>
         ${p.status==="완성"?`<span class="pill 완성" style="margin-left:10px">저장됨</span>`:''}
       </div>`:''}
@@ -279,6 +285,16 @@ async function upload(fileList){
   try{ await api("/api/projects/"+CURRENT.id+"/upload",{method:"POST",body:fd});
     toast("업로드 완료"); await openProject(CURRENT.id);
   }catch(e){ toast("업로드 실패: "+e.message); }
+}
+
+// ✨ AI 캡션·자막 생성
+async function genCaption(){
+  toast("AI가 자막·캡션 만드는 중…");
+  try{
+    const r = await api("/api/projects/"+CURRENT.id+"/caption",{method:"POST"});
+    toast(r.ai ? "AI 캡션 완성 ✨ (완성본 단계에 채워졌어요)" : "캡션 초안 완성 (크레딧 충전 시 AI가 더 잘 써줘요)");
+    await openProject(CURRENT.id);
+  }catch(e){ toast("캡션 생성 실패: "+e.message); }
 }
 
 // ④ 편집

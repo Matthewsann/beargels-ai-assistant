@@ -20,6 +20,8 @@ import logging
 import os
 import re
 import shutil
+import subprocess
+import tempfile
 import time
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -132,6 +134,57 @@ def _raw_files(pid: str) -> list[dict]:
         kind = "video" if ext in _VIDEO_EXT else ("image" if ext in _IMAGE_EXT else "other")
         out.append({"name": name, "kind": kind})
     return out
+
+
+# ── AI 캡션 생성 (Claude) — 텔레그램 없이 웹에서 ──
+_caption_gen = None
+
+
+def _get_caption_gen():
+    """ANTHROPIC_API_KEY가 있으면 캡션 생성기를 준비(지연 초기화). 없으면 None."""
+    global _caption_gen
+    key = os.getenv("ANTHROPIC_API_KEY")
+    if not key:
+        return None
+    if _caption_gen is None:
+        from .caption_generator import CaptionGenerator
+        _caption_gen = CaptionGenerator(key)
+    return _caption_gen
+
+
+def _first_video_frame(pid: str) -> bytes | None:
+    """업로드한 첫 영상에서 대표 프레임 1장을 뽑아 이미지 바이트로 반환."""
+    raw = os.path.join(_proj_dir(pid), "raw")
+    videos = [os.path.join(raw, f["name"]) for f in _raw_files(pid) if f["kind"] == "video"]
+    if not videos:
+        return None
+    ff = video_editor.ffmpeg_exe()
+    with tempfile.TemporaryDirectory() as tmp:
+        out = os.path.join(tmp, "frame.jpg")
+        subprocess.run(
+            [ff, "-y", "-ss", "1", "-i", videos[0], "-frames:v", "1",
+             "-vf", "scale=1000:-1", out],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        if os.path.exists(out):
+            with open(out, "rb") as f:
+                return f.read()
+    return None
+
+
+def _fallback_caption(p: dict) -> dict:
+    """크레딧/키가 없을 때 쓰는 간단 캡션(브랜드·지역·메뉴 키워드 기반)."""
+    menu = (p.get("menu") or p.get("title") or "베이글").strip()
+    hook = (p.get("hook") or "").strip()
+    lines = [hook] if hook else []
+    lines.append(f"송도에서 즐기는 {menu} 🥯")
+    lines.append("오늘도 잠시 쉬어가세요.")
+    tags = ["#베어글스송도", "#송도베이글", "#송도카페", "#송도맛집"]
+    m = re.sub(r"\s+", "", menu)
+    if m and f"#{m}" not in tags:
+        tags.append(f"#{m}")
+    return {"menu": menu, "caption": "\n".join(lines),
+            "hashtags": tags[:5], "overlay_text": hook}
 
 
 def create_app() -> FastAPI:
@@ -250,6 +303,43 @@ def create_app() -> FastAPI:
         p["status"] = ST_EDITED
         _save_project(p)
         return {"ok": True, "status": p["status"]}
+
+    # ✨ AI 캡션·자막 생성 (텔레그램 없이 웹에서)
+    @app.post("/api/projects/{pid}/caption")
+    async def caption(pid: str):
+        p = _load_project(pid)
+        if not p:
+            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
+        videos = [f for f in _raw_files(pid) if f["kind"] == "video"]
+        gen = _get_caption_gen()
+        used_ai = False
+        data = None
+        if gen:
+            try:
+                frame = await asyncio.to_thread(_first_video_frame, pid)
+                res = await gen.generate(
+                    images=[frame] if frame else [],
+                    topic=p.get("title", ""),
+                    is_reel=True,
+                    media_count=max(1, len(videos)),
+                )
+                data = {"menu": res.menu, "caption": res.caption,
+                        "hashtags": res.hashtags, "overlay_text": res.overlay_text}
+                used_ai = True
+            except Exception as e:
+                logger.warning("AI 캡션 실패 → 템플릿 사용: %s", e)
+        if data is None:
+            data = _fallback_caption(p)
+
+        # 프로젝트에 저장 (자막/캡션 채우기)
+        p["caption"] = data["caption"]
+        p["hashtags"] = data["hashtags"]
+        if data.get("menu"):
+            p["menu"] = data["menu"]
+        if data.get("overlay_text"):
+            p["hook"] = data["overlay_text"]
+        _save_project(p)
+        return {"ok": True, "ai": used_ai, **data}
 
     # 릴스 미리보기 스트리밍
     @app.get("/api/projects/{pid}/reel")
