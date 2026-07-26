@@ -243,6 +243,9 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
         p["files"] = _raw_files(pid)
         p["has_reel"] = os.path.exists(os.path.join(_proj_dir(pid), "reel.mp4"))
+        # 폴더 위치 표시용 (사진/영상 넣는 곳 · 완성본 저장 곳)
+        p["raw_dir"] = os.path.abspath(os.path.join(_proj_dir(pid), "raw"))
+        p["final_dir"] = os.path.abspath(os.path.join(FINAL_DIR, _slug(p.get("title", ""))))
         return p
 
     # ③ 업로드
@@ -367,6 +370,26 @@ def create_app() -> FastAPI:
         p["final_path"] = folder
         _save_project(p)
         return {"ok": True, "folder": folder}
+
+    # 📁 폴더 열기 (윈도우 탐색기) — 촬영본(raw) / 완성본(final)
+    @app.post("/api/projects/{pid}/open")
+    async def open_folder(pid: str, which: str = Form("raw")):
+        p = _load_project(pid)
+        if not p:
+            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
+        if which == "final":
+            target = os.path.join(FINAL_DIR, _slug(p.get("title", "")))
+        else:
+            target = os.path.join(_proj_dir(pid), "raw")
+        target = os.path.abspath(target)
+        os.makedirs(target, exist_ok=True)
+        opened = False
+        try:
+            os.startfile(target)  # Windows 탐색기로 열기
+            opened = True
+        except Exception as e:  # 서버가 GUI 없는 환경이면 못 염 (경로는 반환)
+            logger.warning("폴더 열기 실패(경로만 반환): %s", e)
+        return {"ok": True, "opened": opened, "path": target}
 
     # 프로젝트 삭제
     @app.delete("/api/projects/{pid}")

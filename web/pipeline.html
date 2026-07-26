@@ -99,6 +99,11 @@
   .chip.video::before{content:"🎬 "}
   .chip.image::before{content:"🖼 "}
 
+  .pathrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;font-size:.8rem;
+    font-weight:700;color:var(--ink-soft)}
+  .path{font-weight:500;background:var(--surface-2);border:1px solid var(--line);padding:4px 9px;border-radius:7px;
+    word-break:break-all;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:.76rem;color:var(--ink)}
+
   video{width:100%;max-width:300px;border-radius:12px;border:1px solid var(--line);display:block;background:#000}
 
   .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);
@@ -231,6 +236,9 @@ function renderDetail(){
         <div id="drop" class="drop">여기로 영상을 끌어다 놓거나 클릭해서 선택<br><span class="muted" style="font-size:.8rem">여러 개 가능 · 세로/가로 상관없음</span></div>
         <input id="file" type="file" accept="video/*,image/*" multiple style="display:none">
         <div class="files">${(p.files||[]).map(f=>`<span class="chip ${f.kind}">${f.name}</span>`).join("")||'<span class="muted" style="font-size:.82rem">아직 올린 파일이 없어요</span>'}</div>
+        <div class="pathrow">📂 사진/영상 넣는 곳<span class="path">${p.raw_dir||''}</span>
+          <button class="btn sm" onclick="openFolder('${p.id}','raw')">폴더 열기</button>
+          <span class="muted" style="font-weight:500">— 드래그 대신 이 폴더에 직접 넣어도 돼요</span></div>
       </div>
 
       <!-- ④⑤ 편집 + 자막 -->
@@ -263,6 +271,8 @@ function renderDetail(){
         <div class="field"><label>캡션 (인스타에 붙일 글 — ✨버튼으로 자동 생성, 수정 가능)</label><textarea id="caption" placeholder="예: 송도 카페에서 크림치즈 듬뿍 베이글 어때요 …">${esc(captionText)}</textarea></div>
         <button class="btn pri" onclick="finalize()">📁 완성본 폴더에 저장</button>
         ${p.status==="완성"?`<span class="pill 완성" style="margin-left:10px">저장됨</span>`:''}
+        <div class="pathrow">📁 릴스 저장되는 곳<span class="path">${p.final_dir||''}</span>
+          <button class="btn sm" onclick="openFolder('${p.id}','final')">폴더 열기</button></div>
       </div>`:''}
     </div>
   </div>`;
@@ -285,6 +295,14 @@ async function upload(fileList){
   try{ await api("/api/projects/"+CURRENT.id+"/upload",{method:"POST",body:fd});
     toast("업로드 완료"); await openProject(CURRENT.id);
   }catch(e){ toast("업로드 실패: "+e.message); }
+}
+
+// 📁 폴더 열기 (윈도우 탐색기)
+async function openFolder(pid, which){
+  const fd=new FormData(); fd.append("which",which);
+  try{ const r=await api("/api/projects/"+pid+"/open",{method:"POST",body:fd});
+    toast(r.opened?"탐색기에서 폴더를 열었어요":"폴더 위치를 확인하세요");
+  }catch(e){ toast("폴더 열기 실패: "+e.message); }
 }
 
 // ✨ AI 캡션·자막 생성
