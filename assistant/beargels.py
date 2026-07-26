@@ -458,6 +458,9 @@ def _clean_author(name):
         return "고객"          # 날짜가 이름으로 잘못 파싱됨
     if not re.search(r"[가-힣A-Za-z]", name):
         return "고객"          # 숫자/기호뿐이면 이름 아님
+    # 쿠팡은 'KIM****************' 처럼 별을 길게 붙인다. 그대로 부르면 답글이
+    # 이상해지므로 별은 최대 3개로 줄인다(마스킹은 유지).
+    name = re.sub(r"\*{4,}", "***", name)
     return name
 
 
@@ -523,10 +526,14 @@ def _template_reply(typ, review, author, oc, rating, max_len):
                 "말씀해주신 부분 바로 확인하고 고칠게요. 다시 한 번 주문 주시면 "
                 "제대로 보여드릴게요.")[:max_len]
 
+    # ⚠️ 주문 횟수를 모를 때(oc=None) '처음 주문해주셨는데' 라고 단정하면 안 된다.
+    #    단골이 그 답글을 받으면 기분이 상한다 — 중립 인사를 쓴다.
     if isinstance(oc, int) and oc > 1:
         opener = f"벌써 {oc}번째네요, 기억해주고 또 주문해주셔서 진짜 감사해요."
-    else:
+    elif oc == 1:
         opener = "처음 주문해주셨는데 입맛에 맞으셨다니 너무 좋네요!"
+    else:
+        opener = "주문해주시고 이렇게 후기까지 남겨주셔서 감사해요!"
 
     if typ == "question":
         body = " 물어봐주신 건 확인해서 꼼꼼히 챙길게요. 편하게 여쭤봐주셔서 감사해요!"

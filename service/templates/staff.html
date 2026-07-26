@@ -126,8 +126,6 @@
         <form method="post" action="{{ url_for('done', path_key=key, review_id=r.id) }}" class="acts">
           <button class="btn" type="submit" style="width:100%;">✅ 답글 등록함 · 목록에서 내리기</button>
         </form>
-      {% else %}
-        <div class="status" style="margin:0;">답글 초안이 아직 없어요 — 리뷰수집을 눌러주세요.</div>
       {% endif %}
     </div>
     {% endfor %}
@@ -135,6 +133,13 @@
     <div class="empty">
       답글을 기다리는 리뷰가 없어요.<br>
       새 리뷰를 가져오려면 위 <b>리뷰수집</b>을 눌러주세요.
+    </div>
+  {% endif %}
+
+  {% if waiting %}
+    <div class="note">
+      초안이 아직 안 만들어진 리뷰가 {{ waiting }}건 있어요.
+      <b>리뷰수집</b>을 한 번 더 누르면 이어서 만들어집니다.
     </div>
   {% endif %}
 

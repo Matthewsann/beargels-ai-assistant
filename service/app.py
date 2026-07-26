@@ -141,15 +141,20 @@ def home(path_key):
     check(path_key)
     error = None
     reviews = []
+    waiting = 0
     try:
-        reviews = [_review_view(r) for r in db.get_pending_reviews(limit=50)]
+        rows = [_review_view(r) for r in db.get_pending_reviews(limit=100)]
+        # 초안이 있는 것만 보여준다 — 초안 없는 카드가 화면을 덮으면
+        # 직원이 무엇을 해야 하는지 알 수 없다. 나머지는 건수로만 알린다.
+        reviews = [r for r in rows if r["has_draft"]]
+        waiting = len(rows) - len(reviews)
         job = _job_view(db.latest_job())
     except Exception as e:  # noqa: BLE001
         error = f"데이터를 불러오지 못했어요: {str(e)[:150]}"
         job = None
     return render_template(
         "staff.html", key=path_key, reviews=reviews, worker=_worker_view(),
-        job=job, staff=STAFF, error=error,
+        job=job, staff=STAFF, error=error, waiting=waiting,
     )
 
 

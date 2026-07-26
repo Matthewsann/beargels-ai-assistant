@@ -34,6 +34,9 @@ _REVIEW_COLS = (
     "platform", "review_no", "author", "rating", "content", "written_at",
     "written_date", "menus", "delivery_type", "raw",
 )
+# ⚠️ reply_status 는 일부러 넣지 않는다. 우리가 'drafted/posted' 로 바꾼 값을
+#    재수집 때 크롤러 값('none')이 덮어써 버리기 때문. 플랫폼에 이미 답글이
+#    달렸는지는 별도 칼럼 platform_replied 로만 반영한다(아래 save_reviews).
 
 _client: Client | None = None
 
@@ -104,6 +107,10 @@ def save_reviews(reviews):
         r = _pick(r0, _REVIEW_COLS)
         r["written_date"] = r0.get("written_date") or parse_review_date(
             r0.get("written_at"))
+        # 플랫폼에 이미 사장님 답글이 달렸는지(모르면 null 로 둔다).
+        rs = r0.get("reply_status")
+        r["platform_replied"] = (True if rs == "posted"
+                                 else False if rs == "none" else None)
         rows.append(r)
     if not rows:
         return 0
@@ -312,9 +319,14 @@ def mark_replied(review_id):
 
 
 def get_pending_reviews(limit=50):
-    """답글이 아직 안 끝난 리뷰(none/drafted)를 최신순으로 가져온다."""
+    """답글이 아직 안 끝난 리뷰를 최신순으로 가져온다.
+
+    제외: 우리가 '등록함'으로 표시한 것(reply_status='posted') +
+          플랫폼에 이미 사장님 답글이 달려 있는 것(platform_replied=true).
+    """
     return (get_client().table("reviews").select("*")
             .in_("reply_status", ["none", "drafted"])
+            .or_("platform_replied.is.null,platform_replied.eq.false")
             .order("written_date", desc=True)
             .order("collected_at", desc=True)
             .limit(limit).execute().data)

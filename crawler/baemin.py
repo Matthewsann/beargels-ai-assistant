@@ -347,6 +347,11 @@ class BaeminCrawler:
             body = [p for p in parts[i:end] if p]
             content = " ".join(body).strip() or None
 
+        # 답글 여부: 미답변 카드에만 '사장님 댓글 등록하기' 버튼이 있다
+        # (review_reply.py 의 실게시 경로에서 검증된 문구, 2026-07-24).
+        # 버튼이 없으면 이미 답글이 달린 것으로 본다.
+        reply_status = "none" if "사장님 댓글 등록하기" in raw else "posted"
+
         return {
             "platform": "baemin",
             "author": author,
@@ -356,6 +361,7 @@ class BaeminCrawler:
             "review_no": review_no,
             "menus": menus or None,
             "delivery_type": delivery_type,
+            "reply_status": reply_status,
             "raw": raw,
         }
 

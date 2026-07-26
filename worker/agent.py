@@ -83,6 +83,8 @@ def make_drafts() -> int:
     for row in db.get_pending_reviews(limit=100):
         if row.get("reply_draft"):
             continue                      # 이미 초안 있음(직원이 고친 것 포함)
+        if row.get("platform_replied"):
+            continue                      # 플랫폼에 이미 답글이 달림
         if made >= MAX_DRAFTS_PER_RUN:
             logger.info("한 번에 %d건까지만 생성 — 나머지는 다음 수집 때",
                         MAX_DRAFTS_PER_RUN)
