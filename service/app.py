@@ -36,6 +36,10 @@ from flask import (  # noqa: E402
     Flask, abort, jsonify, redirect, render_template, request, url_for,
 )
 
+# 설정은 service/.env 를 먼저 본다(클라우드 서버에는 이 파일만 올린다 —
+# 집 PC 의 .env 에는 배민·쿠팡 비밀번호까지 들어 있어 올리면 안 된다).
+# 집 PC 에서 테스트할 때는 service/.env 가 없으므로 루트 .env 를 쓴다.
+load_dotenv(pathlib.Path(__file__).resolve().parent / ".env")
 load_dotenv(ROOT / ".env")
 
 from database import supabase_client as db  # noqa: E402

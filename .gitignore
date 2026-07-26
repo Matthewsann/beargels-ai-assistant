@@ -44,3 +44,6 @@ sample_frames/
 webapp/rank_history.json
 # 웹앱: 로그인 세션 서명키(기기별 · 민감정보) — 절대 커밋 금지
 webapp/.flask_secret
+# 직원용 서비스: 클라우드에 올릴 설정(Supabase 키 포함) — 절대 커밋 금지
+service/.env
+service/.env.production
