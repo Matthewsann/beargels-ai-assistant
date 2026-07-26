@@ -15,6 +15,11 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 os.chdir(_HERE)
 
+# .env를 webapp 임포트(모듈 로드 시 경로 결정) 전에 읽는다 — PIPELINE_FINAL_DIR 등 반영.
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import uvicorn
 
 from sns_automation.webapp import create_app
