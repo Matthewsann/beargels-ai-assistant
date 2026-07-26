@@ -10,6 +10,7 @@ from __future__ import annotations
 import calendar as calmod
 import json
 import pathlib
+import shutil
 import subprocess
 import sys
 from datetime import date, datetime, timedelta
@@ -279,6 +280,37 @@ def schedule_post(item_id: int):
         if dt:
             meta["status"] = "scheduled"
             meta["scheduled_time"] = f"{dt} {tm}"
+    mp.write_text(yaml.safe_dump(meta, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    return redirect(url_for("view_post", item_id=item_id))
+
+
+@app.route("/post/<int:item_id>/delete", methods=["POST"])
+def delete_post(item_id: int):
+    """글을 휴지통(library/_trash)으로 이동. 완전 삭제 아님 — 되살릴 수 있음."""
+    d = LIB / f"{item_id:04d}"
+    if not d.exists():
+        abort(404)
+    trash = LIB / "_trash"
+    trash.mkdir(exist_ok=True)
+    dest = trash / f"{item_id:04d}"
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.move(str(d), str(dest))
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/post/<int:item_id>/status", methods=["POST"])
+def set_post_status(item_id: int):
+    d = LIB / f"{item_id:04d}"
+    mp = d / "meta.yaml"
+    if not mp.exists():
+        abort(404)
+    meta = yaml.safe_load(mp.read_text(encoding="utf-8")) or {}
+    new = request.form.get("status", "ready")
+    if new in ("ready", "scheduled", "published"):
+        meta["status"] = new
+        if new != "scheduled":
+            meta["scheduled_time"] = None
     mp.write_text(yaml.safe_dump(meta, allow_unicode=True, sort_keys=False), encoding="utf-8")
     return redirect(url_for("view_post", item_id=item_id))
 
