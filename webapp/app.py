@@ -8,18 +8,28 @@
 from __future__ import annotations
 
 import calendar as calmod
+import hmac
 import json
 import pathlib
 import shutil
 import subprocess
 import sys
+import time
 from datetime import date, datetime, timedelta
 
+import os
+import secrets
+
 import yaml
-from flask import Flask, abort, redirect, render_template, request, url_for
+from dotenv import load_dotenv
+from flask import (
+    Flask, abort, redirect, render_template, request, session, url_for,
+)
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LIB = ROOT / "automation" / "library"
+
+load_dotenv(ROOT / ".env")
 
 STATUS_META = {
     "ready":     {"label": "발행 대기", "cls": "warning"},
@@ -28,6 +38,58 @@ STATUS_META = {
 }
 
 app = Flask(__name__)
+
+# ---------------------------------------------------------------------------
+# 로그인 (외부 인터넷 노출 대비)
+# ---------------------------------------------------------------------------
+# .env 의 BEARGELS_WEB_PASSWORD 가 있으면 모든 화면이 로그인 뒤로 잠긴다.
+# 없으면 잠금 없음 = 집 안에서만 쓰는 모드. 터널(start_public.bat)은 비밀번호가
+# 없으면 아예 실행을 거부한다 — 인터넷에 무방비로 열리는 걸 막기 위해.
+WEB_PASSWORD = (os.getenv("BEARGELS_WEB_PASSWORD") or "").strip()
+
+# 세션 서명키 — 파일에 보관해 앱을 재시작해도 로그인이 유지된다.
+_SECRET_FILE = pathlib.Path(__file__).resolve().parent / ".flask_secret"
+if not _SECRET_FILE.exists():
+    _SECRET_FILE.write_text(secrets.token_hex(32), encoding="utf-8")
+app.secret_key = _SECRET_FILE.read_text(encoding="utf-8").strip()
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
+
+OPEN_PATHS = ("/login", "/static")
+
+
+@app.before_request
+def require_login():
+    if not WEB_PASSWORD or session.get("ok"):
+        return None
+    if request.path.startswith(OPEN_PATHS):
+        return None
+    return redirect(url_for("login"))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not WEB_PASSWORD:
+        return redirect(url_for("dashboard"))
+    error = None
+    if request.method == "POST":
+        given = request.form.get("password", "")
+        if hmac.compare_digest(given, WEB_PASSWORD):
+            session["ok"] = True
+            session.permanent = True
+            return redirect(url_for("dashboard"))
+        time.sleep(1.0)  # 무작위 대입 속도 늦추기
+        error = "비밀번호가 달라요."
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 
 def load_items() -> list[dict]:
@@ -207,6 +269,27 @@ def plan_draft():
         return redirect(url_for("view_post", item_id=item_id))
     except Exception as e:  # noqa: BLE001
         return render_template("plan.html", plan=None, error=_friendly_error(e), hint=topic)
+
+
+@app.route("/replies", methods=["GET", "POST"])
+def replies_room():
+    """배민·쿠팡 리뷰 답글 초안 만들기. 초안만 — 게시는 사장님이 직접."""
+    import replies as replies_mod
+
+    result = None
+    error = None
+    form = {"platform": "baemin", "rating": "5"}
+    if request.method == "POST":
+        form = request.form.to_dict()
+        review = replies_mod.build_review(request.form)
+        try:
+            result = replies_mod.generate(review)
+        except Exception as e:  # noqa: BLE001 — 친절 메시지로 변환
+            error = _friendly_error(e)
+    return render_template(
+        "replies.html", result=result, error=error, form=form,
+        platforms=replies_mod.PLATFORMS, kind_label=replies_mod.KIND_LABEL,
+    )
 
 
 @app.route("/analytics")
@@ -398,9 +481,15 @@ def edit_post(item_id: int):
 
 
 if __name__ == "__main__":
-    print("=" * 48)
-    print(" 베어글스 블로그 웹앱 실행 중")
-    print(" 브라우저에서 열기 →  http://localhost:5050")
+    PORT = int(os.getenv("PORT", "5050"))
+    print("=" * 52)
+    print(" 베어글스 AI 비서 웹앱 실행 중")
+    print(f" 브라우저에서 열기 →  http://localhost:{PORT}")
+    if WEB_PASSWORD:
+        print(" [잠김] 비밀번호 잠금 켜짐 (외부 접속 가능)")
+    else:
+        print(" [주의] 비밀번호 없음 — 집 안(같은 와이파이)에서만 쓰세요.")
+        print("    외부에서 쓰려면 .env 에 BEARGELS_WEB_PASSWORD 를 넣으세요.")
     print(" (끄려면 이 창에서 Ctrl+C)")
-    print("=" * 48)
-    app.run(host="0.0.0.0", port=5050, debug=False)
+    print("=" * 52)
+    app.run(host="0.0.0.0", port=PORT, debug=False)

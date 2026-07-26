@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>베어글스 블로그</title>
+<title>베어글스 AI 비서</title>
 <style>
   :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
           --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
@@ -56,6 +56,14 @@
           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-decoration:none; }
   .chip.accent { background:var(--accent-bg); color:var(--accent); }
   .chip.success { background:var(--ok-bg); color:var(--ok); }
+  .lbl { display:block; font-size:13px; font-weight:600; margin-bottom:5px; }
+  .fld { width:100%; border:1px solid var(--line); border-radius:8px; padding:10px 12px;
+         font-family:inherit; font-size:14px; background:var(--card); color:var(--ink);
+         line-height:1.6; }
+  .fld:focus { outline:2px solid var(--accent-bg); border-color:var(--accent); }
+  textarea.fld { resize:vertical; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:480px) { .grid2 { grid-template-columns:1fr; } .nav { flex-wrap:wrap; } }
 </style>
 </head>
 <body>
@@ -65,6 +73,10 @@
       <a href="/" class="{{ 'on' if request.path == '/' else '' }}">📚 글 창고</a>
       <a href="/calendar" class="{{ 'on' if request.path.startswith('/calendar') else '' }}">📅 캘린더</a>
       <a href="/analytics" class="{{ 'on' if request.path.startswith('/analytics') else '' }}">📊 분석</a>
+      <a href="/replies" class="{{ 'on' if request.path.startswith('/replies') else '' }}">💬 리뷰 답글</a>
+      {% if session.get('ok') %}
+        <a href="/logout" style="margin-left:auto;">나가기</a>
+      {% endif %}
     </div>
     {% block content %}{% endblock %}
   </div>

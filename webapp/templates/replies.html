@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="sec">
+  <b>💬 리뷰 답글 만들기</b>
+  <small>초안만 만들어요 · 게시는 직접</small>
+</div>
+
+{% if error %}
+  <div class="note" style="background:var(--warn-bg); color:var(--warn);">{{ error }}</div>
+{% endif %}
+
+{% if result %}
+<div class="post" style="margin-bottom:18px;">
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;">
+    <span class="tag {{ 'warning' if result.escalate else 'success' }}">
+      {{ kind_label.get(result.kind, result.kind) }}
+    </span>
+    <small style="color:var(--muted);">
+      [{{ result.platform_label }}] {{ result.length }}자 / 최대 {{ result.max_len }}자
+    </small>
+  </div>
+
+  {% if result.escalate %}
+    <div class="note" style="background:var(--warn-bg); color:var(--warn); margin-top:0;">
+      이물질·건강·환불·법적 언급이 있는 리뷰예요. 자동 답글을 만들지 않았습니다 —
+      사장님이 직접 확인하고 답해주세요.
+    </div>
+  {% else %}
+    <textarea id="draft" class="fld" rows="9"
+              style="font-size:15px;">{{ result.text }}</textarea>
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button class="btn primary" type="button" onclick="copyDraft()">📋 복사하기</button>
+      <span id="copied" style="font-size:13px; color:var(--ok); align-self:center; display:none;">
+        복사됐어요! 배민/쿠팡에 붙여넣으세요
+      </span>
+    </div>
+    <div class="note" style="font-size:12px;">
+      마음에 안 들면 위에서 바로 고쳐 쓰거나, 아래 '다시 만들기'를 누르면 다른 답글이 나와요.
+    </div>
+  {% endif %}
+</div>
+<script>
+function copyDraft() {
+  const t = document.getElementById('draft');
+  t.select();
+  navigator.clipboard.writeText(t.value).then(() => {
+    document.getElementById('copied').style.display = 'inline';
+  }).catch(() => { document.execCommand('copy'); });
+}
+</script>
+{% endif %}
+
+<form method="post" class="post">
+  <label class="lbl">리뷰 내용 (그대로 붙여넣기)</label>
+  <textarea name="content" class="fld" rows="5"
+            placeholder="예) 베이글이 겉은 바삭하고 속은 촉촉해서 너무 맛있었어요! 크림치즈도 넉넉해서 좋았습니다"
+            >{{ form.content or '' }}</textarea>
+  <small style="color:var(--muted); font-size:12px;">사진만 있는 리뷰면 비워두세요.</small>
+
+  <div class="grid2" style="margin-top:14px;">
+    <div>
+      <label class="lbl">플랫폼</label>
+      <select name="platform" class="fld">
+        {% for code, label, maxlen in platforms %}
+          <option value="{{ code }}" {{ 'selected' if form.platform == code else '' }}>
+            {{ label }} (최대 {{ maxlen }}자)
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="lbl">별점</label>
+      <select name="rating" class="fld">
+        {% for r in [5, 4, 3, 2, 1] %}
+          <option value="{{ r }}" {{ 'selected' if form.rating|string == r|string else '' }}>
+            {{ '★' * r }} {{ r }}점
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="grid2" style="margin-top:14px;">
+    <div>
+      <label class="lbl">작성자 (비우면 '고객')</label>
+      <input name="author" class="fld" value="{{ form.author or '' }}" placeholder="김**">
+    </div>
+    <div>
+      <label class="lbl">주문 횟수 (모르면 비움)</label>
+      <input name="order_count" class="fld" value="{{ form.order_count or '' }}"
+             placeholder="3" inputmode="numeric">
+    </div>
+  </div>
+
+  <div style="margin-top:14px;">
+    <label class="lbl">주문 메뉴 (쉼표로 구분)</label>
+    <input name="menus" class="fld" value="{{ form.menus or '' }}"
+           placeholder="플레인 베이글, 플레인 크림치즈">
+  </div>
+
+  <button class="btn primary" type="submit" style="margin-top:18px; width:100%; justify-content:center;">
+    {{ '🔄 다시 만들기' if result else '✍️ 답글 초안 만들기' }}
+  </button>
+</form>
+
+<div class="note" style="font-size:12px;">
+  답글 톤·매장 정보는 <b>knowledge/</b> 금고와 <b>reference/reply_context.md</b> 를 근거로 만들어요.
+  텔레그램 봇이 쓰는 것과 똑같은 생성기입니다.
+</div>
+
+{% endblock %}
