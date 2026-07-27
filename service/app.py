@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 import pathlib
 import sys
+import traceback
 from datetime import datetime, timedelta, timezone
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -64,6 +65,26 @@ def no_index(resp):
     """검색엔진 수집 금지 — 비밀 주소가 검색에 노출되면 의미가 없다."""
     resp.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
     return resp
+
+
+@app.errorhandler(Exception)
+def record_error(e):
+    """화면에서 난 모든 오류를 DB(error_log)에 남긴다.
+
+    집 PC 의 새벽 자동 점검이 이 기록을 읽어 원인을 고친다. 404 는 비밀 주소를
+    모르는 접근이라 정상 동작이므로 기록하지 않는다(로그가 쓰레기로 찬다).
+    """
+    code = getattr(e, "code", 500)
+    if code == 404:
+        return e
+    db.log_error(
+        "service", str(e), kind=type(e).__name__,
+        path=request.path, detail=traceback.format_exc(),
+    )
+    if code != 500:
+        return e
+    return ("문제가 생겼어요. 잠시 뒤 다시 시도해주세요. "
+            "계속 그러면 사장님께 알려주세요."), 500
 
 
 @app.route("/robots.txt")
@@ -166,8 +187,9 @@ def collect(path_key):
     check(path_key)
     try:
         db.request_collect()
-    except Exception:  # noqa: BLE001 — 화면에서 상태로 보여주므로 조용히 넘긴다
-        pass
+    except Exception as e:  # noqa: BLE001 — 화면은 상태로 안내, 원인은 기록
+        db.log_error("service", str(e), kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
     return redirect(url_for("home", path_key=path_key))
 
 
@@ -187,8 +209,11 @@ def save_draft(path_key, review_id):
     text = (request.form.get("draft") or "").strip()
     try:
         db.save_reply_draft(review_id, text)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as e:  # noqa: BLE001 — 저장 실패를 조용히 넘기면 직원이
+        # 고친 답글이 사라진 걸 모른다. 원인을 반드시 남긴다.
+        db.log_error("service", f"답글 저장 실패(review {review_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
     return redirect(url_for("home", path_key=path_key) + f"#r{review_id}")
 
 
@@ -197,8 +222,10 @@ def done(path_key, review_id):
     check(path_key)
     try:
         db.mark_replied(review_id)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"등록완료 표시 실패(review {review_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
     return redirect(url_for("home", path_key=path_key))
 
 

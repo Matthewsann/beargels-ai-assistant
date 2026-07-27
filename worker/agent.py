@@ -63,6 +63,8 @@ def collect_reviews() -> tuple[int, list[str]]:
     except Exception as e:  # noqa: BLE001 — 한쪽 실패가 전체를 막지 않게
         warnings.append(f"배민 수집 실패: {str(e)[:120]}")
         logger.warning("배민 수집 실패: %s", e)
+        db.log_error("worker", f"배민 수집 실패: {e}", kind=type(e).__name__,
+                     path="collect/baemin", detail=traceback.format_exc())
 
     try:
         from crawler.coupang import CoupangCrawler
@@ -73,6 +75,8 @@ def collect_reviews() -> tuple[int, list[str]]:
     except Exception as e:  # noqa: BLE001
         warnings.append(f"쿠팡 수집 실패: {str(e)[:120]}")
         logger.warning("쿠팡 수집 실패: %s", e)
+        db.log_error("worker", f"쿠팡 수집 실패: {e}", kind=type(e).__name__,
+                     path="collect/coupang", detail=traceback.format_exc())
 
     return saved, warnings
 
@@ -102,6 +106,9 @@ def make_drafts() -> int:
             draft = generate_review_reply(review)
         except Exception as e:  # noqa: BLE001 — 한 건 실패가 전체를 막지 않게
             logger.warning("초안 생성 실패(리뷰 %s): %s", row.get("id"), e)
+            db.log_error("worker", f"초안 생성 실패(리뷰 {row.get('id')}): {e}",
+                         kind=type(e).__name__, path="make_drafts",
+                         detail=traceback.format_exc())
             continue
         db.save_reply_draft(row["id"], draft)
         made += 1
@@ -126,6 +133,9 @@ def run_job(job) -> None:
     except Exception as e:  # noqa: BLE001
         logger.error("수집 요청 #%s 실패: %s", jid, e)
         logger.debug(traceback.format_exc())
+        db.log_error("worker", f"수집 요청 #{jid} 실패: {e}",
+                     kind=type(e).__name__, path="run_job",
+                     detail=traceback.format_exc())
         db.finish_job(jid, "error", str(e)[:400], 0)
     finally:
         db.worker_ping("idle", "대기 중")

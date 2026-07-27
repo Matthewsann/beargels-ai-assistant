@@ -318,6 +318,39 @@ def mark_replied(review_id):
      .eq("id", review_id).execute())
 
 
+def log_error(source, message, kind=None, path=None, detail=None):
+    """오류 1건을 error_log 에 남긴다(집 PC 새벽 점검이 이걸 읽는다).
+
+    ⚠️ 기록 자체가 실패해도 절대 예외를 올리지 않는다 — 로그 때문에 화면이
+       죽으면 본말전도다.
+    """
+    try:
+        get_client().table("error_log").insert({
+            "source": source,
+            "path": (path or "")[:200],
+            "kind": (kind or "")[:100],
+            "message": (message or "")[:500],
+            "detail": (detail or "")[:4000],
+        }).execute()
+    except Exception:  # noqa: BLE001
+        logger.warning("에러 기록 실패(무시): %s", (message or "")[:100])
+
+
+def get_errors(only_unfixed=True, limit=100):
+    """최근 오류 목록. 새벽 자동 점검이 읽는다."""
+    q = get_client().table("error_log").select("*")
+    if only_unfixed:
+        q = q.eq("fixed", False)
+    return q.order("at", desc=True).limit(limit).execute().data
+
+
+def mark_error_fixed(error_id, note=None):
+    """처리 완료 표시 — 다음 점검 때 또 보지 않게 한다."""
+    (get_client().table("error_log")
+     .update({"fixed": True, "note": (note or "")[:500]})
+     .eq("id", error_id).execute())
+
+
 def get_pending_reviews(limit=50):
     """답글이 아직 안 끝난 리뷰를 최신순으로 가져온다.
 
