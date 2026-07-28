@@ -1,0 +1,76 @@
+# 직원용 리뷰 답글 서비스 자동 배포
+#
+# main 에 push 되면 PythonAnywhere 가 코드를 내려받고 웹앱을 재시작한다.
+# 사람이 콘솔에 들어가 git pull + Reload 를 누르지 않아도 된다.
+#
+# 필요한 GitHub Secret 1개:
+#   PA_API_TOKEN  — PythonAnywhere Account → API token 에서 발급한 토큰
+#
+# service/ 와 database/ 가 바뀔 때만 돈다(블로그·크롤러 수정으로는 안 돈다).
+
+name: deploy-service
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'service/**'
+      - 'database/supabase_client.py'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:        # 수동으로도 돌릴 수 있게
+
+env:
+  PA_USER: beargels
+  PA_DOMAIN: beargels.pythonanywhere.com
+  PA_HOST: https://www.pythonanywhere.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 코드 내려받기 (PythonAnywhere 콘솔에 git pull 실행)
+        run: |
+          set -euo pipefail
+          AUTH="Authorization: Token ${{ secrets.PA_API_TOKEN }}"
+
+          # 살아있는 Bash 콘솔을 찾는다(없으면 실패 — 사이트에서 콘솔 하나를 열어두면 된다)
+          CONSOLES=$(curl -sf -H "$AUTH" "$PA_HOST/api/v0/user/$PA_USER/consoles/")
+          echo "$CONSOLES" | python3 -c "
+          import json,sys
+          rows=json.load(sys.stdin)
+          bash=[c for c in rows if c.get('executable','').endswith('bash')]
+          if not bash:
+              print('NO_CONSOLE'); sys.exit(0)
+          print(bash[0]['id'])
+          " > console_id.txt
+          CID=$(cat console_id.txt)
+          if [ "$CID" = "NO_CONSOLE" ]; then
+            echo '::error::PythonAnywhere 에 Bash 콘솔이 없습니다. 사이트에서 Bash 콘솔을 하나 열어두세요.'
+            exit 1
+          fi
+          echo "콘솔 #$CID 에 git pull 을 보냅니다."
+
+          curl -sf -X POST -H "$AUTH" \
+            --data-urlencode $'input=cd ~/beargels-ai-assistant && git pull\n' \
+            "$PA_HOST/api/v0/user/$PA_USER/consoles/$CID/send_input/" > /dev/null
+
+          # git pull 이 끝날 시간을 준다(콘솔은 비동기라 응답을 기다려주지 않는다)
+          sleep 25
+
+      - name: 웹앱 재시작
+        run: |
+          set -euo pipefail
+          curl -sf -X POST -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}" \
+            "$PA_HOST/api/v0/user/$PA_USER/webapps/$PA_DOMAIN/reload/" > /dev/null
+          echo "재시작 완료"
+
+      - name: 실제로 떴는지 확인
+        run: |
+          set -euo pipefail
+          sleep 8
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' "https://$PA_DOMAIN/${{ secrets.PA_SERVICE_PATH }}/")
+          echo "직원 화면 응답: $CODE"
+          if [ "$CODE" != "200" ]; then
+            echo "::error::배포 후 화면이 정상(200)이 아닙니다: $CODE"
+            exit 1
+          fi
