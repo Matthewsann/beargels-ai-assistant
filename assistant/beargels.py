@@ -513,15 +513,20 @@ def generate_review_reply(review):
 
     try:
         # 내장 학습: 누적 규칙 + 사장님이 승인한 실제 답글 예시(few-shot) 주입.
-        from assistant.reply_learning import examples_block, learned_rules
+        from assistant.reply_learning import (
+            edits_block, examples_block, learned_rules,
+        )
         rules = learned_rules()
         rules_block = f"[반드시 지킬 규칙]\n{rules}\n\n" if rules else ""
         ex_block = examples_block(review, k=3)
         ex_block = (ex_block + "\n\n") if ex_block else ""
+        # diff 학습: 사장님이 초안을 고친 사례(수정 전→후)로 취향을 보정.
+        ed_block = edits_block(k=3)
+        ed_block = (ed_block + "\n\n") if ed_block else ""
         ctx = _reply_context()
         ctx_block = f"[참고 사실(백데이터)]\n{ctx}\n\n" if ctx else ""
         user = (
-            f"{rules_block}{ex_block}{ctx_block}"
+            f"{rules_block}{ex_block}{ed_block}{ctx_block}"
             f"[{cfg['label']}] {visit} '{author}'가 {menus} 주문 후 "
             f"별점 {rating}점으로 남긴 리뷰:\n"
             f"\"{content or '(사진만, 텍스트 없음)'}\"\n\n"

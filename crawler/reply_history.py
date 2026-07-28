@@ -220,7 +220,69 @@ def _write_markdown(data):
         "\n".join(lines), encoding="utf-8")
 
 
+def _parse_date(s):
+    """'2026-07-24' / '2026년 7월 17일' 등 혼재 포맷을 date로(실패 시 None)."""
+    s = (s or "").strip()
+    m = re.search(r"(\d{4})[-.년]\s*(\d{1,2})[-.월]\s*(\d{1,2})", s)
+    if not m:
+        return None
+    try:
+        return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    except ValueError:
+        return None
+
+
+PROGRAM_LAUNCH_DATE = "2026-07-20"  # 답글 프로그램 도입일(이후 답글만 학습)
+
+
+def import_recent_approved(since=PROGRAM_LAUNCH_DATE):
+    """도입일 이후 실제 게시된 답글을 '승인 예시'로 편입한다(#3 재크롤링 학습).
+
+    reference/reply_examples.json(build() 산출물)에서 owner_reply가 있고
+    리뷰 날짜가 since 이후인 것만 골라 학습 예시로 저장한다.
+
+    ⚠️ since 이전 답글은 이전(템플릿/딱딱한 톤) 방식이라 말투 학습에 넣지
+       않는다(모듈 상단 주의 참고). 이미 게시/수정으로 저장된 예시(초안 diff
+       포함)는 덮어쓰지 않는다.
+    """
+    from assistant.reply_learning import _load_examples, record_example
+
+    since_d = _parse_date(since)
+    try:
+        data = json.loads(
+            (REF_DIR / "reply_examples.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        logger.warning("reply_examples.json 없음 — 먼저 build()를 실행하세요.")
+        return 0
+
+    have = {(e.get("platform"), str(e.get("review_no")))
+            for e in _load_examples()}
+    n = 0
+    for r in data:
+        reply = (r.get("owner_reply") or "").strip()
+        d = _parse_date(r.get("written_date"))
+        if not reply or not d or (since_d and d < since_d):
+            continue
+        if (r.get("platform"), str(r.get("review_no"))) in have:
+            continue  # 웹 게시로 이미 학습됨(초안 diff 보존)
+        record_example(r, reply, source="crawled")
+        n += 1
+    logger.info("재크롤링 답글 %d건을 승인 예시로 편입(%s 이후)", n, since)
+    return n
+
+
 if __name__ == "__main__":
+    import sys
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    d = build(days=90)
-    print(f"수집 완료: {len(d)}건 → reference/")
+    if "--import-approved" in sys.argv:
+        # 사용: python -m crawler.reply_history --import-approved [YYYY-MM-DD]
+        i = sys.argv.index("--import-approved")
+        since = sys.argv[i + 1] if len(sys.argv) > i + 1 else \
+            PROGRAM_LAUNCH_DATE
+        n = import_recent_approved(since)
+        print(f"승인 예시 편입: {n}건 ({since} 이후)")
+    else:
+        d = build(days=90)
+        print(f"수집 완료: {len(d)}건 → reference/")
+        n = import_recent_approved()
+        print(f"승인 예시 편입: {n}건 ({PROGRAM_LAUNCH_DATE} 이후)")

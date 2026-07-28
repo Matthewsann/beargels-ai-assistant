@@ -164,7 +164,14 @@ def draft():
     review = _find_review(data.get("platform"), data.get("review_no"))
     if not review:
         return jsonify({"ok": False, "text": ""})
-    return jsonify({"ok": True, "text": generate_review_reply(review)})
+    text = generate_review_reply(review)
+    try:
+        # diff 학습: 초안을 기억해 뒀다가 게시 시 사장님 최종본과 비교한다.
+        from assistant.reply_learning import record_draft
+        record_draft(review, text)
+    except Exception:  # noqa: BLE001
+        logger.exception("초안 기록 실패")
+    return jsonify({"ok": True, "text": text})
 
 
 @app.route("/reply", methods=["POST"])
@@ -182,9 +189,14 @@ def reply():
         return jsonify({"ok": False, "msg": f"게시 실패: {str(e)[:150]}"})
     if res.get("applied"):
         # 학습: 사장님이 승인·게시한 답글을 좋은 예시로 저장(다음 생성에 반영).
+        # diff 학습: 생성해 둔 AI 초안과 최종본이 다르면 '수정 사례'로 저장.
         try:
-            from assistant.reply_learning import record_example
-            record_example(review, text or action.draft(), "posted")
+            from assistant.reply_learning import get_draft, record_example
+            final = text or action.draft()
+            draft = get_draft(review)
+            source = "edited" if (draft and draft.strip() != final.strip()) \
+                else "posted"
+            record_example(review, final, source, draft=draft)
         except Exception:  # noqa: BLE001
             logger.exception("학습 예시 저장 실패")
         return jsonify({"ok": True, "msg": "게시 완료 ✅ (학습에 반영됨)"})
