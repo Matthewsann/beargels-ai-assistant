@@ -96,9 +96,8 @@ def _dedupe(rows: list[dict]) -> list[dict]:
     return out
 
 
-def _capture_menus(page, url: str, tag: str,
-                   settle_seconds: float = 12.0) -> list[dict]:
-    """열린 페이지에서 메뉴 화면을 띄우고, 오간 JSON 응답에서 메뉴를 긁는다."""
+def _capture_json(page, url: str, settle_seconds: float = 12.0) -> list[dict]:
+    """메뉴 화면을 띄우고 오간 JSON 응답(메뉴 관련 URL)을 전부 모은다."""
     captured: list[dict] = []
 
     def on_response(resp):
@@ -118,13 +117,56 @@ def _capture_menus(page, url: str, tag: str,
         page.wait_for_timeout(int(settle_seconds * 1000))
     finally:
         page.remove_listener("response", on_response)
+    return captured
 
+
+def _capture_menus(page, url: str, tag: str,
+                   settle_seconds: float = 12.0) -> list[dict]:
+    """메뉴 화면에서 오간 JSON 응답을 재귀 탐색해 메뉴(이름+가격)를 긁는다."""
+    captured = _capture_json(page, url, settle_seconds)
     found: list[dict] = []
     for payload in captured:
         _walk(payload, found)
     if not found:
         _dump(tag, page.content())
     return _dedupe(found)
+
+
+def _parse_baemin_menupan(payloads: list[dict]) -> list[dict]:
+    """배민 menupan API(data.menuGroups[].menus[]) 응답을 파싱한다.
+
+    숨김(HIDE)·미노출(displayYn=False) 메뉴는 '노출 중'이 아니므로 제외.
+    품절(SOLDOUT)은 노출은 되는 상태라 남기되 raw.status 로 표시한다.
+    """
+    rows: list[dict] = []
+    for payload in payloads:
+        if not isinstance(payload, dict):
+            continue
+        data = payload.get("data")
+        groups = data.get("menuGroups") if isinstance(data, dict) else None
+        if not isinstance(groups, list):
+            continue
+        for g in groups:
+            for m in (g.get("menus") or []):
+                if m.get("itemStatus") == "HIDE" or not m.get("displayYn", True):
+                    continue
+                name = (m.get("menuName") or "").strip()
+                price = None
+                for opt in (m.get("menuPriceResponses") or []):
+                    v = opt.get("price")
+                    if isinstance(v, (int, float)) and v > 0:
+                        price = int(v)
+                        break
+                if not name or price is None:
+                    continue
+                rows.append({"menu_name": name, "price": price,
+                             "raw": {"name": name, "price": price,
+                                     "status": m.get("itemStatus"),
+                                     "categoryName": g.get("menuGroupName"),
+                                     "description": m.get("menuDesc") or None}})
+        if rows:
+            break  # menupan 응답 하나면 충분
+    return _dedupe(rows)
 
 
 def _scrape_portal(url: str, tag: str, settle_seconds: float = 12.0) -> list[dict]:
@@ -143,8 +185,17 @@ def fetch_baemin_menus() -> list[dict]:
             _dump("baemin_home", page.content())
             logger.warning("배민 가게 ID를 찾지 못함 — 로그인 상태 확인 필요")
             return []
-        rows = _capture_menus(page, BAEMIN_MENU_URL_TPL.format(shop=m.group(1)),
-                              "baemin")
+        url = BAEMIN_MENU_URL_TPL.format(shop=m.group(1))
+        captured = _capture_json(page, url)
+        rows = _parse_baemin_menupan(captured)
+        if not rows:
+            # menupan 스키마가 바뀌었으면 예전 방식(재귀 탐색)으로 버틴다.
+            found: list[dict] = []
+            for payload in captured:
+                _walk(payload, found)
+            rows = _dedupe(found)
+        if not rows:
+            _dump("baemin", page.content())
     logger.info("배민 노출 메뉴 %d건", len(rows))
     return rows
 
