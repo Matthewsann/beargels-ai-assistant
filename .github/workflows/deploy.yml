@@ -20,6 +20,7 @@ on:
     paths:
       - 'service/**'
       - 'database/supabase_client.py'
+      - 'database/blog_store.py'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
@@ -57,7 +58,11 @@ jobs:
           upload service/app.py
           upload service/wsgi.py
           upload service/templates/staff.html
+          upload service/templates/blog_base.html
+          upload service/templates/blog.html
+          upload service/templates/blog_post.html
           upload database/supabase_client.py
+          upload database/blog_store.py
 
       - name: 웹앱 재시작
         run: |
