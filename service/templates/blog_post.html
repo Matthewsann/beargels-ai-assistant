@@ -1,0 +1,64 @@
+{% extends "blog_base.html" %}
+{% block heading %}글 보기{% endblock %}
+{% block sub %}고치고 → 네이버에 초안 넣기{% endblock %}
+{% block content %}
+
+  <a href="{{ url_for('blog_home', path_key=key) }}"
+     style="font-size:13px; color:var(--muted); text-decoration:none;">← 블로그로</a>
+
+  <div class="card" style="margin-top:10px;">
+    <div class="meta">
+      {% if post.status == 'ready' %}<span class="tag c">발행 대기</span>
+      {% elif post.status == 'scheduled' %}<span class="tag b">예약됨 {{ post.scheduled_at }}</span>
+      {% elif post.status == 'published' %}<span class="tag g">발행 완료</span>{% endif %}
+      {% if post.post_type %}<span>{{ post.post_type }}</span>{% endif %}
+      {% if post.main_keyword %}<span>· {{ post.main_keyword }}</span>{% endif %}
+    </div>
+    <span class="ttl" style="font-size:15px;">{{ post.title or '(제목 없음)' }}</span>
+    {% if post.prepared_at %}
+    <div class="note" style="margin-top:9px;">✅ 네이버에 임시저장돼 있어요. 네이버 → 글쓰기 → 저장 목록에서 사진 넣고 <b>발행</b>을 눌러주세요.</div>
+    {% endif %}
+  </div>
+
+  <form method="post" action="{{ url_for('blog_post_publish', path_key=key, post_id=post.id) }}">
+    <button class="btn primary wide" type="submit">🚀 네이버에 초안 넣기</button>
+  </form>
+  <div style="font-size:12px; color:var(--muted); margin:7px 0 16px; text-align:center;">
+    집 PC가 네이버에 임시저장까지 합니다. 최종 발행은 사장님이 직접.
+  </div>
+
+  <span class="lbl">본문 (고치고 저장할 수 있어요)</span>
+  <form method="post" action="{{ url_for('blog_post_save', path_key=key, post_id=post.id) }}">
+    <textarea name="body" rows="18">{{ post.body or '' }}</textarea>
+    <button class="btn wide" type="submit" style="margin-top:8px;">💾 저장</button>
+  </form>
+
+  <div class="sec">관리</div>
+  <div class="panel">
+    <form method="post" action="{{ url_for('blog_post_status', path_key=key, post_id=post.id) }}"
+          style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+      <input type="hidden" name="status" value="scheduled">
+      <input type="datetime-local" name="scheduled_at" style="flex:1;">
+      <button class="btn sm" type="submit">📅 예약</button>
+    </form>
+    <div class="row">
+      {% if post.status != 'published' %}
+      <form method="post" action="{{ url_for('blog_post_status', path_key=key, post_id=post.id) }}" style="flex:1;">
+        <input type="hidden" name="status" value="published">
+        <button class="btn sm wide" type="submit">✅ 발행 완료로 표시</button>
+      </form>
+      {% else %}
+      <form method="post" action="{{ url_for('blog_post_status', path_key=key, post_id=post.id) }}" style="flex:1;">
+        <input type="hidden" name="status" value="ready">
+        <button class="btn sm wide" type="submit">↩ 대기로 되돌리기</button>
+      </form>
+      {% endif %}
+      <form method="post" action="{{ url_for('blog_post_status', path_key=key, post_id=post.id) }}" style="flex:1;"
+            onsubmit="return confirm('이 글을 휴지통으로 옮길까요?');">
+        <input type="hidden" name="status" value="trashed">
+        <button class="btn sm wide" type="submit" style="color:var(--bad); border-color:#e8bdb7;">🗑 삭제</button>
+      </form>
+    </div>
+  </div>
+
+{% endblock %}

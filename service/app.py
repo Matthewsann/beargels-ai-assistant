@@ -245,6 +245,142 @@ def done(path_key, review_id):
     return redirect(url_for("home", path_key=path_key))
 
 
+# ---------------------------------------------------------------------------
+# 블로그 (📝) — 화면·버튼은 여기, 무거운 일은 집 PC 일꾼이 한다
+# ---------------------------------------------------------------------------
+
+from database import blog_store as blog  # noqa: E402
+
+
+def _blog_job_view(job) -> dict | None:
+    """블로그 작업 진행 상태를 화면용으로."""
+    if not job:
+        return None
+    label = {
+        "blog_recommend": "글감 추천", "blog_draft": "초안 작성",
+        "blog_publish": "네이버 초안 넣기", "blog_rank": "순위 확인",
+    }.get(job.get("kind"), job.get("kind") or "")
+    return {
+        "kind": label,
+        "status": job.get("status"),
+        "busy": job.get("status") in ("pending", "running"),
+        "message": job.get("message") or "",
+    }
+
+
+@app.route("/<path_key>/blog/")
+def blog_home(path_key):
+    check(path_key)
+    error = None
+    posts, recs, ranks, job = [], [], [], None
+    try:
+        posts = blog.list_posts(limit=50)
+        recs = blog.list_recommendations()
+        ranks = blog.latest_ranks()
+        job = _blog_job_view(blog.latest_blog_job())
+    except Exception as e:  # noqa: BLE001
+        error = f"데이터를 불러오지 못했어요: {str(e)[:150]}"
+        db.log_error("service", f"블로그 화면 로드 실패: {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+    return render_template("blog.html", key=path_key, posts=posts, recs=recs,
+                           ranks=ranks, job=job, worker=_worker_view(), error=error)
+
+
+def _ask_worker(path_key, kind, payload=None):
+    """집 PC 일꾼에게 작업을 요청하고 블로그 홈으로 돌아간다."""
+    try:
+        blog.request_blog_job(kind, payload or {}, by="web")
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"블로그 작업 요청 실패({kind}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+    return redirect(url_for("blog_home", path_key=path_key))
+
+
+@app.route("/<path_key>/blog/recommend", methods=["POST"])
+def blog_recommend(path_key):
+    check(path_key)
+    return _ask_worker(path_key, "blog_recommend")
+
+
+@app.route("/<path_key>/blog/rank", methods=["POST"])
+def blog_rank(path_key):
+    check(path_key)
+    return _ask_worker(path_key, "blog_rank")
+
+
+@app.route("/<path_key>/blog/draft", methods=["POST"])
+def blog_draft(path_key):
+    check(path_key)
+    subs = [s.strip() for s in (request.form.get("sub_keywords") or "").split(",") if s.strip()]
+    payload = {
+        "topic": request.form.get("title") or "",
+        "title": request.form.get("title") or "",
+        "post_type": request.form.get("post_type") or "정보성",
+        "main_keyword": request.form.get("main_keyword") or "",
+        "sub_keywords": subs,
+    }
+    return _ask_worker(path_key, "blog_draft", payload)
+
+
+@app.route("/<path_key>/blog/post/<int:post_id>")
+def blog_post(path_key, post_id):
+    check(path_key)
+    post = None
+    error = None
+    try:
+        post = blog.get_post(post_id)
+    except Exception as e:  # noqa: BLE001
+        error = f"글을 불러오지 못했어요: {str(e)[:150]}"
+    if post is None and error is None:
+        abort(404)
+    return render_template("blog_post.html", key=path_key, post=post or {}, error=error)
+
+
+@app.route("/<path_key>/blog/post/<int:post_id>/save", methods=["POST"])
+def blog_post_save(path_key, post_id):
+    check(path_key)
+    try:
+        blog.update_post(post_id, body=request.form.get("body", ""))
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"블로그 글 저장 실패(post {post_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+    return redirect(url_for("blog_post", path_key=path_key, post_id=post_id))
+
+
+@app.route("/<path_key>/blog/post/<int:post_id>/publish", methods=["POST"])
+def blog_post_publish(path_key, post_id):
+    """집 PC 일꾼에게 '네이버 임시저장' 요청. 실제 발행 버튼은 사장님이 직접."""
+    check(path_key)
+    try:
+        blog.request_blog_job("blog_publish", {"post_id": post_id}, by="web")
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"네이버 초안 요청 실패(post {post_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+    return redirect(url_for("blog_post", path_key=path_key, post_id=post_id))
+
+
+@app.route("/<path_key>/blog/post/<int:post_id>/status", methods=["POST"])
+def blog_post_status(path_key, post_id):
+    check(path_key)
+    new = request.form.get("status", "ready")
+    try:
+        if new == "scheduled":
+            blog.set_status(post_id, "scheduled", request.form.get("scheduled_at") or None)
+        else:
+            blog.set_status(post_id, new)
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"블로그 상태 변경 실패(post {post_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+    if new == "trashed":
+        return redirect(url_for("blog_home", path_key=path_key))
+    return redirect(url_for("blog_post", path_key=path_key, post_id=post_id))
+
+
 if __name__ == "__main__":
     if not SERVICE_PATH:
         print("[!] SERVICE_PATH 가 없습니다. .env 에 비밀 주소 조각을 넣어주세요.")

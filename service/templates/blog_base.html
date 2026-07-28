@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{% block title %}베어글스 블로그{% endblock %}</title>
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
+          --ok:#3b6d11; --ok-bg:#eaf3de; --bad:#a3271f; --bad-bg:#fbe9e7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px 14px 64px; }
+  .head { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .logo { width:36px; height:36px; border-radius:10px; background:var(--accent-bg);
+          color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:19px; }
+  .head b { font-size:16px; } .head small { display:block; color:var(--muted); font-size:12px; }
+  .nav { display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
+  .nav a { font-size:13px; padding:7px 13px; border-radius:20px; text-decoration:none;
+           color:var(--muted); background:var(--card); border:1px solid var(--line); }
+  .nav a.on { background:var(--accent-bg); color:var(--accent); border-color:var(--accent-bg); font-weight:600; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px;
+           padding:14px; margin-bottom:16px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .dot.on { background:#3b6d11; } .dot.off { background:#a3271f; } .dot.busy { background:#c98a12; }
+  .status { font-size:13px; color:var(--muted); margin-bottom:10px; }
+  .btn { border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:9px;
+         padding:11px 14px; font-size:14px; font-family:inherit; cursor:pointer;
+         display:inline-flex; align-items:center; justify-content:center; gap:6px; text-decoration:none; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  .btn.primary[disabled] { opacity:.5; }
+  .btn.wide { width:100%; }
+  .btn.sm { padding:8px 11px; font-size:13px; }
+  .row { display:flex; gap:8px; }
+  input, select, textarea { font-family:inherit; font-size:14px; border:1px solid var(--line);
+    border-radius:9px; padding:10px 11px; background:var(--card); color:var(--ink); width:100%; }
+  textarea { resize:vertical; line-height:1.65; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:13px 14px; margin-bottom:10px; }
+  .meta { display:flex; align-items:center; gap:7px; flex-wrap:wrap; font-size:12px;
+          color:var(--muted); margin-bottom:6px; }
+  .tag { font-size:11px; padding:2px 9px; border-radius:20px; white-space:nowrap; }
+  .tag.b { background:var(--accent-bg); color:var(--accent); }
+  .tag.c { background:var(--warn-bg); color:var(--warn); }
+  .tag.g { background:var(--ok-bg); color:var(--ok); }
+  .lbl { font-size:12px; color:var(--muted); margin-bottom:5px; display:block; }
+  .empty { text-align:center; color:var(--muted); padding:40px 16px; font-size:14px; }
+  .note { font-size:12px; padding:11px 12px; border-radius:9px; margin-bottom:14px;
+          background:var(--accent-bg); color:var(--accent); }
+  .note.bad { background:var(--bad-bg); color:var(--bad); }
+  .ttl { font-size:14px; font-weight:600; display:block; }
+  .sec { font-size:14px; font-weight:600; margin:18px 0 8px; }
+  a.plain { text-decoration:none; color:inherit; display:block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="head">
+    <div class="logo">🐻</div>
+    <div><b>{% block heading %}베어글스 블로그{% endblock %}</b>
+      <small>{% block sub %}네이버 블로그 자동화{% endblock %}</small></div>
+  </div>
+
+  <div class="nav">
+    <a href="{{ url_for('home', path_key=key) }}">💬 리뷰 답글</a>
+    <a href="{{ url_for('blog_home', path_key=key) }}" class="on">📝 블로그</a>
+  </div>
+
+  {% if error %}<div class="note bad">{{ error }}</div>{% endif %}
+
+  {% block content %}{% endblock %}
+
+</div>
+</body>
+</html>

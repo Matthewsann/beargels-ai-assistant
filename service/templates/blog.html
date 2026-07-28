@@ -1,0 +1,88 @@
+{% extends "blog_base.html" %}
+{% block sub %}글감 추천 → 초안 → 네이버 초안 넣기{% endblock %}
+{% block content %}
+
+  <div class="panel">
+    <div class="status">
+      <span class="dot {{ 'busy' if worker.state == 'working' else ('on' if worker.alive else 'off') }}"></span>
+      집 PC: {{ worker.text }}
+    </div>
+    {% if job and job.busy %}
+      <div class="note">⏳ {{ job.kind }} 진행 중이에요. 잠시 뒤 새로고침 해주세요.</div>
+    {% elif job and job.message %}
+      <div class="note">✅ 방금 {{ job.kind }}: {{ job.message }}</div>
+    {% endif %}
+    <div class="row">
+      <form method="post" action="{{ url_for('blog_recommend', path_key=key) }}" style="flex:1;">
+        <button class="btn wide" type="submit"
+                {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>🎯 글감 추천</button>
+      </form>
+      <form method="post" action="{{ url_for('blog_rank', path_key=key) }}" style="flex:1;">
+        <button class="btn wide" type="submit"
+                {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>📊 순위 확인</button>
+      </form>
+    </div>
+  </div>
+
+  {% if ranks %}
+  <div class="sec">📊 키워드 순위</div>
+  <div class="panel" style="padding:8px 14px;">
+    {% for r in ranks %}
+    <div style="display:flex; justify-content:space-between; gap:10px; padding:7px 0;
+                border-bottom:1px solid var(--line);">
+      <span style="font-size:13px; min-width:0; overflow:hidden; text-overflow:ellipsis;">{{ r.keyword }}</span>
+      <span style="font-size:13px; white-space:nowrap;">
+        {% if r.found %}
+          <b style="color:{{ '#3b6d11' if r.page == 1 else '#854f0b' }};">{{ r.page }}페이지 {{ r.pos_in_page }}위</b>
+        {% else %}
+          <span style="color:var(--muted);">{{ r.scanned }}위 밖</span>
+        {% endif %}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if recs %}
+  <div class="sec">🎯 추천 글감 <span style="font-weight:400; color:var(--muted); font-size:12px;">· 위에서부터 쓰세요</span></div>
+  {% for r in recs %}
+  <div class="card">
+    <div class="meta">
+      <span>{{ r.priority }}.</span>
+      <span>{{ '🟢' if r.tier == 'green' else ('🟡' if r.tier == 'yellow' else '🔴') }}</span>
+      <span class="tag b">{{ r.main_keyword }}</span>
+      {% if r.competition %}<span>경쟁 {{ r.competition }}</span>{% endif %}
+    </div>
+    <span class="ttl">{{ r.title }}</span>
+    {% if r.why %}<div style="font-size:12px; color:var(--muted); margin-top:4px;">💡 {{ r.why }}</div>{% endif %}
+    <form method="post" action="{{ url_for('blog_draft', path_key=key) }}" style="margin-top:9px;">
+      <input type="hidden" name="title" value="{{ r.title }}">
+      <input type="hidden" name="post_type" value="{{ r.post_type }}">
+      <input type="hidden" name="main_keyword" value="{{ r.main_keyword }}">
+      <input type="hidden" name="sub_keywords" value="{{ (r.sub_keywords or [])|join(', ') }}">
+      <button class="btn sm" type="submit"
+              {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>✍️ 이걸로 초안 만들기</button>
+    </form>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  <div class="sec">📚 글 창고 <span style="font-weight:400; color:var(--muted); font-size:12px;">{{ posts|length }}편</span></div>
+  {% if posts %}
+    {% for p in posts %}
+    <a class="plain card" href="{{ url_for('blog_post', path_key=key, post_id=p.id) }}">
+      <div class="meta">
+        {% if p.status == 'ready' %}<span class="tag c">발행 대기</span>
+        {% elif p.status == 'scheduled' %}<span class="tag b">예약됨</span>
+        {% elif p.status == 'published' %}<span class="tag g">발행 완료</span>{% endif %}
+        {% if p.post_type %}<span>{{ p.post_type }}</span>{% endif %}
+        {% if p.main_keyword %}<span>· {{ p.main_keyword }}</span>{% endif %}
+      </div>
+      <span class="ttl">{{ p.title or '(제목 없음)' }}</span>
+    </a>
+    {% endfor %}
+  {% else %}
+    <div class="panel"><div class="empty">아직 글이 없어요.<br>위 '글감 추천'부터 눌러보세요.</div></div>
+  {% endif %}
+
+{% endblock %}
