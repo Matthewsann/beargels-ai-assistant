@@ -145,6 +145,40 @@ def collect_status():
     return jsonify(running=_collect["running"], msg=_collect["msg"])
 
 
+_history = {"running": False, "msg": ""}
+
+
+def _run_history():
+    """전체 리뷰·답글 내역 수집 + 도입일 이후 답글 학습 편입(버튼 1회용)."""
+    try:
+        from crawler.reply_history import build, import_recent_approved
+        data = build()                      # 전체 기간(소진 시 자동 종료)
+        n = import_recent_approved()        # 도입일 이후 답글 → 승인 예시
+        _history["msg"] = (f"전체 내역 {len(data)}건 수집, "
+                           f"답글 {n}건 학습 편입 ✅")
+    except Exception as e:  # noqa: BLE001
+        logger.exception("전체 내역 수집 실패")
+        _history["msg"] = f"실패: {str(e)[:100]}"
+    finally:
+        _history["running"] = False
+
+
+@app.route("/collect-history", methods=["POST"])
+def collect_history():
+    """전체 리뷰·답글 수집 + 학습 편입을 백그라운드로 실행한다."""
+    if _history["running"] or _collect["running"]:
+        return jsonify({"ok": False, "msg": "이미 수집 중입니다."})
+    _history.update(running=True,
+                    msg="전체 내역 수집 중… (배민·쿠팡 전체 기간, 수 분 소요)")
+    threading.Thread(target=_run_history, daemon=True).start()
+    return jsonify({"ok": True, "msg": _history["msg"]})
+
+
+@app.route("/collect-history/status")
+def collect_history_status():
+    return jsonify(running=_history["running"], msg=_history["msg"])
+
+
 def _find_review(platform, review_no):
     """답글 대상 캐시 우선, 없으면 DB 에서 리뷰를 찾는다."""
     for r in _repliable["reviews"]:
