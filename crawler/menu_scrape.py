@@ -206,7 +206,80 @@ def fetch_coupang_menus() -> list[dict]:
     return rows
 
 
+# 스마트플레이스 '메뉴관리' 화면. 업체(비즈니스) ID는 내 업체 목록에서 자동 감지.
+NAVER_SP_BIZES_URL = "https://new.smartplace.naver.com/bizes"
+NAVER_SP_MENU_URL_TPL = "https://partner.booking.naver.com/bizes/{biz}/options/groups"
+
+
+def _parse_smartplace_state(state: dict) -> list[dict]:
+    """메뉴관리 화면의 __PRELOADED_STATE__ 에서 메뉴를 뽑는다.
+
+    options[] = 카테고리 목록, 각 원소의 options[] 가 메뉴. '추천' 카테고리는
+    다른 카테고리 메뉴의 중복 노출이라 건너뛰고, optionId 로도 한번 더 거른다.
+    """
+    rows, seen_ids = [], set()
+    for g in (state or {}).get("options") or []:
+        if not isinstance(g, dict) or g.get("name") == "추천":
+            continue
+        for m in g.get("options") or []:
+            if not isinstance(m, dict) or m.get("isDeleted"):
+                continue
+            oid = m.get("optionId")
+            if oid in seen_ids:
+                continue
+            seen_ids.add(oid)
+            name = (m.get("name") or "").strip()
+            price = m.get("price")
+            if not name or not isinstance(price, (int, float)) or price <= 0:
+                continue
+            soldout = bool(m.get("isSoldOut") or m.get("isTodaySoldOut"))
+            rows.append({"menu_name": name, "price": int(price),
+                         "raw": {"name": name, "price": int(price),
+                                 "status": "SOLDOUT" if soldout else "ACTIVE",
+                                 "categoryName": g.get("name"),
+                                 "description": m.get("desc") or None}})
+    return _dedupe(rows)
+
+
+def _fetch_naver_admin_menus(page) -> list[dict]:
+    """스마트플레이스 관리자(로그인 필요)에서 전체 메뉴를 가져온다. 실패 시 []."""
+    biz = os.getenv("NAVER_BOOKING_BIZ_ID", "").strip()
+    if not biz:
+        page.goto(NAVER_SP_BIZES_URL, wait_until="domcontentloaded")
+        page.wait_for_timeout(5000)
+        body = page.inner_text("body")
+        if "네이버 로그인이 필요한" in body:
+            logger.info("네이버 미로그인 — 공개 플레이스 페이지로 폴백")
+            return []
+        m = re.search(r"/bizes/booking/(\d+)", page.content())
+        if not m:
+            logger.info("스마트플레이스 업체 링크를 못 찾음 — 공개 페이지로 폴백")
+            return []
+        biz = m.group(1)
+    page.goto(NAVER_SP_MENU_URL_TPL.format(biz=biz),
+              wait_until="domcontentloaded")
+    page.wait_for_timeout(8000)
+    try:
+        state = page.evaluate("() => window.__PRELOADED_STATE__")
+    except Exception:  # noqa: BLE001
+        state = None
+    rows = _parse_smartplace_state(state or {})
+    if not rows:
+        _dump("naver_admin", page.content())
+    return rows
+
+
 def fetch_naver_menus() -> list[dict]:
+    """네이버 메뉴 — 스마트플레이스 관리자(전체) 우선, 안 되면 공개 페이지."""
+    with BrowserSession() as sess:
+        rows = _fetch_naver_admin_menus(sess.page)
+    if rows:
+        logger.info("네이버 노출 메뉴 %d건 (스마트플레이스 관리자)", len(rows))
+        return rows
+    return _fetch_naver_public_menus()
+
+
+def _fetch_naver_public_menus() -> list[dict]:
     """네이버플레이스 공개 메뉴 페이지(로그인 불필요)."""
     place_id = os.getenv("NAVER_PLACE_ID", "").strip()
     if not place_id:
