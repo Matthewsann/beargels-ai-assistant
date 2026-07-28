@@ -67,6 +67,13 @@ app.config.update(
 
 OPEN_PATHS = ("/login", "/static")
 
+# 인스타 릴스 파이프라인 (주제→촬영→자동편집→완성본). 로그인 잠금은
+# 아래 before_request 가 블루프린트 경로에도 그대로 적용된다.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from instagram import bp as instagram_bp  # noqa: E402
+
+app.register_blueprint(instagram_bp)
+
 
 @app.before_request
 def require_login():

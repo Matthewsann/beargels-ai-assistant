@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="sec">
+  <b>🎬 인스타 릴스</b>
+  <small>주제 → 촬영 → 자동편집 → 완성본</small>
+</div>
+
+<!-- 진행 중 프로젝트 -->
+<div class="list" id="projectList">
+  {% if projects %}
+    {% for p in projects %}
+    <a href="#" class="row" onclick="openProject('{{ p.id }}');return false;">
+      <div class="t">
+        <b>{{ p.title }}</b>
+        <small>영상·사진 {{ p.file_count }}개</small>
+      </div>
+      <span class="tag {{ 'success' if p.status == '완성' else ('accent' if p.status == '편집완료' else 'warning') }}">
+        {{ {'촬영대기':'촬영·업로드','업로드됨':'편집 대기','편집완료':'확인·피드백','완성':'완성'}.get(p.status, p.status) }}
+      </span>
+    </a>
+    {% endfor %}
+  {% else %}
+    <div class="empty">아직 릴스 프로젝트가 없어요.<br>아래에서 주제를 고르면 시작돼요.</div>
+  {% endif %}
+</div>
+
+<!-- 작업 공간 -->
+<div id="detail" style="margin-top:20px"></div>
+
+<!-- 주제 고르기 -->
+<div class="sec" style="margin-top:26px">
+  <b>이번 주 릴스 주제</b>
+  <small>클릭하면 시작</small>
+</div>
+<div class="list">
+  {% for t in topics %}
+  <a href="#" class="row" onclick='startTopic({{ t|tojson }});return false;'>
+    <div class="t">
+      <b>{{ t.title }}</b>
+      <small>🎬 {{ t.guide }}</small>
+    </div>
+    <span class="tag accent">{{ t.pillar }}</span>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="note" style="margin-top:16px">
+  영상 편집은 이 PC에서 돌아가요. 완성본은 구글 드라이브 폴더에 저장되니, 폰에서 드라이브 앱으로 열어
+  인스타·Edits 앱에서 인기 음원을 얹어 올리면 됩니다.
+</div>
+
+<style>
+  .drop { border:2px dashed var(--line); border-radius:10px; padding:22px; text-align:center;
+          color:var(--muted); background:#f6f4ee; cursor:pointer; font-size:14px; }
+  .drop.over { border-color:var(--accent); color:var(--accent); background:var(--accent-bg); }
+  .fileschips { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .fchip { font-size:12px; background:#f1efe8; border:1px solid var(--line); border-radius:6px; padding:4px 8px; }
+  .pathbox { margin-top:12px; font-size:12px; color:var(--muted); }
+  .pathbox code { display:block; background:#f1efe8; border:1px solid var(--line); border-radius:6px;
+                  padding:6px 8px; margin:4px 0; word-break:break-all; color:var(--ink); font-size:11px; }
+  .stepbar { display:flex; gap:4px; margin:14px 0 4px; flex-wrap:wrap; }
+  .stepbar span { flex:1; min-width:64px; text-align:center; font-size:11px; padding:5px 3px;
+                  border-radius:6px; background:#f1efe8; color:var(--muted); }
+  .stepbar span.on { background:var(--accent-bg); color:var(--accent); font-weight:600; }
+  .stepbar span.done { background:var(--ok-bg); color:var(--ok); }
+  #detail video { width:100%; max-width:260px; border-radius:10px; border:1px solid var(--line); background:#000; }
+  .msg { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--ink);
+         color:#fff; padding:10px 16px; border-radius:8px; font-size:13px; opacity:0; transition:.25s;
+         pointer-events:none; z-index:99; }
+  .msg.show { opacity:1; }
+</style>
+<div id="msg" class="msg"></div>
+
+<script>
+let CUR = null;
+const $ = s => document.querySelector(s);
+function msg(t){ const m=$("#msg"); m.textContent=t; m.classList.add("show");
+  clearTimeout(m._t); m._t=setTimeout(()=>m.classList.remove("show"),2600); }
+async function call(url, opts){ const r = await fetch(url, opts);
+  const d = await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||r.statusText); return d; }
+function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+async function startTopic(t){
+  const fd = new FormData();
+  ["title","hook","menu","guide","template"].forEach(k=>fd.append(k, t[k]||""));
+  const p = await call("/instagram/api/projects", {method:"POST", body:fd});
+  msg("프로젝트 생성 — 이제 영상을 올려주세요");
+  openProject(p.id);
+}
+
+async function openProject(pid){
+  CUR = await call("/instagram/api/projects/"+pid);
+  render();
+  $("#detail").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function render(){
+  const p = CUR;
+  const step = {촬영대기:2, 업로드됨:3, 편집완료:4, 완성:6}[p.status] || 2;
+  const names = ["주제","업로드","편집","확인","완성"];
+  const hasVideo = (p.files||[]).some(f=>f.kind==="video");
+  const capText = p.caption ? p.caption + ((p.hashtags||[]).length ? "\n\n"+p.hashtags.join(" ") : "") : "";
+  $("#detail").innerHTML = `
+  <div class="post">
+    <div class="sec"><b>${esc(p.title)}</b>
+      <a href="#" onclick="delProject('${p.id}');return false;" style="font-size:13px;color:var(--muted)">삭제</a></div>
+    <small style="color:var(--muted)">${esc(p.guide||"")}</small>
+    <div class="stepbar">${names.map((n,i)=>`<span class="${i+1<step?'done':(i+1===step?'on':'')}">${i+1}.${n}</span>`).join("")}</div>
+
+    <div style="margin-top:16px">
+      <span class="lbl">① 매장에서 찍은 영상 올리기</span>
+      <div id="drop" class="drop">여기로 끌어다 놓거나 클릭해서 선택</div>
+      <input id="file" type="file" accept="video/*,image/*" multiple style="display:none">
+      <div class="fileschips">${(p.files||[]).map(f=>`<span class="fchip">${f.kind==="video"?"🎬":"🖼"} ${esc(f.name)}</span>`).join("") || '<small style="color:var(--muted)">아직 없음</small>'}</div>
+      <div class="pathbox">📂 사진/영상 넣는 곳<code>${esc(p.raw_dir||"")}</code>
+        <button class="btn" style="padding:5px 10px;font-size:12px" onclick="openFolder('raw')">폴더 열기</button></div>
+    </div>
+
+    <div style="margin-top:20px">
+      <span class="lbl">② 자막·캡션</span>
+      <button class="btn" onclick="genCaption()">✨ AI 추천</button>
+      <div class="grid2" style="margin-top:10px">
+        <div><span class="lbl">상단 훅 (첫 3초)</span><input id="hook" class="fld" value="${esc(p.hook||"")}"></div>
+        <div><span class="lbl">하단 자막 (메뉴)</span><input id="menu" class="fld" value="${esc(p.menu||"")}"></div>
+      </div>
+    </div>
+
+    <div style="margin-top:20px">
+      <span class="lbl">③ 릴스 만들기 <small style="font-weight:400;color:var(--muted)">— 세로 9:16·자막·원본소리</small></span>
+      <button class="btn primary" id="rbtn" onclick="renderReel()" ${hasVideo?"":"disabled"}>
+        ${p.has_reel ? "🔄 다시 편집" : "🎬 릴스 만들기"}</button>
+      ${hasVideo?"":'<small style="display:block;color:var(--muted);margin-top:6px">영상을 먼저 올려주세요.</small>'}
+    </div>
+
+    ${p.has_reel ? `
+    <div style="margin-top:20px">
+      <span class="lbl">④ 확인</span>
+      <video controls src="/instagram/api/projects/${p.id}/reel?t=${Date.now()}"></video>
+      <small style="display:block;color:var(--muted);margin-top:8px">자막을 고치고 <b>다시 편집</b>을 누르면 새로 만들어져요.</small>
+    </div>
+    <div style="margin-top:20px">
+      <span class="lbl">⑤ 완성본 저장</span>
+      <textarea id="caption" class="fld" rows="4" placeholder="인스타에 붙일 글">${esc(capText)}</textarea>
+      <button class="btn primary" style="margin-top:8px" onclick="finalize()">📁 완성본 저장</button>
+      ${p.status==="완성"?'<span class="tag success" style="margin-left:8px">저장됨</span>':""}
+      <div class="pathbox">📁 릴스 저장되는 곳<code>${esc(p.final_dir||"")}</code>
+        <button class="btn" style="padding:5px 10px;font-size:12px" onclick="openFolder('final')">폴더 열기</button></div>
+    </div>` : ""}
+  </div>`;
+  wireDrop();
+}
+
+function wireDrop(){
+  const d=$("#drop"), f=$("#file"); if(!d) return;
+  d.onclick=()=>f.click(); f.onchange=()=>upload(f.files);
+  ["dragover","dragenter"].forEach(e=>d.addEventListener(e,ev=>{ev.preventDefault();d.classList.add("over")}));
+  ["dragleave","drop"].forEach(e=>d.addEventListener(e,ev=>{ev.preventDefault();d.classList.remove("over")}));
+  d.addEventListener("drop",ev=>upload(ev.dataTransfer.files));
+}
+async function upload(list){
+  if(!list||!list.length) return;
+  const fd=new FormData(); for(const f of list) fd.append("files", f);
+  msg("업로드 중… ("+list.length+"개)");
+  try{ await call("/instagram/api/projects/"+CUR.id+"/upload",{method:"POST",body:fd});
+    msg("업로드 완료"); openProject(CUR.id); }
+  catch(e){ msg("업로드 실패: "+e.message); }
+}
+async function genCaption(){
+  msg("자막·캡션 만드는 중…");
+  try{ const r=await call("/instagram/api/projects/"+CUR.id+"/caption",{method:"POST"});
+    msg(r.ai ? "AI 캡션 완성 ✨" : "캡션 초안 완성 (크레딧 충전 시 AI가 더 잘 써줘요)");
+    openProject(CUR.id); }
+  catch(e){ msg("실패: "+e.message); }
+}
+async function renderReel(){
+  const b=$("#rbtn"); b.disabled=true; b.textContent="편집 중… (1~2분)";
+  const fd=new FormData(); fd.append("hook",$("#hook").value); fd.append("menu",$("#menu").value);
+  try{ await call("/instagram/api/projects/"+CUR.id+"/render",{method:"POST",body:fd});
+    msg("릴스 완성! 아래에서 확인하세요"); openProject(CUR.id); }
+  catch(e){ msg("편집 실패: "+e.message); b.disabled=false; b.textContent="🎬 릴스 만들기"; }
+}
+async function finalize(){
+  const fd=new FormData(); fd.append("caption", $("#caption")?$("#caption").value:"");
+  try{ await call("/instagram/api/projects/"+CUR.id+"/finalize",{method:"POST",body:fd});
+    msg("완성본 저장됨 📁"); openProject(CUR.id); }
+  catch(e){ msg("저장 실패: "+e.message); }
+}
+async function openFolder(which){
+  const fd=new FormData(); fd.append("which",which);
+  try{ const r=await call("/instagram/api/projects/"+CUR.id+"/open",{method:"POST",body:fd});
+    msg(r.opened?"탐색기에서 폴더를 열었어요":"경로를 확인하세요"); }
+  catch(e){ msg("실패: "+e.message); }
+}
+async function delProject(pid){
+  if(!confirm("이 프로젝트를 삭제할까요?")) return;
+  await call("/instagram/api/projects/"+pid+"/delete",{method:"POST"});
+  location.reload();
+}
+</script>
+{% endblock %}

@@ -74,6 +74,7 @@
       <a href="/calendar" class="{{ 'on' if request.path.startswith('/calendar') else '' }}">📅 캘린더</a>
       <a href="/analytics" class="{{ 'on' if request.path.startswith('/analytics') else '' }}">📊 분석</a>
       <a href="/replies" class="{{ 'on' if request.path.startswith('/replies') else '' }}">💬 리뷰 답글</a>
+      <a href="/instagram" class="{{ 'on' if request.path.startswith('/instagram') else '' }}">🎬 인스타 릴스</a>
       {% if session.get('ok') %}
         <a href="/logout" style="margin-left:auto;">나가기</a>
       {% endif %}
