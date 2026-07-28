@@ -34,17 +34,17 @@ jobs:
           AUTH="Authorization: Token ${{ secrets.PA_API_TOKEN }}"
 
           # 살아있는 Bash 콘솔을 찾는다(없으면 실패 — 사이트에서 콘솔 하나를 열어두면 된다)
-          CONSOLES=$(curl -sf -H "$AUTH" "$PA_HOST/api/v0/user/$PA_USER/consoles/")
-          echo "$CONSOLES" | python3 -c "
-          import json,sys
-          rows=json.load(sys.stdin)
-          bash=[c for c in rows if c.get('executable','').endswith('bash')]
-          if not bash:
-              print('NO_CONSOLE'); sys.exit(0)
-          print(bash[0]['id'])
-          " > console_id.txt
-          CID=$(cat console_id.txt)
-          if [ "$CID" = "NO_CONSOLE" ]; then
+          # ⚠️ YAML 의 run: | 안에서는 모든 줄에 들여쓰기가 붙는다. 여기에 파이썬을
+          #    넣으면 IndentationError 가 난다(실제로 첫 배포가 이걸로 실패했다).
+          #    들여쓰기에 영향받지 않는 jq 로 파싱한다.
+          CONSOLES=$(curl -s -H "$AUTH" "$PA_HOST/api/v0/user/$PA_USER/consoles/")
+          if ! echo "$CONSOLES" | jq -e 'type == "array"' > /dev/null 2>&1; then
+            echo "::error::콘솔 목록을 가져오지 못했습니다. PA_API_TOKEN 을 확인하세요."
+            echo "$CONSOLES" | head -c 300
+            exit 1
+          fi
+          CID=$(echo "$CONSOLES" | jq -r '[.[] | select(.executable | test("bash"))][0].id // "NO_CONSOLE"')
+          if [ "$CID" = "NO_CONSOLE" ] || [ -z "$CID" ]; then
             echo '::error::PythonAnywhere 에 Bash 콘솔이 없습니다. 사이트에서 Bash 콘솔을 하나 열어두세요.'
             exit 1
           fi
