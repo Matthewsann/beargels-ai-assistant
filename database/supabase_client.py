@@ -365,6 +365,59 @@ def get_pending_reviews(limit=50):
             .limit(limit).execute().data)
 
 
+# ---------------------------------------------------------------------------
+# 메뉴 정본 (menu_items / menu_channels / menu_settings)
+# ---------------------------------------------------------------------------
+
+# 웹 화면에서 고칠 수 있는 칼럼만 받는다(오타·악의 입력으로 스키마 밖 칼럼이
+# 들어오는 것을 막는다).
+_MENU_ITEM_COLS = (
+    "menu_type", "category", "group_name", "name", "composition", "description",
+    "store_price", "delivery_price", "ingredient_cost", "cost_source",
+    "store_active", "delivery_active", "sort_order",
+)
+
+
+def menu_all():
+    """정본 메뉴 전체 — 카테고리·정렬 순."""
+    return (get_client().table("menu_items").select("*")
+            .order("sort_order").execute().data)
+
+
+def menu_channels_all():
+    return get_client().table("menu_channels").select("*").execute().data
+
+
+def menu_settings_all():
+    rows = get_client().table("menu_settings").select("*").execute().data
+    return {r["key"]: r["value"] for r in rows}
+
+
+def menu_update_item(sku, fields: dict):
+    payload = {k: v for k, v in fields.items() if k in _MENU_ITEM_COLS}
+    if not payload:
+        return None
+    payload["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    return (get_client().table("menu_items").update(payload)
+            .eq("sku", sku).execute().data)
+
+
+def menu_upsert_channel(sku, channel, fields: dict):
+    allowed = ("name_override", "price_override", "active", "note")
+    payload = {k: fields.get(k) for k in allowed if k in fields}
+    payload.update({"sku": sku, "channel": channel,
+                    "updated_at": datetime.utcnow().isoformat() + "Z"})
+    return (get_client().table("menu_channels")
+            .upsert(payload, on_conflict="sku,channel").execute().data)
+
+
+def menu_set_setting(key, value):
+    return (get_client().table("menu_settings")
+            .upsert({"key": key, "value": value,
+                     "updated_at": datetime.utcnow().isoformat() + "Z"},
+                    on_conflict="key").execute().data)
+
+
 if __name__ == "__main__":
     # 단독 실행: 연결 및 테이블 존재 확인
     logging.basicConfig(level=logging.INFO)

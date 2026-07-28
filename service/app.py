@@ -229,6 +229,72 @@ def done(path_key, review_id):
     return redirect(url_for("home", path_key=path_key))
 
 
+# ---------------------------------------------------------------------------
+# 메뉴 정본 · 원가/마진 관리
+# ---------------------------------------------------------------------------
+
+@app.route("/<path_key>/menu")
+def menu_page(path_key):
+    check(path_key)
+    return render_template("menu.html", key=path_key)
+
+
+@app.route("/<path_key>/menu/data")
+def menu_data(path_key):
+    check(path_key)
+    try:
+        return jsonify({
+            "items": db.menu_all(),
+            "channels": db.menu_channels_all(),
+            "settings": db.menu_settings_all(),
+        })
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/menu/item/<sku>", methods=["POST"])
+def menu_item_save(path_key, sku):
+    check(path_key)
+    try:
+        db.menu_update_item(sku, request.get_json(force=True) or {})
+        return jsonify({"ok": True})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"메뉴 저장 실패({sku}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/menu/channel/<sku>/<channel>", methods=["POST"])
+def menu_channel_save(path_key, sku, channel):
+    check(path_key)
+    if channel not in ("store", "baemin", "coupang", "naver"):
+        abort(400)
+    try:
+        db.menu_upsert_channel(sku, channel, request.get_json(force=True) or {})
+        return jsonify({"ok": True})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"채널 오버라이드 저장 실패({sku}/{channel}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/menu/settings/<key>", methods=["POST"])
+def menu_settings_save(path_key, key):
+    check(path_key)
+    if key not in ("channel_fees", "target_cost_rates"):
+        abort(400)
+    try:
+        db.menu_set_setting(key, request.get_json(force=True))
+        return jsonify({"ok": True})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"메뉴 설정 저장 실패({key}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
 if __name__ == "__main__":
     if not SERVICE_PATH:
         print("[!] SERVICE_PATH 가 없습니다. .env 에 비밀 주소 조각을 넣어주세요.")
