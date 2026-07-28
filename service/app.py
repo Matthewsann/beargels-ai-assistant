@@ -127,6 +127,22 @@ def _worker_view() -> dict:
             "text": f"집 PC가 꺼져 있어요 (마지막 신호 {mins}분 전)"}
 
 
+def _friendly_fail(msg: str) -> str:
+    """실패 사유를 직원이 이해할 수 있는 말로 바꾼다.
+
+    'CDP attach 실패(127.0.0.1:9222)' 같은 원문을 그대로 보여주면 직원은
+    무엇을 해야 할지 알 수 없다. 원인별로 '누가 무엇을 하면 되는지'만 남긴다.
+    """
+    m = msg or ""
+    if "CDP" in m or "attach" in m or "Chrome" in m or "크롬" in m:
+        return "집 PC 크롬을 켜는 중 문제가 있었어요. 잠시 뒤 다시 눌러주세요."
+    if "세션" in m or "로그인" in m or "SessionExpired" in m:
+        return "배민·쿠팡 로그인이 풀렸어요. 사장님께 알려주세요."
+    if "credit" in m.lower() or "크레딧" in m:
+        return "AI 답글 생성이 잠시 멈췄어요. 사장님께 알려주세요."
+    return "수집에 실패했어요. 잠시 뒤 다시 눌러주세요."
+
+
 def _job_view(job) -> dict | None:
     if not job:
         return None
@@ -134,7 +150,7 @@ def _job_view(job) -> dict | None:
         "pending": "수집 요청 접수됨 — 집 PC가 곧 시작해요",
         "running": "수집 중이에요… (30초쯤 걸려요)",
         "done": job.get("message") or "수집 완료",
-        "error": "수집 실패: " + (job.get("message") or ""),
+        "error": _friendly_fail(job.get("message")),
     }.get(job.get("status"), job.get("status"))
     return {"status": job.get("status"), "text": label,
             "busy": job.get("status") in ("pending", "running")}
