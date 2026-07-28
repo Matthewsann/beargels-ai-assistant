@@ -33,8 +33,12 @@ REF_DIR = Path(__file__).resolve().parent.parent / "reference"
 BAEMIN_REVIEWS_URL = "https://self.baemin.com/shops/reviews"
 
 
-def collect_coupang(days=90, max_pages=8):
-    """쿠팡 (리뷰, 사장님 답글) 쌍을 수집한다."""
+def collect_coupang(days=1095, max_pages=300):
+    """쿠팡 (리뷰, 사장님 답글) 쌍을 수집한다.
+
+    기본값은 '전체 수집'(최근 3년, 페이지는 리뷰가 소진되면 자동 종료).
+    fetch_reviews 가 빈 페이지/total 도달 시 스스로 멈추므로 상한만 넉넉히.
+    """
     out = []
     with CoupangCrawler() as c:
         revs = c.fetch_reviews(days=days, max_pages=max_pages)
@@ -76,7 +80,7 @@ def _clean_baemin_reply(text):
     return "\n".join(body).strip() or None
 
 
-def collect_baemin(max_scroll=8):
+def collect_baemin(max_scroll=300):
     """배민 (리뷰, 사장님 답글) 쌍을 수집한다.
 
     리뷰 본문(ReviewContent)과 사장님 댓글(ReviewCommentBox)이 형제 컨테이너라
@@ -91,14 +95,18 @@ def collect_baemin(max_scroll=8):
         if is_session_expired(page):
             logger.warning("배민 세션 만료 — 수집 건너뜀")
             return out
-        prev = 0
+        prev, still = 0, 0
         for _ in range(max_scroll):
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             human_pause(1.5, 2.5)
             cur = len(page.query_selector_all(
                 '[class*="ReviewContent-module__"]'))
             if cur == prev:
-                break
+                still += 1
+                if still >= 3:   # 로딩 지연 오탐 방지: 3연속 무증가 시 끝
+                    break
+            else:
+                still = 0
             prev = cur
         # 문서 순서로 리뷰(HTML) ↔ 답글(innerText) 페어링.
         pairs = page.evaluate(r"""() => {
@@ -138,8 +146,8 @@ def collect_baemin(max_scroll=8):
     return out
 
 
-def build(days=90):
-    """양 플랫폼 내역을 수집해 reference/ 에 저장한다."""
+def build(days=1095):
+    """양 플랫폼 내역을 수집해 reference/ 에 저장한다(기본: 전체 기간)."""
     REF_DIR.mkdir(exist_ok=True)
     data = []
     try:
@@ -282,7 +290,7 @@ if __name__ == "__main__":
         n = import_recent_approved(since)
         print(f"승인 예시 편입: {n}건 ({since} 이후)")
     else:
-        d = build(days=90)
+        d = build()          # 전체 기간(리뷰가 소진되면 자동 종료)
         print(f"수집 완료: {len(d)}건 → reference/")
         n = import_recent_approved()
         print(f"승인 예시 편입: {n}건 ({PROGRAM_LAUNCH_DATE} 이후)")
