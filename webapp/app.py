@@ -26,6 +26,13 @@ from flask import (
     Flask, abort, redirect, render_template, request, session, url_for,
 )
 
+# Windows 콘솔(cp949)에서도 한글·특수문자(— → 등) print 가 깨지지 않도록 UTF-8 고정
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LIB = ROOT / "automation" / "library"
 

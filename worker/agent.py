@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import os
 import pathlib
+import subprocess
 import sys
 import time
 import traceback
@@ -47,12 +48,72 @@ MAX_DRAFTS_PER_RUN = int(os.getenv("WORKER_MAX_DRAFTS", "20"))
 # 수집 + 초안 생성
 # ---------------------------------------------------------------------------
 
+CHROME_BAT = ROOT / "scripts" / "launch_chrome.bat"
+CDP_URL = "http://127.0.0.1:{}/json/version"
+
+
+def cdp_alive(port=None, timeout=2.0) -> bool:
+    """크롤링용 Chrome(원격 디버깅)이 살아있는지 확인한다."""
+    import urllib.request
+    port = port or os.getenv("CDP_PORT", "9222")
+    try:
+        with urllib.request.urlopen(CDP_URL.format(port), timeout=timeout):
+            return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def ensure_chrome(wait_seconds=60) -> bool:
+    """크롤링용 Chrome 이 꺼져 있으면 직접 켜고, 뜰 때까지 기다린다.
+
+    사장님이 매번 launch_chrome.bat 을 눌러야 하는 걸 없애기 위함. 로그인
+    세션은 전용 프로필(.browser_profile)에 남아 있어 다시 켜도 유지된다.
+
+    ⚠️ 로그인 자체가 만료된 경우는 여기서 해결할 수 없다 — 크롤링 단계에서
+       SessionExpiredError 로 잡혀 화면에 사유가 표시된다.
+
+    Returns: 최종적으로 Chrome 이 붙을 수 있는 상태면 True.
+    """
+    if cdp_alive():
+        return True
+    if not CHROME_BAT.exists():
+        logger.warning("launch_chrome.bat 을 찾을 수 없음: %s", CHROME_BAT)
+        return False
+
+    logger.info("크롤링용 Chrome 이 꺼져 있어 직접 켭니다...")
+    db.worker_ping("working", "크롬 켜는 중")
+    try:
+        subprocess.Popen(
+            [str(CHROME_BAT)], cwd=str(CHROME_BAT.parent),
+            creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Chrome 실행 실패: %s", e)
+        db.log_error("worker", f"Chrome 자동 실행 실패: {e}",
+                     kind=type(e).__name__, path="ensure_chrome",
+                     detail=traceback.format_exc())
+        return False
+
+    for _ in range(int(wait_seconds / 2)):
+        time.sleep(2)
+        if cdp_alive():
+            logger.info("Chrome 이 준비됐습니다.")
+            return True
+    logger.warning("Chrome 을 켰지만 %d초 안에 준비되지 않았습니다.", wait_seconds)
+    return False
+
+
 def collect_reviews() -> tuple[int, list[str]]:
     """배민·쿠팡 리뷰를 긁어 DB 에 저장한다. (저장 건수, 경고 메시지들)
 
     한쪽 플랫폼이 실패해도 다른 쪽은 계속한다(로그인 만료 등).
     """
     saved, warnings = 0, []
+
+    # 크롬이 꺼져 있으면 먼저 켠다(사장님이 손으로 켜지 않아도 되게).
+    if not ensure_chrome():
+        warnings.append("크롤링용 Chrome 을 켜지 못했습니다 — 집 PC 확인 필요")
+        return 0, warnings
 
     try:
         from crawler.baemin import BaeminCrawler
