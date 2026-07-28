@@ -45,6 +45,24 @@
   {% endfor %}
 </div>
 
+<!-- 직접 주제 만들기 -->
+<div class="sec" style="margin-top:22px">
+  <b>직접 주제 만들기</b>
+  <small>원하는 주제가 없으면 여기서</small>
+</div>
+<div class="post">
+  <div class="grid2">
+    <div><span class="lbl">주제 (예: 새로 나온 딸기 베이글)</span><input id="ctitle" class="fld"></div>
+    <div><span class="lbl">영상 스타일</span>
+      <select id="ctmpl" class="fld">
+        {% for t in reel_templates %}
+        <option value="{{ t.id }}">{{ t.name }} (~{{ t.target_seconds }}초)</option>
+        {% endfor %}
+      </select></div>
+  </div>
+  <button class="btn primary" style="margin-top:10px" onclick="startCustom()">➕ 프로젝트 시작</button>
+</div>
+
 <div class="note" style="margin-top:16px">
   영상 편집은 이 PC에서 돌아가요. 완성본은 구글 드라이브 폴더에 저장되니, 폰에서 드라이브 앱으로 열어
   인스타·Edits 앱에서 인기 음원을 얹어 올리면 됩니다.
@@ -74,6 +92,9 @@
 
 <script>
 let CUR = null;
+const TPLS = [
+  {% for t in reel_templates %}{id:"{{ t.id }}", name:"{{ t.name }}", sec:{{ t.target_seconds }}},
+  {% endfor %}];
 const $ = s => document.querySelector(s);
 function msg(t){ const m=$("#msg"); m.textContent=t; m.classList.add("show");
   clearTimeout(m._t); m._t=setTimeout(()=>m.classList.remove("show"),2600); }
@@ -87,6 +108,13 @@ async function startTopic(t){
   const p = await call("/instagram/api/projects", {method:"POST", body:fd});
   msg("프로젝트 생성 — 이제 영상을 올려주세요");
   openProject(p.id);
+}
+
+async function startCustom(){
+  const title = $("#ctitle").value.trim();
+  if(!title){ msg("주제를 입력해주세요"); return; }
+  await startTopic({title, template: $("#ctmpl").value});
+  $("#ctitle").value = "";
 }
 
 async function openProject(pid){
@@ -128,6 +156,9 @@ function render(){
 
     <div style="margin-top:20px">
       <span class="lbl">③ 릴스 만들기 <small style="font-weight:400;color:var(--muted)">— 세로 9:16·자막·원본소리</small></span>
+      <select id="tmpl" class="fld" style="max-width:240px;display:block;margin:6px 0 8px">
+        ${TPLS.map(t=>`<option value="${t.id}" ${t.id===(p.template||"T1")?"selected":""}>${t.name} (~${t.sec}초)</option>`).join("")}
+      </select>
       <button class="btn primary" id="rbtn" onclick="renderReel()" ${hasVideo?"":"disabled"}>
         ${p.has_reel ? "🔄 다시 편집" : "🎬 릴스 만들기"}</button>
       ${hasVideo?"":'<small style="display:block;color:var(--muted);margin-top:6px">영상을 먼저 올려주세요.</small>'}
@@ -176,6 +207,7 @@ async function genCaption(){
 async function renderReel(){
   const b=$("#rbtn"); b.disabled=true; b.textContent="편집 중… (1~2분)";
   const fd=new FormData(); fd.append("hook",$("#hook").value); fd.append("menu",$("#menu").value);
+  fd.append("template",$("#tmpl").value);
   try{ await call("/instagram/api/projects/"+CUR.id+"/render",{method:"POST",body:fd});
     msg("릴스 완성! 아래에서 확인하세요"); openProject(CUR.id); }
   catch(e){ msg("편집 실패: "+e.message); b.disabled=false; b.textContent="🎬 릴스 만들기"; }

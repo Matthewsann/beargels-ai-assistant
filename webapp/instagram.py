@@ -24,7 +24,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from sns_automation import video_editor  # noqa: E402
-from sns_automation.templates import get_template  # noqa: E402
+from sns_automation.templates import TEMPLATES, get_template  # noqa: E402
 
 bp = Blueprint("instagram", __name__, url_prefix="/instagram")
 
@@ -122,7 +122,8 @@ def index():
                 p["file_count"] = len(_files(d.name))
                 projects.append(p)
     projects.sort(key=lambda x: x.get("created", 0), reverse=True)
-    return render_template("instagram.html", topics=SUGGESTED_TOPICS, projects=projects)
+    return render_template("instagram.html", topics=SUGGESTED_TOPICS, projects=projects,
+                           reel_templates=list(TEMPLATES.values()))
 
 
 # ── API ───────────────────────────────────────────────
@@ -235,6 +236,8 @@ def render(pid):
         return jsonify({"error": "영상 파일이 없어요. 릴스는 영상이 필요해요."}), 400
     p["hook"] = request.form.get("hook") or p.get("hook", "")
     p["menu"] = request.form.get("menu") or p.get("menu", "")
+    if request.form.get("template"):
+        p["template"] = request.form["template"]
     tmpl = get_template(p.get("template"))
     music = os.getenv("REEL_MUSIC_PATH")
     try:
