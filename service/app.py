@@ -243,13 +243,29 @@ def menu_page(path_key):
 def menu_data(path_key):
     check(path_key)
     try:
+        try:
+            snapshots = db.menu_snapshots_all()
+        except Exception:  # noqa: BLE001 — 006 마이그레이션 전이면 테이블이 없다
+            snapshots = []
         return jsonify({
             "items": db.menu_all(),
             "channels": db.menu_channels_all(),
             "settings": db.menu_settings_all(),
+            "snapshots": snapshots,
         })
     except Exception as e:  # noqa: BLE001
         return jsonify({"error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/menu/collect", methods=["POST"])
+def menu_collect(path_key):
+    """채널 노출 메뉴 수집을 집 PC 일꾼에게 요청."""
+    check(path_key)
+    try:
+        db.request_menu_collect()
+        return jsonify({"ok": True})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
 @app.route("/<path_key>/menu/item/<sku>", methods=["POST"])

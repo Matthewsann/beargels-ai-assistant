@@ -71,6 +71,7 @@ padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:opacity 
     <input type="search" id="q" placeholder="메뉴 검색…">
     <button onclick="openFees()">⚙ 수수료</button>
     <button onclick="openTargets()">🎯 목표원가율</button>
+    <button onclick="openDiff()">📡 채널 대조</button>
     <label style="font-size:11px;color:var(--sub)"><input type="checkbox" id="onlyProblem" onchange="render()"> 문제만</label>
   </div>
   <div class="stats" id="stats"></div>
@@ -110,6 +111,16 @@ padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:opacity 
   <table><tbody id="targetRows"></tbody></table>
   <div style="text-align:right;margin-top:8px"><button onclick="saveTargets()">저장</button>
   <button onclick="dlgTargets.close()">닫기</button></div>
+</dialog>
+
+<dialog id="dlgDiff" style="max-width:760px">
+  <h3>📡 채널 노출 메뉴 대조</h3>
+  <div id="diffBody" style="max-height:60vh;overflow:auto"></div>
+  <p class="note">집 PC 일꾼이 배민·쿠팡·네이버에서 실제 노출 중인 메뉴를 긁어 온 스냅샷과
+  정본을 비교합니다. 이름은 공백·기호·[SET] 등을 무시하고 매칭합니다.</p>
+  <div style="text-align:right">
+    <button onclick="requestCollect()">🔄 채널수집 요청 (집 PC 켜져 있어야 함)</button>
+    <button onclick="dlgDiff.close()">닫기</button></div>
 </dialog>
 
 <div id="toast"></div>
@@ -323,6 +334,67 @@ async function saveTargets(){
   DATA.settings.target_cost_rates = t;
   await api("/settings/target_cost_rates", t);
   dlgTargets.close(); render();
+}
+
+const norm = s => (s||"").replace(/\[[^\]]*\]/g,"").replace(/[^0-9a-zA-Z가-힣]/g,"").toLowerCase();
+
+function openDiff(){
+  const snaps = DATA.snapshots || [];
+  const chLabel = {baemin:"배민", coupang:"쿠팡이츠", naver:"네이버"};
+  let html = "";
+  if (!snaps.length){
+    html = `<p class="note">아직 수집된 스냅샷이 없습니다. 아래 "채널수집 요청"을 누르면
+    집 PC 일꾼이 배민·쿠팡·네이버의 노출 메뉴를 긁어 옵니다(1~2분).
+    끝나면 이 창을 다시 열어 보세요.</p>`;
+  }
+  for (const ch of ["baemin","coupang","naver"]){
+    const rows = snaps.filter(s=>s.channel===ch);
+    if (!rows.length) continue;
+    const when = rows[0].collected_at ? rows[0].collected_at.slice(0,16).replace("T"," ") : "";
+    // 채널에 있는데 정본과 다른 것들
+    let body = "";
+    const matchedSkus = new Set();
+    for (const s of rows){
+      const it = s.matched_sku ? DATA.items.find(i=>i.sku===s.matched_sku)
+                : DATA.items.find(i=>norm(i.name)===norm(s.menu_name));
+      if (it) matchedSkus.add(it.sku);
+      if (!it){
+        body += `<tr><td style="text-align:left">${s.menu_name}</td><td>${won(s.price)}</td>
+          <td colspan="2" class="warn">정본에 없음 → 정본에 추가하거나 채널에서 내리기</td></tr>`;
+        continue;
+      }
+      const expected = chPrice(it, ch);
+      const nameDiff = norm(it.name)!==norm(s.menu_name);
+      const priceDiff = s.price!=null && expected!=null && s.price!==expected;
+      if (!nameDiff && !priceDiff) continue;
+      body += `<tr><td style="text-align:left">${s.menu_name}${nameDiff?`<br><small style="color:var(--sub)">정본: ${it.name}</small>`:""}</td>
+        <td class="${priceDiff?"over":""}">${won(s.price)}</td>
+        <td>${won(expected)}</td>
+        <td>${nameDiff?"이름 다름":""}${nameDiff&&priceDiff?" · ":""}${priceDiff?"가격 다름":""}</td></tr>`;
+    }
+    // 정본에서 배달 노출인데 채널에 없는 것
+    for (const it of DATA.items.filter(i=>i.delivery_active)){
+      if (matchedSkus.has(it.sku)) continue;
+      const o = chOverride(it.sku, ch);
+      if (o && o.active===false) continue;   // 일부러 안 파는 메뉴
+      body += `<tr><td style="text-align:left" class="nocost">${it.name}</td>
+        <td>–</td><td>${won(chPrice(it,ch))}</td><td class="warn">채널에 없음</td></tr>`;
+    }
+    html += `<h4 style="margin:10px 0 4px">${chLabel[ch]} <small style="color:var(--sub);font-weight:400">
+      노출 ${rows.length}개 · 수집 ${when}</small></h4>`;
+    html += body
+      ? `<table style="min-width:0;width:100%"><thead><tr><th style="text-align:left">채널 메뉴명</th>
+         <th>채널가</th><th>정본 기준가</th><th>문제</th></tr></thead><tbody>${body}</tbody></table>`
+      : `<p class="note">✅ 정본과 완전히 일치</p>`;
+  }
+  document.getElementById("diffBody").innerHTML = html || `<p class="note">표시할 내용이 없습니다.</p>`;
+  dlgDiff.showModal();
+}
+
+async function requestCollect(){
+  const r = await fetch(BASE+"/collect",{method:"POST"});
+  const j = await r.json().catch(()=>({ok:false}));
+  toast(j.ok ? "수집 요청됨 — 집 PC가 켜져 있으면 1~2분 뒤 완료" : "⚠ 요청 실패");
 }
 
 document.getElementById("q").addEventListener("input", render);

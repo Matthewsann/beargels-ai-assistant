@@ -418,6 +418,63 @@ def menu_set_setting(key, value):
                     on_conflict="key").execute().data)
 
 
+def request_menu_collect(by=None):
+    """직원이 '채널수집'을 눌렀다 — 집 PC 일꾼에게 채널 메뉴 수집 요청."""
+    live = (get_client().table("jobs").select("*")
+            .eq("kind", "menu_collect")
+            .in_("status", ["pending", "running"])
+            .order("requested_at", desc=True).limit(1).execute().data)
+    if live:
+        return live[0]
+    row = {"kind": "menu_collect", "status": "pending", "requested_by": by or ""}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
+def normalize_menu_name(name):
+    """채널 표기 차이를 무시하기 위한 메뉴명 정규화.
+
+    '[SET] 베이글 샌드위치+음료' 와 '베이글샌드위치 + 음료' 를 같게 본다.
+    """
+    s = re.sub(r"\[[^\]]*\]", "", name or "")          # [SET] [COUPLE] 등 제거
+    s = re.sub(r"[^0-9a-zA-Z가-힣]", "", s)             # 공백·기호 제거
+    return s.lower()
+
+
+def save_menu_snapshots(channel, rows):
+    """채널 스냅샷 갈아끼우기 + 정본 SKU 자동 매칭."""
+    sb = get_client()
+    masters = sb.table("menu_items").select("sku,name").execute().data
+    overrides = (sb.table("menu_channels").select("sku,name_override")
+                 .eq("channel", channel).execute().data)
+    by_norm = {}
+    for m in masters:
+        by_norm.setdefault(normalize_menu_name(m["name"]), m["sku"])
+    for o in overrides:                       # 채널 예외 이름이 우선
+        if o.get("name_override"):
+            by_norm[normalize_menu_name(o["name_override"])] = o["sku"]
+
+    sb.table("menu_channel_snapshots").delete().eq("channel", channel).execute()
+    payload = []
+    for r in rows:
+        payload.append({
+            "channel": channel,
+            "menu_name": r["menu_name"][:200],
+            "price": r.get("price"),
+            "category": r.get("category"),
+            "description": (r.get("description") or None),
+            "matched_sku": by_norm.get(normalize_menu_name(r["menu_name"])),
+            "raw": r.get("raw"),
+        })
+    if payload:
+        sb.table("menu_channel_snapshots").insert(payload).execute()
+    return len(payload)
+
+
+def menu_snapshots_all():
+    return (get_client().table("menu_channel_snapshots").select("*")
+            .order("channel").execute().data)
+
+
 if __name__ == "__main__":
     # 단독 실행: 연결 및 테이블 존재 확인
     logging.basicConfig(level=logging.INFO)
