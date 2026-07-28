@@ -245,6 +245,7 @@ def request_collect(by=None):
     (버튼 연타로 크롤링이 여러 번 도는 걸 막는다).
     """
     live = (get_client().table("jobs").select("*")
+            .eq("kind", "collect")
             .in_("status", ["pending", "running"])
             .order("requested_at", desc=True).limit(1).execute().data)
     if live:
@@ -254,8 +255,12 @@ def request_collect(by=None):
 
 
 def latest_job():
-    """가장 최근 수집 요청 1건(없으면 None). 웹에서 진행 상황 표시용."""
+    """가장 최근 '리뷰 수집' 요청 1건(없으면 None). 웹에서 진행 상황 표시용.
+
+    블로그 등 다른 종류(kind)의 잡은 제외한다 — 리뷰 화면에 엉뚱한 상태가 뜨지 않게.
+    """
     rows = (get_client().table("jobs").select("*")
+            .eq("kind", "collect")
             .order("requested_at", desc=True).limit(1).execute().data)
     return rows[0] if rows else None
 

@@ -176,9 +176,32 @@ def make_drafts() -> int:
     return made
 
 
+def run_blog_job(job) -> None:
+    """블로그 작업 1건 처리 (글감추천·초안·네이버 임시저장·순위확인)."""
+    jid, kind = job["id"], job.get("kind")
+    logger.info("블로그 작업 #%s (%s) 시작", jid, kind)
+    db.worker_ping("working", f"블로그 작업 중 ({kind})")
+    try:
+        import blog_jobs
+        count, msg = blog_jobs.run(job)
+        db.finish_job(jid, "done", msg, count)
+        logger.info("블로그 작업 #%s 완료 — %s", jid, msg)
+    except Exception as e:  # noqa: BLE001
+        logger.error("블로그 작업 #%s 실패: %s", jid, e)
+        logger.debug(traceback.format_exc())
+        db.log_error("worker", f"블로그 작업 #{jid}({kind}) 실패: {e}",
+                     kind=type(e).__name__, path="run_blog_job",
+                     detail=traceback.format_exc())
+        db.finish_job(jid, "error", str(e)[:400], 0)
+    finally:
+        db.worker_ping("idle", "대기 중")
+
+
 def run_job(job) -> None:
-    """수집 요청 1건 처리."""
+    """요청 1건 처리. 종류(kind)에 따라 리뷰 수집 / 블로그 작업으로 나뉜다."""
     jid = job["id"]
+    if str(job.get("kind") or "").startswith("blog_"):
+        return run_blog_job(job)
     logger.info("수집 요청 #%s 처리 시작 (요청자: %s)", jid, job.get("requested_by") or "?")
     db.worker_ping("working", "리뷰 수집 중")
     try:

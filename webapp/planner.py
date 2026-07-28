@@ -179,11 +179,13 @@ def make_recommendations() -> list[dict]:
     return _extract_json_array(raw)
 
 
-def make_draft(topic: str, post_type: str = "정보성", title: str = "",
-               main_keyword: str = "", sub_keywords: list[str] | None = None) -> int:
-    """확정 기획 + 금고 전체를 근거로 초안을 생성해 라이브러리에 적재."""
+def make_draft_data(topic: str, post_type: str = "정보성", title: str = "",
+                    main_keyword: str = "", sub_keywords: list[str] | None = None) -> dict:
+    """확정 기획 + 금고 전체를 근거로 초안 '데이터'만 만들어 돌려준다(저장은 호출자 몫).
+
+    로컬 라이브러리에 넣을지, Supabase 에 넣을지는 부르는 쪽이 정한다.
+    """
     client, cfg, gp = _client_cfg()
-    import library
     knowledge, seo = load_knowledge()
     subs = sub_keywords or []
     prompt = DRAFT_PROMPT.format(
@@ -202,4 +204,12 @@ def make_draft(topic: str, post_type: str = "정보성", title: str = "",
     data.setdefault("sub_keywords", subs)
     data.setdefault("main_keyword", main_keyword)
     data.setdefault("title", title or topic)
+    return data
+
+
+def make_draft(topic: str, post_type: str = "정보성", title: str = "",
+               main_keyword: str = "", sub_keywords: list[str] | None = None) -> int:
+    """초안을 만들어 로컬 라이브러리(automation/library)에 적재하고 id 를 돌려준다."""
+    import library
+    data = make_draft_data(topic, post_type, title, main_keyword, sub_keywords)
     return library.create_item(post_type, data)
