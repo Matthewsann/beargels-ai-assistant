@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>베어글스 · 메뉴/원가</title>
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--ink:#2b2620;--sub:#8b8378;--line:#e7e2d8;
+--brown:#7a5c3e;--red:#c0392b;--redbg:#fdecea;--green:#1e7b4f;--amber:#b7791f;--amberbg:#fdf6e3}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;font-size:14px}
+header{position:sticky;top:0;z-index:10;background:var(--card);border-bottom:1px solid var(--line);padding:10px 14px}
+h1{font-size:16px;margin:0 0 8px}
+h1 small{color:var(--sub);font-weight:normal;font-size:12px;margin-left:6px}
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+.chip{flex:0 0 auto;border:1px solid var(--line);background:var(--card);border-radius:14px;
+padding:4px 10px;font-size:12px;cursor:pointer;white-space:nowrap}
+.chip.on{background:var(--brown);border-color:var(--brown);color:#fff}
+.bar{display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap}
+.bar input[type=search]{flex:1;min-width:120px;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px}
+.bar button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
+.stats{font-size:11px;color:var(--sub);margin-top:6px;display:flex;gap:10px;flex-wrap:wrap}
+.stats b.red{color:var(--red)} .stats b.amber{color:var(--amber)}
+main{padding:10px}
+.wrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;min-width:900px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{position:sticky;top:0;background:#faf8f3;font-size:11px;color:var(--sub);font-weight:600}
+td.name,th.name{text-align:left;max-width:230px;white-space:normal}
+td.name{cursor:pointer}
+td.name .sku{color:var(--sub);font-size:10px}
+td.name .grp{color:var(--sub);font-size:10px;margin-left:4px}
+tr.cat td{background:#f1ede4;text-align:left;font-weight:700;font-size:12px;color:var(--brown)}
+.ed{cursor:pointer;border-bottom:1px dashed #cbc2b4}
+.ed:hover{background:#fdf9ef}
+td input{width:76px;font-size:13px;padding:2px 4px;border:1px solid var(--brown);border-radius:4px;text-align:right}
+td input.wide{width:180px;text-align:left}
+.over{background:var(--redbg);color:var(--red);font-weight:700}
+.warn{background:var(--amberbg);color:var(--amber)}
+.nocost{color:var(--sub);font-style:italic}
+.neg{color:var(--red);font-weight:700}
+.off{opacity:.45}
+.badge{display:inline-block;font-size:10px;border-radius:8px;padding:1px 6px;margin-left:4px}
+.badge.miss{background:var(--amberbg);color:var(--amber)}
+.badge.ovr{background:#e8f0fe;color:#1a56db}
+.detail td{background:#fbfaf6;white-space:normal;text-align:left}
+.chgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;padding:4px 0}
+.chbox{border:1px solid var(--line);border-radius:8px;padding:8px;background:#fff}
+.chbox h4{margin:0 0 6px;font-size:12px}
+.chbox label{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--sub);margin:4px 0}
+.chbox input[type=text],.chbox input[type=number]{width:130px;font-size:12px;padding:3px 5px;border:1px solid var(--line);border-radius:4px}
+.chbox .calc{font-size:11px;margin-top:6px;border-top:1px dashed var(--line);padding-top:6px;line-height:1.5}
+dialog{border:1px solid var(--line);border-radius:12px;max-width:520px;width:92%;padding:16px}
+dialog h3{margin:0 0 10px;font-size:15px}
+dialog table{min-width:0}
+dialog td,dialog th{padding:4px 6px;font-size:12px}
+dialog input{width:70px;text-align:right;font-size:12px;padding:2px 4px;border:1px solid var(--line);border-radius:4px}
+.note{font-size:11px;color:var(--sub);margin:8px 0}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#333;color:#fff;
+padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:opacity .3s;pointer-events:none}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <h1>🥯 메뉴 정본 · 원가/마진 <small>여기 값이 모든 채널의 기준</small></h1>
+  <div class="chips" id="chips"></div>
+  <div class="bar">
+    <input type="search" id="q" placeholder="메뉴 검색…">
+    <button onclick="openFees()">⚙ 수수료</button>
+    <button onclick="openTargets()">🎯 목표원가율</button>
+    <button onclick="openDiff()">📡 채널 대조</button>
+    <label style="font-size:11px;color:var(--sub)"><input type="checkbox" id="onlyProblem" onchange="render()"> 문제만</label>
+  </div>
+  <div class="stats" id="stats"></div>
+</header>
+<main>
+  <div class="wrap">
+    <table id="tbl">
+      <thead><tr>
+        <th class="name">메뉴 (탭하면 채널별 설정)</th>
+        <th>매장가</th><th>배달가</th><th>재료원가</th>
+        <th>원가율<br>매장</th><th>원가율<br>배달</th>
+        <th>마진 매장</th><th>마진 배민</th><th>마진 쿠팡</th><th>마진 네이버</th>
+        <th>노출</th>
+      </tr></thead>
+      <tbody id="tb"></tbody>
+    </table>
+  </div>
+  <p class="note">· 마진 = 판매가 − 플랫폼 수수료(중개+결제+수수료 부가세) − 가게부담 배달비 − 재료원가.
+  인건비·임대료 등 고정비는 미포함.<br>
+  · <span style="background:var(--redbg);color:var(--red);padding:0 4px">빨강</span> = 카테고리 목표 원가율 초과
+  · <span class="badge miss">원가 미입력</span> = 레시피 원가가 없어 직접 입력 필요
+  · 값은 셀을 탭해서 바로 수정(자동 저장).</p>
+</main>
+
+<dialog id="dlgFees">
+  <h3>채널 수수료 설정</h3>
+  <table><thead><tr><th>채널</th><th>중개%</th><th>결제%</th><th>가게부담<br>배달비(원)</th></tr></thead>
+  <tbody id="feeRows"></tbody></table>
+  <p class="note">수수료에는 부가세 10%가 자동 가산됩니다. 정확한 요율은 배민·쿠팡 포털의
+  정산 내역 기준으로 맞춰 주세요(플랫폼이 수시 변경).</p>
+  <div style="text-align:right"><button onclick="saveFees()">저장</button>
+  <button onclick="dlgFees.close()">닫기</button></div>
+</dialog>
+
+<dialog id="dlgTargets">
+  <h3>카테고리별 목표 원가율(%)</h3>
+  <table><tbody id="targetRows"></tbody></table>
+  <div style="text-align:right;margin-top:8px"><button onclick="saveTargets()">저장</button>
+  <button onclick="dlgTargets.close()">닫기</button></div>
+</dialog>
+
+<dialog id="dlgDiff" style="max-width:760px">
+  <h3>📡 채널 노출 메뉴 대조</h3>
+  <div id="diffBody" style="max-height:60vh;overflow:auto"></div>
+  <p class="note">집 PC 일꾼이 배민·쿠팡·네이버에서 실제 노출 중인 메뉴를 긁어 온 스냅샷과
+  정본을 비교합니다. 이름은 공백·기호·[SET] 등을 무시하고 매칭합니다.</p>
+  <div style="text-align:right">
+    <button onclick="requestCollect()">🔄 채널수집 요청 (집 PC 켜져 있어야 함)</button>
+    <button onclick="dlgDiff.close()">닫기</button></div>
+</dialog>
+
+<div id="toast"></div>
+
+<script>
+const BASE = "/{{ key }}/menu";
+let DATA = {items:[], channels:[], settings:{}};
+let CAT = "전체";
+const CH = [["store","매장"],["baemin","배민"],["coupang","쿠팡이츠"],["naver","네이버"]];
+const won = n => n==null ? "–" : Math.round(n).toLocaleString("ko-KR");
+const pct = n => n==null ? "–" : (n*100).toFixed(1)+"%";
+
+function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");
+setTimeout(()=>t.classList.remove("show"),1500);}
+
+async function api(path, body){
+  const r = await fetch(BASE+path,{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body)});
+  const j = await r.json().catch(()=>({ok:false}));
+  if(!j.ok){toast("⚠ 저장 실패: "+(j.error||r.status));return false;}
+  toast("저장됨 ✓");return true;
+}
+
+function chOverride(sku, channel){
+  return DATA.channels.find(c=>c.sku===sku && c.channel===channel);
+}
+function fee(ch){ return (DATA.settings.channel_fees||{})[ch] || {commission:0,payment:0,delivery_fee:0}; }
+function target(cat){ const t=DATA.settings.target_cost_rates||{}; return (t[cat] ?? t["기타"] ?? 35)/100; }
+
+// 채널별 실적용 판매가: 오버라이드 > (배달채널이면 배달가) > 매장가
+function chPrice(it, ch){
+  const o = chOverride(it.sku, ch);
+  if (o && o.price_override != null) return o.price_override;
+  if (ch === "store") return it.store_price;
+  return it.delivery_price ?? it.store_price;
+}
+function margin(it, ch){
+  const p = chPrice(it, ch);
+  if (p == null || it.ingredient_cost == null) return null;
+  const f = fee(ch);
+  const fees = p * ((+f.commission || 0) + (+f.payment || 0)) / 100;
+  const vat = f.vat_on_fees === false ? 0 : fees * 0.1;
+  return p - fees - vat - (+f.delivery_fee || 0) - it.ingredient_cost;
+}
+function costRate(it, ch){
+  const p = chPrice(it, ch);
+  return (p && it.ingredient_cost != null) ? it.ingredient_cost / p : null;
+}
+function hasProblem(it){
+  const rs = costRate(it,"store");
+  if (it.ingredient_cost == null) return true;
+  if (rs != null && rs > target(it.category)) return true;
+  for (const [ch] of CH) { const m = margin(it, ch);
+    if (m != null && m < 0 && (ch==="store" ? it.store_active : it.delivery_active)) return true; }
+  return false;
+}
+
+function render(){
+  const q = document.getElementById("q").value.trim();
+  const onlyP = document.getElementById("onlyProblem").checked;
+  const cats = [...new Set(DATA.items.map(i=>i.category))];
+  document.getElementById("chips").innerHTML =
+    ["전체",...cats].map(c=>`<span class="chip ${c===CAT?"on":""}" onclick="CAT='${c}';render()">${c}</span>`).join("");
+  let items = DATA.items.filter(i=>(CAT==="전체"||i.category===CAT) &&
+    (!q || i.name.includes(q) || (i.sku||"").includes(q)) && (!onlyP || hasProblem(i)));
+  const nocost = DATA.items.filter(i=>i.ingredient_cost==null).length;
+  const over = DATA.items.filter(i=>{const r=costRate(i,"store");return r!=null&&r>target(i.category)}).length;
+  const negs = DATA.items.filter(i=>CH.some(([c])=>{const m=margin(i,c);return m!=null&&m<0})).length;
+  document.getElementById("stats").innerHTML =
+    `총 ${DATA.items.length}개 · <b class="amber">원가 미입력 ${nocost}</b> · <b class="red">목표 초과 ${over}</b> · <b class="red">역마진 채널 있음 ${negs}</b>`;
+
+  let html = "", lastCat = null;
+  for(const it of items){
+    if(it.category !== lastCat){ lastCat = it.category;
+      html += `<tr class="cat"><td colspan="11">${it.category} <small style="font-weight:400">목표 원가율 ${(target(it.category)*100).toFixed(0)}%</small></td></tr>`; }
+    const rs = costRate(it,"store"), rd = costRate(it,"baemin");
+    const tg = target(it.category);
+    const ovrCnt = DATA.channels.filter(c=>c.sku===it.sku&&(c.name_override||c.price_override!=null||c.active===false)).length;
+    const inact = !it.store_active && !it.delivery_active;
+    html += `<tr class="${inact?"off":""}" data-sku="${it.sku}">
+      <td class="name" onclick="toggleDetail('${it.sku}')"><b>${it.name}</b>
+        ${it.ingredient_cost==null?'<span class="badge miss">원가 미입력</span>':""}
+        ${ovrCnt?`<span class="badge ovr">채널예외 ${ovrCnt}</span>`:""}
+        <br><span class="sku">${it.sku}</span><span class="grp">${it.group_name||""}</span></td>
+      <td class="ed" onclick="editCell(this,'${it.sku}','store_price')">${won(it.store_price)}</td>
+      <td class="ed" onclick="editCell(this,'${it.sku}','delivery_price')">${won(it.delivery_price)}</td>
+      <td class="ed ${it.ingredient_cost==null?"nocost":""}" onclick="editCell(this,'${it.sku}','ingredient_cost')" title="${it.cost_source||""}">${it.ingredient_cost==null?"입력":won(it.ingredient_cost)}</td>
+      <td class="${rs!=null&&rs>tg?"over":""}">${pct(rs)}</td>
+      <td class="${rd!=null&&rd>tg?"over":""}">${pct(rd)}</td>
+      ${CH.map(([c])=>{const m=margin(it,c);return `<td class="${m!=null&&m<0?"neg":""}">${won(m)}</td>`}).join("")}
+      <td style="font-size:11px">
+        <span class="ed" onclick="toggleActive('${it.sku}','store_active',${it.store_active})">매장${it.store_active?"✓":"✕"}</span>
+        <span class="ed" onclick="toggleActive('${it.sku}','delivery_active',${it.delivery_active})">배달${it.delivery_active?"✓":"✕"}</span></td>
+    </tr>
+    <tr class="detail" id="d-${it.sku}" style="display:none"><td colspan="11"></td></tr>`;
+  }
+  document.getElementById("tb").innerHTML = html || `<tr><td colspan="11" style="text-align:center;color:var(--sub);padding:30px">해당 없음</td></tr>`;
+}
+
+function editCell(td, sku, field){
+  if (td.querySelector("input")) return;
+  const it = DATA.items.find(i=>i.sku===sku);
+  const cur = it[field] ?? "";
+  td.innerHTML = `<input type="number" step="10" value="${cur}">`;
+  const inp = td.querySelector("input"); inp.focus(); inp.select();
+  const done = async (save)=>{
+    if (save){
+      const v = inp.value === "" ? null : +inp.value;
+      if (v !== it[field]){
+        it[field] = v;
+        if (field === "ingredient_cost") it.cost_source = "웹에서 직접 입력";
+        await api(`/item/${sku}`, {[field]: v, ...(field==="ingredient_cost"?{cost_source:it.cost_source}:{})});
+      }
+    }
+    render();
+  };
+  inp.onkeydown = e => { if(e.key==="Enter") done(true); if(e.key==="Escape") done(false); };
+  inp.onblur = () => done(true);
+}
+
+async function toggleActive(sku, field, cur){
+  event.stopPropagation();
+  const it = DATA.items.find(i=>i.sku===sku);
+  it[field] = !cur;
+  await api(`/item/${sku}`, {[field]: !cur});
+  render();
+}
+
+function toggleDetail(sku){
+  const tr = document.getElementById("d-"+sku);
+  if (tr.style.display !== "none"){ tr.style.display = "none"; return; }
+  document.querySelectorAll(".detail").forEach(x=>x.style.display="none");
+  const it = DATA.items.find(i=>i.sku===sku);
+  tr.style.display = "";
+  tr.firstElementChild.innerHTML = `
+    <div style="font-size:12px;margin-bottom:6px"><b>정본 메뉴명</b>
+      <input class="wide" type="text" id="nm-${sku}" value="${(it.name||"").replace(/"/g,"&quot;")}" style="width:min(320px,80%);padding:4px 6px;border:1px solid var(--line);border-radius:4px">
+      <button onclick="saveName('${sku}')" style="font-size:11px">이름 저장</button>
+      ${it.cost_source?`<div class="note">원가 출처: ${it.cost_source}</div>`:""}
+      ${it.composition?`<div class="note">구성: ${it.composition}</div>`:""}</div>
+    <div class="chgrid">${CH.map(([ch,label])=>{
+      const o = chOverride(sku, ch) || {};
+      const p = chPrice(it, ch), m = margin(it, ch), f = fee(ch);
+      const diff = o.name_override && o.name_override !== it.name;
+      return `<div class="chbox"><h4>${label} ${diff?'<span class="badge miss">이름 다름</span>':""}</h4>
+        <label>메뉴명 예외 <input type="text" id="o-nm-${ch}-${sku}" value="${(o.name_override||"").replace(/"/g,"&quot;")}" placeholder="정본과 같음"></label>
+        <label>가격 예외 <input type="number" id="o-pr-${ch}-${sku}" value="${o.price_override??""}" placeholder="${ch==="store"?won(it.store_price):won(it.delivery_price??it.store_price)}"></label>
+        <label>판매 <input type="checkbox" id="o-ac-${ch}-${sku}" ${o.active===false?"":"checked"}></label>
+        <button style="font-size:11px" onclick="saveCh('${sku}','${ch}')">저장</button>
+        <div class="calc">적용가 <b>${won(p)}</b> · 수수료 ${f.commission}%+${f.payment}%${(+f.delivery_fee)?`+배달비 ${won(f.delivery_fee)}`:""}<br>
+        마진 <b class="${m!=null&&m<0?"neg":""}">${won(m)}</b>${m!=null&&p?` (${(m/p*100).toFixed(1)}%)`:""}</div>
+      </div>`;}).join("")}</div>`;
+}
+
+async function saveName(sku){
+  const v = document.getElementById("nm-"+sku).value.trim();
+  if(!v) return;
+  const it = DATA.items.find(i=>i.sku===sku);
+  it.name = v;
+  await api(`/item/${sku}`, {name:v});
+  render();
+}
+
+async function saveCh(sku, ch){
+  const nm = document.getElementById(`o-nm-${ch}-${sku}`).value.trim() || null;
+  const pr = document.getElementById(`o-pr-${ch}-${sku}`).value;
+  const ac = document.getElementById(`o-ac-${ch}-${sku}`).checked;
+  const payload = {name_override:nm, price_override: pr===""?null:+pr, active: ac};
+  let o = chOverride(sku, ch);
+  if(!o){ o = {sku, channel:ch}; DATA.channels.push(o); }
+  Object.assign(o, payload);
+  await api(`/channel/${sku}/${ch}`, payload);
+  render();
+}
+
+function openFees(){
+  const f = DATA.settings.channel_fees || {};
+  document.getElementById("feeRows").innerHTML = CH.map(([ch,label])=>{
+    const v = f[ch]||{};
+    return `<tr><td>${label}</td>
+      <td><input id="f-c-${ch}" value="${v.commission??0}"></td>
+      <td><input id="f-p-${ch}" value="${v.payment??0}"></td>
+      <td><input id="f-d-${ch}" value="${v.delivery_fee??0}"></td></tr>`;}).join("");
+  dlgFees.showModal();
+}
+async function saveFees(){
+  const f = DATA.settings.channel_fees || {};
+  for(const [ch,label] of CH){
+    f[ch] = {...(f[ch]||{}), label,
+      commission:+document.getElementById(`f-c-${ch}`).value||0,
+      payment:+document.getElementById(`f-p-${ch}`).value||0,
+      delivery_fee:+document.getElementById(`f-d-${ch}`).value||0,
+      vat_on_fees:true};
+  }
+  DATA.settings.channel_fees = f;
+  await api("/settings/channel_fees", f);
+  dlgFees.close(); render();
+}
+
+function openTargets(){
+  const t = DATA.settings.target_cost_rates || {};
+  const cats = [...new Set(DATA.items.map(i=>i.category))];
+  document.getElementById("targetRows").innerHTML = cats.map(c=>
+    `<tr><td>${c}</td><td><input id="t-${c}" value="${t[c]??35}"> %</td></tr>`).join("");
+  dlgTargets.showModal();
+}
+async function saveTargets(){
+  const t = DATA.settings.target_cost_rates || {};
+  for(const c of [...new Set(DATA.items.map(i=>i.category))])
+    t[c] = +document.getElementById("t-"+c).value || 35;
+  DATA.settings.target_cost_rates = t;
+  await api("/settings/target_cost_rates", t);
+  dlgTargets.close(); render();
+}
+
+const norm = s => (s||"").replace(/\[[^\]]*\]/g,"").replace(/[^0-9a-zA-Z가-힣]/g,"").toLowerCase();
+
+function openDiff(){
+  const snaps = DATA.snapshots || [];
+  const chLabel = {baemin:"배민", coupang:"쿠팡이츠", naver:"네이버"};
+  let html = "";
+  if (!snaps.length){
+    html = `<p class="note">아직 수집된 스냅샷이 없습니다. 아래 "채널수집 요청"을 누르면
+    집 PC 일꾼이 배민·쿠팡·네이버의 노출 메뉴를 긁어 옵니다(1~2분).
+    끝나면 이 창을 다시 열어 보세요.</p>`;
+  }
+  for (const ch of ["baemin","coupang","naver"]){
+    const rows = snaps.filter(s=>s.channel===ch);
+    if (!rows.length) continue;
+    const when = rows[0].collected_at ? rows[0].collected_at.slice(0,16).replace("T"," ") : "";
+    // 채널에 있는데 정본과 다른 것들
+    let body = "";
+    const matchedSkus = new Set();
+    for (const s of rows){
+      const it = s.matched_sku ? DATA.items.find(i=>i.sku===s.matched_sku)
+                : DATA.items.find(i=>norm(i.name)===norm(s.menu_name));
+      if (it) matchedSkus.add(it.sku);
+      if (!it){
+        body += `<tr><td style="text-align:left">${s.menu_name}</td><td>${won(s.price)}</td>
+          <td colspan="2" class="warn">정본에 없음 → 정본에 추가하거나 채널에서 내리기</td></tr>`;
+        continue;
+      }
+      const expected = chPrice(it, ch);
+      const nameDiff = norm(it.name)!==norm(s.menu_name);
+      const priceDiff = s.price!=null && expected!=null && s.price!==expected;
+      if (!nameDiff && !priceDiff) continue;
+      body += `<tr><td style="text-align:left">${s.menu_name}${nameDiff?`<br><small style="color:var(--sub)">정본: ${it.name}</small>`:""}</td>
+        <td class="${priceDiff?"over":""}">${won(s.price)}</td>
+        <td>${won(expected)}</td>
+        <td>${nameDiff?"이름 다름":""}${nameDiff&&priceDiff?" · ":""}${priceDiff?"가격 다름":""}</td></tr>`;
+    }
+    // 정본에서 배달 노출인데 채널에 없는 것
+    for (const it of DATA.items.filter(i=>i.delivery_active)){
+      if (matchedSkus.has(it.sku)) continue;
+      const o = chOverride(it.sku, ch);
+      if (o && o.active===false) continue;   // 일부러 안 파는 메뉴
+      body += `<tr><td style="text-align:left" class="nocost">${it.name}</td>
+        <td>–</td><td>${won(chPrice(it,ch))}</td><td class="warn">채널에 없음</td></tr>`;
+    }
+    html += `<h4 style="margin:10px 0 4px">${chLabel[ch]} <small style="color:var(--sub);font-weight:400">
+      노출 ${rows.length}개 · 수집 ${when}</small></h4>`;
+    html += body
+      ? `<table style="min-width:0;width:100%"><thead><tr><th style="text-align:left">채널 메뉴명</th>
+         <th>채널가</th><th>정본 기준가</th><th>문제</th></tr></thead><tbody>${body}</tbody></table>`
+      : `<p class="note">✅ 정본과 완전히 일치</p>`;
+  }
+  document.getElementById("diffBody").innerHTML = html || `<p class="note">표시할 내용이 없습니다.</p>`;
+  dlgDiff.showModal();
+}
+
+async function requestCollect(){
+  const r = await fetch(BASE+"/collect",{method:"POST"});
+  const j = await r.json().catch(()=>({ok:false}));
+  toast(j.ok ? "수집 요청됨 — 집 PC가 켜져 있으면 1~2분 뒤 완료" : "⚠ 요청 실패");
+}
+
+document.getElementById("q").addEventListener("input", render);
+
+fetch(BASE+"/data").then(r=>r.json()).then(d=>{
+  if(d.error){ document.getElementById("tb").innerHTML =
+    `<tr><td colspan="11" style="text-align:left;padding:20px">⚠ ${d.error}<br><br>
+    Supabase에 테이블이 없다면 <code>supabase/migrations/005_menu_master.sql</code> 실행 후
+    <code>python scripts/seed_menu_master.py</code> 를 집 PC에서 실행하세요.</td></tr>`; return; }
+  DATA = d; render();
+});
+</script>
+</body>
+</html>
