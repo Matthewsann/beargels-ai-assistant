@@ -555,6 +555,14 @@ def _template_reply(typ, review, author, oc, rating, max_len):
                 "바로 점검하고 개선하겠습니다. 알려주셔서 감사합니다. 다음에 주문 "
                 "주시면 그때는 제대로 챙겨서 보내드리겠습니다.")[:max_len]
 
+    # 불만 외 유형: 로컬 답글 엔진 — 메뉴·리뷰 내용에 실제로 반응하는 조립식
+    # 답글(API 없이도 템플릿 티 안 나게. 사장님 요청 2026-07-29).
+    try:
+        from assistant.local_reply import compose
+        return compose(review, typ, author, oc, rating, max_len)
+    except Exception:  # noqa: BLE001
+        logger.exception("로컬 답글 엔진 실패 — 기본 템플릿으로")
+
     if isinstance(oc, int) and oc > 1:
         opener = f"벌써 {oc}번째네요, 기억해주고 또 주문해주셔서 진짜 감사해요."
     else:
