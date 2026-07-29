@@ -19,6 +19,8 @@ for _p in (SRC, ROOT):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
+import llm  # noqa: E402 — 위에서 ROOT 를 sys.path 에 넣은 뒤여야 한다
+
 # 금고에서 제외할 파일(색인/인스타 전용 채널 문서 — 블로그 기획엔 불필요)
 KNOWLEDGE_EXCLUDE = {"README.md", "beargels_songdo.md", "growth_strategy.md", "reel_templates.md"}
 # 철학 문서를 앞쪽에 오게 하는 우선순위(있으면 먼저 붙임). 없으면 무시.
@@ -186,12 +188,7 @@ def make_draft_data(topic: str, post_type: str = "정보성", title: str = "",
         title=title or topic, main_keyword=main_keyword,
         sub_keywords=", ".join(subs), sub_keywords_json=json.dumps(subs, ensure_ascii=False),
     )
-    msg = client.messages.create(
-        model=cfg.get("generate", {}).get("model", "claude-sonnet-5"),
-        max_tokens=cfg.get("generate", {}).get("max_tokens", 5000),
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = "".join(b.text for b in msg.content if b.type == "text")
+    raw = llm.complete(user=prompt, max_tokens=cfg.get("generate", {}).get("max_tokens", 5000))
     data = gp._extract_json(raw)
     data.setdefault("tags", [])
     data.setdefault("sub_keywords", subs)
