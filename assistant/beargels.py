@@ -163,23 +163,26 @@ class LLMUnavailable(RuntimeError):
 
 
 def _ask_claude(system, user, max_tokens=1500):
-    """Claude 에 질의한다. 실패 시 LLMUnavailable 로 감싸 던진다.
+    """AI 에 질의한다. 실패 시 LLMUnavailable 로 감싸 던진다.
+
+    공급자(Claude / Gemini)는 llm.py 가 .env 를 보고 자동으로 고른다 —
+    Claude 크레딧이 떨어져도 무료 등급으로 계속 답글·리포트를 만들 수 있다.
 
     호출부는 이를 잡아 '숫자 리포트는 그대로, AI 부분만 생략' 형태로
     graceful degrade 한다(LLM 장애가 리포트 전체를 막지 않도록).
     """
+    import sys
+    from pathlib import Path as _Path
+    _root = str(_Path(__file__).resolve().parent.parent)
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
+    import llm
+
     try:
-        resp = get_client().messages.create(
-            model=MODEL,
-            max_tokens=max_tokens,
-            thinking={"type": "adaptive"},
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
+        return llm.complete(system=system, user=user, max_tokens=max_tokens).strip()
     except Exception as e:  # noqa: BLE001
-        logger.warning("Claude 호출 실패: %s", str(e)[:200])
+        logger.warning("AI 호출 실패: %s", str(e)[:200])
         raise LLMUnavailable(str(e)) from e
-    return "".join(b.text for b in resp.content if b.type == "text").strip()
 
 
 def summarize_reviews(reviews, max_reviews=40):

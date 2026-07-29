@@ -215,12 +215,17 @@ def tracked_keywords() -> list[str]:
 
 def _friendly_error(e: Exception) -> str:
     msg = str(e).lower()
-    if "credit" in msg or "billing" in msg:
-        return ("AI 크레딧이 부족해요. console.anthropic.com 에서 충전하면 "
-                "여기서 바로 기획·초안이 나와요. (그 전까지는 화면·흐름만 확인 가능)")
+    if "쓸 수 있는 ai" in str(e) or "no provider" in msg:
+        return ("쓸 수 있는 AI 가 없어요. .env 에 GEMINI_API_KEY(무료) 또는 "
+                "ANTHROPIC_API_KEY 를 넣어주세요. 무료 키: aistudio.google.com/apikey")
+    if "credit" in msg or "billing" in msg or "insufficient" in msg:
+        return ("Claude 크레딧이 부족해요. .env 에 GEMINI_API_KEY(무료)를 넣으면 "
+                "바로 무료로 계속 쓸 수 있어요. 무료 키: aistudio.google.com/apikey")
     if "api_key" in msg or "authentication" in msg or "x-api-key" in msg:
-        return "API 키가 설정되지 않았어요. automation/.env 의 ANTHROPIC_API_KEY 를 확인해주세요."
-    return f"기획 중 문제가 생겼어요: {e}"
+        return "API 키가 잘못됐어요. .env 의 ANTHROPIC_API_KEY / GEMINI_API_KEY 를 확인해주세요."
+    if "quota" in msg or "429" in msg:
+        return "무료 사용 한도를 잠깐 넘었어요. 몇 분 뒤 다시 눌러주세요."
+    return f"AI 작업 중 문제가 생겼어요: {e}"
 
 
 RECOMMENDATIONS = pathlib.Path(__file__).resolve().parent / "recommendations.json"

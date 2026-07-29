@@ -112,12 +112,8 @@ def expert_review(body: str, title: str, main_keyword: str) -> dict:
         knowledge=knowledge, seo=seo, title=title,
         main_keyword=main_keyword, body=body,
     )
-    msg = client.messages.create(
-        model=cfg.get("generate", {}).get("model", "claude-sonnet-5"),
-        max_tokens=1800,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = "".join(b.text for b in msg.content if b.type == "text")
+    import llm
+    raw = llm.complete(user=prompt, max_tokens=1800)
     data = gp._extract_json(raw)
     data.setdefault("score", None)
     data.setdefault("one_line", "")
