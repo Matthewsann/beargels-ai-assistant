@@ -15,8 +15,9 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "automation" / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
+for _p in (SRC, ROOT):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 # 금고에서 제외할 파일(색인/인스타 전용 채널 문서 — 블로그 기획엔 불필요)
 KNOWLEDGE_EXCLUDE = {"README.md", "beargels_songdo.md", "growth_strategy.md", "reel_templates.md"}
@@ -41,10 +42,12 @@ def load_knowledge() -> tuple[str, str]:
 
 
 def _client_cfg():
+    """설정만 돌려준다. 실제 AI 호출은 llm.complete 가 공급자를 골라서 한다.
+
+    (client 자리는 옛 호출부 호환을 위해 None 을 둔다 — 더는 쓰지 않는다.)
+    """
     import generate_post  # automation/src — .env 로드 + config.yaml
-    cfg = generate_post.load_config()
-    from anthropic import Anthropic
-    return Anthropic(), cfg, generate_post
+    return None, generate_post.load_config(), generate_post
 
 
 PLAN_PROMPT = """너는 베어글스 송도점의 네이버 블로그 마케팅 전문가다.
@@ -78,12 +81,7 @@ def make_plan(hint: str = "") -> dict:
     client, cfg, gp = _client_cfg()
     knowledge, seo = load_knowledge()
     prompt = PLAN_PROMPT.format(knowledge=knowledge, seo=seo, hint=hint or "")
-    msg = client.messages.create(
-        model=cfg.get("generate", {}).get("model", "claude-sonnet-5"),
-        max_tokens=2500,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = "".join(b.text for b in msg.content if b.type == "text")
+    raw = llm.complete(user=prompt, max_tokens=2500)
     data = gp._extract_json(raw)
     data.setdefault("sub_keywords", [])
     data.setdefault("titles", [])
@@ -170,12 +168,7 @@ def make_recommendations() -> list[dict]:
     client, cfg, gp = _client_cfg()
     knowledge, seo = load_knowledge()
     prompt = REC_PROMPT.format(knowledge=knowledge, seo=seo)
-    msg = client.messages.create(
-        model=cfg.get("generate", {}).get("model", "claude-sonnet-5"),
-        max_tokens=2500,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = "".join(b.text for b in msg.content if b.type == "text")
+    raw = llm.complete(user=prompt, max_tokens=2500)
     return _extract_json_array(raw)
 
 
