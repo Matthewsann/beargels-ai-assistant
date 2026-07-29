@@ -197,8 +197,52 @@ def run_blog_job(job) -> None:
         db.worker_ping("idle", "대기 중")
 
 
+def collect_menus() -> tuple[int, list[str]]:
+    """채널(배민/쿠팡/네이버)에 노출 중인 메뉴를 긁어 스냅샷으로 저장."""
+    from crawler import menu_scrape
+
+    total, warnings = 0, []
+    for channel, fetch in (("baemin", menu_scrape.fetch_baemin_menus),
+                           ("coupang", menu_scrape.fetch_coupang_menus),
+                           ("naver", menu_scrape.fetch_naver_menus)):
+        try:
+            rows = fetch()
+            if rows:
+                total += db.save_menu_snapshots(channel, rows)
+            else:
+                warnings.append(f"{channel} 0건(덤프 확인)")
+        except Exception as e:  # noqa: BLE001 — 채널 하나 실패해도 나머지는 진행
+            warnings.append(f"{channel} 실패: {str(e)[:80]}")
+            db.log_error("worker", f"채널 메뉴 수집 실패({channel}): {e}",
+                         kind=type(e).__name__, path=f"menu_collect/{channel}",
+                         detail=traceback.format_exc())
+    return total, warnings
+
+
+def run_menu_job(job) -> None:
+    """채널 메뉴 수집 요청 1건 처리."""
+    jid = job["id"]
+    db.worker_ping("working", "채널 메뉴 수집 중")
+    try:
+        total, warnings = collect_menus()
+        msg = f"채널 메뉴 {total}건 수집"
+        if warnings:
+            msg += " / " + " · ".join(warnings)
+        db.finish_job(jid, "error" if total == 0 else "done", msg, total)
+        logger.info("메뉴 수집 요청 #%s 완료 — %s", jid, msg)
+    except Exception as e:  # noqa: BLE001
+        db.log_error("worker", f"메뉴 수집 요청 #{jid} 실패: {e}",
+                     kind=type(e).__name__, path="run_menu_job",
+                     detail=traceback.format_exc())
+        db.finish_job(jid, "error", str(e)[:400], 0)
+    finally:
+        db.worker_ping("idle", "대기 중")
+
+
 def run_job(job) -> None:
-    """요청 1건 처리. 종류(kind)에 따라 리뷰 수집 / 블로그 작업으로 나뉜다."""
+    """요청 1건 처리. 종류(kind)에 따라 리뷰 수집 / 블로그 / 메뉴 수집으로 나뉜다."""
+    if job.get("kind") == "menu_collect":
+        return run_menu_job(job)
     jid = job["id"]
     if str(job.get("kind") or "").startswith("blog_"):
         return run_blog_job(job)
