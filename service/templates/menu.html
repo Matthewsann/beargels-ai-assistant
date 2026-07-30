@@ -349,7 +349,9 @@ function toggleDetail(sku){
         <label>판매 <input type="checkbox" id="o-ac-${ch}-${sku}" ${o.active===false?"":"checked"}></label>
         <button style="font-size:11px" onclick="saveCh('${sku}','${ch}')">저장</button>
         <div class="calc">적용가 <b>${won(p)}</b> · 수수료 ${f.commission}%+${f.payment}% (부가세 포함 ${(feeRate(ch)*100).toFixed(1)}%)<br>
-        기여마진 <b class="${m!=null&&m<0?"neg":""}">${won(m)}</b>${m!=null&&p?` (${(m/p*100).toFixed(1)}%)`:""}
+        기여마진 <b class="${m!=null&&m<0?"neg":""}">${won(m)}</b>${(()=>{
+          const r=costRate(it,ch), tg=target(it.category);
+          return r==null ? "" : ` · 원가율 <b class="${r>tg?"neg":""}">${pct(r)}</b>`;})()}
         ${(()=>{const b=breakeven(it,ch), lim=+om().min_order||12500;
           if(b==null) return "";
           if(b===Infinity) return `<br><span class="neg">이 원가율로는 배달비 감당 불가</span>`;
