@@ -2,8 +2,9 @@
 
 집 PC(또는 .env 에 SUPABASE_URL/KEY 가 있는 곳)에서 1회 실행:
 
-    python scripts/seed_menu_master.py            # 없는 것만 추가(안전)
-    python scripts/seed_menu_master.py --force    # 시드값으로 전부 덮어쓰기
+    python scripts/seed_menu_master.py             # 없는 것만 추가(안전)
+    python scripts/seed_menu_master.py --settings  # 설정(수수료·목표원가율·주문모델)만 다시 적용
+    python scripts/seed_menu_master.py --force     # 시드값으로 전부 덮어쓰기
 
 먼저 supabase/migrations/005_menu_master.sql 을 SQL Editor 에서 실행해
 테이블을 만들어야 한다.
@@ -30,6 +31,15 @@ def main() -> None:
     force = "--force" in sys.argv
     data = json.loads(SEED.read_text(encoding="utf-8"))
     sb = get_client()
+
+    # 설정만 갱신 — 메뉴·가격은 건드리지 않는다(웹에서 고친 값 보존).
+    if "--settings" in sys.argv:
+        for key, value in data["settings"].items():
+            sb.table("menu_settings").upsert(
+                {"key": key, "value": value}, on_conflict="key").execute()
+            print(f"menu_settings: {key} 갱신")
+        print("설정만 반영했습니다. 메뉴 데이터는 그대로입니다.")
+        return
 
     existing = {r["sku"] for r in sb.table("menu_items").select("sku").execute().data}
     items = data["items"] if force else [i for i in data["items"] if i["sku"] not in existing]

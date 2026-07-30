@@ -409,6 +409,16 @@ def menu_data(path_key):
         return jsonify({"error": str(e)[:200]}), 500
 
 
+@app.route("/<path_key>/menu/aov")
+def menu_aov(path_key):
+    """실측 객단가 — orders 테이블의 실제 주문금액 평균(채널별)."""
+    check(path_key)
+    try:
+        return jsonify(db.order_stats(days=90))
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": str(e)[:200]}), 200
+
+
 @app.route("/<path_key>/menu/collect", methods=["POST"])
 def menu_collect(path_key):
     """채널 노출 메뉴 수집을 집 PC 일꾼에게 요청."""
@@ -451,7 +461,7 @@ def menu_channel_save(path_key, sku, channel):
 @app.route("/<path_key>/menu/settings/<key>", methods=["POST"])
 def menu_settings_save(path_key, key):
     check(path_key)
-    if key not in ("channel_fees", "target_cost_rates"):
+    if key not in ("channel_fees", "target_cost_rates", "order_model"):
         abort(400)
     try:
         db.menu_set_setting(key, request.get_json(force=True))

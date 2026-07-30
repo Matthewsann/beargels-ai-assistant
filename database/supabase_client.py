@@ -12,7 +12,7 @@ Supabase 클라이언트
 import logging
 import os
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from dotenv import load_dotenv
 from supabase import Client, create_client
@@ -473,6 +473,31 @@ def save_menu_snapshots(channel, rows):
     if payload:
         sb.table("menu_channel_snapshots").insert(payload).execute()
     return len(payload)
+
+
+def order_stats(days=90):
+    """채널별 실측 객단가 — orders 테이블의 주문금액 평균.
+
+    배달비는 주문당 1회 발생하므로, '메뉴 하나가 배달비를 얼마나 짊어지는가'를
+    보려면 실제 객단가가 있어야 한다. 추정 대신 실주문에서 뽑는다.
+    취소·환불 주문은 금액이 0이거나 음수로 들어올 수 있어 0 이하를 제외한다.
+    """
+    since = (date.today() - timedelta(days=days)).isoformat()
+    rows = (get_client().table("orders").select("platform,price")
+            .gte("ordered_date", since).limit(10000).execute().data)
+    agg = {}
+    for r in rows:
+        p = r.get("price")
+        if not isinstance(p, (int, float)) or p <= 0:
+            continue
+        a = agg.setdefault(r.get("platform") or "?", {"sum": 0, "n": 0})
+        a["sum"] += p
+        a["n"] += 1
+    return {
+        "days": days,
+        "aov": {k: round(v["sum"] / v["n"]) for k, v in agg.items() if v["n"]},
+        "orders": {k: v["n"] for k, v in agg.items()},
+    }
 
 
 def menu_snapshots_all():
