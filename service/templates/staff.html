@@ -81,19 +81,27 @@
       <span class="dot {{ 'busy' if worker.state == 'working' else ('on' if worker.alive else 'off') }}"></span>
       집 PC: {{ worker.text }}
     </div>
-    <form method="post" action="{{ url_for('collect', path_key=key) }}">
-      <button class="btn primary wide" type="submit"
-              {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>
-        🔄 리뷰수집
-      </button>
-    </form>
+    <div class="row">
+      <form method="post" action="{{ url_for('collect', path_key=key) }}" style="flex:1;">
+        <button class="btn primary wide" type="submit"
+                {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>
+          🔄 리뷰수집
+        </button>
+      </form>
+      <button class="btn" type="button" onclick="location.reload()"
+              title="상태 새로고침">↻ 새로고침</button>
+    </div>
     {% if job %}
       <div class="status" id="jstat" style="margin:10px 0 0;">{{ job.text }}</div>
     {% endif %}
     {% if not worker.alive %}
       <div class="status" style="margin:10px 0 0; color:var(--bad);">
-        집 PC가 켜져 있어야 새 리뷰를 가져올 수 있어요. 아래 목록은 그대로 쓸 수 있습니다.
+        집 PC 프로그램이 꺼져 있어요. 아래 버튼으로 깨울 수 있습니다
+        (PC 본체 전원이 꺼진 경우엔 사장님께 연락).
       </div>
+      <form method="post" action="{{ url_for('wake', path_key=key) }}" style="margin-top:8px;">
+        <button class="btn wide" type="submit">🔌 프로그램 깨우기 (최대 5분)</button>
+      </form>
     {% endif %}
   </div>
 

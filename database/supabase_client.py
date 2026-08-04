@@ -254,6 +254,21 @@ def request_collect(by=None):
     return (get_client().table("jobs").insert(row).execute().data or [None])[0]
 
 
+def request_wake():
+    """웹의 '프로그램 깨우기' — wake 요청 1건을 대기열에 넣는다.
+
+    일꾼이 살아나면(감시견이 5분 안에 되살린다) 이 요청을 done 으로 닫아,
+    웹이 '깨어났음'을 확인할 수 있다. 이미 대기 중이면 재사용(연타 방지).
+    """
+    live = (get_client().table("jobs").select("*")
+            .eq("kind", "wake").eq("status", "pending")
+            .order("requested_at", desc=True).limit(1).execute().data)
+    if live:
+        return live[0]
+    row = {"kind": "wake", "status": "pending", "requested_by": ""}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
 def latest_job():
     """가장 최근 '리뷰 수집' 요청 1건(없으면 None). 웹에서 진행 상황 표시용.
 

@@ -241,6 +241,10 @@ def run_menu_job(job) -> None:
 
 def run_job(job) -> None:
     """요청 1건 처리. 종류(kind)에 따라 리뷰 수집 / 블로그 / 메뉴 수집으로 나뉜다."""
+    if job.get("kind") == "wake":
+        # 웹의 '프로그램 깨우기' 요청 — 이 코드가 도는 것 자체가 답이다.
+        db.finish_job(job["id"], "done", "일꾼이 켜졌습니다")
+        return None
     if job.get("kind") == "menu_collect":
         return run_menu_job(job)
     jid = job["id"]

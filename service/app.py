@@ -146,6 +146,13 @@ def _friendly_fail(msg: str) -> str:
 def _job_view(job) -> dict | None:
     if not job:
         return None
+    if job.get("kind") == "wake":
+        label = {
+            "pending": "프로그램을 깨우는 중… (최대 5분, 화면이 자동으로 새로고침돼요)",
+            "done": "프로그램이 깨어났어요! 이제 리뷰수집을 누를 수 있습니다.",
+        }.get(job.get("status"), job.get("status"))
+        return {"status": job.get("status"), "text": label,
+                "busy": job.get("status") in ("pending", "running")}
     label = {
         "pending": "수집 요청 접수됨 — 집 PC가 곧 시작해요",
         "running": "수집 중이에요… (30초쯤 걸려요)",
@@ -204,6 +211,22 @@ def collect(path_key):
     try:
         db.request_collect()
     except Exception as e:  # noqa: BLE001 — 화면은 상태로 안내, 원인은 기록
+        db.log_error("service", str(e), kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+    return redirect(url_for("home", path_key=path_key))
+
+
+@app.route("/<path_key>/wake", methods=["POST"])
+def wake(path_key):
+    """'프로그램 깨우기' — 집 PC 감시견이 5분 안에 일꾼을 되살린다.
+
+    PC 전원이 켜져 있고 일꾼 프로그램만 꺼진 경우용. PC 전원 자체가 꺼져
+    있으면 이 버튼으로는 켤 수 없다(화면에 그렇게 안내).
+    """
+    check(path_key)
+    try:
+        db.request_wake()
+    except Exception as e:  # noqa: BLE001
         db.log_error("service", str(e), kind=type(e).__name__,
                      path=request.path, detail=traceback.format_exc())
     return redirect(url_for("home", path_key=path_key))
