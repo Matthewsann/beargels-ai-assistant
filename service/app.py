@@ -163,9 +163,28 @@ def _job_view(job) -> dict | None:
             "busy": job.get("status") in ("pending", "running")}
 
 
+# '그대로 등록해도 좋아요' 배지 기준 — 그 유형을 직원이 거의 안 고치게 됐을 때.
+# 표본이 적을 때 우연으로 켜지지 않게 최소 10건을 요구한다.
+TRUST_MIN_SAMPLES = 10
+TRUST_MAX_EDIT_RATE = 0.05
+
+
+def _trusted_kinds() -> set:
+    """수정률이 충분히 낮은 리뷰 유형 집합. 민감/불만은 무조건 제외."""
+    try:
+        stats = db.edit_rate_by_kind()
+    except Exception:  # noqa: BLE001 — 통계 실패가 화면을 막으면 안 된다
+        return set()
+    return {k for k, s in stats.items()
+            if k not in ("escalate", "complaint")
+            and s["n"] >= TRUST_MIN_SAMPLES
+            and s["rate"] <= TRUST_MAX_EDIT_RATE}
+
+
 def _review_view(r: dict) -> dict:
     draft = r.get("reply_draft") or ""
     return {
+        "kind": r.get("kind"),
         "id": r.get("id"),
         "platform": PLAT.get(r.get("platform"), r.get("platform") or ""),
         "rating": r.get("rating"),
@@ -194,6 +213,9 @@ def home(path_key):
         # 초안이 있는 것만 보여준다 — 초안 없는 카드가 화면을 덮으면
         # 직원이 무엇을 해야 하는지 알 수 없다. 나머지는 건수로만 알린다.
         reviews = [r for r in rows if r["has_draft"]]
+        trusted = _trusted_kinds()
+        for r in reviews:
+            r["trusted"] = (not r["escalate"]) and r.get("kind") in trusted
         waiting = len(rows) - len(reviews)
         job = _job_view(db.latest_job())
     except Exception as e:  # noqa: BLE001

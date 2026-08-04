@@ -115,6 +115,7 @@
         {% if r.date %}<span>· {{ r.date }}</span>{% endif %}
         {% if r.menus %}<span>· {{ r.menus }}</span>{% endif %}
         {% if r.escalate %}<span class="tag bad">🚨 직접 대응</span>{% endif %}
+        {% if r.trusted %}<span class="tag" style="background:var(--ok-bg); color:var(--ok);">✅ 그대로 등록해도 좋아요</span>{% endif %}
       </div>
 
       <div class="rv">{{ r.content or '(사진만, 텍스트 없음)' }}</div>

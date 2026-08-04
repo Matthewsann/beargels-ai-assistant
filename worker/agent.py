@@ -33,7 +33,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from assistant.beargels import generate_review_reply  # noqa: E402
+from assistant.beargels import classify_review, generate_review_reply  # noqa: E402
 from database import supabase_client as db  # noqa: E402
 
 logger = logging.getLogger("worker")
@@ -171,7 +171,9 @@ def make_drafts() -> int:
                          kind=type(e).__name__, path="make_drafts",
                          detail=traceback.format_exc())
             continue
-        db.save_reply_draft(row["id"], draft)
+        # AI 원본(ai_draft)과 유형(kind)을 함께 보존 — 직원이 고치면
+        # reply_draft 만 바뀌므로, 나중에 '얼마나 고쳤나(수정률)'를 잴 수 있다.
+        db.save_ai_draft(row["id"], draft, kind=classify_review(review))
         made += 1
     return made
 

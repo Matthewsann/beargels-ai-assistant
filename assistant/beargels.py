@@ -32,6 +32,19 @@ _REPLY_CONTEXT_PATH = (
     Path(__file__).resolve().parent.parent / "reference" / "reply_context.md")
 _REPLY_CONTEXT_CACHE = None
 
+# 답글 교훈 노트 — 직원이 AI 초안을 고친 패턴에서 새벽 공부가 뽑은 규칙.
+# ⚠️ 캐시하지 않는다: 새벽마다 갱신되는 파일이라, 오래 떠 있는 일꾼이
+#    옛 규칙으로 계속 생성하면 공부한 의미가 없다(파일이 작아 비용도 없음).
+_REPLY_LESSONS_PATH = (
+    Path(__file__).resolve().parent.parent / "reference" / "reply_lessons.md")
+
+
+def _reply_lessons():
+    try:
+        return _REPLY_LESSONS_PATH.read_text(encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        return ""
+
 
 def _reply_context():
     """reply_context.md(사실 백데이터)를 읽어 캐시한다. 없으면 빈 문자열."""
@@ -501,6 +514,9 @@ def generate_review_reply(review):
     try:
         ctx = _reply_context()
         ctx_block = f"[참고 사실(백데이터)]\n{ctx}\n\n" if ctx else ""
+        lessons = _reply_lessons()
+        if lessons:
+            ctx_block += f"[답글 교훈 노트 — 반드시 지킬 것]\n{lessons}\n\n"
         user = (
             f"{ctx_block}"
             f"[{cfg['label']}] {visit} '{author}'가 {menus} 주문 후 "

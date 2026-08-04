@@ -324,7 +324,10 @@ def worker_status():
 
 
 def save_reply_draft(review_id, text, status="drafted"):
-    """리뷰 1건의 답글 초안을 저장한다(직원이 고친 것도 여기로)."""
+    """리뷰 1건의 답글 초안을 저장한다(직원이 고친 것도 여기로).
+
+    ⚠️ ai_draft(AI 원본)는 건드리지 않는다 — 수정률 측정의 기준값이다.
+    """
     (get_client().table("reviews").update({
         "reply_draft": text,
         "draft_updated_at": datetime.now().astimezone().isoformat(),
@@ -332,10 +335,65 @@ def save_reply_draft(review_id, text, status="drafted"):
     }).eq("id", review_id).execute())
 
 
+def save_ai_draft(review_id, text, kind=None):
+    """일꾼이 만든 AI 초안을 저장한다 — 원본(ai_draft)과 편집본(reply_draft)에
+    같은 값을 넣고 시작한다. 이후 직원 수정은 reply_draft 만 바꾼다."""
+    (get_client().table("reviews").update({
+        "ai_draft": text,
+        "reply_draft": text,
+        "kind": kind,
+        "draft_updated_at": datetime.now().astimezone().isoformat(),
+        "reply_status": "drafted",
+    }).eq("id", review_id).execute())
+
+
 def mark_replied(review_id):
-    """'답글 등록함' 표시 → 목록에서 내려간다."""
-    (get_client().table("reviews").update({"reply_status": "posted"})
-     .eq("id", review_id).execute())
+    """'답글 등록함' 표시 → 목록에서 내려간다. 등록 시각을 남겨 수정률 집계에 쓴다."""
+    (get_client().table("reviews").update({
+        "reply_status": "posted",
+        "posted_at": datetime.now().astimezone().isoformat(),
+    }).eq("id", review_id).execute())
+
+
+def edit_rate_by_kind(limit=500):
+    """유형(kind)별 수정률을 계산한다.
+
+    Returns: {kind: {"n": 등록건수, "edited": 고친건수, "rate": 수정률}}
+    등록(posted)됐고 ai_draft 가 있는 리뷰만 대상 — 1단계 배포 이후 데이터.
+    공백 차이만 있는 건 '수정 안 함'으로 본다.
+    """
+    rows = (get_client().table("reviews")
+            .select("kind, ai_draft, reply_draft")
+            .eq("reply_status", "posted").not_.is_("ai_draft", "null")
+            .order("posted_at", desc=True).limit(limit).execute().data)
+    stats = {}
+    for r in rows:
+        k = r.get("kind") or "unknown"
+        s = stats.setdefault(k, {"n": 0, "edited": 0})
+        s["n"] += 1
+        a = " ".join((r.get("ai_draft") or "").split())
+        b = " ".join((r.get("reply_draft") or "").split())
+        if a != b:
+            s["edited"] += 1
+    for s in stats.values():
+        s["rate"] = round(s["edited"] / s["n"], 3) if s["n"] else 0.0
+    return stats
+
+
+def get_edit_pairs(days=1, limit=50):
+    """최근 며칠 사이 직원이 실제로 고친 (AI원본, 최종본) 쌍 — 새벽 공부용."""
+    since = (datetime.now().astimezone() - timedelta(days=days)).isoformat()
+    rows = (get_client().table("reviews")
+            .select("id, platform, kind, rating, content, ai_draft, reply_draft")
+            .eq("reply_status", "posted").not_.is_("ai_draft", "null")
+            .gte("posted_at", since).limit(limit).execute().data)
+    pairs = []
+    for r in rows:
+        a = " ".join((r.get("ai_draft") or "").split())
+        b = " ".join((r.get("reply_draft") or "").split())
+        if a and b and a != b:
+            pairs.append(r)
+    return pairs
 
 
 def log_error(source, message, kind=None, path=None, detail=None):
