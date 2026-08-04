@@ -2333,7 +2333,7 @@
     "label": "쿠팡이츠",
     "commission": 9.8,
     "payment": 3.0,
-    "delivery_fee": 2900,
+    "delivery_fee": 3300,
     "vat_on_fees": true
    },
    "naver": {
@@ -2358,6 +2358,11 @@
    "보틀": 25,
    "디저트": 30,
    "기타": 35
+  },
+  "order_model": {
+   "min_order": 12500,
+   "allocation": "order",
+   "aov": {}
   }
  }
 }
