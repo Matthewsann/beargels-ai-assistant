@@ -86,19 +86,38 @@ def _call_claude(system: str, user: str, max_tokens: int) -> str:
     return "".join(b.text for b in msg.content if b.type == "text")
 
 
+# 최신 Gemini(3.x)는 기본으로 '생각(thinking)'을 하는데, 그 토큰이
+# maxOutputTokens 예산을 먹어치워 답글이 문장 중간에 잘린다(MAX_TOKENS,
+# thoughtsTokenCount 767/800 실측 2026-08-06 — "구린 답글"의 원인).
+# thinkingLevel=MINIMAL 로 끄면 정상. 구모델은 이 필드를 모르니(400)
+# thinkingBudget=0 → 설정 없음 순으로 폴백한다.
+_THINKING_CONFIGS = (
+    {"thinkingLevel": "MINIMAL"},
+    {"thinkingBudget": 0},
+    None,
+)
+
+
 def _call_gemini(system: str, user: str, max_tokens: int, model: str | None = None) -> str:
     model = model or GEMINI_MODEL
-    body = {
-        "contents": [{"parts": [{"text": user}]}],
-        "generationConfig": {"maxOutputTokens": max_tokens},
-    }
-    if system:
-        body["system_instruction"] = {"parts": [{"text": system}]}
-    resp = requests.post(
-        GEMINI_URL.format(model=model),
-        params={"key": _key("GEMINI_API_KEY")},
-        json=body, timeout=120,
-    )
+    resp = None
+    for tc in _THINKING_CONFIGS:
+        gen_cfg = {"maxOutputTokens": max_tokens}
+        if tc:
+            gen_cfg["thinkingConfig"] = tc
+        body = {
+            "contents": [{"parts": [{"text": user}]}],
+            "generationConfig": gen_cfg,
+        }
+        if system:
+            body["system_instruction"] = {"parts": [{"text": system}]}
+        resp = requests.post(
+            GEMINI_URL.format(model=model),
+            params={"key": _key("GEMINI_API_KEY")},
+            json=body, timeout=120,
+        )
+        if resp.status_code != 400:
+            break                      # 400(필드 미지원)일 때만 다음 설정 시도
     if resp.status_code == 404 and model != GEMINI_FALLBACK_MODEL:
         # 모델 이름이 바뀐 경우 한 번 더 시도(구글이 모델을 자주 교체한다)
         logger.warning("Gemini 모델 %s 없음 → %s 로 재시도", model, GEMINI_FALLBACK_MODEL)

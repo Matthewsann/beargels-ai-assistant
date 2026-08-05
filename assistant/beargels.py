@@ -546,9 +546,42 @@ def generate_review_reply(review):
             f"반복하지 말고, 주문 메뉴·사진·경험을 구체적으로 여러 개 짚어 "
             f"진짜 내용으로 채운다. 다른 답글과 겹치지 않게 자연스럽게."
         )
-        return _ask_claude(REPLY_PERSONA, user, max_tokens=600)[:max_len]
+        draft = _ask_claude(REPLY_PERSONA, user, max_tokens=600)[:max_len]
+        return _strip_banned(draft, max_len)
     except LLMUnavailable:
         return _template_reply(typ, review, author, oc, rating, max_len)
+
+
+# 생성 후 최종 검문 — 모델이 프롬프트의 금지 규칙을 흘리는 일이 실제로 있다
+# (Gemini가 '바라요'를 씀, 2026-08-06). AI 말투·방문 표현·브랜드 금지어.
+_REPLY_BANNED = (
+    "바라요", "바랍니다", "되셨으면", "되었길", "즐거운 한 끼",
+    "정성껏 준비하겠습니다", "정성을 다하겠습니다", "큰 힘이 됩니다",
+    "보답하겠습니다", "보답할게요",
+    "들러주세요", "놀러오세요", "오시면", "와주셔", "또 오세요",
+    "역대급", "미쳤다", "인생맛집", "혜자", "대박",
+)
+
+
+def _strip_banned(text, max_len):
+    """금지 표현이 섞였으면 그 부분만 자연스럽게 고쳐 받는다(1회).
+
+    재작성도 실패하면 원문을 그대로 돌려준다 — 초안은 직원이 한 번 더
+    보므로, 완벽하지 않은 초안이 안 나오는 것보다 낫다.
+    """
+    hits = [b for b in _REPLY_BANNED if b in text]
+    if not hits:
+        return text
+    try:
+        fixed = _ask_claude(
+            REPLY_PERSONA,
+            "다음 답글에서 금지 표현(" + ", ".join(hits) + ")이 들어간 부분만 "
+            "자연스러운 다른 말로 바꿔줘. 나머지 내용·말투·길이는 그대로 두고, "
+            "답글 본문만 출력해:\n\n" + text,
+            max_tokens=600)[:max_len].strip()
+        return fixed or text
+    except LLMUnavailable:
+        return text
 
 
 def _template_reply(typ, review, author, oc, rating, max_len):
