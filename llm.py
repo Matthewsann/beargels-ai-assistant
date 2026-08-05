@@ -31,8 +31,11 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-GEMINI_FALLBACK_MODEL = "gemini-2.0-flash"
+# 'gemini-flash-latest' 는 구글이 최신 플래시로 자동 연결해 주는 별칭이라
+# 모델 은퇴에 강하다. 구모델은 무료쿼터가 0이 되거나 404 로 사라진다
+# (2.5-flash 404, 2.0-flash 쿼터0 — 2026-08-06 실키로 확인).
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+GEMINI_FALLBACK_MODEL = "gemini-3.5-flash-lite"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
