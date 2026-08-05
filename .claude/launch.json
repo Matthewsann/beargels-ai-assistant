@@ -6,6 +6,12 @@
       "runtimeExecutable": "C:\\Users\\명구\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "runtimeArgs": ["C:\\Users\\명구\\Claude\\beargels-ai-assistant\\webapp\\app.py"],
       "port": 5050
+    },
+    {
+      "name": "staff-service",
+      "runtimeExecutable": "C:\\Users\\명구\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+      "runtimeArgs": ["C:\\Users\\명구\\Claude\\beargels-ai-assistant\\service\\app.py"],
+      "port": 5060
     }
   ]
 }

@@ -278,6 +278,36 @@ def save_draft(path_key, review_id):
     return redirect(url_for("home", path_key=path_key) + f"#r{review_id}")
 
 
+@app.route("/<path_key>/review/<int:review_id>/regen", methods=["POST"])
+def regen(path_key, review_id):
+    """'AI 재생성' — 집 PC 일꾼에게 초안 재생성을 요청한다(잡 큐).
+
+    생성은 일꾼이 하므로(웹서버엔 AI 키·생성 코드가 없다) 보통 15~30초 걸린다.
+    화면 쪽 JS 가 draft_state 를 폴링해 새 초안이 오면 바꿔 넣는다.
+    """
+    check(path_key)
+    try:
+        db.request_regen(review_id)
+        return jsonify({"ok": True})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"재생성 요청 실패(review {review_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:150]}), 200
+
+
+@app.route("/<path_key>/review/<int:review_id>/draft")
+def draft_state(path_key, review_id):
+    """초안 현재 상태 — 재생성 폴링용(JS 가 3초마다 확인)."""
+    check(path_key)
+    try:
+        r = db.get_review(review_id) or {}
+        return jsonify({"draft": r.get("reply_draft") or "",
+                        "at": r.get("draft_updated_at") or ""})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": str(e)[:150]}), 200
+
+
 @app.route("/<path_key>/review/<int:review_id>/done", methods=["POST"])
 def done(path_key, review_id):
     check(path_key)

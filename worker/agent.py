@@ -241,12 +241,51 @@ def run_menu_job(job) -> None:
         db.worker_ping("idle", "대기 중")
 
 
+def run_regen_job(job) -> None:
+    """웹의 'AI 재생성' 요청 — 리뷰 1건의 초안을 새로 만들어 덮어쓴다.
+
+    대상 리뷰 id 는 message 에 담겨 온다(jobs 에 payload 컬럼이 없어서).
+    크롤링 없이 DB 의 리뷰로만 생성하므로 빠르다(수 초).
+    """
+    jid = job["id"]
+    try:
+        rid = int(job.get("message") or 0)
+        row = db.get_review(rid)
+        if not row:
+            db.finish_job(jid, "error", f"리뷰 {rid} 를 찾을 수 없습니다", 0)
+            return
+        db.worker_ping("working", "답글 재생성 중")
+        review = {
+            "platform": row.get("platform"),
+            "review_no": row.get("review_no"),
+            "author": row.get("author"),
+            "rating": row.get("rating"),
+            "content": row.get("content"),
+            "menus": row.get("menus") or [],
+            "order_count": None,
+        }
+        draft = generate_review_reply(review)
+        db.save_ai_draft(rid, draft, kind=classify_review(review))
+        db.finish_job(jid, "done", f"리뷰 {rid} 초안 재생성 완료", 1)
+        logger.info("재생성 #%s 완료 (리뷰 %s)", jid, rid)
+    except Exception as e:  # noqa: BLE001
+        logger.error("재생성 #%s 실패: %s", jid, e)
+        db.log_error("worker", f"재생성 #{jid} 실패: {e}",
+                     kind=type(e).__name__, path="run_regen_job",
+                     detail=traceback.format_exc())
+        db.finish_job(jid, "error", str(e)[:400], 0)
+    finally:
+        db.worker_ping("idle", "대기 중")
+
+
 def run_job(job) -> None:
     """요청 1건 처리. 종류(kind)에 따라 리뷰 수집 / 블로그 / 메뉴 수집으로 나뉜다."""
     if job.get("kind") == "wake":
         # 웹의 '프로그램 깨우기' 요청 — 이 코드가 도는 것 자체가 답이다.
         db.finish_job(job["id"], "done", "일꾼이 켜졌습니다")
         return None
+    if job.get("kind") == "regen":
+        return run_regen_job(job)
     if job.get("kind") == "menu_collect":
         return run_menu_job(job)
     jid = job["id"]

@@ -269,6 +269,31 @@ def request_wake():
     return (get_client().table("jobs").insert(row).execute().data or [None])[0]
 
 
+def request_regen(review_id, by=None):
+    """직원이 'AI 재생성'을 눌렀다 → 집 PC 일꾼에게 초안 재생성을 요청한다.
+
+    jobs 에 payload 컬럼이 없어(DDL 회피) 대상 리뷰 id 를 message 에 담는다 —
+    일꾼이 읽은 뒤 finish_job 이 결과 문구로 덮어쓴다.
+    같은 리뷰의 재생성이 이미 대기/진행 중이면 재사용(연타 방지).
+    """
+    live = (get_client().table("jobs").select("*")
+            .eq("kind", "regen").eq("message", str(review_id))
+            .in_("status", ["pending", "running"])
+            .order("requested_at", desc=True).limit(1).execute().data)
+    if live:
+        return live[0]
+    row = {"kind": "regen", "status": "pending",
+           "requested_by": by or "", "message": str(review_id)}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
+def get_review(review_id):
+    """리뷰 1건(없으면 None) — 재생성 등 단건 작업용."""
+    rows = (get_client().table("reviews").select("*")
+            .eq("id", review_id).limit(1).execute().data)
+    return rows[0] if rows else None
+
+
 def latest_job():
     """가장 최근 '리뷰 수집' 요청 1건(없으면 None). 웹에서 진행 상황 표시용.
 
