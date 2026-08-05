@@ -28,6 +28,7 @@ import subprocess
 import sys
 import time
 import traceback
+from datetime import datetime, timedelta
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -278,6 +279,54 @@ def run_regen_job(job) -> None:
         db.worker_ping("idle", "대기 중")
 
 
+# ---------------------------------------------------------------------------
+# 자동 수집 — 직원이 버튼을 안 눌러도 몇 시간마다 알아서 수집+초안 준비
+# ---------------------------------------------------------------------------
+
+# 몇 시간마다 자동 수집할지. 0 이면 끔(버튼으로만).
+AUTO_COLLECT_HOURS = float(os.getenv("WORKER_AUTO_COLLECT_HOURS", "2"))
+# 심야(주문·리뷰가 거의 없는 시간)엔 안 돈다. "시작-끝" 시각(끝 미포함).
+QUIET_HOURS = os.getenv("WORKER_QUIET_HOURS", "0-7")
+
+
+def _in_quiet_hours(now) -> bool:
+    try:
+        start, end = (int(x) for x in QUIET_HOURS.split("-"))
+    except ValueError:
+        return False
+    if start <= end:
+        return start <= now.hour < end
+    return now.hour >= start or now.hour < end   # 예: "23-7" (자정 걸침)
+
+
+def auto_collect_due(now, last_requested_at) -> bool:
+    """자동 수집을 걸 때가 됐는지 — 순수 판단 로직(테스트 대상).
+
+    마지막 '수집 잡'의 요청 시각 기준이라, 직원이 방금 버튼을 눌렀으면
+    그만큼 미뤄지고, 실패한 잡도 간격만큼 기다렸다 재시도한다(스팸 방지).
+    """
+    if AUTO_COLLECT_HOURS <= 0 or _in_quiet_hours(now):
+        return False
+    if not last_requested_at:
+        return True
+    return (now - last_requested_at) >= timedelta(hours=AUTO_COLLECT_HOURS)
+
+
+def maybe_auto_collect() -> None:
+    """때가 됐으면 수집 잡을 스스로 대기열에 넣는다(처리는 기존 잡 흐름 그대로)."""
+    try:
+        last = None
+        job = db.latest_job()
+        if job and job.get("requested_at"):
+            last = datetime.fromisoformat(
+                job["requested_at"].replace("Z", "+00:00")).astimezone()
+        if auto_collect_due(datetime.now().astimezone(), last):
+            db.request_collect(by="자동")
+            logger.info("자동 수집 요청을 넣었습니다 (%.1f시간 간격)", AUTO_COLLECT_HOURS)
+    except Exception as e:  # noqa: BLE001 — 자동 수집 실패가 루프를 막으면 안 된다
+        logger.warning("자동 수집 판단 실패: %s", e)
+
+
 def run_job(job) -> None:
     """요청 1건 처리. 종류(kind)에 따라 리뷰 수집 / 블로그 / 메뉴 수집으로 나뉜다."""
     if job.get("kind") == "wake":
@@ -342,6 +391,7 @@ def main() -> int:
             if job:
                 run_job(job)
             else:
+                maybe_auto_collect()
                 db.worker_ping("idle", "대기 중")
         except KeyboardInterrupt:
             raise

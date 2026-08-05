@@ -52,6 +52,10 @@
           background:var(--accent-bg); color:var(--accent); }
   .note.bad { background:var(--bad-bg); color:var(--bad); }
   .copied { color:var(--ok); font-size:12px; text-align:center; margin-top:6px; display:none; }
+  .postcopy { display:none; align-items:center; justify-content:space-between; gap:8px;
+              background:var(--ok-bg); color:var(--ok); border-radius:9px;
+              padding:10px 12px; margin-top:9px; font-size:13px; }
+  .postcopy .btn { padding:8px 13px; font-size:13px; }
   .navbar { display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
   .navbar a { font-size:13px; padding:7px 13px; border-radius:20px; text-decoration:none;
               color:var(--muted); background:var(--card); border:1px solid var(--line); }
@@ -110,6 +114,10 @@
   </div>
 
   {% if reviews %}
+    <div class="status" style="margin-bottom:9px;">
+      ✍️ 처리할 답글 <b style="color:var(--ink);">{{ reviews|length }}건</b>
+      — 위에서부터 하나씩 처리해 주세요
+    </div>
     {% for r in reviews %}
     <div class="card {{ 'esc' if r.escalate else '' }}" id="r{{ r.id }}">
       <div class="meta">
@@ -147,7 +155,15 @@
           </button>
         </div>
         <div class="copied" id="c{{ r.id }}">복사됐어요! 배민·쿠팡에 붙여넣으세요</div>
-        <form method="post" action="{{ url_for('done', path_key=key, review_id=r.id) }}" class="acts">
+        <div class="postcopy" id="p{{ r.id }}">
+          <b>{{ r.platform }} 앱에 답글 등록까지 마치셨나요?</b>
+          <button class="btn primary" type="button"
+                  onclick="document.getElementById('done{{ r.id }}').submit()">
+            네, 등록했어요
+          </button>
+        </div>
+        <form method="post" id="done{{ r.id }}"
+              action="{{ url_for('done', path_key=key, review_id=r.id) }}" class="acts">
           <button class="btn" type="submit" style="width:100%;">✅ 답글 등록함 · 목록에서 내리기</button>
         </form>
       {% endif %}
@@ -155,8 +171,9 @@
     {% endfor %}
   {% else %}
     <div class="empty">
-      답글을 기다리는 리뷰가 없어요.<br>
-      새 리뷰를 가져오려면 위 <b>리뷰수집</b>을 눌러주세요.
+      🎉 답글을 기다리는 리뷰가 없어요.<br>
+      새 리뷰는 낮 시간엔 2시간마다 자동으로 가져와요.<br>
+      지금 당장 확인하려면 위 <b>리뷰수집</b>을 눌러주세요.
     </div>
   {% endif %}
 
@@ -208,6 +225,9 @@ function copyIt(id, saveUrl) {
     const c = document.getElementById('c' + id);
     c.style.display = 'block';
     setTimeout(() => { c.style.display = 'none'; }, 2500);
+    // 복사했다 = 곧 등록한다 → '등록함' 누락 방지 확인띠를 띄운다(2순위 개발).
+    const p = document.getElementById('p' + id);
+    if (p) p.style.display = 'flex';
   };
   const body = new URLSearchParams({draft: t.value});
   fetch(saveUrl, {method: 'POST', body: body}).catch(() => {});
