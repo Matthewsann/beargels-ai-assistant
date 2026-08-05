@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>사용법 — 베어글스 리뷰 답글</title>
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
+          --ok:#3b6d11; --ok-bg:#eaf3de; --bad:#a3271f; --bad-bg:#fbe9e7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.7;
+         font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px 14px 64px; }
+  .head { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .logo { width:36px; height:36px; border-radius:10px; background:var(--accent-bg);
+          color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:19px; }
+  .head b { font-size:16px; } .head small { display:block; color:var(--muted); font-size:12px; }
+  .back { margin-left:auto; font-size:13px; text-decoration:none; color:var(--accent);
+          background:var(--accent-bg); padding:7px 13px; border-radius:20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:16px; margin-bottom:12px; font-size:14px; }
+  .card h2 { font-size:15px; margin:0 0 10px; }
+  .card h2 .no { display:inline-flex; width:22px; height:22px; border-radius:50%;
+                 background:var(--accent); color:#fff; font-size:13px; align-items:center;
+                 justify-content:center; margin-right:7px; }
+  .b { display:inline-block; border:1px solid var(--line); border-radius:7px; padding:2px 9px;
+       font-size:12px; background:#f6f5f1; white-space:nowrap; }
+  .b.p { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .tip { font-size:13px; background:var(--accent-bg); color:var(--accent);
+         border-radius:9px; padding:10px 12px; margin-top:10px; }
+  .warn { font-size:13px; background:var(--bad-bg); color:var(--bad);
+          border-radius:9px; padding:10px 12px; margin-top:10px; }
+  ul { margin:8px 0 0; padding-left:18px; } li { margin-bottom:6px; }
+  .muted { color:var(--muted); font-size:13px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+  td { border-top:1px solid var(--line); padding:8px 6px; vertical-align:top; }
+  td:first-child { white-space:nowrap; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="head">
+    <div class="logo">🐻</div>
+    <div><b>리뷰 답글 사용법</b>
+      <small>처음 오셨으면 위에서부터 순서대로 읽어주세요</small></div>
+    <a class="back" href="{{ url_for('home', path_key=key) }}">← 답글 화면</a>
+  </div>
+
+  <div class="card">
+    <h2>이 화면이 하는 일</h2>
+    배민·쿠팡에 달린 새 리뷰를 모아 오고, AI가 답글 초안을 미리 써 둡니다.
+    여러분은 <b>초안을 확인하고 → 복사해서 → 배민·쿠팡 앱에 붙여넣어 등록</b>만
+    하면 돼요. 답글이 우리 가게 말투로 이미 써져 있으니 처음부터 쓸 필요가 없습니다.
+  </div>
+
+  <div class="card">
+    <h2><span class="no">1</span>새 리뷰 가져오기</h2>
+    화면 맨 위 <span class="b p">🔄 리뷰수집</span>을 누르면 집 PC가 배민·쿠팡에서
+    새 리뷰를 긁어오고 답글 초안까지 만들어요(보통 1~3분).
+    끝나면 <span class="b">↻ 새로고침</span>을 눌러 목록을 확인하세요.
+    <div class="tip">💡 "집 PC가 꺼져 있어요"라고 나오면
+      <span class="b">🔌 프로그램 깨우기</span>를 누르고 5분쯤 기다렸다가 새로고침.
+      그래도 안 되면 사장님께 연락해주세요.</div>
+  </div>
+
+  <div class="card">
+    <h2><span class="no">2</span>초안 확인하고 다듬기</h2>
+    카드마다 리뷰 원문(회색 상자)과 그 아래 답글 초안이 있어요.
+    <ul>
+      <li>초안이 괜찮으면 → 그대로 3번으로.</li>
+      <li>조금 고치고 싶으면 → 초안 칸에서 <b>바로 타이핑해서 수정</b>하세요.</li>
+      <li>초안이 마음에 안 들면 → <span class="b">🔄 AI 재생성</span>을 누르면
+        AI가 완전히 새로 써요(15~30초, 자동으로 바뀜).</li>
+    </ul>
+    <div class="tip">💡 <span class="b">✅ 그대로 등록해도 좋아요</span> 배지가 붙은
+      카드는 그동안 거의 수정 없이 나갔던 유형이라 안심하고 바로 복사해도 됩니다.</div>
+    <div class="tip">🧠 여러분이 고친 내용은 AI가 매일 새벽에 공부해서,
+      다음 날 초안부터 반영돼요. 고칠수록 초안이 점점 취향에 맞아집니다.</div>
+  </div>
+
+  <div class="card">
+    <h2><span class="no">3</span>복사해서 배민·쿠팡에 등록</h2>
+    <span class="b p">📋 복사하기</span>를 누르면 초안(고친 내용 포함)이 복사되고
+    서버에도 저장돼요. 그다음 배민 사장님앱 / 쿠팡이츠 스토어앱의 해당 리뷰에
+    <b>붙여넣고 등록</b>하세요.
+    <div class="tip">💡 카드 위쪽 태그로 어느 앱인지 확인:
+      <span class="b" style="background:var(--accent-bg);color:var(--accent);">배민</span> /
+      <span class="b" style="background:var(--warn-bg);color:var(--warn);">쿠팡이츠</span></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="no">4</span>등록했으면 꼭! "답글 등록함"</h2>
+    배민·쿠팡에 등록을 마쳤으면 그 카드의
+    <span class="b">✅ 답글 등록함 · 목록에서 내리기</span>를 눌러 마무리하세요.
+    <ul>
+      <li>카드가 목록에서 내려가서, 처리 끝난 리뷰가 안 쌓여요.</li>
+      <li>다른 직원이 같은 리뷰에 또 답글 다는 걸 막아요.</li>
+      <li>AI가 "최종적으로 어떤 답글이 나갔는지" 배우는 데이터가 돼요.</li>
+    </ul>
+    <div class="warn">⚠️ 이 버튼을 안 누르면 리뷰가 화면에 계속 남고 AI 공부도
+      안 됩니다. <b>복사만 하고 끝내지 말고 꼭 눌러주세요.</b></div>
+  </div>
+
+  <div class="card">
+    <h2>🚨 "직접 대응" 빨간 카드</h2>
+    이물질·건강·환불·법적 언급이 있는 리뷰는 AI가 일부러 답글을 만들지 않아요.
+    <b>사장님께 바로 알리고</b>, 사장님 지시 후에 카드의
+    <span class="b">확인함 · 목록에서 내리기</span>를 눌러주세요.
+    <div class="warn">⚠️ 이런 리뷰에 임의로 답글을 달지 마세요.</div>
+  </div>
+
+  <div class="card">
+    <h2>자주 묻는 질문</h2>
+    <table>
+      <tr><td>리뷰수집을 눌렀는데 반응이 없어요</td>
+          <td>1~3분 걸려요. 조금 기다렸다가 ↻ 새로고침. "집 PC가 꺼져 있어요"면
+              🔌 프로그램 깨우기 → 5분 뒤 새로고침.</td></tr>
+      <tr><td>AI 재생성이 2분 넘게 안 끝나요</td>
+          <td>집 PC 프로그램이 꺼진 경우예요. 🔌 프로그램 깨우기 후 다시 시도.</td></tr>
+      <tr><td>초안이 안 만들어진 리뷰가 있대요</td>
+          <td>🔄 리뷰수집을 한 번 더 누르면 이어서 만들어요.</td></tr>
+      <tr><td>실수로 "답글 등록함"을 눌렀어요</td>
+          <td>사장님께 말씀해주세요. 실제 답글은 배민·쿠팡에 있으니 사라진 건 없어요.</td></tr>
+      <tr><td>복사하기가 안 눌려요/복사가 안 돼요</td>
+          <td>초안 칸을 길게 눌러 전체선택 → 복사로 대신할 수 있어요.</td></tr>
+    </table>
+  </div>
+
+  <div class="muted" style="text-align:center; margin-top:18px;">
+    막히면 사장님께 편하게 물어보세요 🐻
+  </div>
+
+</div>
+</body>
+</html>

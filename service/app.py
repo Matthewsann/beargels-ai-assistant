@@ -227,6 +227,13 @@ def home(path_key):
     )
 
 
+@app.route("/<path_key>/guide")
+def guide(path_key):
+    """직원용 사용법 안내 — 정적 페이지(DB 안 씀)."""
+    check(path_key)
+    return render_template("guide.html", key=path_key)
+
+
 @app.route("/<path_key>/collect", methods=["POST"])
 def collect(path_key):
     check(path_key)
