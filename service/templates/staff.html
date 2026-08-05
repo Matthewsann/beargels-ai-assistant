@@ -66,9 +66,11 @@
     <div><b>베어글스 리뷰 답글</b>
       <small>답글 초안을 복사해서 배민·쿠팡에 붙여넣으세요</small></div>
     <a href="{{ url_for('guide', path_key=key) }}"
-       style="margin-left:auto;font-size:12px;text-decoration:none">❓ 사용법</a>
+       style="margin-left:auto;font-size:14px;font-weight:600;text-decoration:none;
+              background:var(--accent);color:#fff;padding:9px 15px;border-radius:20px;
+              white-space:nowrap;">❓ 사용법</a>
     <a href="{{ url_for('menu_page', path_key=key) }}"
-       style="font-size:12px;text-decoration:none">🥯 메뉴/원가</a>
+       style="font-size:12px;text-decoration:none;white-space:nowrap;">🥯 메뉴/원가</a>
   </div>
 
   <div class="navbar">
