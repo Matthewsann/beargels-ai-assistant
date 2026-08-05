@@ -335,24 +335,48 @@ def save_reply_draft(review_id, text, status="drafted"):
     }).eq("id", review_id).execute())
 
 
+# schema_v5.sql 이 추가하는 컬럼들. 아직 Supabase 에 적용 전이면 이 컬럼들만
+# 빼고 재시도한다 — 초안 저장·'등록함' 버튼이 마이그레이션 하나 때문에 통째로
+# 죽으면 안 된다(수정률 측정만 잠시 포기).
+# 에러코드: UPDATE 는 PGRST204(스키마 캐시에 컬럼 없음), SELECT 는 42703.
+_V5_COLS = ("ai_draft", "kind", "posted_at")
+_MISSING_COLUMN_CODES = ("PGRST204", "42703")
+
+
+def _update_review(review_id, payload):
+    client = get_client()
+    try:
+        client.table("reviews").update(payload).eq("id", review_id).execute()
+    except Exception as e:  # noqa: BLE001 — postgrest APIError
+        if getattr(e, "code", None) not in _MISSING_COLUMN_CODES:
+            raise
+        slim = {k: v for k, v in payload.items() if k not in _V5_COLS}
+        if not slim:
+            raise
+        logger.warning("schema_v5 미적용 — %s 없이 저장 (SQL Editor 에서 "
+                       "database/schema_v5.sql 실행 필요)",
+                       [k for k in payload if k in _V5_COLS])
+        client.table("reviews").update(slim).eq("id", review_id).execute()
+
+
 def save_ai_draft(review_id, text, kind=None):
     """일꾼이 만든 AI 초안을 저장한다 — 원본(ai_draft)과 편집본(reply_draft)에
     같은 값을 넣고 시작한다. 이후 직원 수정은 reply_draft 만 바꾼다."""
-    (get_client().table("reviews").update({
+    _update_review(review_id, {
         "ai_draft": text,
         "reply_draft": text,
         "kind": kind,
         "draft_updated_at": datetime.now().astimezone().isoformat(),
         "reply_status": "drafted",
-    }).eq("id", review_id).execute())
+    })
 
 
 def mark_replied(review_id):
     """'답글 등록함' 표시 → 목록에서 내려간다. 등록 시각을 남겨 수정률 집계에 쓴다."""
-    (get_client().table("reviews").update({
+    _update_review(review_id, {
         "reply_status": "posted",
         "posted_at": datetime.now().astimezone().isoformat(),
-    }).eq("id", review_id).execute())
+    })
 
 
 def edit_rate_by_kind(limit=500):
