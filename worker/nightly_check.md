@@ -42,13 +42,17 @@
    ```
    환경 문제로 코드를 안 고친 건도 `mark_error_fixed` 로 사유를 적어 닫는다.
 
-7. **답글 공부(매일):** 어제 직원이 AI 초안을 고친 쌍을 읽는다.
+7. **답글 공부(매일):** 최근 직원이 AI 초안을 고친 쌍을 읽는다.
+   (days=2 — 새벽에 PC가 꺼져 하루를 건너뛰어도 그날 수정을 잃지 않게.
+   같은 쌍을 이틀 보게 되는 건 무해하다: 규칙은 반복 패턴에서만 뽑으니까.)
    ```
-   python -c "from database import supabase_client as db; import json; print(json.dumps(db.get_edit_pairs(days=1), ensure_ascii=False, indent=1))"
+   python -c "from database import supabase_client as db; import json; print(json.dumps(db.get_edit_pairs(days=2), ensure_ascii=False, indent=1))"
    ```
    - 고친 쌍이 없으면 이 단계는 건너뛴다.
    - 고친 쌍이 있으면 **반복되는 패턴만** 뽑아 `reference/reply_lessons.md` 를
      갱신한다(규칙 최대 15개 유지, 파일 머리의 운영 원칙을 따른다).
+     ⚠️ '(사장님 확정)' 표시가 붙은 규칙은 절대 지우거나 고치지 않는다 —
+     15개 상한은 자동 학습 규칙에만 적용된다.
      직원이 거의 안 고친 좋은 최종본이 있으면 '모범 예시'에 1~2개 추가한다.
    - ⚠️ 이 파일 밖(생성 코드·페르소나)은 공부를 이유로 고치지 않는다.
      lessons 파일은 다음 생성 프롬프트에 자동 반영된다.
