@@ -11,7 +11,9 @@ $alive = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
 
 if ($alive) { exit 0 }
 
-Start-Process -FilePath $agent -WorkingDirectory $PSScriptRoot
+# Hidden: visible windows piled up on the owner's screen (2026-08-06).
+# Worker status is shown in the staff web app; output goes to logs\worker.log.
+Start-Process -FilePath $agent -WorkingDirectory $PSScriptRoot -WindowStyle Hidden
 "$(Get-Date -Format 'yyyy-MM-dd HH:mm') worker was down - restarted" |
     Out-File -Append -Encoding utf8 (Join-Path $root 'logs\watchdog.log')
 exit 0
