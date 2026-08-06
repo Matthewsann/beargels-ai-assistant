@@ -479,16 +479,18 @@ def mark_error_fixed(error_id, note=None):
 
 
 def get_pending_reviews(limit=50):
-    """답글이 아직 안 끝난 리뷰를 최신순으로 가져온다.
+    """답글이 아직 안 끝난 리뷰를 **오래된 순**으로 가져온다.
 
+    오래된 순인 이유: 플랫폼 답글 기한이 임박한 리뷰부터 처리해야 하는데,
+    최신순이면 그런 리뷰가 목록 맨 아래에 묻힌다(UIUX 검토 2026-08-06).
     제외: 우리가 '등록함'으로 표시한 것(reply_status='posted') +
           플랫폼에 이미 사장님 답글이 달려 있는 것(platform_replied=true).
     """
     return (get_client().table("reviews").select("*")
             .in_("reply_status", ["none", "drafted"])
             .or_("platform_replied.is.null,platform_replied.eq.false")
-            .order("written_date", desc=True)
-            .order("collected_at", desc=True)
+            .order("written_date", desc=False)
+            .order("collected_at", desc=False)
             .limit(limit).execute().data)
 
 
