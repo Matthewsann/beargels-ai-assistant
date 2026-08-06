@@ -218,12 +218,14 @@ def home(path_key):
             r["trusted"] = (not r["escalate"]) and r.get("kind") in trusted
         waiting = len(rows) - len(reviews)
         job = _job_view(db.latest_job())
+        approved_count = len(db.get_approved_reviews(limit=100))
     except Exception as e:  # noqa: BLE001
         error = f"데이터를 불러오지 못했어요: {str(e)[:150]}"
         job = None
+        approved_count = 0
     return render_template(
         "staff.html", key=path_key, reviews=reviews, worker=_worker_view(),
-        job=job, error=error, waiting=waiting,
+        job=job, error=error, waiting=waiting, approved_count=approved_count,
     )
 
 
@@ -317,11 +319,41 @@ def draft_state(path_key, review_id):
 
 @app.route("/<path_key>/review/<int:review_id>/done", methods=["POST"])
 def done(path_key, review_id):
+    """(구 흐름 호환) 직접 등록 완료 표시 — 지금은 approve/skip 이 주 경로."""
     check(path_key)
     try:
         db.mark_replied(review_id)
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"등록완료 표시 실패(review {review_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+    return redirect(url_for("home", path_key=path_key))
+
+
+@app.route("/<path_key>/review/<int:review_id>/approve", methods=["POST"])
+def approve(path_key, review_id):
+    """'수정 완료' — 이 초안 그대로 자동 등록 대기열에 넣는다.
+
+    실제 게시는 집 PC 일꾼이 정해진 시간에 일괄 수행한다.
+    """
+    check(path_key)
+    try:
+        db.mark_approved(review_id)
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"수정완료 표시 실패(review {review_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+    return redirect(url_for("home", path_key=path_key))
+
+
+@app.route("/<path_key>/review/<int:review_id>/skip", methods=["POST"])
+def skip(path_key, review_id):
+    """'넘어가기' — 이미 앱에서 직접 등록했거나 답글 불필요(학습 제외)."""
+    check(path_key)
+    try:
+        db.mark_skipped(review_id)
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"넘어가기 표시 실패(review {review_id}): {e}",
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
     return redirect(url_for("home", path_key=path_key))

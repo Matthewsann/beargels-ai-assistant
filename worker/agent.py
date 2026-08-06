@@ -327,6 +327,116 @@ def maybe_auto_collect() -> None:
         logger.warning("자동 수집 판단 실패: %s", e)
 
 
+# ---------------------------------------------------------------------------
+# 자동 답글 등록 — 직원이 '수정 완료'한 답글을 정해진 시간에 일괄 게시
+# ---------------------------------------------------------------------------
+
+# 하루 중 게시 시각(HH:MM, 쉼표 구분). 빈 값이면 끔.
+AUTO_POST_TIMES = os.getenv("WORKER_AUTO_POST_TIMES", "11:00,17:00,22:00")
+_last_post_slot = None   # 같은 슬롯을 두 번 돌지 않게(메모리 — 재시작해도
+                         # 이미 게시된 건 posted 라 재게시는 없다)
+
+
+def post_slot_due(now, last_slot):
+    """지금이 게시 시각(슬롯 시작 후 10분 안)이고 아직 안 돈 슬롯이면 그
+    슬롯 키("YYYY-MM-DD HH:MM")를, 아니면 None 을 반환한다. 순수 로직."""
+    for t in (AUTO_POST_TIMES or "").split(","):
+        t = t.strip()
+        if not t:
+            continue
+        try:
+            hh, mm = (int(x) for x in t.split(":"))
+        except ValueError:
+            continue
+        slot = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        if slot <= now < slot + timedelta(minutes=10):
+            key = slot.strftime("%Y-%m-%d %H:%M")
+            return None if key == last_slot else key
+    return None
+
+
+def run_auto_post() -> None:
+    """'수정 완료(approved)' 답글을 배민·쿠팡에 실제 게시한다.
+
+    안전 계약(crawler/review_reply.ReplyToReviewAction):
+      · .env WRITE_DRY_RUN=true 면 게시하지 않고 미리보기 로그만 남긴다.
+      · 에스컬레이션 리뷰는 액션이 스스로 거부한다(직원 화면에서도 승인 불가).
+    성공한 건만 posted 로 바꾸고, 실패한 건은 approved 로 남아 다음
+    슬롯에 재시도된다. 결과는 텔레그램으로 사장님께 보고.
+    """
+    approved = db.get_approved_reviews()
+    if not approved:
+        return
+    from crawler.browser import BrowserSession
+    from crawler.review_reply import ReplyToReviewAction
+
+    dry = (os.getenv("WRITE_DRY_RUN", "true").strip().lower()
+           not in ("false", "0", "no"))
+    logger.info("자동 등록 시작 — 대기 %d건 (dry_run=%s)", len(approved), dry)
+    db.worker_ping("working", f"답글 자동 등록 중 ({len(approved)}건)")
+    ensure_chrome()
+    posted, failed = [], []
+    try:
+        with BrowserSession() as session:
+            for row in approved:
+                review = {
+                    "platform": row.get("platform"),
+                    "review_no": row.get("review_no"),
+                    "author": row.get("author"),
+                    "rating": row.get("rating"),
+                    "content": row.get("content"),
+                    "menus": row.get("menus") or [],
+                }
+                try:
+                    res = ReplyToReviewAction(
+                        review, reply_text=row.get("reply_draft"),
+                        session=session).run(confirm=True)
+                    if res.get("applied"):
+                        db.mark_replied(row["id"])
+                        posted.append(row)
+                    else:   # dry-run — 게시 안 됨, approved 유지
+                        logger.info("[DRY-RUN] 리뷰 %s 게시 생략", row["id"])
+                except Exception as e:  # noqa: BLE001 — 한 건 실패가 배치를 안 막게
+                    failed.append((row, str(e)[:150]))
+                    db.log_error("worker", f"자동 등록 실패(리뷰 {row['id']}): {e}",
+                                 kind=type(e).__name__, path="run_auto_post",
+                                 detail=traceback.format_exc())
+                time.sleep(2)   # 연속 게시 간 사람같은 간격
+    except Exception as e:  # noqa: BLE001 — 브라우저 자체가 안 열리는 경우 등
+        db.log_error("worker", f"자동 등록 배치 실패: {e}",
+                     kind=type(e).__name__, path="run_auto_post",
+                     detail=traceback.format_exc())
+    finally:
+        db.worker_ping("idle", "대기 중")
+
+    if dry:
+        logger.info("자동 등록 dry-run 종료 — 실제 게시하려면 .env "
+                    "WRITE_DRY_RUN=false 로 바꾸고 일꾼 재시작")
+        return
+    try:
+        from bot import notify
+        lines = [f"📮 답글 자동 등록 결과 — 성공 {len(posted)}건, 실패 {len(failed)}건"]
+        for r in posted[:10]:
+            lines.append(f"  ✅ [{r.get('platform')}] {r.get('author')} ★{r.get('rating')}")
+        for r, msg in failed[:5]:
+            lines.append(f"  ❌ [{r.get('platform')}] {r.get('author')} — {msg}")
+        if posted or failed:
+            notify.send_message("\n".join(lines))
+    except Exception as e:  # noqa: BLE001 — 보고 실패는 치명적이지 않다
+        logger.warning("자동 등록 결과 보고 실패: %s", e)
+
+
+def maybe_auto_post() -> None:
+    global _last_post_slot
+    try:
+        slot = post_slot_due(datetime.now(), _last_post_slot)
+        if slot:
+            _last_post_slot = slot
+            run_auto_post()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("자동 등록 판단 실패: %s", e)
+
+
 def run_job(job) -> None:
     """요청 1건 처리. 종류(kind)에 따라 리뷰 수집 / 블로그 / 메뉴 수집으로 나뉜다."""
     if job.get("kind") == "wake":
@@ -392,6 +502,7 @@ def main() -> int:
                 run_job(job)
             else:
                 maybe_auto_collect()
+                maybe_auto_post()
                 db.worker_ping("idle", "대기 중")
         except KeyboardInterrupt:
             raise

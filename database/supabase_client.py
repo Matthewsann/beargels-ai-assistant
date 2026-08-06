@@ -397,11 +397,40 @@ def save_ai_draft(review_id, text, kind=None):
 
 
 def mark_replied(review_id):
-    """'답글 등록함' 표시 → 목록에서 내려간다. 등록 시각을 남겨 수정률 집계에 쓴다."""
+    """실제 게시 완료 표시. 등록 시각을 남겨 수정률 집계에 쓴다.
+
+    (2026-08-06 흐름 변경 후) 자동 등록이 성공했을 때 일꾼이 부른다.
+    """
     _update_review(review_id, {
         "reply_status": "posted",
         "posted_at": datetime.now().astimezone().isoformat(),
     })
+
+
+def mark_approved(review_id):
+    """직원이 '수정 완료'를 눌렀다 — 자동 등록 대기 상태로.
+
+    실제 게시는 일꾼이 정해진 시간에 일괄 수행(run_auto_post)하고,
+    성공하면 mark_replied 로 posted 가 된다.
+    """
+    _update_review(review_id, {"reply_status": "approved"})
+
+
+def mark_skipped(review_id):
+    """'넘어가기' — 이미 앱에서 직접 등록했거나 답글이 필요 없는 리뷰.
+
+    posted 와 달리 수정률 집계(edit_rate_by_kind)에 안 들어간다:
+    우리가 게시한 최종본이 아니라서 AI 학습 데이터로 쓰면 오염된다.
+    """
+    _update_review(review_id, {"reply_status": "skipped"})
+
+
+def get_approved_reviews(limit=50):
+    """자동 등록을 기다리는(수정 완료된) 리뷰 목록 — 오래된 순."""
+    return (get_client().table("reviews").select("*")
+            .eq("reply_status", "approved")
+            .order("written_date", desc=False)
+            .limit(limit).execute().data)
 
 
 def edit_rate_by_kind(limit=500):

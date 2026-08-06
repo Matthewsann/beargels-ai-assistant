@@ -44,3 +44,27 @@ def test_quiet_hours_wrapping_midnight(monkeypatch):
 def test_disabled_by_env(monkeypatch):
     monkeypatch.setattr(agent, "AUTO_COLLECT_HOURS", 0)
     assert agent.auto_collect_due(_t(10), None) is False
+
+
+# --- 자동 답글 등록 슬롯 판정 ------------------------------------------------
+
+def test_post_slot_fires_within_window():
+    # 11:00 슬롯: 11:00~11:09 사이에만, 슬롯 키를 반환.
+    key = agent.post_slot_due(_t(11, 3).replace(tzinfo=None), None)
+    assert key and key.endswith("11:00")
+
+
+def test_post_slot_not_twice():
+    now = _t(11, 3).replace(tzinfo=None)
+    key = agent.post_slot_due(now, None)
+    assert agent.post_slot_due(now, key) is None   # 같은 슬롯 재실행 금지
+
+
+def test_post_slot_outside_window():
+    assert agent.post_slot_due(_t(11, 20).replace(tzinfo=None), None) is None
+    assert agent.post_slot_due(_t(9, 0).replace(tzinfo=None), None) is None
+
+
+def test_post_slot_disabled(monkeypatch):
+    monkeypatch.setattr(agent, "AUTO_POST_TIMES", "")
+    assert agent.post_slot_due(_t(11, 3).replace(tzinfo=None), None) is None

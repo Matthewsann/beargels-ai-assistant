@@ -113,6 +113,13 @@
     {% endif %}
   </div>
 
+  {% if approved_count %}
+    <div class="note" style="background:var(--ok-bg); color:var(--ok);">
+      ⏳ 자동 등록 대기 <b>{{ approved_count }}건</b> — 매일 11시·17시·22시에
+      집 PC가 배민·쿠팡에 일괄 등록해요
+    </div>
+  {% endif %}
+
   {% if reviews %}
     <div class="status" style="margin-bottom:9px;">
       ✍️ 처리할 답글 <b style="color:var(--ink);">{{ reviews|length }}건</b>
@@ -137,38 +144,38 @@
           이물질·건강·환불·법적 언급이 있는 리뷰예요. 답글을 만들지 않았습니다 —
           <b>사장님께 바로 알려주세요.</b>
         </div>
-        <form method="post" action="{{ url_for('done', path_key=key, review_id=r.id) }}" class="acts"
+        <form method="post" action="{{ url_for('skip', path_key=key, review_id=r.id) }}" class="acts"
               onsubmit="return confirm('사장님께 알리셨나요?\n카드가 목록에서 내려갑니다.')">
           <button class="btn" type="submit">확인함 · 목록에서 내리기</button>
         </form>
       {% elif r.has_draft %}
         <label class="lbl">답글 초안 (마음에 안 들면 여기서 바로 고치세요)</label>
-        <textarea name="draft" id="d{{ r.id }}" rows="6">{{ r.draft }}</textarea>
+        <textarea name="draft" id="d{{ r.id }}" rows="6"
+                  onblur="saveDraft({{ r.id }}, '{{ url_for('save_draft', path_key=key, review_id=r.id) }}')">{{ r.draft }}</textarea>
         <div class="acts">
-          <button class="btn primary wide" type="button"
-                  onclick="copyIt({{ r.id }}, '{{ url_for('save_draft', path_key=key, review_id=r.id) }}')">
-            📋 복사하기
-          </button>
           <button class="btn" type="button" id="g{{ r.id }}"
                   title="지금 초안을 버리고 AI가 새로 씁니다"
                   onclick="regenIt({{ r.id }}, '{{ url_for('regen', path_key=key, review_id=r.id) }}', '{{ url_for('draft_state', path_key=key, review_id=r.id) }}')">
             🔄 AI 재생성
           </button>
-        </div>
-        <div class="copied" id="c{{ r.id }}">복사됐어요! 배민·쿠팡에 붙여넣으세요</div>
-        <div class="postcopy" id="p{{ r.id }}">
-          <b>{{ r.platform }} 앱에 답글 등록까지 마치셨나요?</b>
-          <button class="btn primary" type="button"
-                  onclick="document.getElementById('done{{ r.id }}').submit()">
-            네, 등록했어요
+          <button class="btn" type="button"
+                  onclick="copyIt({{ r.id }}, '{{ url_for('save_draft', path_key=key, review_id=r.id) }}')">
+            📋 복사
           </button>
         </div>
-        {# 확인띠의 '네, 등록했어요'는 JS form.submit() 이라 onsubmit 확인을
-           건너뛴다(이미 확인한 셈). 직접 클릭만 실수 방지 confirm. #}
-        <form method="post" id="done{{ r.id }}"
-              action="{{ url_for('done', path_key=key, review_id=r.id) }}" class="acts"
-              onsubmit="return confirm('{{ r.platform }}에 답글을 등록하셨나요?\n카드가 목록에서 내려갑니다.')">
-          <button class="btn" type="submit" style="width:100%;">✅ 답글 등록함 · 목록에서 내리기</button>
+        <div class="copied" id="c{{ r.id }}">복사됐어요!</div>
+        {# 수정 완료 = 이 텍스트 그대로 고객에게 자동 등록되므로 confirm 필수.
+           초안 최신본을 함께 저장하고 넘어간다(고친 걸 안 잃게). #}
+        <form method="post" id="ok{{ r.id }}"
+              action="{{ url_for('approve', path_key=key, review_id=r.id) }}" class="acts"
+              onsubmit="return approveIt({{ r.id }}, '{{ url_for('save_draft', path_key=key, review_id=r.id) }}')">
+          <button class="btn primary" type="submit" style="width:100%;">
+            ✅ 수정 완료 — 자동 등록 대기
+          </button>
+        </form>
+        <form method="post" action="{{ url_for('skip', path_key=key, review_id=r.id) }}" class="acts"
+              onsubmit="return confirm('이 리뷰를 넘어갈까요?\n(이미 앱에서 직접 등록했거나, 답글이 필요 없는 경우)\n자동 등록되지 않고 목록에서 내려갑니다.')">
+          <button class="btn" type="submit" style="width:100%;">⏭️ 넘어가기 — 이미 등록했거나 답글 불필요</button>
         </form>
       {% endif %}
     </div>
@@ -236,18 +243,34 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+// 고친 초안을 서버에 저장(자동저장: 칸에서 나갈 때·복사할 때·수정완료 때).
+function saveDraft(id, saveUrl) {
+  const t = document.getElementById('d' + id);
+  const body = new URLSearchParams({draft: t.value});
+  return fetch(saveUrl, {method: 'POST', body: body}).catch(() => {});
+}
+
+// '수정 완료' = 이 텍스트가 그대로 고객에게 자동 등록된다 → 확인 + 최신본
+// 저장이 끝난 뒤 제출(저장 요청이 페이지 이동에 잘려 수정본을 잃지 않게).
+function approveIt(id, saveUrl) {
+  const t = document.getElementById('d' + id);
+  if (!confirm('이 내용 그대로 자동 등록할까요?\n\n"' +
+               t.value.slice(0, 60) + '…"\n\n다음 등록 시간(11시·17시·22시)에 나갑니다.')) {
+    return false;
+  }
+  saveDraft(id, saveUrl).then(() =>
+    document.getElementById('ok' + id).submit());   // .submit()은 onsubmit 안 탐
+  return false;
+}
+
 function copyIt(id, saveUrl) {
   const t = document.getElementById('d' + id);
   const done = () => {
     const c = document.getElementById('c' + id);
     c.style.display = 'block';
     setTimeout(() => { c.style.display = 'none'; }, 2500);
-    // 복사했다 = 곧 등록한다 → '등록함' 누락 방지 확인띠를 띄운다(2순위 개발).
-    const p = document.getElementById('p' + id);
-    if (p) p.style.display = 'flex';
   };
-  const body = new URLSearchParams({draft: t.value});
-  fetch(saveUrl, {method: 'POST', body: body}).catch(() => {});
+  saveDraft(id, saveUrl);
   if (navigator.clipboard) {
     navigator.clipboard.writeText(t.value).then(done)
       .catch(() => { t.select(); document.execCommand('copy'); done(); });
