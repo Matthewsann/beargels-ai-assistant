@@ -65,6 +65,17 @@ def seo_knowledge() -> str:
     return "(네이버-SEO-지식.md 를 찾지 못했습니다. 기본 SEO 원칙으로 작성합니다.)"
 
 
+# 공식 브랜드 세계관 (구글드라이브 BI 자료 기준) — 글에서 자연스럽게 활용
+BRAND_WORLD = """[베어글스 공식 세계관 — 글에서 과하지 않게, 자연스럽게 활용]
+- 컨셉: '베이글을 사랑하는 곰들의 크림치즈공장'
+- 베어그리(곰): 크림치즈공장 공장장, 커피와 베이글을 매우 좋아함 (메인 마스코트)
+- 버터리(고양이): 베어그리를 따라다니는 버터·크림치즈 애호가
+- 비비(비버, 샐러드), 잼니(토끼, 크림치즈에 열등감), 요요(여우, 요거트)
+- 베이글 맛 캐릭터: 크리미(플레인), 어니(어니언), 바즐리(바질), 루루(블루베리), 홀리(통밀), 그리(그릭요거트) 등
+- 활용 예: 신메뉴 글에서 "어니가 드디어 공장에서 나왔어요", 일상 글에서 "공장장 베어그리의 새벽"
+- 주의: 캐릭터는 글당 1~2회 양념처럼만. 정보와 진짜 경험이 항상 우선."""
+
+
 def build_prompt(brand: dict, post_type: str, variables: dict, avoid_titles: list[str]) -> str:
     region = brand.get("region", "")
     guide = TYPE_GUIDE.get(post_type, TYPE_GUIDE["정보성"])
@@ -86,6 +97,8 @@ def build_prompt(brand: dict, post_type: str, variables: dict, avoid_titles: lis
 ===== 네이버 상위 노출 지식 (필독·준수) =====
 {seo_knowledge()}
 ===== 지식 끝 =====
+
+{BRAND_WORLD}
 
 [톤] 다정하고 따뜻하게, 과장 없이 솔직하게. 1인칭 경험 서술. 이모지 🐻🥯☕️ 문단당 1~2개.
 

@@ -23,12 +23,17 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "media" / "thumbs"
 
-# 베어글스 브랜드 팔레트
-CREAM = "#F6EBD9"      # 배경
-BROWN = "#4A2F1B"      # 본문 텍스트
-BEAR = "#8B5E3C"       # 곰 몸통
-BEAR_LIGHT = "#D9B38C" # 곰 주둥이/귀 안쪽
-ACCENT = "#E8B04B"     # 포인트(꿀색)
+# 베어글스 공식 브랜드 팔레트 (구글드라이브 color_palete.png 에서 추출)
+CREAM = "#FAF3E1"      # 메인 배경(크림)
+CREAM_DEEP = "#F5E7C6" # 서브 배경(베이지)
+BROWN = "#222222"      # 텍스트(블랙)
+BEAR = "#8B5E3C"       # 곰 몸통(캐릭터 이미지 없을 때 폴백용)
+BEAR_LIGHT = "#D9B38C" # 곰 주둥이/귀 안쪽(폴백용)
+ACCENT = "#FA8112"     # 포인트(공식 오렌지)
+
+# 공식 캐릭터 이미지(베어그리). brand/ 폴더에 있으면 그린 곰 대신 사용.
+BRAND_DIR = pathlib.Path(__file__).resolve().parent.parent / "brand"
+CHARACTER_FILE = BRAND_DIR / "bi_beargri.png"
 
 SIZES = {"thumb": (1000, 1000), "poster": (1080, 1350), "card": (1080, 1080)}
 
@@ -103,8 +108,17 @@ def make(title: str, sub: str | None, kind: str, photo: str | None) -> pathlib.P
         draw.rounded_rectangle([m, m, w - m, h - m], radius=int(w * 0.04),
                                outline=BEAR, width=max(4, w // 180))
 
-    bear_r = int(w * 0.10)
-    draw_bear(draw, w // 2, int(h * 0.26), bear_r)
+    # 캐릭터: 공식 베어그리 이미지가 있으면 사용, 없으면 그린 곰 폴백
+    if CHARACTER_FILE.exists():
+        ch = Image.open(CHARACTER_FILE).convert("RGBA")
+        ch_w = int(w * 0.30)
+        ch_h = int(ch_w * ch.height / ch.width)
+        ch = ch.resize((ch_w, ch_h), Image.LANCZOS)
+        img.paste(ch, ((w - ch_w) // 2, int(h * 0.26) - ch_h // 2), ch)
+        draw = ImageDraw.Draw(img)
+    else:
+        bear_r = int(w * 0.10)
+        draw_bear(draw, w // 2, int(h * 0.26), bear_r)
 
     tf = font(int(w * 0.075))
     lines = wrap_text(draw, title, tf, int(w * 0.82))[:3]
@@ -122,8 +136,7 @@ def make(title: str, sub: str | None, kind: str, photo: str | None) -> pathlib.P
             y += int(w * 0.06)
 
     bf = font(int(w * 0.036))                                  # 하단 브랜드 라인
-    brand = "🐻 베어글스 송도점 | 인천 송도 수제 베이글"
-    brand = "베어글스 송도점  ·  인천 송도 수제 베이글"       # 이모지 렌더 불가 폰트 대비
+    brand = "BEARGELS  ·  베어글스 송도점"
     lw = draw.textlength(brand, font=bf)
     draw.text(((w - lw) / 2, h - int(h * 0.09)), brand, font=bf, fill=text_color)
 
