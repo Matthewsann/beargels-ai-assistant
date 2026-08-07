@@ -36,6 +36,15 @@ images:
   provider: "none"    # none = 촬영목록+AI프롬프트만 저장 / openai = AI 보조이미지 실제 생성(OPENAI_API_KEY 필요)
   per_post_ai: 1      # 글당 AI 보조이미지(썸네일/배경) 개수. 음식 실물은 직접 촬영 권장.
 
+# 미디어 자동화 (사진 보정/영상/썸네일)
+media:
+  preset: "food"      # 사진 보정 프리셋: food(먹음직) | soft(감성) | none
+  max_size: 1600      # 블로그용 최대 크기(px)
+  video:
+    size: "1080x1080" # 영상 해상도 (인스타 겸용이면 1080x1080, 유튜브면 1920x1080)
+    per_image_sec: 2.5
+    max_photos: 6
+
 # 2단계 예약 발행 설정
 publish:
   mode: "assist"      # assist(권장) | full  — 위 설명 참고

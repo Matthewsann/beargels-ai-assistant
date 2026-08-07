@@ -95,6 +95,26 @@ py src\schedule_publish.py --pick 1,3,5 --daily 08:00 --start 2026-07-28
 
 ---
 
+## 5.5 미디어 자동화 (사진 보정 · 영상 · 썸네일 · 곰 캐릭터)
+
+폰 사진을 `media\inbox\` 에 복사해 넣는 것이 사장님이 하는 전부입니다.
+
+| 명령 | 하는 일 | 결과 위치 |
+|------|---------|----------|
+| `media.bat` 더블클릭 | **①사진 자동 보정 + ②짧은 영상 제작** 한 번에 | `media\enhanced\`, `media\video\` |
+| `py src\enhance_photos.py` | 음식사진 프리셋 보정(따뜻함·채도·선명, EXIF 회전, 리사이즈) | `media\enhanced\` |
+| `py src\make_video.py` | 보정 사진들로 15초 페이드 영상 (음악: `media\music.mp3` 넣으면 자동) | `media\video\` |
+| `py src\make_thumbnail.py "제목" --sub "부제"` | **곰돌이 브랜드 썸네일** (코드로 그려서 매번 같은 룩) | `media\thumbs\` |
+| `py src\make_thumbnail.py "제목" --type poster --photo media\enhanced\사진.jpg` | 실물사진 배경 이벤트 포스터 | `media\thumbs\` |
+| `py src\make_character.py` | 곰 캐릭터 일러스트 5포즈 AI 생성 (키 없으면 프롬프트만 저장) | `media\character\` |
+
+- 영상 제작에는 **ffmpeg** 필요(한 번만):  `winget install Gyan.FFmpeg`  후 터미널 재시작.
+- 곰 캐릭터 AI 생성은 `OPENAI_API_KEY` + `pip install openai` 필요. 없으면 프롬프트 파일이
+  저장되니 무료 이미지 생성 서비스에 붙여넣어 뽑아도 됩니다. **베스트 컷을 골라 고정 사용**하세요.
+- 원칙: 음식·매장은 **실물 사진**(보정만 AI), 썸네일·포스터·캐릭터는 디자인이라 생성 OK.
+
+---
+
 ## 6. 화면이 안 맞을 때 (선택자 튜닝)
 
 입력/발행이 실패하면 `library/**/... ` 대신 `posts/_debug/` 에 스크린샷·HTML 이 남습니다.

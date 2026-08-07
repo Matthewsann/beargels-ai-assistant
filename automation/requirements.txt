@@ -4,3 +4,7 @@ playwright>=1.44
 anthropic>=0.40
 PyYAML>=6.0
 python-dotenv>=1.0
+Pillow>=10.0
+
+# (선택) AI 이미지 생성 — 곰 캐릭터/보조이미지 쓸 때만
+# openai>=1.0
