@@ -113,6 +113,9 @@ def save_reviews(reviews):
         rs = r0.get("reply_status")
         r["platform_replied"] = (True if rs == "posted"
                                  else False if rs == "none" else None)
+        # '마지막으로 수집된 시각'으로 갱신 — insert 기본값은 최초 1회뿐이라
+        # 재수집돼도 옛 값이 남아, '최근 수집분' 조회(답글 공부)가 빈손이 된다.
+        r["collected_at"] = datetime.now().astimezone().isoformat()
         rows.append(r)
     if not rows:
         return 0
