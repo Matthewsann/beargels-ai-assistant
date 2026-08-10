@@ -12,8 +12,10 @@ Supabase 접속이 필요해 집 PC 에서 실행한다 (worker\menu_diff.bat).
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 from datetime import datetime
+from difflib import SequenceMatcher
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -28,6 +30,11 @@ CH_LABEL = {"baemin": "배민 (self.baemin.com)",
             "naver": "네이버 스마트플레이스"}
 # 채널별 기준가 — 네이버는 매장 메뉴 기준(사장님 확인), 배달앱은 배달가.
 PRICE_BASE = {"baemin": "delivery", "coupang": "delivery", "naver": "store"}
+
+# 쿠팡 메뉴 화면에서 카테고리 제목이 메뉴처럼 잡히는 노이즈(실조사 2026-08).
+NOISE = re.compile(
+    r"^\[B\]|^\[신메뉴\]$|^\[1~2인 세트\]$|^커피$|^보틀\(1L\)$|^단체주문 10인$"
+    r"|^든든한 샌드위치 세트$|^BEARGLS HEALTHY|^Bear Cream Cheese")
 
 
 def expected_price(item, override, channel):
@@ -80,6 +87,7 @@ def main() -> int:
 
         price_fix, name_fix, extra, missing = [], [], [], []
         matched_skus = set()
+        rows = [s for s in rows if not NOISE.search(s["menu_name"])]
         for s in rows:
             sku = s.get("matched_sku") or by_norm.get(
                 db.normalize_menu_name(s["menu_name"]))
@@ -104,6 +112,32 @@ def main() -> int:
             if ov and ov.get("active") is False:
                 continue
             missing.append(item)
+
+        # '정본에 없음'과 '채널에 없음'이 사실은 같은 메뉴인 경우(오타·표기 차이)를
+        # 짝지어 '이름 수정'으로 승격 — 예: 채널 '슈패너' ↔ 정본 '슈페너'.
+        # 확신 높은 것(유사도 0.8 이상)만 승격, 나머지는 그대로 둔다.
+        still_extra, used = [], set()
+        for s in extra:
+            en = db.normalize_menu_name(s["menu_name"])
+            best, score = None, 0.0
+            for i, item in enumerate(missing):
+                if i in used:
+                    continue
+                r = SequenceMatcher(None, en,
+                                    db.normalize_menu_name(item["name"])).ratio()
+                if r > score:
+                    best, score = i, r
+            if best is not None and score >= 0.8:
+                item = missing[best]
+                used.add(best)
+                name_fix.append((s, expected_name(item, overrides.get((item["sku"], ch)))))
+                ep = expected_price(item, overrides.get((item["sku"], ch)), ch)
+                if s.get("price") is not None and ep is not None and s["price"] != ep:
+                    price_fix.append((s, item, ep))
+            else:
+                still_extra.append(s)
+        extra = still_extra
+        missing = [m for i, m in enumerate(missing) if i not in used]
 
         n = len(price_fix) + len(name_fix) + len(extra) + len(missing)
         total_fix += n
