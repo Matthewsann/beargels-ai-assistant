@@ -33,6 +33,8 @@ _ORDER_COLS = (
 _REVIEW_COLS = (
     "platform", "review_no", "author", "rating", "content", "written_at",
     "written_date", "menus", "delivery_type", "raw",
+    # 플랫폼에 실제 등록돼 있는 사장님 답글 본문(schema_v6) — AI 공부 데이터.
+    "platform_reply",
 )
 # ⚠️ reply_status 는 일부러 넣지 않는다. 우리가 'drafted/posted' 로 바꾼 값을
 #    재수집 때 크롤러 값('none')이 덮어써 버리기 때문. 플랫폼에 이미 답글이
@@ -114,8 +116,18 @@ def save_reviews(reviews):
         rows.append(r)
     if not rows:
         return 0
-    resp = (get_client().table("reviews")
-            .upsert(rows, on_conflict="platform,review_no").execute())
+    try:
+        resp = (get_client().table("reviews")
+                .upsert(rows, on_conflict="platform,review_no").execute())
+    except Exception as e:  # noqa: BLE001 — schema_v6(platform_reply) 미적용 대비
+        if getattr(e, "code", None) not in _MISSING_COLUMN_CODES:
+            raise
+        logger.warning("schema_v6 미적용 — platform_reply 없이 저장 "
+                       "(SQL Editor 에서 database/schema_v6.sql 실행 필요)")
+        for r in rows:
+            r.pop("platform_reply", None)
+        resp = (get_client().table("reviews")
+                .upsert(rows, on_conflict="platform,review_no").execute())
     n = len(resp.data or [])
     logger.info("리뷰 %d건 저장(upsert)", n)
     return n
@@ -472,6 +484,26 @@ def get_edit_pairs(days=1, limit=50):
         if a and b and a != b:
             pairs.append(r)
     return pairs
+
+
+def get_platform_reply_examples(days=2, limit=30):
+    """플랫폼에 실제 등록돼 있는 답글 예시 — 새벽 답글 공부용.
+
+    최근 수집분 중 답글 본문이 있는 리뷰를 (리뷰, 실제 답글) 쌍으로 준다.
+    schema_v6(platform_reply) 미적용이면 조용히 빈 목록.
+    """
+    since = (datetime.now().astimezone() - timedelta(days=days)).isoformat()
+    try:
+        return (get_client().table("reviews")
+                .select("id, platform, rating, content, menus, platform_reply")
+                .not_.is_("platform_reply", "null")
+                .gte("collected_at", since)
+                .order("written_date", desc=True)
+                .limit(limit).execute().data)
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) in _MISSING_COLUMN_CODES:
+            return []
+        raise
 
 
 def log_error(source, message, kind=None, path=None, detail=None):

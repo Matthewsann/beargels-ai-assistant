@@ -18,6 +18,7 @@
 """
 
 import logging
+import re
 import time
 from datetime import date, datetime, timedelta
 from functools import wraps
@@ -52,7 +53,23 @@ PLATFORM = "배민"
 SELECTORS = {
     "order_table": "table",
     "review_item": '[class*="ReviewContent-module__"]',
+    # 사장님 답글 박스 — 리뷰 카드의 '형제' 컨테이너라 문서순 페어링으로 잇는다.
+    "reply_box": '[class*="ReviewCommentBox-module__"]',
 }
+
+
+def clean_owner_reply(text):
+    """배민 답글박스 텍스트에서 헤더('사장님'/날짜)·버튼('삭제/수정')을 제거해
+    실제 답글 본문만 남긴다. 본문 없으면 None. (reply_history 와 공용)"""
+    if not text:
+        return None
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    drop = {"사장님", "삭제", "수정", "신고", "답글",
+            "사장님 댓글 등록하기", "사장님 댓글 추가하기"}
+    body = [ln for ln in lines
+            if ln not in drop
+            and not re.fullmatch(r"\d{4}년\s*\d{1,2}월\s*\d{1,2}일", ln)]
+    return "\n".join(body).strip() or None
 
 # 주문 테이블 컬럼 순서(헤더 기준). 데이터 행은 9칸이며 0번은 펼치기 버튼.
 ORDER_COLUMNS = [
@@ -262,10 +279,36 @@ class BaeminCrawler:
             prev = cur
 
         soup = BeautifulSoup(self.page.content(), "html.parser")
-        items = soup.select(SELECTORS["review_item"])
-        reviews = [self._parse_review_item(i) for i in items]
-        reviews = [r for r in reviews if r]
-        logger.info("리뷰 %d건 수집", len(reviews))
+        reviews = self.parse_review_cards(soup)
+        logger.info("리뷰 %d건 수집 (답글 달린 리뷰 %d건)",
+                    len(reviews),
+                    sum(1 for r in reviews if r.get("platform_reply")))
+        return reviews
+
+    @staticmethod
+    def parse_review_cards(soup):
+        """리뷰 카드와 사장님 답글박스를 문서순으로 페어링해 파싱한다.
+
+        답글박스(ReviewCommentBox)는 리뷰 카드(ReviewContent)의 '형제'라
+        바로 앞 리뷰에 귀속시킨다(reply_history.py 에서 검증된 구조).
+        답글이 달린 리뷰는 platform_reply(실제 답글 본문)를 함께 담는다 —
+        실제 등록된 답글은 AI 답글 공부의 학습 데이터가 된다(2026-08-10).
+        """
+        nodes = soup.select(
+            SELECTORS["review_item"] + ", " + SELECTORS["reply_box"])
+        reviews, cur = [], None
+        for node in nodes:
+            cls = " ".join(node.get("class") or [])
+            if "ReviewCommentBox-module__" in cls:
+                if cur is not None:
+                    reply = clean_owner_reply(node.get_text("\n", strip=True))
+                    if reply:
+                        cur["platform_reply"] = reply
+                        cur["reply_status"] = "posted"
+                continue
+            cur = BaeminCrawler._parse_review_item(node)
+            if cur:
+                reviews.append(cur)
         return reviews
 
     @staticmethod

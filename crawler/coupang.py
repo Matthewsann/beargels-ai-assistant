@@ -173,8 +173,11 @@ class CoupangCrawler:
                 str(r.get("orderId")) if r.get("orderId") else None),
             "ordered_at": (r.get("orderedAt") or "").replace("T", " ")[:16]
                           or None,
-            # replies 가 있으면 이미 답변한 리뷰
+            # replies 가 있으면 이미 답변한 리뷰. 실제 답글 본문은 AI 답글
+            # 공부의 학습 데이터로 쓴다(2026-08-10).
             "reply_status": "posted" if r.get("replies") else "none",
+            "platform_reply": ((r.get("replies") or [{}])[0].get("content")
+                               or None) if r.get("replies") else None,
             "raw": json.dumps(r, ensure_ascii=False),
         }
 
