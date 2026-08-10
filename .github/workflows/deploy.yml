@@ -42,17 +42,24 @@ jobs:
           AUTH="Authorization: Token ${{ secrets.PA_API_TOKEN }}"
 
           upload() {
+            # PythonAnywhere 파일 API가 가끔 504/타임아웃을 낸다(2026-08-10 실사고).
+            # 파일당 최대 3회, 60초 타임아웃으로 재시도한다.
             local rel="$1"
             local url="$PA_HOST/api/v0/user/$PA_USER/files/path$PA_ROOT/$rel"
-            local code
-            code=$(curl -s -o /tmp/up.out -w '%{http_code}' -X POST \
-                     -H "$AUTH" -F "content=@$rel" "$url")
-            if [ "$code" != "200" ] && [ "$code" != "201" ]; then
-              echo "::error::업로드 실패 $rel (HTTP $code)"
-              head -c 300 /tmp/up.out; echo
-              return 1
-            fi
-            echo "  올림: $rel (HTTP $code)"
+            local code try
+            for try in 1 2 3; do
+              code=$(curl -s -o /tmp/up.out -w '%{http_code}' --max-time 60 -X POST \
+                       -H "$AUTH" -F "content=@$rel" "$url" || echo 000)
+              if [ "$code" = "200" ] || [ "$code" = "201" ]; then
+                echo "  올림: $rel (HTTP $code, ${try}번째 시도)"
+                return 0
+              fi
+              echo "  재시도 $try/3: $rel (HTTP $code)"
+              sleep 5
+            done
+            echo "::error::업로드 실패 $rel (HTTP $code)"
+            head -c 300 /tmp/up.out; echo
+            return 1
           }
 
           upload service/app.py
