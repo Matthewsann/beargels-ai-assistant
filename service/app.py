@@ -505,6 +505,13 @@ def menu_page(path_key):
     return render_template("menu.html", key=path_key)
 
 
+@app.route("/<path_key>/menu/tasks")
+def menu_tasks(path_key):
+    """채널별 수정 작업지시서 — 정본 vs 채널 스냅샷 차이를 체크리스트로."""
+    check(path_key)
+    return render_template("menu_tasks.html", key=path_key)
+
+
 @app.route("/<path_key>/menu/data")
 def menu_data(path_key):
     check(path_key)
@@ -575,7 +582,7 @@ def menu_channel_save(path_key, sku, channel):
 @app.route("/<path_key>/menu/settings/<key>", methods=["POST"])
 def menu_settings_save(path_key, key):
     check(path_key)
-    if key not in ("channel_fees", "target_cost_rates", "order_model"):
+    if key not in ("channel_fees", "target_cost_rates", "order_model", "task_done"):
         abort(400)
     try:
         db.menu_set_setting(key, request.get_json(force=True))
