@@ -44,6 +44,11 @@ main{padding:10px;max-width:760px;margin:0 auto}
 .tag.x{background:var(--amberbg);color:var(--amber)}
 .tag.a{background:var(--greenbg);color:var(--green)}
 .empty{text-align:center;color:var(--sub);padding:40px 16px}
+.ctx{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.chip2{font-size:10.5px;border:1px solid var(--line);border-radius:8px;padding:1px 7px;
+color:var(--sub);background:var(--bg);white-space:nowrap;font-variant-numeric:tabular-nums}
+.chip2.cur{border-color:var(--brown);color:var(--brown);font-weight:700}
+.chip2.master{background:var(--brownbg);color:var(--brown);border-color:var(--brownbg)}
 .note{font-size:11.5px;color:var(--sub);margin:14px 4px}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#333;color:#fff;
 padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:opacity .3s;pointer-events:none}
@@ -97,7 +102,9 @@ function expPrice(it,ch){
 function expName(it,ch){const o=ov(it.sku,ch);return (o&&o.name_override)||it.name;}
 function activeFor(it,ch){return fee(ch).price_base==="store"?!!it.store_active:!!it.delivery_active;}
 
-function computeTasks(ch){
+let CACHE={};
+function analyze(ch){
+  if(CACHE[ch]) return CACHE[ch];
   const snaps=(DATA.snapshots||[]).filter(s=>s.channel===ch&&!NOISE.test(s.menu_name));
   const bySku=Object.fromEntries(DATA.items.map(i=>[i.sku,i]));
   const byNorm={};
@@ -105,19 +112,21 @@ function computeTasks(ch){
   for(const o of DATA.channels) if(o.channel===ch&&o.name_override) byNorm[norm(o.name_override)]=o.sku;
 
   const tasks=[]; const matched=new Set();
+  const obs={};                      // sku → 이 채널에 실제 노출 중인 {price,name}
   let extras=[];
   for(const s of snaps){
     const sku=s.matched_sku||byNorm[norm(s.menu_name)];
     const it=bySku[sku];
     if(!it){extras.push(s);continue;}
     matched.add(sku);
+    obs[sku]={price:s.price,name:s.menu_name};
     const o=ov(sku,ch);
     if(o&&o.active===false) continue;
     const ep=expPrice(it,ch), en=expName(it,ch);
     if(s.price!=null&&ep!=null&&s.price!==ep)
-      tasks.push({type:"price",name:s.menu_name,cur:s.price,to:ep});
+      tasks.push({type:"price",name:s.menu_name,cur:s.price,to:ep,sku});
     if(norm(s.menu_name)!==norm(en))
-      tasks.push({type:"name",name:s.menu_name,to:en});
+      tasks.push({type:"name",name:s.menu_name,to:en,sku});
   }
   let missing=DATA.items.filter(it=>{
     if(!activeFor(it,ch)||matched.has(it.sku)) return false;
@@ -134,16 +143,41 @@ function computeTasks(ch){
     });
     if(best>=0&&score>=0.8){
       const it=missing[best];used.add(best);
-      tasks.push({type:"name",name:s.menu_name,to:expName(it,ch)});
+      obs[it.sku]={price:s.price,name:s.menu_name};
+      tasks.push({type:"name",name:s.menu_name,to:expName(it,ch),sku:it.sku});
       const ep=expPrice(it,ch);
       if(s.price!=null&&ep!=null&&s.price!==ep)
-        tasks.push({type:"price",name:s.menu_name,cur:s.price,to:ep});
+        tasks.push({type:"price",name:s.menu_name,cur:s.price,to:ep,sku:it.sku});
     } else still.push(s);
   }
   missing=missing.filter((_,i)=>!used.has(i));
   for(const s of still) tasks.push({type:"extra",name:s.menu_name,cur:s.price});
   for(const it of missing) tasks.push({type:"add",name:it.name,to:expPrice(it,ch),sku:it.sku});
-  return tasks;
+  return CACHE[ch]={tasks,obs};
+}
+function computeTasks(ch){return analyze(ch).tasks;}
+
+// 항목의 '현 상황' 한 줄 — 세 채널 현재가 + 정본 매장/배달가
+function ctx(t){
+  const chips=[];
+  if(t.sku){
+    const it=DATA.items.find(i=>i.sku===t.sku);
+    for(const [c,l] of Object.entries(LABEL)){
+      const o=analyze(c).obs[t.sku];
+      const cur=(c===CH)?" cur":"";
+      chips.push(`<span class="chip2${cur}">${l} ${o?won(o.price):"없음"}</span>`);
+    }
+    if(it) chips.push(`<span class="chip2 master">정본 매장 ${won(it.store_price)} · 배달 ${won(it.delivery_price)}</span>`);
+  } else {
+    // 정본에 없는 메뉴 — 다른 채널에도 같은 이름이 떠 있는지
+    for(const [c,l] of Object.entries(LABEL)){
+      const s=(DATA.snapshots||[]).find(x=>x.channel===c&&norm(x.menu_name)===norm(t.name));
+      const cur=(c===CH)?" cur":"";
+      chips.push(`<span class="chip2${cur}">${l} ${s?won(s.price):"없음"}</span>`);
+    }
+    chips.push(`<span class="chip2 master">정본 없음</span>`);
+  }
+  return `<div class="ctx">${chips.join("")}</div>`;
 }
 
 function key(ch,t){return ch+"|"+t.type+"|"+t.name;}
@@ -214,7 +248,7 @@ function render(){
           <input type="checkbox" ${done?"checked":""}
             onchange="markDone('${CH}',${JSON.stringify(t).replace(/"/g,"&quot;")},this.checked,this.closest('.row'))">
           <div class="body"><div class="t">${t.name}<span class="tag ${tag}">${title.slice(2)}</span></div>
-          <div class="d">${desc}</div></div></label>`;
+          <div class="d">${desc}</div>${ctx(t)}</div></label>`;
       }
       html+=`</div></div>`;
     }
