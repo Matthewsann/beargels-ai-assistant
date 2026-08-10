@@ -194,11 +194,12 @@ function aov(ch){
   return (m.aov && +m.aov[ch]) || +m.min_order || 12500;
 }
 
-// 채널별 실적용 판매가: 오버라이드 > (배달채널이면 배달가) > 매장가
+// 채널별 실적용 판매가: 오버라이드 > 채널 기준가 > 매장가
+// 네이버는 매장 메뉴 기준(price_base:"store")이라 매장가를 쓴다.
 function chPrice(it, ch){
   const o = chOverride(it.sku, ch);
   if (o && o.price_override != null) return o.price_override;
-  if (ch === "store") return it.store_price;
+  if (ch === "store" || fee(ch).price_base === "store") return it.store_price;
   return it.delivery_price ?? it.store_price;
 }
 

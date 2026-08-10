@@ -2320,28 +2320,32 @@
     "commission": 0.0,
     "payment": 1.3,
     "delivery_fee": 0,
-    "vat_on_fees": true
+    "vat_on_fees": true,
+    "price_base": "store"
    },
    "baemin": {
     "label": "배민",
     "commission": 6.8,
     "payment": 3.0,
     "delivery_fee": 3300,
-    "vat_on_fees": true
+    "vat_on_fees": true,
+    "price_base": "delivery"
    },
    "coupang": {
     "label": "쿠팡이츠",
     "commission": 9.8,
     "payment": 3.0,
     "delivery_fee": 3300,
-    "vat_on_fees": true
+    "vat_on_fees": true,
+    "price_base": "delivery"
    },
    "naver": {
     "label": "네이버",
     "commission": 2.0,
     "payment": 3.3,
     "delivery_fee": 0,
-    "vat_on_fees": true
+    "vat_on_fees": true,
+    "price_base": "store"
    }
   },
   "target_cost_rates": {
