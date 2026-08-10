@@ -107,10 +107,12 @@
         집 PC 프로그램이 꺼져 있어요. 아래 버튼으로 깨울 수 있습니다
         (PC 본체 전원이 꺼진 경우엔 사장님께 연락).
       </div>
-      <form method="post" action="{{ url_for('wake', path_key=key) }}" style="margin-top:8px;">
-        <button class="btn wide" type="submit">🔌 프로그램 깨우기 (최대 5분)</button>
-      </form>
     {% endif %}
+    {# 깨우기는 항상 노출(사장님 요청 2026-08-10) — 살아있을 때 눌러도
+       일꾼이 '켜졌습니다'로 즉시 닫아 무해하다. #}
+    <form method="post" action="{{ url_for('wake', path_key=key) }}" style="margin-top:8px;">
+      <button class="btn wide" type="submit">🔌 집 PC 깨우기 (꺼져 있으면 최대 5분)</button>
+    </form>
   </div>
 
   {% if approved_count %}
