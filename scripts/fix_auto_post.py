@@ -16,7 +16,9 @@
     python scripts/fix_auto_post.py --check  # 진단만(변경 없음)
 """
 
+import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -65,6 +67,44 @@ def set_value(lines, new_value):
     return out
 
 
+def restart_worker():
+    """일꾼(worker/agent.py)을 껐다 켠다 — .env 변경은 재시작해야 적용된다.
+
+    ⚠️ 답글 일꾼은 4_run_bot.bat(인스타 SNS 봇)이 아니라 worker/run_agent.bat
+       이고, 창 없이(hidden) 돌기 때문에 사장님이 직접 끄기 어렵다. 그래서
+       여기서 기존 프로세스를 종료하고 바로 다시 띄운다. 혹시 실패해도
+       5분마다 도는 작업 스케줄러(BeargelsWatchdog)가 살려준다.
+    """
+    print("\n[일꾼 재시작]")
+    if os.name != "nt":
+        print("  · 윈도우가 아니라 건너뜁니다(집 PC에서 실행해 주세요).")
+        return
+
+    kill_ps = (
+        "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+        "Where-Object { $_.CommandLine -match 'worker[\\\\/]agent\\.py' } | "
+        "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }")
+    try:
+        subprocess.run(["powershell", "-NoProfile", "-Command", kill_ps],
+                       timeout=60, capture_output=True)
+        print("  · 돌고 있던 일꾼을 껐습니다.")
+    except Exception as e:  # noqa: BLE001 — 못 꺼도 감시자가 5분 안에 처리
+        print(f"  · 종료 시도 실패({e}) — 감시자가 곧 정리합니다.")
+
+    agent_bat = ROOT / "worker" / "run_agent.bat"
+    if not agent_bat.exists():
+        print(f"  · 실행 파일을 찾지 못했습니다: {agent_bat}")
+        print("    5분 안에 자동 감시자가 일꾼을 다시 켭니다.")
+        return
+    try:
+        subprocess.Popen([str(agent_bat)], cwd=str(agent_bat.parent),
+                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        print("  · 새 설정으로 일꾼을 다시 켰습니다. ✅")
+        print("    (창 없이 도는 게 정상입니다 — 상태는 답글 화면에서 확인)")
+    except Exception as e:  # noqa: BLE001
+        print(f"  · 재시작 실패({e}) — 5분 안에 감시자가 자동으로 켭니다.")
+
+
 def main():
     args = [a.lower() for a in sys.argv[1:]]
     check_only = "--check" in args
@@ -100,9 +140,9 @@ def main():
         new_value, done_msg = "true", "연습 모드로 되돌렸습니다."
     else:
         if not dry:
-            print("\n설정은 이미 정상이라 바꿀 것이 없습니다.")
-            print("그래도 등록이 안 된다면, 일꾼(4_run_bot.bat)이 최신 코드로")
-            print("다시 시작됐는지 확인해 주세요 — 오래 켜둔 창은 옛 코드로 돕니다.")
+            print("\n설정은 이미 정상입니다. 그래도 등록이 안 된다면 일꾼이")
+            print("옛 설정으로 돌고 있을 수 있어, 다시 시작해 보겠습니다.")
+            restart_worker()
             return 0
         new_value, done_msg = "false", "실게시 모드로 바꿨습니다."
 
@@ -112,10 +152,8 @@ def main():
                         encoding="utf-8")
 
     print(f"\n✅ {done_msg} (원본은 {backup.name} 로 백업)")
-    print("\n[남은 한 단계] 일꾼을 다시 시작해야 적용됩니다:")
-    print("   1) 켜져 있는 검은 봇 창을 닫습니다(또는 Ctrl+C).")
-    print("   2) 4_run_bot.bat 을 다시 실행합니다.")
-    print("\n그다음 11시·17시·22시 중 가장 가까운 시각에 대기 중인 답글이")
+    restart_worker()
+    print("\n이제 11시·17시·22시 중 가장 가까운 시각에 대기 중인 답글이")
     print("배민·쿠팡에 등록되고, 결과가 텔레그램으로 옵니다.")
     return 0
 
