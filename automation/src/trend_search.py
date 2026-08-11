@@ -33,9 +33,21 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 def load_seeds() -> list[str]:
     try:
         cfg = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
-        return (cfg.get("trend", {}) or {}).get("seeds") or DEFAULT_SEEDS
+        seeds = (cfg.get("trend", {}) or {}).get("seeds") or DEFAULT_SEEDS
     except Exception:
-        return DEFAULT_SEEDS
+        seeds = list(DEFAULT_SEEDS)
+    # 학습 루프(⑧피드백): 실제 유입 검색어를 시드에 자동 합류
+    learned_file = DATA / "keywords-learned.yaml"
+    if learned_file.exists():
+        try:
+            learned = yaml.safe_load(learned_file.read_text(encoding="utf-8")) or {}
+            for kw in learned.get("keywords", []):
+                if kw not in seeds:
+                    seeds.append(kw)
+            print(f"  (피드백 학습 키워드 {len(learned.get('keywords', []))}개 합류)")
+        except Exception:
+            pass
+    return seeds
 
 
 def fetch_suggestions(query: str) -> list[str]:

@@ -39,6 +39,18 @@ def load_media_cfg() -> dict:
         return {}
 
 
+def resolve_inbox(mcfg: dict) -> pathlib.Path:
+    """사진 입구 폴더. config media.inbox 가 있으면 그 경로(구글드라이브 데스크톱 폴더 등),
+    없으면 로컬 media/inbox. 폰 → 드라이브 업로드 → PC 자동 동기화 흐름을 지원한다."""
+    custom = mcfg.get("inbox")
+    if custom:
+        p = pathlib.Path(custom)
+        if p.exists():
+            return p
+        print(f"⚠ media.inbox 경로가 없습니다: {custom} → 로컬 media/inbox 사용")
+    return INBOX
+
+
 def warm(img: Image.Image, amount: float) -> Image.Image:
     """따뜻한 톤 보정: R을 살짝 올리고 B를 살짝 내림."""
     if amount <= 0:
@@ -85,11 +97,15 @@ def main() -> None:
     if args:
         files = [pathlib.Path(a) if pathlib.Path(a).is_absolute() else ROOT / a for a in args]
     else:
-        INBOX.mkdir(parents=True, exist_ok=True)
-        files = sorted(p for p in INBOX.iterdir() if p.suffix.lower() in EXTS)
+        inbox = resolve_inbox(mcfg)
+        inbox.mkdir(parents=True, exist_ok=True)
+        # 이미 보정한 파일은 건너뜀 (드라이브 폴더를 반복 스캔해도 중복 작업 없음)
+        done = {p.stem.replace("_보정", "") for p in OUT.glob("*_보정.jpg")} if OUT.exists() else set()
+        files = sorted(p for p in inbox.iterdir()
+                       if p.suffix.lower() in EXTS and p.stem not in done)
 
     if not files:
-        print(f"media/inbox/ 에 사진이 없습니다. 폰 사진을 복사해 넣고 다시 실행하세요.")
+        print("보정할 새 사진이 없습니다. (드라이브 사진함 또는 media/inbox 에 사진을 넣어주세요)")
         return
 
     print(f"사진 {len(files)}장 자동 보정 (프리셋: {preset})")
