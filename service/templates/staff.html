@@ -116,10 +116,20 @@
   </div>
 
   {% if approved_count %}
-    <div class="note" style="background:var(--ok-bg); color:var(--ok);">
-      ⏳ 자동 등록 대기 <b>{{ approved_count }}건</b> — 매일 11시·17시·22시에
-      집 PC가 배민·쿠팡에 일괄 등록해요
-    </div>
+    {# 대기열이 있는데 일꾼이 꺼져 있으면 '등록 예정'이 아니라 '등록 못 함'이다
+       — 초록 안내가 오히려 오해를 부르므로 경고로 바꾼다(2026-08-11). #}
+    {% if worker.alive %}
+      <div class="note" style="background:var(--ok-bg); color:var(--ok);">
+        ⏳ 자동 등록 대기 <b>{{ approved_count }}건</b> — 매일 11시·17시·22시에
+        집 PC가 배민·쿠팡에 일괄 등록해요
+      </div>
+    {% else %}
+      <div class="note" style="background:var(--bad-bg); color:var(--bad);">
+        ⚠️ 자동 등록 대기 <b>{{ approved_count }}건</b> — 집 PC 프로그램이 꺼져
+        있어 <b>등록되지 않고 쌓이는 중</b>이에요. 위 “집 PC 깨우기”를 누르거나
+        PC 전원을 켜주세요.
+      </div>
+    {% endif %}
   {% endif %}
 
   {% if reviews %}

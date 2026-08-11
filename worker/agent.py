@@ -410,8 +410,20 @@ def run_auto_post() -> None:
         db.worker_ping("idle", "대기 중")
 
     if dry:
-        logger.info("자동 등록 dry-run 종료 — 실제 게시하려면 .env "
-                    "WRITE_DRY_RUN=false 로 바꾸고 일꾼 재시작")
+        # ⚠️ 조용히 끝내지 않는다: 연습 모드면 대기열이 영영 줄지 않는데
+        #    화면·텔레그램에 아무 표시가 없어 '왜 등록이 안 되지'로 이어진다
+        #    (사장님 제보 2026-08-11). 상태·오류로그·텔레그램에 모두 남긴다.
+        msg = (f"자동 등록이 '연습 모드(WRITE_DRY_RUN=true)'라 {len(approved)}건이 "
+               f"등록되지 않고 대기로 남았습니다. 집 PC .env 에서 "
+               f"WRITE_DRY_RUN=false 로 바꾸고 일꾼을 재시작하세요.")
+        logger.warning(msg)
+        db.worker_ping("idle", f"⚠️ {msg}")
+        db.log_error("worker", msg, kind="DryRunSkipped", path="run_auto_post")
+        try:
+            from bot import notify
+            notify.send_message(f"⚠️ {msg}")
+        except Exception:  # noqa: BLE001 — 알림 실패가 일꾼을 막지 않게
+            logger.warning("dry-run 안내 전송 실패")
         return
     try:
         from bot import notify
