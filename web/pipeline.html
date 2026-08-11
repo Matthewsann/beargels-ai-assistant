@@ -132,11 +132,28 @@
 </header>
 
 <div class="wrap">
+  <!-- ⓪ 이번 주 촬영 체크리스트 (기획 에이전트) -->
+  <div class="section">
+    <div class="eyebrow">이번 주</div>
+    <h2 class="row" style="gap:12px">촬영 체크리스트
+      <button class="btn sm" id="planBtn" onclick="genPlan()">🤖 새로 계획 짜기</button></h2>
+    <div id="plan" class="cards"></div>
+    <p class="muted" style="font-size:.82rem;margin-top:10px">반나절에 몰아서 찍고(배치 촬영), 요일별로 나눠 발행하는 게 물량의 비결이에요. 성과를 기록할수록 AI 계획이 똑똑해져요.</p>
+  </div>
+
   <!-- 진행 중 프로젝트 -->
   <div class="section">
     <div class="eyebrow">작업 중</div>
     <h2>내 릴스 프로젝트</h2>
     <div id="projects" class="cards"></div>
+  </div>
+
+  <!-- 발행 대기 큐 -->
+  <div class="section" id="queueSec" style="display:none">
+    <div class="eyebrow">발행 대기</div>
+    <h2>완성된 릴스 — Edits 앱에서 인기음원 얹어 발행</h2>
+    <div class="muted" id="rhythm" style="font-size:.82rem;margin-top:4px"></div>
+    <div id="queue" class="cards"></div>
   </div>
 
   <!-- 새 릴스 시작: 주제 고르기 -->
@@ -149,6 +166,21 @@
 
   <!-- 프로젝트 상세 (6단계 작업 공간) -->
   <div id="detail"></div>
+
+  <!-- 주간 리뷰 (성과 피드백 루프) -->
+  <div class="section">
+    <div class="eyebrow">주간 리뷰 · 일주일에 15분</div>
+    <h2>성과 기록 &amp; AI 분석</h2>
+    <div class="card" style="margin-top:14px">
+      <b>📈 인사이트 스크린샷 분석</b>
+      <div class="meta" style="margin-top:3px">인스타 앱 → 프로페셔널 대시보드 화면을 캡처해 올리면, AI가 "다음 주에 뭘 바꿀지" 알려주고 다음 촬영 계획에 반영해요.</div>
+      <div class="field" style="margin-top:10px"><input id="insFiles" type="file" accept="image/*" multiple></div>
+      <div class="field"><textarea id="insNote" placeholder="메모 (선택) — 예: 크림치즈 릴스가 제일 잘 됐어요"></textarea></div>
+      <button class="btn pri sm" id="insBtn" onclick="analyzeIns()">📈 AI 분석</button>
+      <div id="insResult" class="muted" style="white-space:pre-wrap;font-size:.85rem;margin-top:12px"></div>
+    </div>
+    <div id="hookLib"></div>
+  </div>
 </div>
 
 <div id="toast" class="toast"></div>
@@ -165,6 +197,7 @@ async function api(url, opts){ const r=await fetch(url,opts); if(!r.ok){ let m=r
 async function init(){
   const t = await api("/api/topics"); TOPICS = t.topics; renderTopics();
   await loadProjects();
+  await loadPlan(); await loadQueue(); await loadReview();
 }
 function renderTopics(){
   $("#topics").innerHTML = TOPICS.map((t,i)=>`
@@ -246,8 +279,10 @@ function renderDetail(){
         <h3>④ 릴스 자동 편집 <span class="muted" style="font-weight:600;font-size:.82rem">— 9:16·자막·원본소리</span></h3>
         <div class="row" style="margin-bottom:12px">
           <button class="btn" onclick="genCaption()">✨ AI가 자막·캡션 추천</button>
-          <span class="muted" style="font-size:.8rem">영상 보고 훅·메뉴·캡션·해시태그를 자동으로 채워줘요</span>
+          <button class="btn" onclick="genHooks()">🎣 훅 3버전 추천</button>
+          <span class="muted" style="font-size:.8rem">훅만 바꿔 여러 버전을 만들면 뭐가 잘 되는지 배울 수 있어요</span>
         </div>
+        <div class="row" id="hookChips" style="margin-bottom:12px">${hookChipsHtml(p.hook_variants)}</div>
         <div class="grid2">
           <div class="field"><label>상단 훅 자막 (첫 3초)</label><input id="hook" type="text" value="${(p.hook||'').replace(/"/g,'&quot;')}"></div>
           <div class="field"><label>하단 자막 (메뉴·키워드)</label><input id="menu" type="text" value="${(p.menu||'').replace(/"/g,'&quot;')}"></div>
@@ -270,6 +305,7 @@ function renderDetail(){
         <h3>⑥ 완성본으로 저장</h3>
         <div class="field"><label>캡션 (인스타에 붙일 글 — ✨버튼으로 자동 생성, 수정 가능)</label><textarea id="caption" placeholder="예: 송도 카페에서 크림치즈 듬뿍 베이글 어때요 …">${esc(captionText)}</textarea></div>
         <button class="btn pri" onclick="finalize()">📁 완성본 폴더에 저장</button>
+        <span class="muted" style="font-size:.78rem;margin-left:8px">훅 바꿔 또 저장하면 reel_2.mp4처럼 버전이 추가돼요</span>
         ${p.status==="완성"?`<span class="pill 완성" style="margin-left:10px">저장됨</span>`:''}
         <div class="pathrow">📁 릴스 저장되는 곳<span class="path">${p.final_dir||''}</span>
           <button class="btn sm" onclick="openFolder('${p.id}','final')">폴더 열기</button></div>
@@ -330,7 +366,7 @@ async function finalize(){
   const cap=$("#caption")?$("#caption").value:"";
   const fd=new FormData(); fd.append("caption",cap);
   try{ const r=await api("/api/projects/"+CURRENT.id+"/finalize",{method:"POST",body:fd});
-    toast("완성본 저장됨 📁"); await openProject(CURRENT.id); await loadProjects();
+    toast("완성본 저장됨 📁 — 발행 대기에 추가"); await openProject(CURRENT.id); await loadProjects(); await loadQueue();
   }catch(e){ toast("저장 실패: "+e.message); }
 }
 
@@ -338,6 +374,137 @@ async function delProject(pid){
   if(!confirm("이 프로젝트를 삭제할까요?")) return;
   await api("/api/projects/"+pid,{method:"DELETE"});
   CURRENT=null; $("#detail").innerHTML=""; await loadProjects(); toast("삭제됨");
+}
+
+// ═══ ⓪ 이번 주 촬영 체크리스트 ═══
+async function loadPlan(){
+  const plan = await api("/api/plan");
+  const el = $("#plan");
+  if(!plan.items || !plan.items.length){
+    el.innerHTML = `<div class="empty">아직 이번 주 계획이 없어요. <b>🤖 새로 계획 짜기</b>를 눌러보세요.</div>`;
+    return;
+  }
+  el.innerHTML = plan.items.map((t,i)=>`
+    <div class="card">
+      <div style="font-size:.71rem;font-weight:800;color:var(--crust-ink);text-transform:uppercase">${esc(t.pillar||'')} · ${esc(t.publish_day||'')}요일 발행 · ${esc(t.template||'T1')}</div>
+      <b style="margin-top:3px">${esc(t.title)}</b>
+      <div class="meta">🎬 ${esc(t.guide||'')}</div>
+      <div class="meta" style="color:var(--crust-ink)">훅: ${esc(t.hook||'')}</div>
+      ${t.project_id
+        ? `<button class="btn sm" style="margin-top:10px" onclick="openProject('${t.project_id}')">✅ 진행 중 — 열기</button>`
+        : `<button class="btn pri sm" style="margin-top:10px" onclick="startPlan(${i})">🎬 촬영 시작</button>`}
+    </div>`).join("");
+}
+async function genPlan(){
+  const b=$("#planBtn"); b.disabled=true; b.innerHTML='<span class="spin"></span>계획 만드는 중…';
+  try{ await api("/api/plan/generate",{method:"POST"}); await loadPlan(); toast("이번 주 촬영 계획 완성 🤖"); }
+  catch(e){ toast("계획 생성 실패: "+e.message); }
+  b.disabled=false; b.textContent="🤖 새로 계획 짜기";
+}
+async function startPlan(i){
+  const fd=new FormData(); fd.append("index",i);
+  try{
+    const p = await api("/api/plan/start",{method:"POST",body:fd});
+    toast("프로젝트 생성됨 — 가이드대로 찍어서 올려주세요");
+    await loadPlan(); await loadProjects(); openProject(p.id);
+  }catch(e){ toast("실패: "+e.message); }
+}
+
+// ═══ 🎣 훅 3버전 (1→N 변형) ═══
+function hookChipsHtml(hooks){
+  return (hooks||[]).map(h=>{
+    const v = esc(h).replace(/"/g,"&quot;");
+    return `<button class="btn sm ghost" style="border-style:dashed" data-h="${v}" onclick="useHook(this.dataset.h)">🎣 ${esc(h)}</button>`;
+  }).join("");
+}
+function useHook(h){
+  const el=$("#hook"); if(el){ el.value=h; toast("훅 적용됨 — 릴스 만들기(다시 편집)를 누르세요"); }
+}
+async function genHooks(){
+  toast("훅 만드는 중…");
+  try{
+    const r = await api("/api/projects/"+CURRENT.id+"/hooks",{method:"POST"});
+    CURRENT.hook_variants = r.hooks;
+    $("#hookChips").innerHTML = hookChipsHtml(r.hooks);
+    toast(r.ai ? "훅 3버전 완성 — 눌러서 적용하세요" : "기본 훅 제안 (크레딧 충전 시 AI 추천)");
+  }catch(e){ toast("훅 추천 실패: "+e.message); }
+}
+
+// ═══ 📤 발행 대기 큐 ═══
+let QUEUE=[];
+async function loadQueue(){
+  const q = await api("/api/queue"); QUEUE=q.items;
+  const sec=$("#queueSec");
+  if(!q.items.length){ sec.style.display="none"; return; }
+  sec.style.display="block";
+  $("#rhythm").textContent = "📅 " + q.rhythm;
+  $("#queue").innerHTML = q.items.map((it,i)=>`
+    <div class="card">
+      <b>${esc(it.title)}</b>
+      <div class="meta">훅: ${esc(it.hook||'')}</div>
+      <div class="path" style="margin-top:8px;font-size:.72rem">${esc(it.final_path||'')}</div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn sm" onclick="copyCap(${i})">📋 캡션 복사</button>
+        <button class="btn pri sm" onclick="markPub('${it.id}')">✅ 발행 완료</button>
+      </div>
+    </div>`).join("");
+}
+function copyCap(i){
+  const it=QUEUE[i];
+  const txt=(it.caption||it.hook||"")+((it.hashtags&&it.hashtags.length)?"\n\n"+it.hashtags.join(" "):"");
+  navigator.clipboard.writeText(txt).then(()=>toast("캡션 복사됨 — Edits 앱에 붙여넣으세요"))
+    .catch(()=>toast("복사 실패 — 캡션은 완성본 폴더 caption.txt에도 있어요"));
+}
+async function markPub(pid){
+  try{
+    await api("/api/projects/"+pid+"/published",{method:"POST"});
+    toast("발행 완료 ✅ — 2~3일 뒤 주간 리뷰에서 성과를 적어주세요");
+    await loadQueue(); await loadReview(); await loadProjects();
+  }catch(e){ toast("실패: "+e.message); }
+}
+
+// ═══ 📈 주간 리뷰 ═══
+async function loadReview(){
+  const r = await api("/api/review");
+  const el = $("#hookLib");
+  if(!r.hooks.length){ el.innerHTML=""; }
+  else{
+    el.innerHTML = `<div class="card" style="margin-top:13px">
+      <b>발행한 릴스 — 성과 기록 (훅 라이브러리)</b>
+      <div class="meta" style="margin-top:3px">발행 2~3일 뒤 인사이트 숫자를 적어두면, 다음 계획 때 AI가 잘 된 훅을 변형해 재활용해요.</div>
+      ${r.hooks.map(h=>`
+        <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
+          <b style="font-size:.88rem">${esc(h.title)}</b>
+          <span class="muted" style="font-size:.8rem"> · 훅: ${esc(h.hook||'(없음)')}</span>
+          <div class="row" style="margin-top:8px">
+            ${[["reach","도달"],["saves","저장"],["shares","공유"],["likes","좋아요"]].map(([k,l])=>
+              `<input type="text" inputmode="numeric" placeholder="${l}" value="${h[k]??''}" id="m_${h.id}_${k}" style="width:84px">`).join("")}
+            <button class="btn sm" onclick="saveResult('${h.id}')">저장</button>
+          </div>
+        </div>`).join("")}
+    </div>`;
+  }
+  if(r.insights.length && !$("#insResult").textContent){
+    $("#insResult").textContent = "지난 분석 ▸ " + r.insights[0].summary;
+  }
+}
+async function saveResult(hid){
+  const fd=new FormData();
+  for(const k of ["reach","saves","shares","likes"]) fd.append(k, ($("#m_"+hid+"_"+k)||{value:""}).value||"");
+  try{ await api("/api/hooks/"+hid+"/result",{method:"POST",body:fd}); toast("성과 기록됨 📊"); }
+  catch(e){ toast("기록 실패: "+e.message); }
+}
+async function analyzeIns(){
+  const files=$("#insFiles").files, note=$("#insNote").value;
+  if(!files.length && !note.trim()){ toast("스크린샷이나 메모를 넣어주세요"); return; }
+  const fd=new FormData(); for(const f of files) fd.append("files",f); fd.append("note",note);
+  const b=$("#insBtn"); b.disabled=true; b.innerHTML='<span class="spin"></span>분석 중…';
+  try{
+    const r=await api("/api/insights",{method:"POST",body:fd});
+    $("#insResult").textContent=r.summary;
+    toast(r.ai?"분석 완료 — 다음 주 계획에 반영돼요":"기록해뒀어요");
+  }catch(e){ toast("분석 실패: "+e.message); }
+  b.disabled=false; b.textContent="📈 AI 분석";
 }
 
 init().catch(e=>toast("불러오기 실패: "+e.message));
