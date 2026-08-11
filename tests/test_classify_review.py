@@ -33,8 +33,9 @@ def test_low_rating_is_complaint():
     assert cr("배달이 너무 늦고 식었어요", 2) == "complaint"
 
 
-def test_high_rating_no_text_is_photo_only():
-    assert cr("", 5) == "photo_only"
+def test_high_rating_no_text_defaults_to_rating_only():
+    # 사진이 '확인'되지 않으면 사진 리뷰가 아니라 별점만 리뷰로(2026-08-12).
+    assert cr("", 5) == "rating_only"
 
 
 def test_question_detected():
@@ -74,3 +75,22 @@ def test_complaint_report_baemin_fallback_to_review_id():
           "written_at": "2026년 7월 26일"}
     out = format_complaint_report([rv])
     assert "#20260726123" in out and "2026년 7월 26일" in out
+
+
+def test_rating_only_when_no_photo_evidence():
+    # 사진 없는 별점만 리뷰를 '사진 리뷰'로 오분류해 "사진 감사해요" 답글이
+    # 실고객에 나간 사고(2026-08-12) 회귀 방지.
+    from assistant.beargels import classify_review
+    rv = {"platform": "coupang", "rating": 5, "content": "",
+          "raw": '{"images": [], "comment": ""}'}
+    assert classify_review(rv) == "rating_only"
+    # raw 가 없어 판별 불가한 경우(배민 등)도 사진 언급을 피하는 쪽으로.
+    assert classify_review({"platform": "baemin", "rating": 5,
+                            "content": ""}) == "rating_only"
+
+
+def test_photo_only_when_images_confirmed():
+    from assistant.beargels import classify_review
+    rv = {"platform": "coupang", "rating": 5, "content": "",
+          "raw": '{"images": [{"url": "x"}]}'}
+    assert classify_review(rv) == "photo_only"

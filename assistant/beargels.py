@@ -14,6 +14,7 @@
 모델: claude-opus-4-8 (adaptive thinking). ANTHROPIC_API_KEY 는 .env 에서 로드.
 """
 
+import json
 import logging
 import os
 import random
@@ -381,6 +382,9 @@ _TYPE_GUIDE = {
     "praise_detail": ("리뷰에서 칭찬한 구체적 포인트(메뉴·식감·맛·서비스)를 그대로 "
                       "짚어 반응하고, 정성껏 답한다."),
     "photo_only": "사진만 남긴 고평점이다. 짧고 산뜻하게 감사. 억지로 길게 쓰지 마라.",
+    "rating_only": ("별점만 남긴 고평점이다(사진·글 없음). 짧고 산뜻하게 감사만. "
+                    "⚠️ 사진·리뷰 내용을 절대 언급하지 마라 — 없는 사진을 "
+                    "언급하면 고객이 이상하게 느낀다."),
     "neutral": "짧은 리뷰다. 따뜻하되 간결하게 2문장 내외.",
     "question": "리뷰에 담긴 질문·요청에 실제로 답하거나 안내한다. 감사 인사는 짧게.",
     "complaint": ("서비스 리커버리 4단계로: (1)무엇이 잘못됐는지 리뷰 내용을 "
@@ -460,10 +464,29 @@ def format_complaint_report(reviews, label=""):
     return "\n".join(lines)
 
 
+def _has_photo(review):
+    """리뷰에 사진이 실제로 있는지. 모르면 None.
+
+    쿠팡은 raw JSON 의 images 로 확실히 알 수 있다. 배민 등 판별 불가면
+    None — 이때는 사진을 '언급하지 않는' 쪽이 안전하다(없는 사진을 언급한
+    답글이 실고객에 나간 사고, 2026-08-12).
+    """
+    if review.get("platform") == "coupang" and review.get("raw"):
+        try:
+            data = review["raw"]
+            if isinstance(data, str):
+                data = json.loads(data)
+            return bool(data.get("images"))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
 def classify_review(review):
     """리뷰를 대응 유형으로 분류한다.
 
-    반환: escalate | complaint | question | praise_detail | photo_only | neutral
+    반환: escalate | complaint | question | praise_detail | photo_only |
+          rating_only | neutral
     """
     if any(k in (review.get("content") or "") for k in ESCALATION_KEYWORDS):
         return "escalate"
@@ -472,7 +495,9 @@ def classify_review(review):
     if rating is not None and rating <= 3:
         return "complaint"
     if not content:
-        return "photo_only"
+        # 사진이 '확인된' 경우에만 사진 리뷰로. 불확실하면 별점만 남긴
+        # 리뷰로 보고 사진 언급을 피한다.
+        return "photo_only" if _has_photo(review) else "rating_only"
     if any(q in content for q in ("?", "되나요", "있나요", "가능", "문의", "언제")):
         return "question"
     return "praise_detail" if len(content) >= 15 else "neutral"
@@ -539,12 +564,13 @@ def generate_review_reply(review):
             f"{ctx_block}"
             f"[{cfg['label']}] {visit} '{author}'가 {menus} 주문 후 "
             f"별점 {rating}점으로 남긴 리뷰:\n"
-            f"\"{content or '(사진만, 텍스트 없음)'}\"\n\n"
+            f"\"{content or ('(사진만, 텍스트 없음)' if typ == 'photo_only' else '(내용 없이 별점만 남김)')}\"\n\n"
             f"[이 리뷰 유형 대응 지침] {_TYPE_GUIDE.get(typ, '')}\n"
             f"위 지침대로 답글을 써줘. 글자수를 넉넉히 활용해 {target}자 내외로 "
             f"정성껏 길게(최대 {max_len}자 초과 금지). 단 억지로 늘리거나 같은 말을 "
-            f"반복하지 말고, 주문 메뉴·사진·경험을 구체적으로 여러 개 짚어 "
-            f"진짜 내용으로 채운다. 다른 답글과 겹치지 않게 자연스럽게."
+            f"반복하지 말고, 주문 메뉴·경험을 구체적으로 짚어 진짜 내용으로 "
+            f"채운다(사진은 실제로 있는 리뷰에서만 언급). 다른 답글과 겹치지 않게 "
+            f"자연스럽게."
         )
         draft = _ask_claude(REPLY_PERSONA, user, max_tokens=600)[:max_len]
         return _strip_banned(draft, max_len)

@@ -162,6 +162,7 @@ def make_drafts() -> int:
             "rating": row.get("rating"),
             "content": row.get("content"),
             "menus": row.get("menus") or [],
+            "raw": row.get("raw"),  # 사진 유무 판별용(classify_review)
             "order_count": None,
         }
         try:
@@ -263,6 +264,7 @@ def run_regen_job(job) -> None:
             "rating": row.get("rating"),
             "content": row.get("content"),
             "menus": row.get("menus") or [],
+            "raw": row.get("raw"),  # 사진 유무 판별용(classify_review)
             "order_count": None,
         }
         draft = generate_review_reply(review)
@@ -388,6 +390,7 @@ def run_auto_post() -> None:
                     "rating": row.get("rating"),
                     "content": row.get("content"),
                     "menus": row.get("menus") or [],
+                    "raw": row.get("raw"),  # 사진 유무 판별용(classify_review)
                 }
                 try:
                     res = ReplyToReviewAction(
@@ -463,6 +466,7 @@ def run_post_job(job) -> None:
             "rating": row.get("rating"),
             "content": row.get("content"),
             "menus": row.get("menus") or [],
+            "raw": row.get("raw"),  # 사진 유무 판별용(classify_review)
         }
         res = ReplyToReviewAction(
             review, reply_text=row.get("reply_draft")).run(confirm=True)
