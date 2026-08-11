@@ -52,8 +52,12 @@ def existing_titles() -> list[str]:
     return [t for t in titles if t]
 
 
-def create_item(post_type: str, data: dict) -> int:
-    """생성된 글(data: title/body/tags/keywords)을 새 라이브러리 항목으로 저장."""
+def create_item(post_type: str, data: dict, review: dict | None = None) -> int:
+    """생성된 글(data: title/body/tags/keywords)을 새 라이브러리 항목으로 저장.
+
+    review: 검수 에이전트 결과 {score, issues, revised} — meta 에 기록되어
+    발행 선택 화면에서 참고할 수 있다.
+    """
     item_id = next_id()
     d = item_dir(item_id)
     (d / "images").mkdir(parents=True, exist_ok=True)
@@ -81,6 +85,9 @@ def create_item(post_type: str, data: dict) -> int:
         "created": _now(),
         "scheduled_time": None,
     }
+    if review:
+        meta["review_score"] = review.get("score")
+        meta["review_issues"] = review.get("issues", [])
     save_meta(item_id, meta)
     return item_id
 

@@ -32,7 +32,9 @@ def show_ready() -> list[dict]:
     print("\n📦 발행 대기(ready) 목록")
     print("-" * 60)
     for m in metas:
-        print(f"  [{m['id']:>3}] ({m.get('type','')}) {m.get('title','')}")
+        score = m.get("review_score")
+        tag = f" [검수 {score}점]" if score is not None else ""
+        print(f"  [{m['id']:>3}] ({m.get('type','')}) {m.get('title','')}{tag}")
     print("-" * 60)
     return metas
 

@@ -45,6 +45,15 @@ media:
     per_image_sec: 2.5
     max_photos: 6
 
+# AI 검수 에이전트 (④) — 생성 직후 SEO 체크리스트 심사·자체수정
+review:
+  enabled: true
+  min_score: 80       # 이 점수 미만이면 AI 수정본으로 교체
+
+# 시장조사 에이전트 (⓪) — 네이버 자동완성 수집 시드
+trend:
+  seeds: ["송도 베이글", "송도 카페", "송도 빵집", "베이글", "송도 브런치"]
+
 # 2단계 예약 발행 설정
 publish:
   mode: "assist"      # assist(권장) | full  — 위 설명 참고

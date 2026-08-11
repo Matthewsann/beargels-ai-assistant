@@ -162,6 +162,14 @@ def generate_one(client: Anthropic, cfg: dict, post_type: str, variables: dict) 
     return data
 
 
+def _review_if_enabled(client, cfg, data: dict) -> tuple[dict, dict | None]:
+    """[에이전트 ④] AI 검수 — config: review.enabled (기본 켜짐)."""
+    if not cfg.get("review", {}).get("enabled", True):
+        return data, None
+    import review_post
+    return review_post.review_one(client, cfg, data)
+
+
 def run_plan(client, cfg) -> list[int]:
     plan = yaml.safe_load((ROOT / "content-plan.yaml").read_text(encoding="utf-8"))
     made = []
@@ -169,7 +177,8 @@ def run_plan(client, cfg) -> list[int]:
         ptype = item.get("type", "신메뉴")
         print(f"  · '{ptype}' 생성 중…")
         data = generate_one(client, cfg, ptype, item.get("vars", {}))
-        item_id = library.create_item(ptype, data)
+        data, review = _review_if_enabled(client, cfg, data)
+        item_id = library.create_item(ptype, data, review=review)
         made.append(item_id)
         print(f"    ✓ 라이브러리 #{item_id:04d}  | {data.get('title','')}")
     return made
@@ -181,7 +190,8 @@ def run_stockpile(client, cfg, count: int) -> list[int]:
         ptype, topic = EVERGREEN_TOPICS[(library.next_id() + i) % len(EVERGREEN_TOPICS)]
         print(f"  · [{i+1}/{count}] '{ptype}' 생성 중… ({topic})")
         data = generate_one(client, cfg, ptype, {"주제": topic})
-        item_id = library.create_item(ptype, data)
+        data, review = _review_if_enabled(client, cfg, data)
+        item_id = library.create_item(ptype, data, review=review)
         made.append(item_id)
         print(f"    ✓ 라이브러리 #{item_id:04d}  | {data.get('title','')}")
     return made

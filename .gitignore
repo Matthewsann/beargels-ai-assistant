@@ -13,3 +13,5 @@ automation/media/
 automation/naver_state.json
 automation/login_status.txt
 .browser_profile/
+automation/data/
+automation/content-plan.yaml.bak
