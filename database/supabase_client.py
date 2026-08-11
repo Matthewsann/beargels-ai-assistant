@@ -431,6 +431,29 @@ def mark_approved(review_id):
     _update_review(review_id, {"reply_status": "approved"})
 
 
+def mark_drafted(review_id):
+    """검토 대기(drafted)로 되돌린다 — 등록 실패 시 카드가 다시 나타나
+    직원이 재시도할 수 있게."""
+    _update_review(review_id, {"reply_status": "drafted"})
+
+
+def request_post(review_id, by=None):
+    """'답글 등록' 버튼 — 집 PC 일꾼에게 이 리뷰 1건의 즉시 게시를 요청한다.
+
+    (2026-08-10 흐름 변경: 정시 일괄 등록 대신 버튼 즉시 등록)
+    regen 과 같은 방식으로 리뷰 id 는 message 에 담는다. 연타 방지 재사용.
+    """
+    live = (get_client().table("jobs").select("*")
+            .eq("kind", "post").eq("message", str(review_id))
+            .in_("status", ["pending", "running"])
+            .order("requested_at", desc=True).limit(1).execute().data)
+    if live:
+        return live[0]
+    row = {"kind": "post", "status": "pending",
+           "requested_by": by or "", "message": str(review_id)}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
 def mark_skipped(review_id):
     """'넘어가기' — 이미 앱에서 직접 등록했거나 답글이 필요 없는 리뷰.
 

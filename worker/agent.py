@@ -332,7 +332,9 @@ def maybe_auto_collect() -> None:
 # ---------------------------------------------------------------------------
 
 # 하루 중 게시 시각(HH:MM, 쉼표 구분). 빈 값이면 끔.
-AUTO_POST_TIMES = os.getenv("WORKER_AUTO_POST_TIMES", "11:00,17:00,22:00")
+# 2026-08-10 사장님 결정: 정시 일괄 대신 '답글 등록' 버튼 즉시 게시(run_post_job)
+# 가 기본 — 정시 일괄은 꺼 둔다(.env 로 재활성 가능).
+AUTO_POST_TIMES = os.getenv("WORKER_AUTO_POST_TIMES", "")
 _last_post_slot = None   # 같은 슬롯을 두 번 돌지 않게(메모리 — 재시작해도
                          # 이미 게시된 건 posted 라 재게시는 없다)
 
@@ -438,6 +440,55 @@ def run_auto_post() -> None:
         logger.warning("자동 등록 결과 보고 실패: %s", e)
 
 
+def run_post_job(job) -> None:
+    """웹의 '답글 등록' 버튼 — 리뷰 1건을 지금 바로 배민·쿠팡에 게시한다.
+
+    성공 → posted(수정률 데이터). 실패/리허설 → drafted 로 되돌려 카드가
+    다시 나타나게 한다(직원이 재시도 가능).
+    """
+    jid = job["id"]
+    rid = int(job.get("message") or 0)
+    row = db.get_review(rid)
+    if not row or row.get("reply_status") != "approved":
+        db.finish_job(jid, "error", f"리뷰 {rid} 가 등록 대기 상태가 아닙니다", 0)
+        return
+    db.worker_ping("working", "답글 등록 중")
+    try:
+        from crawler.review_reply import ReplyToReviewAction
+        ensure_chrome()
+        review = {
+            "platform": row.get("platform"),
+            "review_no": row.get("review_no"),
+            "author": row.get("author"),
+            "rating": row.get("rating"),
+            "content": row.get("content"),
+            "menus": row.get("menus") or [],
+        }
+        res = ReplyToReviewAction(
+            review, reply_text=row.get("reply_draft")).run(confirm=True)
+        if res.get("applied"):
+            db.mark_replied(rid)
+            db.finish_job(jid, "done", f"리뷰 {rid} 답글 등록 완료", 1)
+            logger.info("답글 등록 #%s 완료 (리뷰 %s)", jid, rid)
+        else:   # 리허설(WRITE_DRY_RUN=true) — 게시 안 됨
+            db.mark_drafted(rid)
+            db.finish_job(jid, "done",
+                          "[리허설] WRITE_DRY_RUN=true — 실제 등록 안 함", 0)
+            logger.info("답글 등록 #%s 리허설 — 게시 생략 (리뷰 %s)", jid, rid)
+    except Exception as e:  # noqa: BLE001
+        logger.error("답글 등록 #%s 실패: %s", jid, e)
+        db.log_error("worker", f"답글 등록 실패(리뷰 {rid}): {e}",
+                     kind=type(e).__name__, path="run_post_job",
+                     detail=traceback.format_exc())
+        try:
+            db.mark_drafted(rid)    # 카드 복귀 → 직원 재시도 가능
+        except Exception:  # noqa: BLE001
+            pass
+        db.finish_job(jid, "error", str(e)[:400], 0)
+    finally:
+        db.worker_ping("idle", "대기 중")
+
+
 def maybe_auto_post() -> None:
     global _last_post_slot
     try:
@@ -457,6 +508,8 @@ def run_job(job) -> None:
         return None
     if job.get("kind") == "regen":
         return run_regen_job(job)
+    if job.get("kind") == "post":
+        return run_post_job(job)
     if job.get("kind") == "menu_collect":
         return run_menu_job(job)
     jid = job["id"]

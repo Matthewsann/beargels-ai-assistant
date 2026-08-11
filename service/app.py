@@ -312,7 +312,8 @@ def draft_state(path_key, review_id):
     try:
         r = db.get_review(review_id) or {}
         return jsonify({"draft": r.get("reply_draft") or "",
-                        "at": r.get("draft_updated_at") or ""})
+                        "at": r.get("draft_updated_at") or "",
+                        "reply_status": r.get("reply_status") or ""})
     except Exception as e:  # noqa: BLE001
         return jsonify({"error": str(e)[:150]}), 200
 
@@ -330,20 +331,24 @@ def done(path_key, review_id):
     return redirect(url_for("home", path_key=path_key))
 
 
-@app.route("/<path_key>/review/<int:review_id>/approve", methods=["POST"])
-def approve(path_key, review_id):
-    """'수정 완료' — 이 초안 그대로 자동 등록 대기열에 넣는다.
+@app.route("/<path_key>/review/<int:review_id>/post", methods=["POST"])
+def post_reply(path_key, review_id):
+    """'답글 등록' — 이 초안 그대로 지금 바로 게시하라고 일꾼에게 요청.
 
-    실제 게시는 집 PC 일꾼이 정해진 시간에 일괄 수행한다.
+    (2026-08-10: 정시 일괄 등록 대신 버튼 즉시 등록)
+    approved 로 표시하고 post 잡을 넣는다. 결과는 JS 가 draft_state 를
+    폴링해 posted(성공)/drafted(실패·리허설 복귀)로 확인한다.
     """
     check(path_key)
     try:
         db.mark_approved(review_id)
+        db.request_post(review_id)
+        return jsonify({"ok": True})
     except Exception as e:  # noqa: BLE001
-        db.log_error("service", f"수정완료 표시 실패(review {review_id}): {e}",
+        db.log_error("service", f"답글 등록 요청 실패(review {review_id}): {e}",
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
-    return redirect(url_for("home", path_key=path_key))
+        return jsonify({"ok": False, "error": str(e)[:150]}), 200
 
 
 @app.route("/<path_key>/review/<int:review_id>/skip", methods=["POST"])

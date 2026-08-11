@@ -58,3 +58,5 @@ service/.env.production
 # 인스타 릴스 런타임 산출물 (영상 원본·편집본)
 automation/reels/
 automation/reels_완성본/
+.env.bak
+.env.*.bak

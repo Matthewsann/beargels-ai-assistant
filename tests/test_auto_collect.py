@@ -47,24 +47,29 @@ def test_disabled_by_env(monkeypatch):
 
 
 # --- 자동 답글 등록 슬롯 판정 ------------------------------------------------
+# 기본값은 꺼짐("") — 2026-08-10부터 '답글 등록' 버튼 즉시 게시가 기본.
+# 슬롯 로직은 .env 로 재활성할 수 있어 회귀 테스트는 유지한다.
 
-def test_post_slot_fires_within_window():
+def test_post_slot_disabled_by_default():
+    assert agent.AUTO_POST_TIMES == ""
+    assert agent.post_slot_due(_t(11, 3).replace(tzinfo=None), None) is None
+
+
+def test_post_slot_fires_within_window(monkeypatch):
+    monkeypatch.setattr(agent, "AUTO_POST_TIMES", "11:00,17:00,22:00")
     # 11:00 슬롯: 11:00~11:09 사이에만, 슬롯 키를 반환.
     key = agent.post_slot_due(_t(11, 3).replace(tzinfo=None), None)
     assert key and key.endswith("11:00")
 
 
-def test_post_slot_not_twice():
+def test_post_slot_not_twice(monkeypatch):
+    monkeypatch.setattr(agent, "AUTO_POST_TIMES", "11:00,17:00,22:00")
     now = _t(11, 3).replace(tzinfo=None)
     key = agent.post_slot_due(now, None)
     assert agent.post_slot_due(now, key) is None   # 같은 슬롯 재실행 금지
 
 
-def test_post_slot_outside_window():
+def test_post_slot_outside_window(monkeypatch):
+    monkeypatch.setattr(agent, "AUTO_POST_TIMES", "11:00,17:00,22:00")
     assert agent.post_slot_due(_t(11, 20).replace(tzinfo=None), None) is None
     assert agent.post_slot_due(_t(9, 0).replace(tzinfo=None), None) is None
-
-
-def test_post_slot_disabled(monkeypatch):
-    monkeypatch.setattr(agent, "AUTO_POST_TIMES", "")
-    assert agent.post_slot_due(_t(11, 3).replace(tzinfo=None), None) is None
