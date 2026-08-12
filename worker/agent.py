@@ -443,6 +443,22 @@ def run_auto_post() -> None:
         logger.warning("자동 등록 결과 보고 실패: %s", e)
 
 
+def _notify_replaced(row) -> None:
+    """이미 달려 있던 답글을 덮어쓴 사실을 사장님께 알린다.
+
+    사장님이 배민·쿠팡 앱에서 직접 단 답글일 수도 있으므로 조용히 넘기지
+    않는다. 알림이 실패해도 등록 자체는 이미 끝났으니 예외를 올리지 않는다.
+    """
+    try:
+        from bot import notify
+        notify.send_message(
+            f"✏️ [{row.get('platform')}] {row.get('author')} 님 리뷰에 이미 "
+            f"답글이 달려 있어, 직원이 등록한 내용으로 **수정**했습니다.\n"
+            f"앱에서 직접 답글을 다셨다면 내용이 바뀌었을 수 있어요.")
+    except Exception:  # noqa: BLE001
+        logger.warning("답글 덮어쓰기 알림 전송 실패")
+
+
 def run_post_job(job) -> None:
     """웹의 '답글 등록' 버튼 — 리뷰 1건을 지금 바로 배민·쿠팡에 게시한다.
 
@@ -472,8 +488,16 @@ def run_post_job(job) -> None:
             review, reply_text=row.get("reply_draft")).run(confirm=True)
         if res.get("applied"):
             db.mark_replied(rid)
-            db.finish_job(jid, "done", f"리뷰 {rid} 답글 등록 완료", 1)
-            logger.info("답글 등록 #%s 완료 (리뷰 %s)", jid, rid)
+            # 시간차로 이미 답글이 달려 있어 '수정'으로 맞춘 경우 — 조용히
+            # 덮어쓰면 사장님이 앱에서 직접 단 답글이 바뀐 걸 모른다.
+            detail = res.get("result")
+            replaced = bool(detail.get("replaced")) if isinstance(detail, dict) \
+                else False
+            note = " (이미 있던 답글을 이 내용으로 수정)" if replaced else ""
+            db.finish_job(jid, "done", f"리뷰 {rid} 답글 등록 완료{note}", 1)
+            logger.info("답글 등록 #%s 완료 (리뷰 %s)%s", jid, rid, note)
+            if replaced:
+                _notify_replaced(row)
         else:   # 리허설(WRITE_DRY_RUN=true) — 게시 안 됨
             db.mark_drafted(rid)
             db.finish_job(jid, "done",

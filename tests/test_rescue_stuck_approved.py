@@ -74,10 +74,14 @@ def test_one_failure_does_not_stop_the_rest(agent):
 
 
 def test_rescue_is_throttled(agent, monkeypatch):
+    import time
+
     ag, fake = agent
     fake.approved = [{"id": 1}]
-    monkeypatch.setattr(ag, "_last_rescue", 0.0)
+    # '마지막 점검이 주기보다 오래전'인 상태로 맞춘다(부팅 직후 monotonic 이
+    # 작아도 테스트가 흔들리지 않게 절대값 대신 현재 시각 기준으로).
     monkeypatch.setattr(ag, "RESCUE_EVERY_SECONDS", 300)
+    monkeypatch.setattr(ag, "_last_rescue", time.monotonic() - 301)
 
     ag.maybe_rescue_stuck()          # 첫 호출 — 실행됨
     first = len(fake.requested)

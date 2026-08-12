@@ -33,6 +33,29 @@ from crawler.write_guard import WriteAction
 
 logger = logging.getLogger(__name__)
 
+
+def _coupang_already_replied(code, err):
+    """쿠팡 응답이 '이미 답글이 있다'는 거절인지 판별한다.
+
+    코드가 50001 로 오지만 문자열/숫자·필드 위치가 배포마다 흔들려, 코드와
+    메시지를 함께 느슨하게 본다(오탐해도 '수정'으로 한 번 더 시도할 뿐이다).
+    """
+    blob = f"{code} {err}"
+    return "50001" in blob or "이미" in blob
+
+
+def _coupang_ok(status, code, err):
+    """쿠팡 답글 API 응답이 성공인지 판별한다.
+
+    ⚠️ 예전엔 error 필드가 비면 성공으로 봤는데, 거절 코드(50001)만 오고
+    error 가 없는 응답을 '게시 완료'로 오인할 수 있었다 — 거절 코드는 명시적
+    으로 실패로 본다.
+    """
+    if status != 200 or err:
+        return False
+    return code == "SUCCESS" or not _coupang_already_replied(code, err)
+
+
 COUPANG_REPLY_API = "https://store.coupangeats.com/api/v1/merchant/reviews/reply"
 # 이미 답글이 있는 리뷰는 reply 가 50001 로 거절된다 — 수정은 별도 엔드포인트
 # (JS 번들 정적 분석으로 확인, 2026-08-12).
@@ -72,6 +95,9 @@ class ReplyToReviewAction(WriteAction):
         self.session = session
         # True 면 이미 답글이 달린 리뷰의 '수정' 경로도 허용(답글 수정 기능).
         self.allow_edit = allow_edit
+        # 신규 등록인 줄 알았는데 이미 답글이 있어 '수정'으로 덮어썼는지.
+        # (시간차 등록 — 보고에 남겨 사장님이 알 수 있게 한다)
+        self.replaced_existing = False
 
     # -- 미리보기(부작용 없음) ---------------------------------------------
 
@@ -171,7 +197,43 @@ class ReplyToReviewAction(WriteAction):
                     "수정할 기존 답글 정보가 아직 없어요. 다음 자동 수집(최대 "
                     "2시간) 뒤 다시 시도해 주세요.")
             payload["orderReviewReplyId"] = int(reply_id)
-        # 페이지 컨텍스트에서 fetch(쿠키·Akamai 센서 포함). 응답 JSON 반환.
+        status, code, err = self._coupang_fetch(page, url, payload)
+        if _coupang_ok(status, code, err):
+            logger.info("쿠팡 답글 게시 완료 (리뷰 #%s)", review_id)
+            return {"platform": "coupang", "review_no": review_id,
+                    "status": status, "code": code,
+                    "replaced": self.replaced_existing}
+
+        # 시간차로 이미 답글이 달린 경우(웹 화면엔 미답변인데 앱/다른 경로에서
+        # 먼저 등록됨) — 신규 등록은 50001 로 거절된다. 직원이 등록을 누른
+        # 내용이 최종본이므로 '수정'으로 자동 전환해 그 내용으로 맞춘다.
+        if not self.allow_edit and _coupang_already_replied(code, err):
+            reply_id = self._coupang_reply_id(page, review_id)
+            if not reply_id:
+                raise ReplyPostError(
+                    "이미 답글이 달려 있는 리뷰예요. 기존 답글 정보가 아직 "
+                    "없어 지금은 수정할 수 없습니다 — 다음 자동 수집(최대 "
+                    "2시간) 뒤 자동으로 이 내용으로 맞춰집니다.")
+            payload["orderReviewReplyId"] = int(reply_id)
+            logger.info("쿠팡 리뷰 #%s 에 이미 답글이 있어 '수정'으로 전환합니다",
+                        review_id)
+            status, code, err = self._coupang_fetch(
+                page, COUPANG_REPLY_MODIFY_API, payload)
+            if _coupang_ok(status, code, err):
+                self.replaced_existing = True
+                logger.info("쿠팡 답글 수정 완료 (리뷰 #%s)", review_id)
+                return {"platform": "coupang", "review_no": review_id,
+                        "status": status, "code": code, "replaced": True}
+
+        raise ReplyPostError(
+            f"쿠팡 답글 게시 실패 status={status} code={code} "
+            f"error={json.dumps(err, ensure_ascii=False) if err else None}")
+
+    def _coupang_fetch(self, page, url, payload):
+        """페이지 컨텍스트에서 답글 API 를 호출한다(쿠키·Akamai 센서 포함).
+
+        Returns: (status, code, error) — 응답 JSON 에서 뽑은 값.
+        """
         result = page.evaluate(
             """async ({url, body}) => {
                 const r = await fetch(url, {
@@ -186,17 +248,10 @@ class ReplyToReviewAction(WriteAction):
             }""",
             {"url": url, "body": payload},
         )
-        status = result.get("status")
         data = result.get("data") or {}
-        code = data.get("code") if isinstance(data, dict) else None
-        err = data.get("error") if isinstance(data, dict) else None
-        if status == 200 and (code == "SUCCESS" or not err):
-            logger.info("쿠팡 답글 게시 완료 (리뷰 #%s)", review_id)
-            return {"platform": "coupang", "review_no": review_id,
-                    "status": status, "code": code}
-        raise ReplyPostError(
-            f"쿠팡 답글 게시 실패 status={status} code={code} "
-            f"error={json.dumps(err, ensure_ascii=False) if err else None}")
+        if not isinstance(data, dict):
+            data = {}
+        return result.get("status"), data.get("code"), data.get("error")
 
     def _coupang_reply_id(self, page, review_id):
         """대상 리뷰의 현재 답글 id(orderReviewReplyId)를 찾는다.
@@ -267,13 +322,20 @@ class ReplyToReviewAction(WriteAction):
         open_btn = card.get_by_text(BAEMIN_REPLY_BTN_TEXT, exact=False)
         editing = False
         if open_btn.count() == 0:
-            if not self.allow_edit:
-                raise ReplyPostError(
-                    "이미 답글이 있거나 '사장님 댓글 등록하기' 버튼이 없습니다.")
+            # 등록 버튼이 없다 = 이미 답글이 달려 있다. 시간차로 앱/다른 경로에서
+            # 먼저 등록된 경우인데, 직원이 등록을 누른 내용이 최종본이므로
+            # '수정'으로 전환해 그 내용으로 맞춘다(누락 방지). 덮어쓴 사실은
+            # replaced_existing 으로 상위에 알려 보고에 남긴다.
             box = card.locator(
                 'xpath=following::*[contains(@class,"ReviewCommentBox-module__")][1]')
             if box.count() == 0:
-                raise ReplyPostError("수정할 답글박스를 찾지 못했습니다.")
+                raise ReplyPostError(
+                    "'사장님 댓글 등록하기' 버튼도, 수정할 답글박스도 "
+                    "찾지 못했습니다.")
+            if not self.allow_edit:
+                self.replaced_existing = True
+                logger.info("배민 리뷰 #%s 에 이미 답글이 있어 '수정'으로 "
+                            "전환합니다", self.review.get("review_no"))
             edit_btn = box.first.get_by_text("수정", exact=True)
             if edit_btn.count() == 0:
                 raise ReplyPostError("답글박스에 '수정' 버튼이 없습니다.")
@@ -307,7 +369,8 @@ class ReplyToReviewAction(WriteAction):
         logger.info("배민 답글 게시 완료 (리뷰 #%s)",
                     self.review.get("review_no"))
         return {"platform": "baemin",
-                "review_no": self.review.get("review_no")}
+                "review_no": self.review.get("review_no"),
+                "replaced": self.replaced_existing}
 
     def _find_baemin_card(self, page):
         """대상 배민 리뷰 카드(ReviewContent) Locator 를 반환한다(없으면 None).
