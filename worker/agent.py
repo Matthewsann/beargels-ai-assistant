@@ -557,6 +557,57 @@ def maybe_auto_post() -> None:
         logger.warning("자동 등록 판단 실패: %s", e)
 
 
+# 방치된 approved 를 다시 줄 세우는 주기(초) — 매 루프(15초)마다 DB 를
+# 훑을 필요는 없다.
+RESCUE_EVERY_SECONDS = int(os.getenv("WORKER_RESCUE_SECONDS", "300"))
+_last_rescue = 0.0
+
+
+def rescue_stuck_approved() -> int:
+    """등록 잡이 사라진 'approved' 리뷰를 다시 줄 세운다. 되살린 건수 반환.
+
+    왜 필요한가: '답글 등록' 버튼은 mark_approved 후 request_post 를 부르는데,
+    그 사이에 통신이 끊기면 잡 없이 approved 로 남는다. 옛 '정시 일괄 등록'
+    시절에 쌓인 approved 도 마찬가지다(지금은 AUTO_POST_TIMES 가 비어 있어
+    일괄 등록이 돌지 않으므로 영영 방치된다). 화면엔 '등록 진행 중'으로
+    보이지만 실제로는 아무도 처리하지 않는 상태다.
+
+    안전: **잡이 아예 없는 건만** 다시 넣는다. 대기·진행 중인 잡이 있으면
+    건드리지 않으므로 같은 답글을 두 번 등록할 위험이 없다.
+    """
+    revived = 0
+    for row in db.get_approved_reviews(limit=100):
+        rid = row.get("id")
+        if rid is None:
+            continue
+        try:
+            if db.latest_review_job("post", rid):
+                continue                      # 이미 줄 서 있음/처리된 이력 있음
+            db.request_post(rid, by="자동복구")
+            revived += 1
+            logger.info("방치된 등록 대기 리뷰 %s 를 다시 줄 세웠습니다", rid)
+        except Exception as e:  # noqa: BLE001 — 한 건 실패가 전체를 막지 않게
+            logger.warning("등록 대기 복구 실패(리뷰 %s): %s", rid, e)
+    if revived:
+        db.log_error("worker",
+                     f"등록 잡이 없던 답글 {revived}건을 자동으로 다시 "
+                     f"등록 요청했습니다(방치 방지).",
+                     kind="StuckApprovedRevived", path="rescue_stuck_approved")
+    return revived
+
+
+def maybe_rescue_stuck() -> None:
+    global _last_rescue
+    now = time.monotonic()
+    if now - _last_rescue < RESCUE_EVERY_SECONDS:
+        return
+    _last_rescue = now
+    try:
+        rescue_stuck_approved()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("등록 대기 점검 실패: %s", e)
+
+
 def run_job(job) -> None:
     """요청 1건 처리. 종류(kind)에 따라 리뷰 수집 / 블로그 / 메뉴 수집으로 나뉜다."""
     if job.get("kind") == "wake":
@@ -633,6 +684,7 @@ def main() -> int:
             else:
                 maybe_auto_collect()
                 maybe_auto_post()
+                maybe_rescue_stuck()
                 db.worker_ping("idle", "대기 중")
         except KeyboardInterrupt:
             raise
