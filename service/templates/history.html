@@ -42,6 +42,15 @@
   .note { font-size:12px; padding:11px 12px; border-radius:9px; margin-bottom:14px;
           background:var(--accent-bg); color:var(--accent); }
   .note.bad { background:var(--bad-bg); color:var(--bad); }
+  .done-box { display:none; background:var(--ok-bg); color:var(--ok);
+              border-radius:9px; padding:11px 12px; margin-top:9px; font-size:13px; }
+  .btn.golink { background:var(--card); color:var(--ok); border-color:var(--ok);
+                text-decoration:none; display:block; text-align:center; }
+  .filters { display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
+  .filters a { font-size:13px; padding:7px 14px; border-radius:20px; text-decoration:none;
+               color:var(--muted); background:var(--card); border:1px solid var(--line); }
+  .filters a.on { background:var(--accent-bg); color:var(--accent);
+                  border-color:var(--accent-bg); font-weight:600; }
 </style>
 </head>
 <body>
@@ -52,6 +61,15 @@
     <div><b>등록한 답글</b>
       <small>최근 등록순 · 여기서 바로 고쳐 재게시할 수 있어요</small></div>
     <a class="back" href="{{ url_for('home', path_key=key) }}">← 답글 화면</a>
+  </div>
+
+  <div class="filters">
+    <a href="{{ url_for('history', path_key=key) }}"
+       class="{{ 'on' if not plat }}">전체</a>
+    <a href="{{ url_for('history', path_key=key, plat='baemin') }}"
+       class="{{ 'on' if plat == 'baemin' }}">🔵 배민만</a>
+    <a href="{{ url_for('history', path_key=key, plat='coupang') }}"
+       class="{{ 'on' if plat == 'coupang' }}">🟠 쿠팡만</a>
   </div>
 
   {% if error %}<div class="note bad">{{ error }}</div>{% endif %}
@@ -76,6 +94,15 @@
             onclick="editIt({{ r.id }}, '{{ url_for('edit_post', path_key=key, review_id=r.id) }}', '{{ url_for('edit_state', path_key=key, review_id=r.id) }}')">
       ✏️ 수정 등록 — 실제 답글 바꾸기
     </button>
+    {# 수정 완료 후에만 보이는 확인 띠 + 실제 답글 바로가기 #}
+    <div class="done-box" id="ok{{ r.id }}">
+      <b>✅ 수정 완료! 고객에게 새 답글이 보여요.</b>
+      {% if r.platform_url %}
+      <a class="btn golink" href="{{ r.platform_url }}" target="_blank" rel="noopener">
+        🔗 {{ r.platform }}에서 실제 답글 확인하기
+      </a>
+      {% endif %}
+    </div>
   </div>
   {% else %}
   <div class="empty">아직 등록한 답글이 없어요.</div>
@@ -101,6 +128,8 @@ function editIt(id, editUrl, stateUrl) {
         if (st.status === 'done') {
           clearInterval(poll);
           btn.textContent = '✅ 수정 완료!';
+          const box = document.getElementById('ok' + id);
+          if (box) box.style.display = 'block';   // 완료 안내 + 바로가기
           setTimeout(restore, 2500);
         } else if (st.status === 'error') {
           clearInterval(poll);

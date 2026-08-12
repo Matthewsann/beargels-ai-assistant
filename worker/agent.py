@@ -504,6 +504,19 @@ def run_post_job(job) -> None:
                           "[리허설] WRITE_DRY_RUN=true — 실제 등록 안 함", 0)
             logger.info("답글 등록 #%s 리허설 — 게시 생략 (리뷰 %s)", jid, rid)
     except Exception as e:  # noqa: BLE001
+        # 기한 만료는 재시도해도 영영 실패한다 — 카드를 되돌리면 직원이
+        # 계속 누르고 자동복구가 계속 줄 세운다. '넘어가기'로 정리한다.
+        # (지연 import 라 클래스 이름으로 판별한다)
+        if type(e).__name__ == "ReplyDeadlineError":
+            logger.info("답글 등록 #%s — 기한 만료로 정리 (리뷰 %s)", jid, rid)
+            try:
+                db.mark_skipped(rid)
+            except Exception:  # noqa: BLE001
+                pass
+            db.finish_job(jid, "done",
+                          f"리뷰 {rid} 답글 기한 만료 — 목록에서 정리함", 0)
+            db.worker_ping("idle", "대기 중")
+            return
         logger.error("답글 등록 #%s 실패: %s", jid, e)
         db.log_error("worker", f"답글 등록 실패(리뷰 {rid}): {e}",
                      kind=type(e).__name__, path="run_post_job",
@@ -515,6 +528,35 @@ def run_post_job(job) -> None:
         db.finish_job(jid, "error", str(e)[:400], 0)
     finally:
         db.worker_ping("idle", "대기 중")
+
+
+def _refresh_reply_id(row):
+    """쿠팡 수정에 필요한 답글 id 가 raw 에 없으면 즉시 재수집해 채운다.
+
+    방금 등록한 답글은 raw(마지막 수집분)에 아직 replies 가 없어 수정이
+    '다음 수집(최대 2시간) 뒤에나' 가능했다 — 직원이 오타를 바로 못 고쳐
+    답답하다(사장님 보고 2026-08-13). 수정 직전에 한 번 긁어 해결한다.
+    """
+    if row.get("platform") != "coupang":
+        return row
+    try:
+        import json as _json
+        raw = _json.loads(row["raw"]) if row.get("raw") else {}
+        if raw.get("replies"):
+            return row                     # 이미 답글 정보 있음
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from crawler.coupang import CoupangCrawler
+        logger.info("수정용 답글 정보가 없어 쿠팡 리뷰를 다시 긁습니다 (리뷰 %s)",
+                    row.get("id"))
+        db.worker_ping("working", "답글 정보 새로고침 중")
+        with CoupangCrawler() as c:
+            db.save_reviews(c.fetch_reviews(days=COUPANG_DAYS))
+        return db.get_review(row["id"]) or row
+    except Exception as e:  # noqa: BLE001 — 실패해도 아래에서 안내 메시지가 뜬다
+        logger.warning("답글 정보 새로고침 실패(리뷰 %s): %s", row.get("id"), e)
+        return row
 
 
 def run_post_edit_job(job) -> None:
@@ -534,6 +576,7 @@ def run_post_edit_job(job) -> None:
     try:
         from crawler.review_reply import ReplyToReviewAction
         ensure_chrome()
+        row = _refresh_reply_id(row) or row
         review = {
             "platform": row.get("platform"),
             "review_no": row.get("review_no"),

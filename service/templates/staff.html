@@ -133,6 +133,15 @@
     {% endif %}
   {% endif %}
 
+  <div class="navbar" style="margin-bottom:10px;">
+    <a href="{{ url_for('home', path_key=key) }}"
+       class="{{ 'on' if not plat }}">전체</a>
+    <a href="{{ url_for('home', path_key=key, plat='baemin') }}"
+       class="{{ 'on' if plat == 'baemin' }}">🔵 배민만</a>
+    <a href="{{ url_for('home', path_key=key, plat='coupang') }}"
+       class="{{ 'on' if plat == 'coupang' }}">🟠 쿠팡만</a>
+  </div>
+
   {% if reviews %}
     <div class="status" style="margin-bottom:9px;">
       ✍️ 처리할 답글 <b style="color:var(--ink);">{{ reviews|length }}건</b>

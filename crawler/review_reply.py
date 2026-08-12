@@ -76,6 +76,20 @@ class ReplyPostError(RuntimeError):
     """답글 게시가 확인되지 않았을 때(응답 실패/DOM 미확인 등) 발생."""
 
 
+class ReplyDeadlineError(ReplyPostError):
+    """플랫폼의 답글 작성 기한이 지나 영영 등록할 수 없는 리뷰.
+
+    재시도해도 절대 성공하지 않으므로, 상위(일꾼)에서 '넘어가기'로 정리해
+    직원 화면에 계속 뜨지 않게 한다(2026-08-13).
+    """
+
+
+def _coupang_deadline_over(code, err):
+    """쿠팡 응답이 '답글 기한 만료'(20051) 거절인지."""
+    blob = f"{code} {err}"
+    return "20051" in blob or "기한이 지났" in blob
+
+
 class ReplyToReviewAction(WriteAction):
     """리뷰 1건에 답글을 게시하는 쓰기 액션(dry-run 기본).
 
@@ -203,6 +217,12 @@ class ReplyToReviewAction(WriteAction):
             return {"platform": "coupang", "review_no": review_id,
                     "status": status, "code": code,
                     "replaced": self.replaced_existing}
+
+        # 답글 기한 만료(20051) — 재시도해도 영영 안 되므로 전용 예외로 올려
+        # 상위에서 '넘어가기' 처리한다(직원 화면에 계속 뜨는 것 방지).
+        if _coupang_deadline_over(code, err):
+            raise ReplyDeadlineError(
+                "쿠팡 답글 작성 기한이 지난 리뷰예요 — 등록할 수 없습니다.")
 
         # 시간차로 이미 답글이 달린 경우(웹 화면엔 미답변인데 앱/다른 경로에서
         # 먼저 등록됨) — 신규 등록은 50001 로 거절된다. 직원이 등록을 누른

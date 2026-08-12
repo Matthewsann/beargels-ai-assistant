@@ -181,6 +181,14 @@ def _trusted_kinds() -> set:
             and s["rate"] <= TRUST_MAX_EDIT_RATE}
 
 
+# 플랫폼 리뷰 관리 페이지 — '실제 답글 보러가기' 바로가기용(리뷰별 딥링크는
+# 두 플랫폼 다 제공하지 않아 리뷰 목록 페이지로 보낸다).
+PLATFORM_REVIEW_URL = {
+    "baemin": "https://self.baemin.com/shops/reviews",
+    "coupang": "https://store.coupangeats.com/merchant/management/reviews",
+}
+
+
 def _review_view(r: dict) -> dict:
     draft = r.get("reply_draft") or ""
     return {
@@ -195,6 +203,7 @@ def _review_view(r: dict) -> dict:
         "draft": draft,
         "escalate": draft.strip().startswith("⚠️"),
         "has_draft": bool(draft),
+        "platform_url": PLATFORM_REVIEW_URL.get(r.get("platform"), ""),
     }
 
 
@@ -208,8 +217,12 @@ def home(path_key):
     error = None
     reviews = []
     waiting = 0
+    plat = (request.args.get("plat") or "").strip()   # baemin|coupang|빈값(전체)
     try:
-        rows = [_review_view(r) for r in db.get_pending_reviews(limit=100)]
+        raw_rows = db.get_pending_reviews(limit=100)
+        if plat:                       # 쿠팡만/배민만 보기
+            raw_rows = [r for r in raw_rows if r.get("platform") == plat]
+        rows = [_review_view(r) for r in raw_rows]
         # 초안이 있는 것만 보여준다 — 초안 없는 카드가 화면을 덮으면
         # 직원이 무엇을 해야 하는지 알 수 없다. 나머지는 건수로만 알린다.
         reviews = [r for r in rows if r["has_draft"]]
@@ -226,6 +239,7 @@ def home(path_key):
     return render_template(
         "staff.html", key=path_key, reviews=reviews, worker=_worker_view(),
         job=job, error=error, waiting=waiting, approved_count=approved_count,
+        plat=plat,
     )
 
 
@@ -360,14 +374,18 @@ def history(path_key):
     """
     check(path_key)
     error, rows = None, []
+    plat = (request.args.get("plat") or "").strip()   # baemin|coupang|빈값(전체)
     try:
-        for r in db.get_posted_reviews(limit=50):
+        for r in db.get_posted_reviews(limit=100):
+            if plat and r.get("platform") != plat:
+                continue
             v = _review_view(r)
             v["posted_at"] = (r.get("posted_at") or "")[:16].replace("T", " ")
             rows.append(v)
     except Exception as e:  # noqa: BLE001
         error = f"데이터를 불러오지 못했어요: {str(e)[:150]}"
-    return render_template("history.html", key=path_key, rows=rows, error=error)
+    return render_template("history.html", key=path_key, rows=rows,
+                           error=error, plat=plat)
 
 
 @app.route("/<path_key>/review/<int:review_id>/edit_post", methods=["POST"])
