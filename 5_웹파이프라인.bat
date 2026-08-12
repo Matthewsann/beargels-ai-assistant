@@ -2,9 +2,30 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 echo.
-echo   베어글스 인스타 파이프라인 웹페이지
-echo   잠시 후 브라우저에서 http://localhost:8000 을 여세요.
-echo   (이 창을 닫으면 서버가 꺼집니다)
+echo  ============================================
+echo    Beargels Insta Pipeline (Web)
+echo  ============================================
 echo.
-"C:\Users\명구\AppData\Local\Programs\Python\Python312\python.exe" run_web.py
+echo  Opening http://localhost:8000 in your browser...
+echo  (Keep this window open - closing it stops the server)
+echo.
+start "" http://localhost:8000
+
+rem -- find python: PATH first, then py launcher, then default install path --
+where python >nul 2>&1
+if %errorlevel%==0 (
+  python run_web.py
+  goto done
+)
+where py >nul 2>&1
+if %errorlevel%==0 (
+  py -3 run_web.py
+  goto done
+)
+if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
+  "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" run_web.py
+  goto done
+)
+echo  [ERROR] Python not found. Please install Python 3.12.
+:done
 pause
