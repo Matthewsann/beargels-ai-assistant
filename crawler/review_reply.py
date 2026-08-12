@@ -203,12 +203,21 @@ class ReplyToReviewAction(WriteAction):
         human_pause(2.0, 3.0)
         if is_session_expired(page):
             raise SessionExpiredError("[배민] 세션 만료 — 재로그인 필요.")
-        # 지연 로딩 대비 스크롤
-        for _ in range(4):
+        # 지연 로딩 대비: 카드를 찾을 때까지 스크롤(최대 10회, 카드 수가 더
+        # 늘지 않으면 끝까지 본 것이므로 중단). 고정 4회로는 오래된 리뷰를
+        # 못 만나는 경우가 있었다(2026-08-12).
+        card = self._find_baemin_card(page)
+        prev = -1
+        for _ in range(10):
+            if card is not None:
+                break
+            cur = page.locator('[class*="ReviewContent-module__"]').count()
+            if cur == prev:
+                break
+            prev = cur
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             human_pause(1.2, 2.0)
-
-        card = self._find_baemin_card(page)
+            card = self._find_baemin_card(page)
         if card is None:
             raise ReplyPostError("대상 배민 리뷰 카드를 찾지 못했습니다.")
 
@@ -252,7 +261,13 @@ class ReplyToReviewAction(WriteAction):
     def _find_baemin_card(self, page):
         """대상 배민 리뷰 카드(ReviewContent) Locator 를 반환한다(없으면 None).
 
-        리뷰번호 우선, 없으면 작성자+본문으로 매칭. 검증됨(2026-07).
+        매칭 우선순위:
+          1) 리뷰번호 텍스트
+          2) 작성자 + 본문
+          3) 작성자 + '사장님 댓글 등록하기'(미답변) — **유일할 때만**.
+             내용 없는(별점/사진만) 리뷰는 본문 매칭이 불가능해 1차 일괄
+             등록에서 10건이 전부 실패했다(2026-08-12). 같은 작성자의
+             미답변 카드가 2개 이상이면 오게시 위험이라 포기한다.
         """
         rid = self.review.get("review_no")
         if rid:
@@ -263,6 +278,7 @@ class ReplyToReviewAction(WriteAction):
         cards = page.locator('[class*="ReviewContent-module__"]')
         author = self.review.get("author")
         content = (self.review.get("content") or "").strip()[:20]
+        author_only_hits = []
         for i in range(cards.count()):
             c = cards.nth(i)
             txt = c.inner_text()
@@ -270,6 +286,11 @@ class ReplyToReviewAction(WriteAction):
                 return c
             if author and content and author in txt and content in txt:
                 return c
+            if (author and not content and author in txt
+                    and BAEMIN_REPLY_BTN_TEXT in txt):
+                author_only_hits.append(c)
+        if len(author_only_hits) == 1:
+            return author_only_hits[0]
         return None
 
 
