@@ -192,6 +192,25 @@ def create_app() -> FastAPI:
     os.makedirs(FINAL_DIR, exist_ok=True)
     app = FastAPI(title="베어글스 인스타 파이프라인")
 
+    # (선택) 접속 코드 — .env의 PIPELINE_ACCESS_CODE 설정 시에만 켜짐.
+    # 폰/외부에서 접속을 열 때 남이 못 들어오게 하는 간단한 잠금.
+    access_code = os.getenv("PIPELINE_ACCESS_CODE", "").strip()
+    if access_code:
+        @app.middleware("http")
+        async def _access_gate(request, call_next):
+            given = request.query_params.get("code", "")
+            if request.cookies.get("pipe_code") == access_code or given == access_code:
+                resp = await call_next(request)
+                if given == access_code:
+                    resp.set_cookie("pipe_code", access_code,
+                                    max_age=90 * 24 * 3600, httponly=True)
+                return resp
+            return HTMLResponse(
+                "<meta charset='utf-8'><body style='font-family:sans-serif;"
+                "text-align:center;padding-top:80px'><h2>🔒 접속 코드가 필요해요</h2>"
+                "<p>주소 뒤에 <b>?code=접속코드</b> 를 붙여 다시 접속하세요.<br>"
+                "예: http://주소:8000/?code=1234</p></body>", status_code=401)
+
     @app.get("/", response_class=HTMLResponse)
     async def index():
         with open(os.path.join(_WEB_DIR, "pipeline.html"), encoding="utf-8") as f:

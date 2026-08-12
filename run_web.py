@@ -27,11 +27,33 @@ from sns_automation.webapp import create_app
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
+def _lan_ip() -> str | None:
+    """같은 와이파이의 폰에서 접속할 때 쓸 PC의 내부 IP."""
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except OSError:
+        return None
+
+
 def main() -> None:
     app = create_app()
+    host = os.getenv("PIPELINE_HOST", "0.0.0.0")
+    port = int(os.getenv("PIPELINE_PORT", "8000"))
     print("\n  베어글스 인스타 파이프라인")
-    print("  브라우저에서 열기 →  http://localhost:8000\n")
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+    print("  이 PC에서 열기   →  http://localhost:%d" % port)
+    ip = _lan_ip()
+    if ip and host != "127.0.0.1":
+        print("  폰에서 열기(같은 와이파이) →  http://%s:%d" % (ip, port))
+    code = os.getenv("PIPELINE_ACCESS_CODE", "").strip()
+    if code:
+        print("  접속 코드 설정됨 — 처음 접속 시 주소 뒤에 ?code=%s 붙이기" % code)
+    print()
+    uvicorn.run(app, host=host, port=port, log_level="warning")
 
 
 if __name__ == "__main__":
