@@ -401,6 +401,7 @@ def history(path_key):
     check(path_key)
     error, rows = None, []
     plat = (request.args.get("plat") or "").strip()   # baemin|coupang|빈값(전체)
+    sort = (request.args.get("sort") or "").strip()   # rating|빈값(최신순)
     try:
         for r in db.get_posted_reviews(limit=100):
             if plat and r.get("platform") != plat:
@@ -408,10 +409,13 @@ def history(path_key):
             v = _review_view(r)
             v["posted_at"] = (r.get("posted_at") or "")[:16].replace("T", " ")
             rows.append(v)
+        if sort == "rating":
+            # 낮은 별점 먼저 — 문제 리뷰의 답글을 먼저 점검하기 위함.
+            rows.sort(key=lambda v: (v.get("rating") or 0, v.get("posted_at") or ""))
     except Exception as e:  # noqa: BLE001
         error = f"데이터를 불러오지 못했어요: {str(e)[:150]}"
     return render_template("history.html", key=path_key, rows=rows,
-                           error=error, plat=plat)
+                           error=error, plat=plat, sort=sort)
 
 
 @app.route("/<path_key>/review/<int:review_id>/edit_post", methods=["POST"])

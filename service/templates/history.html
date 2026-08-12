@@ -27,6 +27,23 @@
   .tag.b { background:var(--accent-bg); color:var(--accent); }
   .tag.c { background:var(--warn-bg); color:var(--warn); }
   .stars { color:#c98a12; letter-spacing:1px; }
+  .stars .dim { color:#dcd8cc; }
+  /* 배민·쿠팡 리뷰 관리 화면과 같은 2단 배치(작성자 | 주문정보) */
+  .rvhead { display:flex; gap:14px; align-items:flex-start; padding-bottom:11px;
+            border-bottom:1px solid var(--line); margin-bottom:11px; }
+  .who { flex:0 0 40%; min-width:0; }
+  .whoname { font-weight:700; font-size:14px; word-break:break-all; }
+  .who .stars { font-size:15px; }
+  .who .dim { color:var(--muted); font-size:12px; }
+  .pill { font-size:11px; font-weight:600; color:var(--accent);
+          background:var(--accent-bg); border-radius:4px; padding:1px 6px; margin-left:5px; }
+  .ord { flex:1; min-width:0; font-size:12.5px; color:var(--ink); }
+  .ord div { display:flex; gap:8px; margin-bottom:3px; word-break:break-word; }
+  .ord i { flex:0 0 58px; color:var(--muted); font-style:normal; }
+  @media (max-width:420px) {
+    .rvhead { flex-direction:column; gap:9px; }
+    .who { flex:none; }
+  }
   .rv { font-size:14px; background:#f6f5f1; border-radius:9px; padding:10px 12px;
         margin-bottom:11px; white-space:pre-wrap; word-break:break-word; }
   .lbl { font-size:12px; color:var(--muted); margin-bottom:5px; display:block; }
@@ -64,12 +81,18 @@
   </div>
 
   <div class="filters">
-    <a href="{{ url_for('history', path_key=key) }}"
+    <a href="{{ url_for('history', path_key=key, sort=sort) }}"
        class="{{ 'on' if not plat }}">전체</a>
-    <a href="{{ url_for('history', path_key=key, plat='baemin') }}"
+    <a href="{{ url_for('history', path_key=key, plat='baemin', sort=sort) }}"
        class="{{ 'on' if plat == 'baemin' }}">🔵 배민만</a>
-    <a href="{{ url_for('history', path_key=key, plat='coupang') }}"
+    <a href="{{ url_for('history', path_key=key, plat='coupang', sort=sort) }}"
        class="{{ 'on' if plat == 'coupang' }}">🟠 쿠팡만</a>
+  </div>
+  <div class="filters">
+    <a href="{{ url_for('history', path_key=key, plat=plat) }}"
+       class="{{ 'on' if sort != 'rating' }}">🕒 최신순</a>
+    <a href="{{ url_for('history', path_key=key, plat=plat, sort='rating') }}"
+       class="{{ 'on' if sort == 'rating' }}">⭐ 낮은 별점순</a>
   </div>
 
   {% if error %}<div class="note bad">{{ error }}</div>{% endif %}
@@ -81,11 +104,23 @@
 
   {% for r in rows %}
   <div class="card" id="r{{ r.id }}">
-    <div class="meta">
-      <span class="tag {{ 'b' if r.platform == '배민' else 'c' }}">{{ r.platform }}</span>
-      <span class="stars">{{ '★' * (r.rating or 0) }}</span>
-      <span>{{ r.author }}</span>
-      {% if r.posted_at %}<span>· 등록 {{ r.posted_at }}</span>{% endif %}
+    {# 답글 화면과 같은 2단 배치(배민·쿠팡 관리화면 형태) #}
+    <div class="rvhead">
+      <div class="who">
+        <div class="whoname">
+          {{ r.author }}
+          {% if r.order_count %}<span class="pill">{{ r.order_count }}회 주문</span>{% endif %}
+        </div>
+        <div class="stars">{{ '★' * (r.rating or 0) }}<span class="dim">{{ '☆' * (5 - (r.rating or 0)) }}</span></div>
+        <div class="dim">{{ r.date }}</div>
+        <span class="tag {{ 'b' if r.platform == '배민' else 'c' }}">{{ r.platform }}</span>
+      </div>
+      <div class="ord">
+        {% if r.menus %}<div><i>주문메뉴</i>{{ r.menus }}</div>{% endif %}
+        {% if r.order_no %}<div><i>주문번호</i>{{ r.order_no }}{% if r.ordered_at %} · {{ r.ordered_at }}{% endif %}</div>{% endif %}
+        {% if r.delivery %}<div><i>수령방식</i>{{ r.delivery }}</div>{% endif %}
+        {% if r.posted_at %}<div><i>답글등록</i>{{ r.posted_at }}</div>{% endif %}
+      </div>
     </div>
     <div class="rv">{{ r.content or '(사진/별점만, 텍스트 없음)' }}</div>
     <label class="lbl">등록된 답글 (고치면 실제 답글이 바뀌어요)</label>
