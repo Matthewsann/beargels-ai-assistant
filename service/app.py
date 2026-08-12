@@ -351,6 +351,55 @@ def post_reply(path_key, review_id):
         return jsonify({"ok": False, "error": str(e)[:150]}), 200
 
 
+@app.route("/<path_key>/history")
+def history(path_key):
+    """등록한 답글 확인·수정 화면 — 최근 등록순.
+
+    등록 후에도 마음에 안 들면 여기서 고쳐 재게시할 수 있다(사장님 요청
+    2026-08-12).
+    """
+    check(path_key)
+    error, rows = None, []
+    try:
+        for r in db.get_posted_reviews(limit=50):
+            v = _review_view(r)
+            v["posted_at"] = (r.get("posted_at") or "")[:16].replace("T", " ")
+            rows.append(v)
+    except Exception as e:  # noqa: BLE001
+        error = f"데이터를 불러오지 못했어요: {str(e)[:150]}"
+    return render_template("history.html", key=path_key, rows=rows, error=error)
+
+
+@app.route("/<path_key>/review/<int:review_id>/edit_post", methods=["POST"])
+def edit_post(path_key, review_id):
+    """게시된 답글 수정 — 새 내용 저장 후 일꾼에게 재게시 요청."""
+    check(path_key)
+    text = (request.form.get("draft") or "").strip()
+    try:
+        if not text:
+            return jsonify({"ok": False, "error": "내용이 비어 있어요"}), 200
+        db.save_reply_draft(review_id, text, status="posted")
+        db.request_post_edit(review_id)
+        return jsonify({"ok": True})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"답글 수정 요청 실패(review {review_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:150]}), 200
+
+
+@app.route("/<path_key>/review/<int:review_id>/edit_state")
+def edit_state(path_key, review_id):
+    """답글 수정 진행 상태 — 최근 post_edit 잡의 status/message."""
+    check(path_key)
+    try:
+        j = db.latest_review_job("post_edit", review_id) or {}
+        return jsonify({"status": j.get("status") or "",
+                        "message": (j.get("message") or "")[:200]})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": str(e)[:150]}), 200
+
+
 @app.route("/<path_key>/review/<int:review_id>/skip", methods=["POST"])
 def skip(path_key, review_id):
     """'넘어가기' — 이미 앱에서 직접 등록했거나 답글 불필요(학습 제외)."""

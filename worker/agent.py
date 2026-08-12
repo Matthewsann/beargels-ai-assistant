@@ -493,6 +493,53 @@ def run_post_job(job) -> None:
         db.worker_ping("idle", "대기 중")
 
 
+def run_post_edit_job(job) -> None:
+    """'답글 수정' — 이미 게시된 답글을 새 내용(reply_draft)으로 재게시한다.
+
+    쿠팡=같은 reply API 재호출(덮어쓰기), 배민=답글박스 '수정'→'저장'.
+    실패해도 리뷰는 posted 그대로(기존 답글이 살아 있으므로) — 잡 상태로만
+    결과를 알린다.
+    """
+    jid = job["id"]
+    rid = int(job.get("message") or 0)
+    row = db.get_review(rid)
+    if not row or row.get("reply_status") != "posted":
+        db.finish_job(jid, "error", f"리뷰 {rid} 는 게시된 답글이 아닙니다", 0)
+        return
+    db.worker_ping("working", "답글 수정 중")
+    try:
+        from crawler.review_reply import ReplyToReviewAction
+        ensure_chrome()
+        review = {
+            "platform": row.get("platform"),
+            "review_no": row.get("review_no"),
+            "author": row.get("author"),
+            "rating": row.get("rating"),
+            "content": row.get("content"),
+            "menus": row.get("menus") or [],
+            "raw": row.get("raw"),
+        }
+        res = ReplyToReviewAction(
+            review, reply_text=row.get("reply_draft"),
+            allow_edit=True).run(confirm=True)
+        if res.get("applied"):
+            db.mark_replied(rid)    # 수정 시각으로 갱신 → 새벽 공부 대상에 포함
+            db.finish_job(jid, "done", f"리뷰 {rid} 답글 수정 완료", 1)
+            logger.info("답글 수정 #%s 완료 (리뷰 %s)", jid, rid)
+        else:
+            db.finish_job(jid, "done",
+                          "[리허설] WRITE_DRY_RUN=true — 실제 수정 안 함", 0)
+    except Exception as e:  # noqa: BLE001
+        logger.error("답글 수정 #%s 실패: %s", jid, e)
+        db.log_error("worker", f"답글 수정 실패(리뷰 {rid}): {e}",
+                     kind=type(e).__name__, path="run_post_edit_job",
+                     detail=traceback.format_exc())
+        # '리뷰 {rid}' 를 남겨야 화면 폴링(latest_review_job)이 찾는다.
+        db.finish_job(jid, "error", f"리뷰 {rid} 답글 수정 실패: {str(e)[:350]}", 0)
+    finally:
+        db.worker_ping("idle", "대기 중")
+
+
 def maybe_auto_post() -> None:
     global _last_post_slot
     try:
@@ -514,8 +561,16 @@ def run_job(job) -> None:
         return run_regen_job(job)
     if job.get("kind") == "post":
         return run_post_job(job)
+    if job.get("kind") == "post_edit":
+        return run_post_edit_job(job)
     if job.get("kind") == "menu_collect":
         return run_menu_job(job)
+    if job.get("kind") not in (None, "", "collect"):
+        # 모르는 종류를 수집으로 오처리하지 않는다 — 구버전 일꾼이 새 종류의
+        # 잡(post_edit)을 수집으로 돌려버린 사고(2026-08-12).
+        db.finish_job(job["id"], "error",
+                      f"알 수 없는 잡 종류: {job.get('kind')} — 일꾼 업데이트 필요", 0)
+        return None
     jid = job["id"]
     if str(job.get("kind") or "").startswith("blog_"):
         return run_blog_job(job)

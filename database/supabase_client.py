@@ -437,21 +437,53 @@ def mark_drafted(review_id):
     _update_review(review_id, {"reply_status": "drafted"})
 
 
-def request_post(review_id, by=None):
-    """'답글 등록' 버튼 — 집 PC 일꾼에게 이 리뷰 1건의 즉시 게시를 요청한다.
+def _request_review_job(kind, review_id, by=None):
+    """리뷰 1건 대상 잡(post/post_edit/regen 류)을 넣는다. 연타 방지 재사용.
 
-    (2026-08-10 흐름 변경: 정시 일괄 등록 대신 버튼 즉시 등록)
-    regen 과 같은 방식으로 리뷰 id 는 message 에 담는다. 연타 방지 재사용.
+    jobs 에 payload 컬럼이 없어(DDL 회피) 리뷰 id 는 message 에 담는다 —
+    일꾼이 읽은 뒤 finish_job 이 결과 문구로 덮어쓴다.
     """
     live = (get_client().table("jobs").select("*")
-            .eq("kind", "post").eq("message", str(review_id))
+            .eq("kind", kind).eq("message", str(review_id))
             .in_("status", ["pending", "running"])
             .order("requested_at", desc=True).limit(1).execute().data)
     if live:
         return live[0]
-    row = {"kind": "post", "status": "pending",
+    row = {"kind": kind, "status": "pending",
            "requested_by": by or "", "message": str(review_id)}
     return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
+def request_post(review_id, by=None):
+    """'답글 등록' 버튼 — 이 리뷰 1건의 즉시 게시 요청(2026-08-10 흐름)."""
+    return _request_review_job("post", review_id, by)
+
+
+def request_post_edit(review_id, by=None):
+    """'답글 수정' — 이미 게시된 답글을 새 내용으로 고쳐 재게시 요청."""
+    return _request_review_job("post_edit", review_id, by)
+
+
+def latest_review_job(kind, review_id):
+    """이 리뷰를 대상으로 한 최근 잡 1건(없으면 None) — 화면 폴링용.
+
+    대기 중엔 message 가 리뷰 id 그대로지만, finish_job 이 결과 문구
+    ('리뷰 {id} 답글 수정 완료' 등)로 덮어쓰므로 둘 다 매칭한다.
+    """
+    rows = (get_client().table("jobs").select("*")
+            .eq("kind", kind)
+            .or_(f"message.eq.{review_id},message.like.리뷰 {review_id} *")
+            .order("requested_at", desc=True).limit(1).execute().data)
+    return rows[0] if rows else None
+
+
+def get_posted_reviews(limit=50):
+    """우리가 게시한 답글 목록 — 최근 등록순. '등록한 답글' 화면용."""
+    return (get_client().table("reviews").select("*")
+            .eq("reply_status", "posted")
+            .not_.is_("posted_at", "null")
+            .order("posted_at", desc=True)
+            .limit(limit).execute().data)
 
 
 def mark_skipped(review_id):

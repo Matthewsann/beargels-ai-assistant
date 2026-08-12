@@ -66,6 +66,7 @@ jobs:
           upload service/wsgi.py
           upload service/templates/staff.html
           upload service/templates/guide.html
+          upload service/templates/history.html
           upload service/templates/blog_base.html
           upload service/templates/blog.html
           upload service/templates/blog_post.html

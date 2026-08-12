@@ -34,6 +34,9 @@ from crawler.write_guard import WriteAction
 logger = logging.getLogger(__name__)
 
 COUPANG_REPLY_API = "https://store.coupangeats.com/api/v1/merchant/reviews/reply"
+# 이미 답글이 있는 리뷰는 reply 가 50001 로 거절된다 — 수정은 별도 엔드포인트
+# (JS 번들 정적 분석으로 확인, 2026-08-12).
+COUPANG_REPLY_MODIFY_API = COUPANG_REPLY_API + "/modify"
 COUPANG_REVIEWS_URL = "https://store.coupangeats.com/merchant/management/reviews"
 COUPANG_REPLY_GLOB = "**/merchant/reviews/reply"
 
@@ -63,10 +66,12 @@ class ReplyToReviewAction(WriteAction):
 
     name = "reply-to-review"
 
-    def __init__(self, review, reply_text=None, session=None):
+    def __init__(self, review, reply_text=None, session=None, allow_edit=False):
         self.review = review or {}
         self.reply_text = reply_text
         self.session = session
+        # True 면 이미 답글이 달린 리뷰의 '수정' 경로도 허용(답글 수정 기능).
+        self.allow_edit = allow_edit
 
     # -- 미리보기(부작용 없음) ---------------------------------------------
 
@@ -154,6 +159,18 @@ class ReplyToReviewAction(WriteAction):
             "orderReviewId": int(review_id),
             "comment": reply,
         }
+        # 수정 모드면 modify 엔드포인트(신규 reply 는 이미 답글 존재 시 50001).
+        # modify 는 대상 답글 id(orderReviewReplyId)를 요구한다 — 리뷰
+        # 검색 API 를 페이지 컨텍스트에서 호출해 현재 답글 id 를 얻는다.
+        url = COUPANG_REPLY_API
+        if self.allow_edit:
+            url = COUPANG_REPLY_MODIFY_API
+            reply_id = self._coupang_reply_id(page, review_id)
+            if not reply_id:
+                raise ReplyPostError(
+                    "수정할 기존 답글 정보가 아직 없어요. 다음 자동 수집(최대 "
+                    "2시간) 뒤 다시 시도해 주세요.")
+            payload["orderReviewReplyId"] = int(reply_id)
         # 페이지 컨텍스트에서 fetch(쿠키·Akamai 센서 포함). 응답 JSON 반환.
         result = page.evaluate(
             """async ({url, body}) => {
@@ -167,7 +184,7 @@ class ReplyToReviewAction(WriteAction):
                 try { data = await r.json(); } catch (e) {}
                 return {status: r.status, data};
             }""",
-            {"url": COUPANG_REPLY_API, "body": payload},
+            {"url": url, "body": payload},
         )
         status = result.get("status")
         data = result.get("data") or {}
@@ -180,6 +197,24 @@ class ReplyToReviewAction(WriteAction):
         raise ReplyPostError(
             f"쿠팡 답글 게시 실패 status={status} code={code} "
             f"error={json.dumps(err, ensure_ascii=False) if err else None}")
+
+    def _coupang_reply_id(self, page, review_id):
+        """대상 리뷰의 현재 답글 id(orderReviewReplyId)를 찾는다.
+
+        쿠팡은 페이지 밖 '읽기' fetch 가 Akamai 로 막히므로(쓰기만 통과),
+        저장해 둔 raw 의 replies[0].orderReviewReplyId 를 쓴다. raw 에 답글이
+        아직 없으면(답글 단 뒤 재수집 전) None → 상위에서 '다음 수집 후
+        재시도' 안내. (page 인자는 시그니처 호환용, 미사용)
+        """
+        raw = self.review.get("raw")
+        if not raw:
+            return None
+        try:
+            data = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:  # noqa: BLE001
+            return None
+        reps = data.get("replies") or []
+        return reps[0].get("orderReviewReplyId") if reps else None
 
     # -- 배민: DOM(사장님 댓글 등록하기 → textarea → 등록) ------------------
 
@@ -227,12 +262,26 @@ class ReplyToReviewAction(WriteAction):
         if content and content[:15] not in card_txt:
             raise ReplyPostError("대상 리뷰 본문이 일치하지 않습니다 — 게시 중단.")
 
-        # 작성기 열기
+        # 작성기 열기 — 미답변이면 '사장님 댓글 등록하기', 이미 답글이 있고
+        # 수정 모드면 답글박스(형제)의 '수정' 버튼.
         open_btn = card.get_by_text(BAEMIN_REPLY_BTN_TEXT, exact=False)
+        editing = False
         if open_btn.count() == 0:
-            raise ReplyPostError(
-                "이미 답글이 있거나 '사장님 댓글 등록하기' 버튼이 없습니다.")
-        open_btn.first.click()
+            if not self.allow_edit:
+                raise ReplyPostError(
+                    "이미 답글이 있거나 '사장님 댓글 등록하기' 버튼이 없습니다.")
+            box = card.locator(
+                'xpath=following::*[contains(@class,"ReviewCommentBox-module__")][1]')
+            if box.count() == 0:
+                raise ReplyPostError("수정할 답글박스를 찾지 못했습니다.")
+            edit_btn = box.first.get_by_text("수정", exact=True)
+            if edit_btn.count() == 0:
+                raise ReplyPostError("답글박스에 '수정' 버튼이 없습니다.")
+            edit_btn.first.click()
+            editing = True
+            card = box.first    # 이후 textarea·버튼은 답글박스 안에서 찾는다
+        else:
+            open_btn.first.click()
         human_pause(0.8, 1.5)
 
         # textarea 채우기 + 입력값 검증
@@ -246,10 +295,12 @@ class ReplyToReviewAction(WriteAction):
         if (ta.input_value() or "").strip() != reply.strip():
             raise ReplyPostError("입력값이 답글과 불일치 — 게시 중단.")
 
-        # '등록' 버튼(정확 매칭 — '사장님 댓글 등록하기' 와 구분)
-        submit = card.get_by_role("button", name="등록", exact=True)
+        # 제출 버튼: 신규='등록', 수정='저장' (실게시로 확인된 문구, 2026-07-24)
+        submit_name = "저장" if editing else "등록"
+        submit = card.get_by_role("button", name=submit_name, exact=True)
         if submit.count() == 0:
-            raise ReplyPostError("'등록' 버튼을 찾지 못했습니다(텍스트 확인 필요).")
+            raise ReplyPostError(
+                f"'{submit_name}' 버튼을 찾지 못했습니다(텍스트 확인 필요).")
         submit.first.click()
         human_pause(1.8, 2.8)
 

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>등록한 답글 — 베어글스</title>
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
+          --ok:#3b6d11; --ok-bg:#eaf3de; --bad:#a3271f; --bad-bg:#fbe9e7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px 14px 64px; }
+  .head { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .logo { width:36px; height:36px; border-radius:10px; background:var(--accent-bg);
+          color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:19px; }
+  .head b { font-size:16px; } .head small { display:block; color:var(--muted); font-size:12px; }
+  .back { margin-left:auto; font-size:13px; text-decoration:none; color:var(--accent);
+          background:var(--accent-bg); padding:7px 13px; border-radius:20px; white-space:nowrap; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:14px; margin-bottom:12px; }
+  .meta { display:flex; align-items:center; gap:7px; flex-wrap:wrap; font-size:12px;
+          color:var(--muted); margin-bottom:8px; }
+  .tag { font-size:11px; padding:2px 9px; border-radius:20px; }
+  .tag.b { background:var(--accent-bg); color:var(--accent); }
+  .tag.c { background:var(--warn-bg); color:var(--warn); }
+  .stars { color:#c98a12; letter-spacing:1px; }
+  .rv { font-size:14px; background:#f6f5f1; border-radius:9px; padding:10px 12px;
+        margin-bottom:11px; white-space:pre-wrap; word-break:break-word; }
+  .lbl { font-size:12px; color:var(--muted); margin-bottom:5px; display:block; }
+  textarea { font-family:inherit; font-size:14px; border:1px solid var(--line);
+             border-radius:9px; padding:10px 11px; background:var(--card);
+             color:var(--ink); width:100%; resize:vertical; line-height:1.65; }
+  .btn { border:1px solid var(--line); background:var(--card); color:var(--ink);
+         border-radius:9px; padding:11px 14px; font-size:14px; font-family:inherit;
+         cursor:pointer; width:100%; margin-top:9px; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  .btn[disabled] { opacity:.5; }
+  .empty { text-align:center; color:var(--muted); padding:44px 16px; font-size:14px; }
+  .note { font-size:12px; padding:11px 12px; border-radius:9px; margin-bottom:14px;
+          background:var(--accent-bg); color:var(--accent); }
+  .note.bad { background:var(--bad-bg); color:var(--bad); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="head">
+    <div class="logo">📜</div>
+    <div><b>등록한 답글</b>
+      <small>최근 등록순 · 여기서 바로 고쳐 재게시할 수 있어요</small></div>
+    <a class="back" href="{{ url_for('home', path_key=key) }}">← 답글 화면</a>
+  </div>
+
+  {% if error %}<div class="note bad">{{ error }}</div>{% endif %}
+
+  <div class="note">
+    ✏️ 답글을 고치고 <b>[수정 등록]</b>을 누르면 집 PC가 배민·쿠팡의 실제
+    답글을 새 내용으로 바꿔요(30초 안팎).
+  </div>
+
+  {% for r in rows %}
+  <div class="card" id="r{{ r.id }}">
+    <div class="meta">
+      <span class="tag {{ 'b' if r.platform == '배민' else 'c' }}">{{ r.platform }}</span>
+      <span class="stars">{{ '★' * (r.rating or 0) }}</span>
+      <span>{{ r.author }}</span>
+      {% if r.posted_at %}<span>· 등록 {{ r.posted_at }}</span>{% endif %}
+    </div>
+    <div class="rv">{{ r.content or '(사진/별점만, 텍스트 없음)' }}</div>
+    <label class="lbl">등록된 답글 (고치면 실제 답글이 바뀌어요)</label>
+    <textarea id="d{{ r.id }}" rows="5">{{ r.draft }}</textarea>
+    <button class="btn primary" type="button" id="e{{ r.id }}"
+            onclick="editIt({{ r.id }}, '{{ url_for('edit_post', path_key=key, review_id=r.id) }}', '{{ url_for('edit_state', path_key=key, review_id=r.id) }}')">
+      ✏️ 수정 등록 — 실제 답글 바꾸기
+    </button>
+  </div>
+  {% else %}
+  <div class="empty">아직 등록한 답글이 없어요.</div>
+  {% endfor %}
+
+</div>
+
+<script>
+function editIt(id, editUrl, stateUrl) {
+  const t = document.getElementById('d' + id);
+  const btn = document.getElementById('e' + id);
+  if (!confirm('등록된 실제 답글을 이 내용으로 바꿀까요?\n\n"' +
+               t.value.slice(0, 60) + '…"')) return;
+  btn.disabled = true; btn.textContent = '✏️ 수정 중… (30초쯤 걸려요)';
+  const restore = () => { btn.disabled = false; btn.textContent = '✏️ 수정 등록 — 실제 답글 바꾸기'; };
+  const body = new URLSearchParams({draft: t.value});
+  fetch(editUrl, {method: 'POST', body: body}).then(r => r.json()).then(res => {
+    if (!res.ok) { restore(); alert('요청 실패: ' + (res.error || '')); return; }
+    let tries = 0;
+    const poll = setInterval(() => {
+      tries += 1;
+      fetch(stateUrl).then(r => r.json()).then(st => {
+        if (st.status === 'done') {
+          clearInterval(poll);
+          btn.textContent = '✅ 수정 완료!';
+          setTimeout(restore, 2500);
+        } else if (st.status === 'error') {
+          clearInterval(poll);
+          restore();
+          alert('수정이 안 됐어요: ' + (st.message || '') +
+                '\n잠시 후 다시 시도해주세요.');
+        } else if (tries >= 60) {
+          clearInterval(poll);
+          restore();
+          alert('아직 확인이 안 돼요. 집 PC 상태를 확인하고 다시 시도해주세요.');
+        }
+      }).catch(() => {});
+    }, 3000);
+  }).catch(() => restore());
+}
+// 자동 높이
+document.querySelectorAll('textarea').forEach(t => {
+  const fit = () => { t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; };
+  t.addEventListener('input', fit); fit();
+});
+</script>
+</body>
+</html>
