@@ -105,8 +105,11 @@ function editIt(id, editUrl, stateUrl) {
         } else if (st.status === 'error') {
           clearInterval(poll);
           restore();
+          // 실패 시 실제 답글은 이전 내용 그대로다 — 위 칸에 보이는 새 글은
+          // 아직 반영되지 않았음을 분명히 알린다(오해 방지).
           alert('수정이 안 됐어요: ' + (st.message || '') +
-                '\n잠시 후 다시 시도해주세요.');
+                '\n\n고객에게 보이는 답글은 이전 내용 그대로예요. ' +
+                '잠시 후 다시 시도해주세요.');
         } else if (tries >= 60) {
           clearInterval(poll);
           restore();

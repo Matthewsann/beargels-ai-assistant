@@ -527,8 +527,14 @@ def run_post_edit_job(job) -> None:
             db.finish_job(jid, "done", f"리뷰 {rid} 답글 수정 완료", 1)
             logger.info("답글 수정 #%s 완료 (리뷰 %s)", jid, rid)
         else:
-            db.finish_job(jid, "done",
-                          "[리허설] WRITE_DRY_RUN=true — 실제 수정 안 함", 0)
+            # 연습 모드 = 실제 답글이 그대로다 → 'done'(성공)으로 보고하면
+            # 화면이 '✅ 수정 완료!'를 띄워 바뀐 줄 알게 된다. 실패로 알린다.
+            # ⚠️ 문구는 '리뷰 {id} ' 로 시작해야 화면 폴링이 이 잡을 찾는다
+            #    (latest_review_job 의 like 조건).
+            db.finish_job(jid, "error",
+                          f"리뷰 {rid} 연습 모드(WRITE_DRY_RUN=true)라 실제 "
+                          f"답글은 그대로예요. 집 PC에서 "
+                          f"5_자동등록_고치기.bat 을 실행해 주세요.", 0)
     except Exception as e:  # noqa: BLE001
         logger.error("답글 수정 #%s 실패: %s", jid, e)
         db.log_error("worker", f"답글 수정 실패(리뷰 {rid}): {e}",
