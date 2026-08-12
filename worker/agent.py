@@ -551,8 +551,10 @@ def _refresh_reply_id(row):
         logger.info("수정용 답글 정보가 없어 쿠팡 리뷰를 다시 긁습니다 (리뷰 %s)",
                     row.get("id"))
         db.worker_ping("working", "답글 정보 새로고침 중")
+        # 기본 페이지 수(5)로는 2주치를 다 못 훑어 대상 리뷰를 놓쳤다
+        # (실측: 5페이지=25건, 12페이지=48건 — 2026-08-13). 넉넉히 훑는다.
         with CoupangCrawler() as c:
-            db.save_reviews(c.fetch_reviews(days=COUPANG_DAYS))
+            db.save_reviews(c.fetch_reviews(days=COUPANG_DAYS, max_pages=15))
         return db.get_review(row["id"]) or row
     except Exception as e:  # noqa: BLE001 — 실패해도 아래에서 안내 메시지가 뜬다
         logger.warning("답글 정보 새로고침 실패(리뷰 %s): %s", row.get("id"), e)

@@ -22,6 +22,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import sys
@@ -204,6 +205,31 @@ def _review_view(r: dict) -> dict:
         "escalate": draft.strip().startswith("⚠️"),
         "has_draft": bool(draft),
         "platform_url": PLATFORM_REVIEW_URL.get(r.get("platform"), ""),
+        # 주문 정보 — 배민·쿠팡 리뷰 관리 화면과 같은 항목을 보여준다.
+        **_order_info(r),
+    }
+
+
+def _order_info(r: dict) -> dict:
+    """리뷰 카드에 띄울 주문 정보(주문번호·주문일·수령방식·주문횟수).
+
+    저장 컬럼에 없으면 raw(플랫폼 원본 JSON)에서 보완한다.
+    """
+    raw = {}
+    try:
+        if r.get("raw"):
+            raw = json.loads(r["raw"]) if isinstance(r["raw"], str) else r["raw"]
+    except Exception:  # noqa: BLE001
+        raw = {}
+    order_no = r.get("order_no") or raw.get("abbrOrderId") or ""
+    ordered = (r.get("ordered_at") or raw.get("orderedAt") or "")
+    count = r.get("order_count") or raw.get("orderCount")
+    delivery = r.get("delivery_type") or raw.get("orderType") or ""
+    return {
+        "order_no": order_no,
+        "ordered_at": str(ordered).replace("T", " ")[:16],
+        "order_count": count if isinstance(count, int) and count > 0 else None,
+        "delivery": {"REGULAR": "배달", "TAKE_OUT": "포장"}.get(delivery, delivery),
     }
 
 
