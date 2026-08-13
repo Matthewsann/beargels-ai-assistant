@@ -73,3 +73,20 @@ def test_post_slot_outside_window(monkeypatch):
     monkeypatch.setattr(agent, "AUTO_POST_TIMES", "11:00,17:00,22:00")
     assert agent.post_slot_due(_t(11, 20).replace(tzinfo=None), None) is None
     assert agent.post_slot_due(_t(9, 0).replace(tzinfo=None), None) is None
+
+
+# --- 답글 기한 지난 옛 리뷰 정리 ---------------------------------------------
+
+def test_too_old_to_reply_by_window():
+    # 전체 수집 뒤 옛 리뷰가 직원 화면을 덮던 것 방지(2026-08-13).
+    from datetime import date, timedelta
+    old = (date.today() - timedelta(days=agent.REPLY_WINDOW_DAYS + 1)).isoformat()
+    fresh = (date.today() - timedelta(days=3)).isoformat()
+    assert agent._too_old_to_reply({"written_date": old}) is True
+    assert agent._too_old_to_reply({"written_date": fresh}) is False
+
+
+def test_unknown_date_is_kept():
+    # 날짜를 모르면 함부로 정리하지 않는다.
+    assert agent._too_old_to_reply({}) is False
+    assert agent._too_old_to_reply({"written_date": "언젠가"}) is False

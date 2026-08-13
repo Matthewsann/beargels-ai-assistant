@@ -158,14 +158,40 @@ def collect_reviews(full=False) -> tuple[int, list[str]]:
     return saved, warnings
 
 
+# 이보다 오래된 미답변 리뷰는 답글 기한이 지나 등록할 수 없다 —
+# 초안을 만들지 않고 목록에서 정리한다. 실측(2026-08-13): 쿠팡은 9일 된
+# 리뷰는 등록 성공, 17일 된 리뷰는 기한만료(20051) 거절. 실제 한도보다
+# 넉넉히 잡아 '아직 되는데 걸러버리는' 일이 없게 한다.
+REPLY_WINDOW_DAYS = int(os.getenv("WORKER_REPLY_WINDOW_DAYS", "30"))
+
+
+def _too_old_to_reply(row) -> bool:
+    d = row.get("written_date")
+    if not d:
+        return False                      # 모르면 건드리지 않는다
+    try:
+        age = (datetime.now().date() - datetime.fromisoformat(d).date()).days
+    except Exception:  # noqa: BLE001
+        return False
+    return age > REPLY_WINDOW_DAYS
+
+
 def make_drafts() -> int:
-    """초안이 아직 없는 미답변 리뷰에 답글 초안을 만들어 저장한다. 만든 수 반환."""
-    made = 0
+    """초안이 아직 없는 미답변 리뷰에 답글 초안을 만들어 저장한다. 만든 수 반환.
+
+    답글 기한이 지난 옛 리뷰는 초안을 만들지 않고 '넘어가기'로 정리한다 —
+    전체 수집 뒤 옛 리뷰가 직원 화면을 덮고 AI 호출도 낭비됐다(2026-08-13).
+    """
+    made, retired = 0, 0
     for row in db.get_pending_reviews(limit=100):
         if row.get("reply_draft"):
             continue                      # 이미 초안 있음(직원이 고친 것 포함)
         if row.get("platform_replied"):
             continue                      # 플랫폼에 이미 답글이 달림
+        if _too_old_to_reply(row):
+            db.mark_skipped(row["id"])    # 기한 지남 → 목록에서 정리
+            retired += 1
+            continue
         if made >= MAX_DRAFTS_PER_RUN:
             logger.info("한 번에 %d건까지만 생성 — 나머지는 다음 수집 때",
                         MAX_DRAFTS_PER_RUN)
@@ -192,6 +218,8 @@ def make_drafts() -> int:
         # reply_draft 만 바뀌므로, 나중에 '얼마나 고쳤나(수정률)'를 잴 수 있다.
         db.save_ai_draft(row["id"], draft, kind=classify_review(review))
         made += 1
+    if retired:
+        logger.info("답글 기한이 지난 옛 리뷰 %d건을 목록에서 정리했습니다", retired)
     return made
 
 
