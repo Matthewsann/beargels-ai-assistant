@@ -81,6 +81,7 @@
 </style>
 </head>
 <body>
+{% include "_sidebar.html" %}
 <div class="wrap">
 
   <div class="head">
@@ -91,16 +92,6 @@
        style="margin-left:auto;font-size:14px;font-weight:600;text-decoration:none;
               background:var(--accent);color:#fff;padding:9px 15px;border-radius:20px;
               white-space:nowrap;">❓ 사용법</a>
-    <a href="{{ url_for('menu_page', path_key=key) }}"
-       style="font-size:12px;text-decoration:none;white-space:nowrap;">🥯 메뉴/원가</a>
-  </div>
-
-  <div class="navbar">
-    <a href="{{ url_for('home', path_key=key) }}" class="on">💬 리뷰 답글</a>
-    <a href="{{ url_for('history', path_key=key) }}">📜 등록한 답글</a>
-    <a href="{{ url_for('reviews_all', path_key=key) }}">🗂️ 전체 리뷰</a>
-    <a href="{{ url_for('blog_home', path_key=key) }}">📝 블로그</a>
-    <a href="{{ url_for('place_guide', path_key=key) }}">📍 플레이스</a>
   </div>
 
   {% if error %}<div class="note bad">{{ error }}</div>{% endif %}
