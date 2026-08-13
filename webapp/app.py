@@ -499,6 +499,28 @@ def edit_post(item_id: int):
     return render_template("edit.html", meta=meta, body=body, item_id=item_id)
 
 
+@app.route("/place")
+def place_guide():
+    """네이버 스마트플레이스 실행 가이드 — 저장소 루트의 정적 HTML 을 그대로 서빙.
+
+    직원용 서비스 앱(service/app.py)의 `/<key>/place` 와 같은 파일을 본다.
+    내용을 고칠 때는 루트의 `스마트플레이스-직원가이드.html` 한 곳만 고치면
+    양쪽에 같이 반영된다.
+    """
+    page = ROOT / "스마트플레이스-직원가이드.html"
+    try:
+        body = page.read_text(encoding="utf-8")
+    except OSError:
+        abort(404)
+    # 파일이 <title> 부터 시작하는 조각이라 문서 껍데기를 씌워 준다.
+    return (
+        '<!doctype html>\n<html lang="ko">\n'
+        '<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f"{body}\n</html>"
+    )
+
+
 if __name__ == "__main__":
     PORT = int(os.getenv("PORT", "5050"))
     print("=" * 52)
