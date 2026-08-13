@@ -57,6 +57,7 @@ padding:4px 11px;font-size:12px;cursor:pointer;white-space:nowrap;color:var(--in
 .fchip small{opacity:.65;margin-left:3px;font-size:10px}
 .bar select{border:1px solid var(--line);border-radius:8px;padding:7px 8px;font-size:12px;background:var(--card);color:var(--ink)}
 .cnt{font-size:11px;color:var(--sub);margin:4px 2px}
+.faxis{flex:0 0 auto;align-self:center;font-size:10px;color:var(--sub);margin-right:2px}
 </style>
 </head>
 <body>
@@ -72,7 +73,7 @@ padding:4px 11px;font-size:12px;cursor:pointer;white-space:nowrap;color:var(--in
 
 <script>
 const BASE = "/{{ key }}/menu";
-let DATA=null, TAB='ing', Q='', SKU=null, CATF='전체', SORT='cat', MQ='', MCAT='전체';
+let DATA=null, TAB='ing', Q='', SKU=null, CATF='전체', SORT='cat', MQ='', MCAT='전체', ICATM='전체';
 const won=n=>n==null?"–":Math.round(n).toLocaleString("ko-KR");
 const w1=n=>n==null?"–":(Math.round(n*100)/100).toLocaleString("ko-KR");
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");
@@ -89,6 +90,19 @@ const usedCount=id=>DATA.recipes.filter(r=>r.ingredient_id===id).length;
 const cats=()=>[...new Set(DATA.ingredients.map(i=>i.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ko"));
 const nname=s=>(s||"").replace(/\s+/g,"").toLowerCase();
 const findDup=(name,exceptId)=>DATA.ingredients.find(i=>i.id!==exceptId&&nname(i.name)===nname(name));
+// 자재 id → 그 자재가 들어가는 메뉴 분류들. 한 자재가 여러 분류에 걸치므로
+// 자재의 '분류'(구매·보관 기준)를 대체하지 않고, 보는 축을 하나 더 두는 것.
+let _mcMap=null;
+function menuCatsByIng(){
+  if(_mcMap) return _mcMap;
+  const bySku={}; for(const i of DATA.items) bySku[i.sku]=i;
+  const m={};
+  for(const r of DATA.recipes){
+    const it=bySku[r.sku]; if(!it) continue;
+    (m[r.ingredient_id]=m[r.ingredient_id]||new Set()).add(it.category||"기타");
+  }
+  return _mcMap=m;
+}
 const dupNames=()=>{const seen={},out=new Set();
   for(const i of DATA.ingredients){const k=nname(i.name);
     if(seen[k]){out.add(k);out.add(nname(seen[k].name));}else seen[k]=i;}
@@ -107,6 +121,7 @@ function renderIng(){
     </select>
   </div>
   <div class="fchips" id="catChips"></div>
+  <div class="fchips" id="menuCatChips"></div>
   <div class="cnt" id="cnt"></div>
   <div class="addrow">
     <input id="niName" placeholder="새 자재 이름" style="flex:1;min-width:120px">
@@ -123,6 +138,7 @@ function renderIng(){
   </table></div>
   <p class="note">· 구매량/구매가를 탭해서 고치면 <b>그 자재를 쓰는 모든 메뉴의 원가가 즉시 재계산</b>됩니다.<br>
   · 같은 이름은 하나만 등록됩니다(단위가 달라도). 이미 있는 자재는 새로 만들지 말고 수정하세요.<br>
+  · 필터는 두 축입니다 — <b>자재</b> 줄은 구매·보관 기준, <b>메뉴</b> 줄은 그 자재가 들어가는 메뉴 분류(레시피로 자동, 한 자재가 여러 분류에 걸칠 수 있음). 두 축을 함께 걸 수 있습니다.<br>
   · 위 칩으로 분류를 걸러 보고, 오른쪽 드롭다운으로 정렬을 바꿉니다("미사용"은 어떤 레시피에도 안 쓰는 자재).<br>
   · 분류는 직접 입력하거나 기존 분류에서 고르면 됩니다(빈칸이면 "미분류"). 표에서 분류를 탭해 나중에 바꿀 수도 있습니다.<br>
   · "반제품(역산)" 분류는 옛 원가표에서 역산해 등록한 것 — 실제 구매 단위·가격으로 고쳐주시면 더 정확해집니다.</p>`;
@@ -142,8 +158,18 @@ function renderIng2(){
   const dups=dupNames();
   if(dups.size) chipDefs.push(["이름중복",DATA.ingredients.filter(i=>dups.has(nname(i.name))).length]);
   const chips=document.getElementById("catChips");
-  if(chips) chips.innerHTML=chipDefs.map(([c,n])=>
+  if(chips) chips.innerHTML=`<span class="faxis">자재</span>`+chipDefs.map(([c,n])=>
     `<span class="fchip ${c===CATF?"on":""}" onclick="CATF='${c}';renderIng2()">${c}<small>${n}</small></span>`).join("");
+
+  // 메뉴 분류 축 — 레시피로 자동 계산(한 자재가 여러 분류에 걸칠 수 있다)
+  const mc=menuCatsByIng();
+  const mcOrder=[...new Set(DATA.items.map(i=>i.category).filter(Boolean))];
+  const mcCount={};
+  for(const i of DATA.ingredients) for(const c of (mc[i.id]||[])) mcCount[c]=(mcCount[c]||0)+1;
+  const mchips=document.getElementById("menuCatChips");
+  if(mchips) mchips.innerHTML=`<span class="faxis">메뉴</span>`
+    +[["전체",DATA.ingredients.length],...mcOrder.filter(c=>mcCount[c]).map(c=>[c,mcCount[c]])]
+      .map(([c,n])=>`<span class="fchip ${c===ICATM?"on":""}" onclick="ICATM='${c}';renderIng2()">${c}<small>${n}</small></span>`).join("");
 
   let list=DATA.ingredients.filter(i=>{
     if(q && !(i.name.includes(q)||(i.category||'').includes(q))) return false;
@@ -151,7 +177,7 @@ function renderIng2(){
     if(CATF==="미사용") return !usedCount(i.id);
     if(CATF==="이름중복") return dupNames().has(nname(i.name));
     return (i.category||"미분류")===CATF;
-  });
+  }).filter(i=>ICATM==="전체"||(menuCatsByIng()[i.id]||new Set()).has(ICATM));
   const byName=(a,b)=>a.name.localeCompare(b.name,"ko");
   const S={
     cat:(a,b)=>(a.category||"미분류").localeCompare(b.category||"미분류","ko")||byName(a,b),
@@ -165,7 +191,8 @@ function renderIng2(){
   list=list.sort(S[SORT]||S.cat);
   const cnt=document.getElementById("cnt");
   if(cnt) cnt.textContent=`${list.length}개 표시 (전체 ${DATA.ingredients.length}개)`
-    + (CATF!=="전체"?` · 분류: ${CATF}`:"") + (q?` · 검색: "${q}"`:"");
+    + (CATF!=="전체"?` · 자재분류: ${CATF}`:"") + (ICATM!=="전체"?` · 메뉴분류: ${ICATM}`:"")
+    + (q?` · 검색: "${q}"`:"");
 
   const dupSet=dupNames();
   let html="",cat=null;
@@ -366,6 +393,7 @@ async function delLine(rid){
   if(j){DATA.recipes=DATA.recipes.filter(r=>r.id!==rid);syncRecipe(j);render();}
 }
 function syncRecipe(j){
+  _mcMap=null;
   if(j.line){
     const i=DATA.recipes.findIndex(r=>r.id===j.line.id);
     if(i>=0) DATA.recipes[i]=j.line; else DATA.recipes.push(j.line);
@@ -405,7 +433,7 @@ function render(){
 }
 fetch(BASE+"/data").then(r=>r.json()).then(d=>{
   if(d.error){document.getElementById("main").innerHTML=`<div class="empty">⚠ ${d.error}</div>`;return;}
-  DATA=d; DATA.ingredients=d.ingredients||[]; DATA.recipes=d.recipes||[];
+  DATA=d; DATA.ingredients=d.ingredients||[]; DATA.recipes=d.recipes||[]; _mcMap=null;
   const p=new URLSearchParams(location.search); SKU=p.get("sku")||null;
   if(SKU) TAB='rec';
   render();
