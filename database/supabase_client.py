@@ -935,8 +935,56 @@ class DuplicateIngredient(ValueError):
 
 
 def _norm_ing_name(s):
-    """이름 비교용 정규화 — 공백·대소문자 무시('플레인 베이글'='플레인베이글')."""
-    return re.sub(r"\s+", "", (s or "")).lower()
+    """이름 비교용 정규화 — 공백·구두점·대소문자 무시.
+
+    '플레인 베이글' = '플레인베이글' = '플레인-베이글' = '플레인(베이글)'.
+    실제로 겹쳐 등록된 것들이 대개 띄어쓰기나 괄호 차이였다.
+    """
+    return re.sub(r"[\s·\-_/,.()\[\]]+", "", (s or "")).lower()
+
+
+def ingredient_merge(keep_id, drop_id):
+    """자재 둘을 하나로 합친다 — 레시피를 옮기고 남는 쪽을 지운다.
+
+    같은 메뉴에 둘 다 들어가 있으면 사용량을 더한다(둘로 나눠 적어둔 것이므로).
+    Returns: {"moved": 옮긴 레시피 줄 수, "merged": 합쳐진 줄 수, "recomputed": {...}}
+    """
+    keep_id, drop_id = int(keep_id), int(drop_id)
+    if keep_id == drop_id:
+        raise ValueError("같은 자재입니다")
+    sb = get_client()
+    ings = {i["id"]: i for i in ingredients_all()}
+    keep, drop = ings.get(keep_id), ings.get(drop_id)
+    if not keep or not drop:
+        raise ValueError("자재를 찾을 수 없습니다")
+    if (keep.get("unit") or "") != (drop.get("unit") or ""):
+        raise ValueError(
+            f"단위가 다릅니다({keep['unit']} vs {drop['unit']}). "
+            f"사용량 뜻이 달라 자동으로 합칠 수 없습니다 — 단위를 먼저 맞춰주세요.")
+
+    rows = sb.table("menu_recipes").select("*").execute().data
+    keep_by_sku = {r["sku"]: r for r in rows if r["ingredient_id"] == keep_id}
+    moving = [r for r in rows if r["ingredient_id"] == drop_id]
+
+    moved = merged = 0
+    for r in moving:
+        other = keep_by_sku.get(r["sku"])
+        if other:                              # 한 메뉴에 둘 다 있으면 사용량을 더한다
+            sb.table("menu_recipes").update(
+                {"qty": float(other["qty"]) + float(r["qty"])}
+            ).eq("id", other["id"]).execute()
+            sb.table("menu_recipes").delete().eq("id", r["id"]).execute()
+            merged += 1
+        else:
+            sb.table("menu_recipes").update(
+                {"ingredient_id": keep_id}).eq("id", r["id"]).execute()
+            moved += 1
+
+    affected = sorted({r["sku"] for r in moving} | set(keep_by_sku))
+    sb.table("ingredients").delete().eq("id", drop_id).execute()
+    updated = recompute_costs(affected, force=True) if affected else {}
+    return {"moved": moved, "merged": merged, "recomputed": updated,
+            "kept": keep["name"], "dropped": drop["name"]}
 
 
 def ingredient_upsert(fields, ing_id=None):

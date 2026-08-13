@@ -54,6 +54,8 @@ padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:opacity 
 .fchip{flex:0 0 auto;border:1px solid var(--line);background:var(--card);border-radius:14px;
 padding:4px 11px;font-size:12px;cursor:pointer;white-space:nowrap;color:var(--ink)}
 .fchip.on{background:var(--brown);border-color:var(--brown);color:#fff}
+.fchip.warn{border-color:var(--red);color:var(--red);background:var(--redbg)}
+.fchip.warn.on{background:var(--red);border-color:var(--red);color:#fff}
 .fchip small{opacity:.65;margin-left:3px;font-size:10px}
 .bar select{border:1px solid var(--line);border-radius:8px;padding:7px 8px;font-size:12px;background:var(--card);color:var(--ink)}
 .cnt{font-size:11px;color:var(--sub);margin:4px 2px}
@@ -134,7 +136,8 @@ async function api(path, body){
 const unitCost=i=>i.pack_qty?i.pack_cost/i.pack_qty:0;
 const usedCount=id=>DATA.recipes.filter(r=>r.ingredient_id===id).length;
 const cats=()=>[...new Set(DATA.ingredients.map(i=>i.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ko"));
-const nname=s=>(s||"").replace(/\s+/g,"").toLowerCase();
+// 백엔드 _norm_ing_name 과 같은 규칙 — 공백·구두점·대소문자 무시
+const nname=s=>(s||"").replace(/[\s·\-_\/,.()\[\]]+/g,"").toLowerCase();
 // 검색 매칭 — 띄어쓰기·대소문자·기호를 무시한다(사장님 보고 2026-08-13).
 // 메뉴명에 &·[]·+ 가 섞여 있어("파리지엔 잠봉&뵈르 샌드위치") 보이는 대로
 // "잠봉 뵈르"를 쳐도 안 잡혔다.
@@ -167,6 +170,28 @@ const dupNames=()=>{const seen={},out=new Set();
   for(const i of DATA.ingredients){const k=nname(i.name);
     if(seen[k]){out.add(k);out.add(nname(seen[k].name));}else seen[k]=i;}
   return out;};
+// 이름이 똑같은 묶음 — 띄어쓰기·괄호만 다른 것도 같은 묶음으로 본다.
+function dupGroups(){
+  const by={};
+  for(const i of DATA.ingredients) (by[nname(i.name)]=by[nname(i.name)]||[]).push(i);
+  return Object.values(by).filter(g=>g.length>1)
+    .sort((a,b)=>a[0].name.localeCompare(b[0].name,"ko"));
+}
+// 이름은 다르지만 헷갈릴 만한 짝 — 한쪽이 다른 쪽으로 시작하고 길이차가 작을 때
+// (예: '초코소스' vs '초코소스A'). 초성이 같은 것까지 넣으면 소음이 커서 뺐다.
+function nearGroups(){
+  const list=[...DATA.ingredients].sort((a,b)=>nname(a.name).localeCompare(nname(b.name)));
+  const exact=new Set(dupGroups().flat().map(i=>i.id));
+  const out=[];
+  for(let i=0;i<list.length-1;i++){
+    const a=nname(list[i].name), b=nname(list[i+1].name);
+    if(a===b) continue;
+    if(b.startsWith(a) && b.length-a.length<=2 && a.length>=2
+       && !exact.has(list[i].id) && !exact.has(list[i+1].id))
+      out.push([list[i],list[i+1]]);
+  }
+  return out;
+}
 const SUPPLIERS=["쿠팡","엠즈푸드","본사","직접제조","그외"];
 // 자재 분류 — 구매·보관 기준(메뉴 분류와 별개 축). 발주할 때 묶이는 단위로 잡았다.
 // 반제품은 분류가 아니라 이름에 "(반제품)"으로 표시하고, 발주처를 '직접제조'로 둔다.
@@ -236,11 +261,14 @@ function renderIng2(){
                   ...cats().filter(c=>c!=="미분류").map(c=>[c,catCount[c]||0]),
                   ...(catCount["미분류"]?[["미분류",catCount["미분류"]]]:[]),
                   ["미사용",unused]];
-  const dups=dupNames();
-  if(dups.size) chipDefs.push(["이름중복",DATA.ingredients.filter(i=>dups.has(nname(i.name))).length]);
+  const dg=dupGroups(), ng=nearGroups();
+  if(dg.length) chipDefs.push(["이름중복",dg.reduce((n,g)=>n+g.length,0)]);
+  if(ng.length) chipDefs.push(["비슷한이름",ng.length*2]);
   const chips=document.getElementById("catChips");
-  if(chips) chips.innerHTML=`<span class="faxis">자재</span>`+chipDefs.map(([c,n])=>
-    `<span class="fchip ${c===CATF?"on":""}" onclick="CATF='${c}';renderIng2()">${c}<small>${n}</small></span>`).join("");
+  if(chips) chips.innerHTML=`<span class="faxis">자재</span>`+chipDefs.map(([c,n])=>{
+    const warn=(c==="이름중복"||c==="비슷한이름");
+    return `<span class="fchip ${c===CATF?"on":""}${warn?" warn":""}"
+      onclick="CATF='${c}';renderIng2()">${warn?"⚠ ":""}${c}<small>${n}</small></span>`;}).join("");
 
   // 메뉴 분류 축 — 레시피로 자동 계산(한 자재가 여러 분류에 걸칠 수 있다)
   const mc=menuCatsByIng();
@@ -267,6 +295,7 @@ function renderIng2(){
     if(CATF==="전체") return true;
     if(CATF==="미사용") return !usedCount(i.id);
     if(CATF==="이름중복") return dupNames().has(nname(i.name));
+    if(CATF==="비슷한이름") return false;      // 아래에서 짝 단위로 따로 그린다
     return (i.category||"미분류")===CATF;
   }).filter(i=>ICATM==="전체"||(menuCatsByIng()[i.id]||new Set()).has(ICATM));
   const byName=(a,b)=>a.name.localeCompare(b.name,"ko");
@@ -289,6 +318,7 @@ function renderIng2(){
   const dupSet=dupNames();
   const tbl=document.getElementById("ingTable");
   if(!tbl) return;
+  if(CATF==="이름중복"||CATF==="비슷한이름"){ renderDup(tbl); return; }
   ING_VIEW=list;                       // 일괄편집 Enter 이동에 쓰는 현재 화면 순서
   const head=BULK
     ? `<tr><th class="ck"><input type="checkbox" onclick="bSelAll(this.checked)"></th>
@@ -347,6 +377,69 @@ function renderIng2(){
   tbl.className=BULK?"bulk":"";
   tbl.innerHTML=head+(html||`<tr><td colspan="${span}" class="empty">없음</td></tr>`);
   bBar();
+}
+
+// ── 중복 자재 보기 ──────────────────────────────────────────
+// 목록에 섞어 두면 짝을 눈으로 찾아야 한다. 짝끼리 붙여 놓고, 어느 쪽을
+// 남길지 바로 고르게 한다. 남기는 쪽으로 레시피가 옮겨가고 나머지는 지워진다.
+function renderDup(tbl){
+  const groups = CATF==="이름중복" ? dupGroups() : nearGroups();
+  tbl.className="";
+  if(!groups.length){
+    tbl.innerHTML=`<tr><td class="empty">${
+      CATF==="이름중복"?"이름이 겹치는 자재가 없습니다 👍"
+                      :"헷갈릴 만한 이름이 없습니다 👍"}</td></tr>`;
+    const c=document.getElementById("cnt"); if(c) c.textContent="";
+    bBar(); return;
+  }
+  let html=`<tr><th class="l">자재</th><th class="l">분류·발주처</th><th>단위단가</th>
+    <th>사용<br>메뉴</th><th>이걸로<br>합치기</th></tr>`;
+  groups.forEach((g,gi)=>{
+    const title=CATF==="이름중복"?g[0].name:`${g[0].name} / ${g[1].name}`;
+    html+=`<tr class="cat"><td colspan="5">${gi+1}. ${title}
+      <span class="sub">— ${g.length}개</span></td></tr>`;
+    // 많이 쓰는 쪽을 위로: 대개 그쪽이 '진짜'다
+    const sorted=[...g].sort((a,b)=>usedCount(b.id)-usedCount(a.id));
+    for(const i of sorted){
+      const n=usedCount(i.id);
+      const others=sorted.filter(x=>x.id!==i.id);
+      html+=`<tr>
+        <td class="l"><b>${i.name}</b><br><span class="sub">#${i.id} · ${w1(i.pack_qty)}${i.unit} / ${won(i.pack_cost)}원</span></td>
+        <td class="l">${i.category||"미분류"}<br><span class="sub">${i.supplier||"발주처 미지정"}</span></td>
+        <td><b>${w1(unitCost(i))}</b><span class="sub">/${i.unit}</span></td>
+        <td>${n?`${n}개`:'<span class="sub">안 씀</span>'}</td>
+        <td>${others.map(o=>`<button class="okbtn" style="margin:1px 0"
+          onclick="mergeIng(${i.id},${o.id})">← #${o.id} 흡수</button>`).join("<br>")}</td>
+      </tr>`;
+    }
+  });
+  tbl.innerHTML=html;
+  const c=document.getElementById("cnt");
+  if(c) c.textContent=`${CATF==="이름중복"?"이름이 같은":"헷갈릴 만한"} 묶음 ${groups.length}개`;
+  bBar();
+}
+async function mergeIng(keepId, dropId){
+  const keep=DATA.ingredients.find(i=>i.id===keepId);
+  const drop=DATA.ingredients.find(i=>i.id===dropId);
+  if(!keep||!drop) return;
+  const n=usedCount(dropId);
+  if(!confirm(`'${drop.name}'을(를) '${keep.name}'에 합칩니다.\n\n`
+    +`· '${drop.name}'을 쓰던 메뉴 ${n}개가 '${keep.name}'을 쓰게 됩니다\n`
+    +`· 한 메뉴에 둘 다 있으면 사용량을 더합니다\n`
+    +`· '${drop.name}'은 삭제되고, 남는 값은 '${keep.name}'(${w1(unitCost(keep))}원/${keep.unit})입니다\n\n`
+    +`진행할까요?`)) return;
+  const j=await api("/ingredient/merge",{keep_id:keepId,drop_id:dropId});
+  if(!j) return;
+  DATA.ingredients=DATA.ingredients.filter(i=>i.id!==dropId);
+  for(const r of DATA.recipes) if(r.ingredient_id===dropId) r.ingredient_id=keepId;
+  for(const [sku,c] of Object.entries(j.recomputed||{})){
+    const it=DATA.items.find(x=>x.sku===sku); if(it) it.ingredient_cost=c;
+  }
+  _mcMap=null;
+  const d=await fetch(BASE+"/data").then(r=>r.json());   // 합쳐진 사용량까지 정확히
+  DATA=d; DATA.ingredients=d.ingredients||[]; DATA.recipes=d.recipes||[];
+  toast(`합침 ✓ 레시피 ${j.moved}줄 이동${j.merged?` · ${j.merged}줄 사용량 합산`:""}`);
+  render();
 }
 
 // ── 엑셀식 일괄편집 ─────────────────────────────────────────
