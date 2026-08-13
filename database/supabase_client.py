@@ -320,13 +320,24 @@ def latest_job():
     return rows[0] if rows else None
 
 
+# 직원이 화면 앞에서 결과를 기다리는 작업 — 리뷰수집(수 분) 뒤에 밀리면
+# 3분 폴링 안에 끝나지 않아 '아직 확인이 안 돼요'로 보인다. 먼저 집는다.
+INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "wake")
+
+
 def claim_next_job():
     """집 PC 일꾼이 부른다: 대기 중인 요청 1건을 잡아 running 으로 바꾼다.
 
-    없으면 None. (일꾼이 1대뿐이라 경합은 고려하지 않는다.)
+    직원이 기다리는 작업(등록·수정·재생성·깨우기)을 먼저 집고, 없을 때만
+    나머지(리뷰수집·메뉴수집·블로그)를 오래된 순으로 처리한다. 없으면 None.
+    (일꾼이 1대뿐이라 경합은 고려하지 않는다.)
     """
     rows = (get_client().table("jobs").select("*").eq("status", "pending")
+            .in_("kind", list(INTERACTIVE_JOB_KINDS))
             .order("requested_at").limit(1).execute().data)
+    if not rows:
+        rows = (get_client().table("jobs").select("*").eq("status", "pending")
+                .order("requested_at").limit(1).execute().data)
     if not rows:
         return None
     job = rows[0]
