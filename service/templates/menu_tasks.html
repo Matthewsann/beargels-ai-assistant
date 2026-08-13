@@ -93,14 +93,17 @@ function sim(a,b){
 
 function ov(sku,ch){return DATA.channels.find(c=>c.sku===sku&&c.channel===ch);}
 function fee(ch){return (DATA.settings.channel_fees||{})[ch]||{};}
+// 가격이 갈리는 곳은 배달앱뿐 — 매장·네이버는 매장가 그대로다(사장님 확인).
+// 그래서 이 둘은 채널 오버라이드를 보지 않는다.
+const STORE_PRICED=new Set(["store","naver"]);
 function expPrice(it,ch){
+  if(STORE_PRICED.has(ch)) return it.store_price;
   const o=ov(it.sku,ch);
   if(o&&o.price_override!=null) return o.price_override;
-  if(fee(ch).price_base==="store") return it.store_price;
   return it.delivery_price??it.store_price;
 }
 function expName(it,ch){const o=ov(it.sku,ch);return (o&&o.name_override)||it.name;}
-function activeFor(it,ch){return fee(ch).price_base==="store"?!!it.store_active:!!it.delivery_active;}
+function activeFor(it,ch){return STORE_PRICED.has(ch)?!!it.store_active:!!it.delivery_active;}
 
 let CACHE={};
 function analyze(ch){

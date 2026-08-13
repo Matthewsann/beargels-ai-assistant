@@ -196,12 +196,14 @@ function aov(ch){
   return (m.aov && +m.aov[ch]) || +m.min_order || 12500;
 }
 
-// 채널별 실적용 판매가: 오버라이드 > 채널 기준가 > 매장가
-// 네이버는 매장 메뉴 기준(price_base:"store")이라 매장가를 쓴다.
+// 가격이 갈리는 곳은 배달앱(배민·쿠팡)뿐이다 — 매장과 네이버는 같은 매장가를
+// 쓴다(사장님 확인 2026-08). 그래서 이 둘은 채널 오버라이드도 보지 않는다.
+// 네이버에 매장가와 다른 값이 올라가 있으면 그건 고칠 거리이지 기준이 아니다.
+const STORE_PRICED = new Set(["store", "naver"]);
 function chPrice(it, ch){
+  if (STORE_PRICED.has(ch)) return it.store_price;
   const o = chOverride(it.sku, ch);
   if (o && o.price_override != null) return o.price_override;
-  if (ch === "store" || fee(ch).price_base === "store") return it.store_price;
   return it.delivery_price ?? it.store_price;
 }
 
@@ -243,7 +245,7 @@ function hasProblem(it){
   if (it.ingredient_cost == null) return true;
   if (rs != null && rs > target(it.category)) return true;
   for (const [ch] of CH) { const m = margin(it, ch);
-    if (m != null && m < 0 && (ch==="store" ? it.store_active : it.delivery_active)) return true; }
+    if (m != null && m < 0 && (STORE_PRICED.has(ch) ? it.store_active : it.delivery_active)) return true; }
   // 손익분기 객단가가 최소주문금액을 넘으면 그 메뉴 위주 주문은 적자가 난다.
   const be = breakeven(it, "coupang");
   if (be != null && be > (+om().min_order || 12500)) return true;
