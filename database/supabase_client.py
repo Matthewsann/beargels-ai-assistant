@@ -841,10 +841,31 @@ def recipes_all():
     return get_client().table("menu_recipes").select("*").execute().data
 
 
+class DuplicateIngredient(ValueError):
+    """같은 이름의 자재가 이미 있을 때."""
+
+
+def _norm_ing_name(s):
+    """이름 비교용 정규화 — 공백·대소문자 무시('플레인 베이글'='플레인베이글')."""
+    return re.sub(r"\s+", "", (s or "")).lower()
+
+
 def ingredient_upsert(fields, ing_id=None):
     payload = {k: fields.get(k) for k in _ING_COLS if k in fields}
     payload["updated_at"] = datetime.utcnow().isoformat() + "Z"
     sb = get_client()
+
+    # 이름 중복 차단 — 단위가 달라도 같은 이름은 하나만 둔다(사장님 요청).
+    name = payload.get("name")
+    if name:
+        target = _norm_ing_name(name)
+        for row in ingredients_all():
+            if row["id"] == ing_id:
+                continue                      # 자기 자신은 제외(단순 수정)
+            if _norm_ing_name(row["name"]) == target:
+                raise DuplicateIngredient(
+                    f"'{row['name']}'({row['unit']})가 이미 있습니다. "
+                    f"새로 만들지 말고 그 자재를 수정해 주세요.")
     if ing_id:
         rows = sb.table("ingredients").update(payload).eq("id", ing_id).execute().data
     else:

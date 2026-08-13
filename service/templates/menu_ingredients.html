@@ -50,6 +50,13 @@ padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:opacity 
 .addrow button{border:none;background:var(--brown);color:#fff;border-radius:8px;padding:7px 14px;font-size:13px;cursor:pointer}
 .menu-pick{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:14px;margin-bottom:8px}
 .empty{text-align:center;color:var(--sub);padding:36px 12px}
+.fchips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 4px;margin-top:6px;-webkit-overflow-scrolling:touch}
+.fchip{flex:0 0 auto;border:1px solid var(--line);background:var(--card);border-radius:14px;
+padding:4px 11px;font-size:12px;cursor:pointer;white-space:nowrap;color:var(--ink)}
+.fchip.on{background:var(--brown);border-color:var(--brown);color:#fff}
+.fchip small{opacity:.65;margin-left:3px;font-size:10px}
+.bar select{border:1px solid var(--line);border-radius:8px;padding:7px 8px;font-size:12px;background:var(--card);color:var(--ink)}
+.cnt{font-size:11px;color:var(--sub);margin:4px 2px}
 </style>
 </head>
 <body>
@@ -65,7 +72,7 @@ padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:opacity 
 
 <script>
 const BASE = "/{{ key }}/menu";
-let DATA=null, TAB='ing', Q='', SKU=null;
+let DATA=null, TAB='ing', Q='', SKU=null, CATF='전체', SORT='cat';
 const won=n=>n==null?"–":Math.round(n).toLocaleString("ko-KR");
 const w1=n=>n==null?"–":(Math.round(n*100)/100).toLocaleString("ko-KR");
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");
@@ -79,7 +86,15 @@ async function api(path, body){
 }
 const unitCost=i=>i.pack_qty?i.pack_cost/i.pack_qty:0;
 const usedCount=id=>DATA.recipes.filter(r=>r.ingredient_id===id).length;
-const cats=()=>[...new Set(DATA.ingredients.map(i=>i.category).filter(Boolean))].sort();
+const cats=()=>[...new Set(DATA.ingredients.map(i=>i.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ko"));
+const nname=s=>(s||"").replace(/\s+/g,"").toLowerCase();
+const findDup=(name,exceptId)=>DATA.ingredients.find(i=>i.id!==exceptId&&nname(i.name)===nname(name));
+const dupNames=()=>{const seen={},out=new Set();
+  for(const i of DATA.ingredients){const k=nname(i.name);
+    if(seen[k]){out.add(k);out.add(nname(seen[k].name));}else seen[k]=i;}
+  return out;};
+const SORTS=[["cat","분류순"],["name","이름순"],["unit_desc","단위단가 높은순"],["unit_asc","단위단가 낮은순"],
+             ["cost_desc","구매가 높은순"],["used_desc","많이 쓰는 순"],["used_asc","적게 쓰는 순"]];
 
 // ── 자재 탭 ──────────────────────────────────────────────
 function renderIng(){
@@ -87,7 +102,12 @@ function renderIng(){
   let list=DATA.ingredients.filter(i=>!q||i.name.includes(q));
   let html=`<div class="bar">
     <input placeholder="자재 검색…" value="${Q}" oninput="Q=this.value;renderIng2()">
+    <select onchange="SORT=this.value;renderIng2()">
+      ${SORTS.map(([v,l])=>`<option value="${v}" ${v===SORT?"selected":""}>${l}</option>`).join("")}
+    </select>
   </div>
+  <div class="fchips" id="catChips"></div>
+  <div class="cnt" id="cnt"></div>
   <div class="addrow">
     <input id="niName" placeholder="새 자재 이름" style="flex:1;min-width:120px">
     <input id="niCat" list="catList" placeholder="분류" style="width:110px">
@@ -102,6 +122,8 @@ function renderIng(){
     <tbody id="ingBody"></tbody>
   </table></div>
   <p class="note">· 구매량/구매가를 탭해서 고치면 <b>그 자재를 쓰는 모든 메뉴의 원가가 즉시 재계산</b>됩니다.<br>
+  · 같은 이름은 하나만 등록됩니다(단위가 달라도). 이미 있는 자재는 새로 만들지 말고 수정하세요.<br>
+  · 위 칩으로 분류를 걸러 보고, 오른쪽 드롭다운으로 정렬을 바꿉니다("미사용"은 어떤 레시피에도 안 쓰는 자재).<br>
   · 분류는 직접 입력하거나 기존 분류에서 고르면 됩니다(빈칸이면 "미분류"). 표에서 분류를 탭해 나중에 바꿀 수도 있습니다.<br>
   · "반제품(역산)" 분류는 옛 원가표에서 역산해 등록한 것 — 실제 구매 단위·가격으로 고쳐주시면 더 정확해집니다.</p>`;
   document.getElementById("main").innerHTML=html;
@@ -109,16 +131,51 @@ function renderIng(){
 }
 function renderIng2(){
   const q=Q.trim();
-  const list=DATA.ingredients.filter(i=>!q||i.name.includes(q)||(i.category||'').includes(q))
-    .sort((a,b)=>(a.category||"미분류").localeCompare(b.category||"미분류","ko")
-                 ||a.name.localeCompare(b.name,"ko"));
+  // 분류 필터 칩 — '전체'·분류별·'미사용'(레시피에서 안 쓰는 자재)
+  const catCount={};
+  for(const i of DATA.ingredients){const c=i.category||"미분류";catCount[c]=(catCount[c]||0)+1;}
+  const unused=DATA.ingredients.filter(i=>!usedCount(i.id)).length;
+  const chipDefs=[["전체",DATA.ingredients.length],
+                  ...cats().map(c=>[c,catCount[c]||0]),
+                  ...(catCount["미분류"]?[["미분류",catCount["미분류"]]]:[]),
+                  ["미사용",unused]];
+  const dups=dupNames();
+  if(dups.size) chipDefs.push(["이름중복",DATA.ingredients.filter(i=>dups.has(nname(i.name))).length]);
+  const chips=document.getElementById("catChips");
+  if(chips) chips.innerHTML=chipDefs.map(([c,n])=>
+    `<span class="fchip ${c===CATF?"on":""}" onclick="CATF='${c}';renderIng2()">${c}<small>${n}</small></span>`).join("");
+
+  let list=DATA.ingredients.filter(i=>{
+    if(q && !(i.name.includes(q)||(i.category||'').includes(q))) return false;
+    if(CATF==="전체") return true;
+    if(CATF==="미사용") return !usedCount(i.id);
+    if(CATF==="이름중복") return dupNames().has(nname(i.name));
+    return (i.category||"미분류")===CATF;
+  });
+  const byName=(a,b)=>a.name.localeCompare(b.name,"ko");
+  const S={
+    cat:(a,b)=>(a.category||"미분류").localeCompare(b.category||"미분류","ko")||byName(a,b),
+    name:byName,
+    unit_desc:(a,b)=>unitCost(b)-unitCost(a)||byName(a,b),
+    unit_asc:(a,b)=>unitCost(a)-unitCost(b)||byName(a,b),
+    cost_desc:(a,b)=>(b.pack_cost||0)-(a.pack_cost||0)||byName(a,b),
+    used_desc:(a,b)=>usedCount(b.id)-usedCount(a.id)||byName(a,b),
+    used_asc:(a,b)=>usedCount(a.id)-usedCount(b.id)||byName(a,b),
+  };
+  list=list.sort(S[SORT]||S.cat);
+  const cnt=document.getElementById("cnt");
+  if(cnt) cnt.textContent=`${list.length}개 표시 (전체 ${DATA.ingredients.length}개)`
+    + (CATF!=="전체"?` · 분류: ${CATF}`:"") + (q?` · 검색: "${q}"`:"");
+
+  const dupSet=dupNames();
   let html="",cat=null;
   for(const i of list){
     const c=i.category||"미분류";
-    if(c!==cat){cat=c;html+=`<tr class="cat"><td colspan="8">${c}</td></tr>`;}
+    if(SORT==="cat"&&c!==cat){cat=c;html+=`<tr class="cat"><td colspan="8">${c}</td></tr>`;}
     const n=usedCount(i.id);
     html+=`<tr>
-      <td class="l ed" onclick="editCell(this,${i.id},'name',true)">${i.name}</td>
+      <td class="l ed" onclick="editCell(this,${i.id},'name',true)">${i.name}${
+        dupSet.has(nname(i.name))?'<span class="pill" style="background:var(--redbg);color:var(--red)">중복</span>':""}</td>
       <td class="l ed" onclick="editCell(this,${i.id},'category',true)">${i.category||"미분류"}</td>
       <td class="ed" onclick="editCell(this,${i.id},'unit',true)">${i.unit}</td>
       <td class="ed" onclick="editCell(this,${i.id},'pack_qty')">${w1(i.pack_qty)}</td>
@@ -138,6 +195,10 @@ function editCell(td,id,field,isText){
   const done=async(save)=>{
     if(save){
       const v=isText?inp.value.trim():(inp.value===""?null:+inp.value);
+      if(field==="name"&&v){
+        const d=findDup(v,id);
+        if(d){toast(`⚠ '${d.name}'(${d.unit})와 이름이 겹칩니다`);render();return;}
+      }
       if(v!==null&&v!==""&&v!==i[field]){
         i[field]=v;
         const j=await api("/ingredient",{...i});
@@ -161,6 +222,12 @@ async function addIng(){
   const category=document.getElementById("niCat").value.trim()||"미분류";
   const qty=+document.getElementById("niQty").value, cost=+document.getElementById("niCost").value;
   if(!name||!qty||!cost){toast("이름·구매량·구매가를 채워주세요");return;}
+  const dup=findDup(name);
+  if(dup){
+    toast(`⚠ '${dup.name}'(${dup.unit})가 이미 있습니다 — 그 자재를 수정하세요`);
+    Q=dup.name; CATF="전체"; render();       // 기존 자재를 바로 찾아준다
+    return;
+  }
   const j=await api("/ingredient",{name,unit,pack_qty:qty,pack_cost:cost,category});
   if(j){DATA.ingredients.push(j.ingredient);toast("등록 ✓");render();}
 }

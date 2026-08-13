@@ -712,6 +712,9 @@ def menu_ingredient_save(path_key):
     body = request.get_json(force=True) or {}
     try:
         row = db.ingredient_upsert(body, body.get("id"))
+    except db.DuplicateIngredient as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    try:
         affected = db.skus_using_ingredient(row["id"]) if row else []
         updated = db.recompute_costs(affected) if affected else {}
         return jsonify({"ok": True, "ingredient": row, "recomputed": updated})
