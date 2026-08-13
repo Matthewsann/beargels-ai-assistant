@@ -544,6 +544,31 @@ function target(cat){const t=DATA.settings.target_cost_rates||{};return (t[cat]?
 
 const lineCount=sku=>DATA.recipes.filter(r=>r.sku===sku).length;
 
+// 포장·소모품 판별 — 원가율의 분자는 '식자재'여야 목표(35% 등)와 비교가 된다.
+// 컵·뚜껑·스트로우는 실제로 나가는 돈이지만 식자재가 아니므로 따로 센다.
+// 분류를 '포장·소모품'으로 정리하기 전에는 이름으로도 잡아준다.
+const PACK_WORDS=["컵","뚜껑","스트로우","빨대","캐리어","봉투","용기","보틀병","홀더",
+  "포크","나이프","스푼","냅킨","트레이","랩","호일","파우치","캡","포장","박스","상자",
+  "띠지","스티커","소스통","유산지","시트"];
+function isPack(ing){
+  if(!ing) return false;
+  const c=ing.category||"";
+  if(c==="포장·소모품"||c==="비품·청소"||c==="비품") return true;
+  if(c&&c!=="미분류"&&!PACK_WORDS.some(w=>c.includes(w))) return false;  // 분류가 잡혔으면 그 말을 믿는다
+  return PACK_WORDS.some(w=>ing.name.includes(w));
+}
+// {food, pack, total} 로 나눠 계산
+function costSplit(sku){
+  let food=0, pack=0;
+  for(const ln of DATA.recipes.filter(r=>r.sku===sku)){
+    const ing=DATA.ingredients.find(i=>i.id===ln.ingredient_id);
+    if(!ing) continue;
+    const amt=(+ln.qty||0)*unitCost(ing);
+    if(isPack(ing)) pack+=amt; else food+=amt;
+  }
+  return {food, pack, total:food+pack};
+}
+
 // 메뉴 목록 — 검색·분류·'레시피 없음' 필터. 탭하면 편집 화면으로.
 function renderRecList(){
   const q=MQ.trim();
@@ -561,17 +586,20 @@ function renderRecList(){
   for(const it of list){
     const n=lineCount(it.sku);
     const cost=it.ingredient_cost;
+    const sp=costSplit(it.sku);
     // 원가율 기준은 매장가 — 배달가는 수수료를 얹어 올린 값이라 원가율이
     // 실제보다 좋아 보인다. 매장가가 없는 배달 전용 메뉴만 배달가로 계산.
     const base=it.store_price??it.delivery_price;
     const basis=it.store_price!=null?"매장":"배달";
-    const rate=(cost!=null&&base)?cost/base:null;
+    // 목표 원가율과 견주는 분자는 '식자재'다. 포장은 따로 보여준다.
+    const rate=(n&&base)?sp.food/base:null;
     const tg=target(it.category);
     rows+=`<tr onclick="SKU='${it.sku}';render()" style="cursor:pointer">
       <td class="l"><b>${it.name}</b><br><span class="sub">${it.sku} · ${it.category||""}</span></td>
-      <td>${cost==null?'<span class="sub">원가 없음</span>':won(cost)}</td>
+      <td>${cost==null&&!n?'<span class="sub">원가 없음</span>':
+        `${won(n?sp.food:cost)}${sp.pack?`<br><span class="sub">+포장 ${won(sp.pack)}</span>`:""}`}</td>
       <td style="${rate!=null&&rate>tg?"color:var(--red);font-weight:700":""}">${rate==null?"–":
-        `${(rate*100).toFixed(1)}%<br><span class="sub" style="font-weight:400">${basis}가</span>`}</td>
+        `${(rate*100).toFixed(1)}%<br><span class="sub" style="font-weight:400">${basis}가·식자재</span>`}</td>
       <td>${n?`${n}줄`:'<span class="pill" style="background:var(--amberbg);color:var(--amber)">없음</span>'}</td>
       <td class="sub">›</td></tr>`;
   }
@@ -582,11 +610,13 @@ function renderRecList(){
       `<span class="fchip ${c===MCAT?"on":""}" onclick="MCAT='${c}';renderRecList()">${c}<small>${n}</small></span>`).join("")}</div>
     <div class="cnt">${list.length}개 표시 · 탭하면 레시피 편집</div>
     <div class="wrap"><table>
-      <tr><th class="l">메뉴</th><th>재료원가</th><th>원가율<br>(매장가)</th><th>레시피</th><th></th></tr>
+      <tr><th class="l">메뉴</th><th>원가<br>(식자재+포장)</th><th>원가율<br>(식자재)</th><th>레시피</th><th></th></tr>
       ${rows||`<tr><td colspan="5" class="empty">해당 메뉴 없음</td></tr>`}
     </table></div>
     <p class="note">· <b>레시피 없음</b> 칩을 누르면 원가가 아직 없는 메뉴만 모아 봅니다 — 여기부터 채우면 됩니다.<br>
-    · 원가율은 <b>매장가</b> 기준입니다 — 배달가는 수수료만큼 올려둔 값이라 원가율이 실제보다 낮게 보입니다. 매장에서 안 파는 메뉴만 배달가 기준(칸에 표시). 목표 초과는 빨간색.</p>`;
+    · 원가율은 <b>매장가 · 식자재</b> 기준입니다 — 배달가는 수수료만큼 올려둔 값이라 원가율이 실제보다 낮게 보이고,
+      컵·뚜껑 같은 <b>포장비는 식자재가 아니라서</b> 목표 원가율(35% 등)과 견주면 안 됩니다. 포장비는 옆에 따로 표시됩니다.
+      매장에서 안 파는 메뉴만 배달가 기준(칸에 표시). 목표 초과는 빨간색.</p>`;
 }
 
 function renderRec(){
@@ -601,38 +631,47 @@ function renderRec(){
   </div>`;
   {
     const lines=DATA.recipes.filter(r=>r.sku===SKU);
-    let total=0, rows="", ri=0;
+    let total=0, food=0, pack=0, rows="", ri=0;
     for(const ln of lines){
       const ing=DATA.ingredients.find(i=>i.id===ln.ingredient_id);
       if(!ing) continue;
       const q=(ln.id in REDITS)?REDITS[ln.id]:ln.qty;
       const amt=(+q||0)*unitCost(ing); total+=amt;
+      const pk=isPack(ing); if(pk) pack+=amt; else food+=amt;
       const qcell = RBULK
         ? `<td><input class="bcell${(ln.id in REDITS)?" chg":""}" type="number" step="any"
              data-r="${ri}" data-c="0" value="${q??""}"
              onchange="rEdit(${ln.id},this.value,this)" onkeydown="bKey(event)"> ${ing.unit}</td>`
         : `<td class="ed" onclick="editQty(this,${ln.id},${ln.ingredient_id},${ln.qty})">${w1(ln.qty)} ${ing.unit}</td>`;
       rows+=`<tr>
-        <td class="l">${ing.name}<span class="sub"> ${w1(unitCost(ing))}/${ing.unit}</span></td>
+        <td class="l">${ing.name}${pk?'<span class="pill">포장</span>':""}
+          <span class="sub"> ${w1(unitCost(ing))}/${ing.unit}</span></td>
         ${qcell}
         <td>${won(amt)}</td>
         <td><span class="del" onclick="delLine(${ln.id})">빼기</span></td></tr>`;
       ri++;
     }
     const tg=target(it.category);
-    const recStore=total?Math.ceil(total/tg/100)*100:null;
-    const recDeliv=total?Math.ceil(total/tg/(1-feeRate("coupang"))/100)*100:null;
+    // 포장비는 목표 원가율로 마크업할 대상이 아니라 그대로 얹는 실비다.
+    //   권장가 = 식자재 ÷ 목표원가율 + 포장비
+    const recStore=total?Math.ceil((food/tg+pack)/100)*100:null;
+    const recDeliv=total?Math.ceil((food/tg+pack)/(1-feeRate("coupang"))/100)*100:null;
+    const rs=it.store_price?food/it.store_price:null;      // 식자재 기준(목표와 비교)
     html+=`<div class="sum">
-      <div>재료원가 합계 <b class="big">${won(total)}원</b>
-        <span class="sub">(정본에 저장된 원가: ${won(it.ingredient_cost)}원)</span></div>
+      <div>식자재 원가 <b class="big">${won(food)}원</b>
+        ${pack?`<span class="sub">+ 포장·소모품 ${won(pack)}원 = 합계 <b>${won(total)}원</b></span>`
+               :`<span class="sub">(포장 없음)</span>`}
+        <br><span class="sub">정본에 저장된 원가: ${won(it.ingredient_cost)}원 (합계 기준)</span></div>
       <div style="margin-top:6px">목표 원가율 ${(tg*100).toFixed(0)}% 기준 —
         권장 매장가 <b class="rec">${won(recStore)}원</b> ·
         권장 배달가 <b class="rec">${won(recDeliv)}원</b>
-        <span class="sub">(쿠팡 수수료 ${(feeRate("coupang")*100).toFixed(1)}% 감안)</span></div>
-      <div style="margin-top:6px;border-top:1px dashed var(--line);padding-top:6px">현재 원가율 —
-        ${it.store_price?`매장 <b style="${total/it.store_price>tg?"color:var(--red)":""}">${(total/it.store_price*100).toFixed(1)}%</b>`:'매장 <span class="sub">판매 안 함</span>'}
-        ${it.delivery_price?` · 배달 <b>${(total/it.delivery_price*100).toFixed(1)}%</b>
-          <span class="sub">(수수료 빼면 실질 ${(total/(it.delivery_price*(1-feeRate("coupang")))*100).toFixed(1)}%)</span>`:""}
+        <span class="sub">(식자재 ÷ ${(tg*100).toFixed(0)}% + 포장비${pack?` ${won(pack)}원`:""}, 배달은 쿠팡 수수료 ${(feeRate("coupang")*100).toFixed(1)}% 감안)</span></div>
+      <div style="margin-top:6px;border-top:1px dashed var(--line);padding-top:6px">현재 <b>식자재</b> 원가율 —
+        ${it.store_price?`매장 <b style="${rs>tg?"color:var(--red)":""}">${(rs*100).toFixed(1)}%</b>`:'매장 <span class="sub">판매 안 함</span>'}
+        ${it.delivery_price?` · 배달 <b>${(food/it.delivery_price*100).toFixed(1)}%</b>
+          <span class="sub">(수수료 빼면 실질 ${(food/(it.delivery_price*(1-feeRate("coupang")))*100).toFixed(1)}%)</span>`:""}
+        ${pack?`<br><span class="sub">포장까지 넣으면 매장 ${it.store_price?(total/it.store_price*100).toFixed(1)+"%":"–"}
+          · 배달 ${it.delivery_price?(total/it.delivery_price*100).toFixed(1)+"%":"–"} — 목표 원가율과 견줄 숫자는 위쪽(식자재)입니다.</span>`:""}
       </div>
       <div class="sub" style="margin-top:4px">현재 판매가: 매장 ${won(it.store_price)} · 배달 ${won(it.delivery_price)}
         — <a href="/{{ key }}/menu">가격 수정은 메뉴/원가에서</a></div>
@@ -652,7 +691,10 @@ function renderRec(){
     </div>
     <p class="note">· 사용량은 고친 뒤 <b>엔터</b>나 <b>✓</b> 로 저장합니다.
     여러 줄을 한꺼번에 고치려면 <b>✏️ 사용량 일괄</b>을 켜세요(Enter=아래 줄, 맨 아래 저장으로 한 번에 반영).<br>\n    · 사용량을 고치거나 재료를 넣고 빼면 <b>원가가 즉시 재계산되어 정본에 저장</b>됩니다.<br>
-    · 신메뉴는 메뉴/원가 화면에서 먼저 등록한 뒤, 여기서 레시피를 붙이세요.</p>`;
+    · 신메뉴는 메뉴/원가 화면에서 먼저 등록한 뒤, 여기서 레시피를 붙이세요.<br>
+    · <b>컵·뚜껑·스트로우 같은 포장은 레시피에 넣는 게 맞습니다</b> — 실제로 나가는 돈이니까요.
+      다만 목표 원가율과 견줄 숫자는 <b>식자재</b>이므로 화면에서 따로 셉니다.
+      분류를 <b>포장·소모품</b>으로 두면 확실히 갈라지고, 아직 분류가 없으면 이름으로 알아서 잡습니다(<span class="pill">포장</span> 표시).</p>`;
   }
   document.getElementById("main").innerHTML=html;
   rBar();
