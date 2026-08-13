@@ -743,6 +743,100 @@ def order_stats(days=90):
     }
 
 
+# ---------------------------------------------------------------------------
+# 자재(원부자재) · 레시피 · 원가 자동 계산
+# ---------------------------------------------------------------------------
+
+_ING_COLS = ("name", "unit", "pack_qty", "pack_cost", "category", "note")
+
+
+def ingredients_all():
+    return (get_client().table("ingredients").select("*")
+            .order("category").order("name").execute().data)
+
+
+def recipes_all():
+    return get_client().table("menu_recipes").select("*").execute().data
+
+
+def ingredient_upsert(fields, ing_id=None):
+    payload = {k: fields.get(k) for k in _ING_COLS if k in fields}
+    payload["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    sb = get_client()
+    if ing_id:
+        rows = sb.table("ingredients").update(payload).eq("id", ing_id).execute().data
+    else:
+        rows = sb.table("ingredients").upsert(
+            payload, on_conflict="name,unit").execute().data
+    return (rows or [None])[0]
+
+
+def ingredient_delete(ing_id):
+    """자재 삭제 — 레시피에서 쓰는 중이면 DB 제약(restrict)으로 실패한다."""
+    get_client().table("ingredients").delete().eq("id", ing_id).execute()
+
+
+def recipe_upsert(sku, ingredient_id, qty):
+    return (get_client().table("menu_recipes").upsert(
+        {"sku": sku, "ingredient_id": ingredient_id, "qty": qty,
+         "updated_at": datetime.utcnow().isoformat() + "Z"},
+        on_conflict="sku,ingredient_id").execute().data or [None])[0]
+
+
+def recipe_delete(rid):
+    rows = (get_client().table("menu_recipes").select("sku")
+            .eq("id", rid).execute().data)
+    get_client().table("menu_recipes").delete().eq("id", rid).execute()
+    return rows[0]["sku"] if rows else None
+
+
+def recompute_costs(skus=None, force=False):
+    """레시피 기반으로 menu_items.ingredient_cost 재계산.
+
+    Args:
+        skus: 대상 SKU 목록(None=레시피가 있는 전 메뉴).
+        force: True 면 '웹에서 직접 입력' 원가도 덮어쓴다. 레시피를 사람이
+               직접 고친 직후에는 True 로 부른다(레시피가 더 최신 의사표시).
+    Returns: 갱신된 {sku: cost}
+    """
+    sb = get_client()
+    ings = {i["id"]: i for i in sb.table("ingredients").select("*").execute().data}
+    q = sb.table("menu_recipes").select("*")
+    if skus:
+        q = q.in_("sku", list(skus))
+    lines = q.execute().data
+    by_sku = {}
+    for ln in lines:
+        by_sku.setdefault(ln["sku"], []).append(ln)
+    if not by_sku:
+        return {}
+    items = (sb.table("menu_items").select("sku,ingredient_cost,cost_source")
+             .in_("sku", list(by_sku)).execute().data)
+    src_by = {i["sku"]: (i.get("cost_source") or "") for i in items}
+    updated = {}
+    stamp = f"레시피 자동계산({date.today().isoformat()})"
+    for sku, lns in by_sku.items():
+        if not force and src_by.get(sku, "").startswith("웹에서 직접 입력"):
+            continue
+        total = 0.0
+        for ln in lns:
+            ing = ings.get(ln["ingredient_id"])
+            if not ing or not ing.get("pack_qty"):
+                continue
+            total += float(ln["qty"]) * float(ing["pack_cost"]) / float(ing["pack_qty"])
+        cost = round(total, 1)
+        sb.table("menu_items").update(
+            {"ingredient_cost": cost, "cost_source": stamp}).eq("sku", sku).execute()
+        updated[sku] = cost
+    return updated
+
+
+def skus_using_ingredient(ing_id):
+    rows = (get_client().table("menu_recipes").select("sku")
+            .eq("ingredient_id", ing_id).execute().data)
+    return sorted({r["sku"] for r in rows})
+
+
 def menu_snapshots_all():
     return (get_client().table("menu_channel_snapshots").select("*")
             .order("channel").execute().data)

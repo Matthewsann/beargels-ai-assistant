@@ -566,19 +566,86 @@ def menu_tasks(path_key):
     return render_template("menu_tasks.html", key=path_key)
 
 
+@app.route("/<path_key>/menu/ingredients")
+def menu_ingredients(path_key):
+    """자재(원부자재)·레시피 관리 — 원가 자동 계산의 근거."""
+    check(path_key)
+    return render_template("menu_ingredients.html", key=path_key)
+
+
+@app.route("/<path_key>/menu/ingredient", methods=["POST"])
+def menu_ingredient_save(path_key):
+    check(path_key)
+    body = request.get_json(force=True) or {}
+    try:
+        row = db.ingredient_upsert(body, body.get("id"))
+        affected = db.skus_using_ingredient(row["id"]) if row else []
+        updated = db.recompute_costs(affected) if affected else {}
+        return jsonify({"ok": True, "ingredient": row, "recomputed": updated})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"자재 저장 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/menu/ingredient/<int:ing_id>/delete", methods=["POST"])
+def menu_ingredient_delete(path_key, ing_id):
+    check(path_key)
+    try:
+        db.ingredient_delete(ing_id)
+        return jsonify({"ok": True})
+    except Exception as e:  # noqa: BLE001 — 레시피에서 사용 중이면 여기로 온다
+        return jsonify({"ok": False,
+                        "error": "레시피에서 사용 중이라 삭제할 수 없습니다. "
+                                 "먼저 해당 메뉴 레시피에서 빼주세요."}), 400
+
+
+@app.route("/<path_key>/menu/recipe", methods=["POST"])
+def menu_recipe_save(path_key):
+    check(path_key)
+    body = request.get_json(force=True) or {}
+    try:
+        row = db.recipe_upsert(body["sku"], body["ingredient_id"], body["qty"])
+        # 레시피를 사람이 직접 고친 것 — 수기 원가보다 레시피가 최신 의사표시.
+        updated = db.recompute_costs([body["sku"]], force=True)
+        return jsonify({"ok": True, "line": row, "recomputed": updated})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"레시피 저장 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/menu/recipe/<int:rid>/delete", methods=["POST"])
+def menu_recipe_delete(path_key, rid):
+    check(path_key)
+    try:
+        sku = db.recipe_delete(rid)
+        updated = db.recompute_costs([sku], force=True) if sku else {}
+        return jsonify({"ok": True, "recomputed": updated})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+def _safe(fn):
+    """마이그레이션 전(테이블 없음)이면 빈 목록 — 화면이 죽지 않게."""
+    try:
+        return fn()
+    except Exception:  # noqa: BLE001
+        return []
+
+
 @app.route("/<path_key>/menu/data")
 def menu_data(path_key):
     check(path_key)
     try:
-        try:
-            snapshots = db.menu_snapshots_all()
-        except Exception:  # noqa: BLE001 — 006 마이그레이션 전이면 테이블이 없다
-            snapshots = []
+        snapshots = _safe(db.menu_snapshots_all)
         return jsonify({
             "items": db.menu_all(),
             "channels": db.menu_channels_all(),
             "settings": db.menu_settings_all(),
             "snapshots": snapshots,
+            "ingredients": _safe(db.ingredients_all),
+            "recipes": _safe(db.recipes_all),
         })
     except Exception as e:  # noqa: BLE001
         return jsonify({"error": str(e)[:200]}), 500
