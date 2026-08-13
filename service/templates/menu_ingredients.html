@@ -289,13 +289,17 @@ function renderRecList(){
   for(const it of list){
     const n=lineCount(it.sku);
     const cost=it.ingredient_cost;
-    const price=it.delivery_price??it.store_price;
-    const rate=(cost!=null&&price)?cost/price:null;
+    // 원가율 기준은 매장가 — 배달가는 수수료를 얹어 올린 값이라 원가율이
+    // 실제보다 좋아 보인다. 매장가가 없는 배달 전용 메뉴만 배달가로 계산.
+    const base=it.store_price??it.delivery_price;
+    const basis=it.store_price!=null?"매장":"배달";
+    const rate=(cost!=null&&base)?cost/base:null;
     const tg=target(it.category);
     rows+=`<tr onclick="SKU='${it.sku}';render()" style="cursor:pointer">
       <td class="l"><b>${it.name}</b><br><span class="sub">${it.sku} · ${it.category||""}</span></td>
       <td>${cost==null?'<span class="sub">원가 없음</span>':won(cost)}</td>
-      <td class="${rate!=null&&rate>tg?"":""}" style="${rate!=null&&rate>tg?"color:var(--red);font-weight:700":""}">${rate==null?"–":(rate*100).toFixed(1)+"%"}</td>
+      <td style="${rate!=null&&rate>tg?"color:var(--red);font-weight:700":""}">${rate==null?"–":
+        `${(rate*100).toFixed(1)}%<br><span class="sub" style="font-weight:400">${basis}가</span>`}</td>
       <td>${n?`${n}줄`:'<span class="pill" style="background:var(--amberbg);color:var(--amber)">없음</span>'}</td>
       <td class="sub">›</td></tr>`;
   }
@@ -306,11 +310,11 @@ function renderRecList(){
       `<span class="fchip ${c===MCAT?"on":""}" onclick="MCAT='${c}';renderRecList()">${c}<small>${n}</small></span>`).join("")}</div>
     <div class="cnt">${list.length}개 표시 · 탭하면 레시피 편집</div>
     <div class="wrap"><table>
-      <tr><th class="l">메뉴</th><th>재료원가</th><th>원가율<br>(배달)</th><th>레시피</th><th></th></tr>
+      <tr><th class="l">메뉴</th><th>재료원가</th><th>원가율<br>(매장가)</th><th>레시피</th><th></th></tr>
       ${rows||`<tr><td colspan="5" class="empty">해당 메뉴 없음</td></tr>`}
     </table></div>
     <p class="note">· <b>레시피 없음</b> 칩을 누르면 원가가 아직 없는 메뉴만 모아 봅니다 — 여기부터 채우면 됩니다.<br>
-    · 원가율은 배달가 기준이며, 카테고리 목표를 넘으면 빨간색입니다.</p>`;
+    · 원가율은 <b>매장가</b> 기준입니다 — 배달가는 수수료만큼 올려둔 값이라 원가율이 실제보다 낮게 보입니다. 매장에서 안 파는 메뉴만 배달가 기준(칸에 표시). 목표 초과는 빨간색.</p>`;
 }
 
 function renderRec(){
@@ -345,6 +349,11 @@ function renderRec(){
         권장 매장가 <b class="rec">${won(recStore)}원</b> ·
         권장 배달가 <b class="rec">${won(recDeliv)}원</b>
         <span class="sub">(쿠팡 수수료 ${(feeRate("coupang")*100).toFixed(1)}% 감안)</span></div>
+      <div style="margin-top:6px;border-top:1px dashed var(--line);padding-top:6px">현재 원가율 —
+        ${it.store_price?`매장 <b style="${total/it.store_price>tg?"color:var(--red)":""}">${(total/it.store_price*100).toFixed(1)}%</b>`:'매장 <span class="sub">판매 안 함</span>'}
+        ${it.delivery_price?` · 배달 <b>${(total/it.delivery_price*100).toFixed(1)}%</b>
+          <span class="sub">(수수료 빼면 실질 ${(total/(it.delivery_price*(1-feeRate("coupang")))*100).toFixed(1)}%)</span>`:""}
+      </div>
       <div class="sub" style="margin-top:4px">현재 판매가: 매장 ${won(it.store_price)} · 배달 ${won(it.delivery_price)}
         — <a href="/{{ key }}/menu">가격 수정은 메뉴/원가에서</a></div>
     </div>
