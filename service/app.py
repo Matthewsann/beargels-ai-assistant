@@ -725,6 +725,22 @@ def menu_ingredient_save(path_key):
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
+@app.route("/<path_key>/menu/ingredient/merge", methods=["POST"])
+def menu_ingredient_merge(path_key):
+    """중복 등록된 자재 둘을 하나로 — 레시피를 옮기고 남는 쪽을 지운다."""
+    check(path_key)
+    body = request.get_json(force=True) or {}
+    try:
+        out = db.ingredient_merge(body.get("keep_id"), body.get("drop_id"))
+        return jsonify({"ok": True, **out})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"자재 합치기 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
 @app.route("/<path_key>/menu/ingredient/<int:ing_id>/delete", methods=["POST"])
 def menu_ingredient_delete(path_key, ing_id):
     check(path_key)
