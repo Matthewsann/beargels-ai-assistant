@@ -58,6 +58,18 @@ padding:4px 11px;font-size:12px;cursor:pointer;white-space:nowrap;color:var(--in
 .bar select{border:1px solid var(--line);border-radius:8px;padding:7px 8px;font-size:12px;background:var(--card);color:var(--ink)}
 .cnt{font-size:11px;color:var(--sub);margin:4px 2px}
 .faxis{flex:0 0 auto;align-self:center;font-size:10px;color:var(--sub);margin-right:2px}
+.ac{position:relative;flex:1;min-width:150px}
+.ac input{width:100%}
+.aclist{position:absolute;left:0;right:0;top:calc(100% + 3px);z-index:30;background:var(--card);
+border:1px solid var(--line);border-radius:8px;max-height:250px;overflow:auto;display:none;
+box-shadow:0 8px 22px rgba(0,0,0,.10)}
+.aclist.on{display:block}
+.acitem{padding:9px 11px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--line);
+display:flex;justify-content:space-between;gap:8px}
+.acitem:last-child{border-bottom:none}
+.acitem.hl{background:var(--brownbg)}
+.acitem .sub{white-space:nowrap}
+.acnone{padding:10px 11px;font-size:12px;color:var(--sub)}
 </style>
 </head>
 <body>
@@ -362,8 +374,11 @@ function renderRec(){
       ${rows||`<tr><td colspan="4" class="empty">아직 레시피가 없습니다. 아래에서 재료를 추가하세요.</td></tr>`}
     </table></div>
     <div class="addrow">
-      <input id="nlIng" list="ingList" placeholder="재료 이름 입력·선택" style="flex:1;min-width:140px">
-      <datalist id="ingList">${DATA.ingredients.map(i=>`<option value="${i.name} (${i.unit})">${w1(unitCost(i))}원/${i.unit}</option>`).join("")}</datalist>
+      <div class="ac">
+        <input id="nlIng" placeholder="재료 이름 (초성도 가능)" autocomplete="off"
+          oninput="acFilter()" onfocus="acFilter()" onkeydown="acKey(event)" onblur="acBlur()">
+        <div class="aclist" id="acList"></div>
+      </div>
       <input id="nlQty" type="number" step="any" placeholder="사용량" style="width:80px">
       <button onclick="addLine()">+ 추가</button>
     </div>
@@ -372,6 +387,66 @@ function renderRec(){
   }
   document.getElementById("main").innerHTML=html;
 }
+// ── 재료 자동완성 ───────────────────────────────────────────
+// 브라우저 datalist 는 한글 조합 중 목록을 갱신하지 못해(두 글자부터 사라짐)
+// 직접 만든다. 이름·초성(ㅊㅋ→초코) 둘 다로 찾는다.
+const CHO="ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+function chosung(str){
+  return [...(str||"")].map(ch=>{
+    const c=ch.charCodeAt(0)-0xAC00;
+    return (c>=0&&c<=11171)?CHO[Math.floor(c/588)]:ch;
+  }).join("");
+}
+let AC_ID=null, AC_LIST=[], AC_HL=0;
+
+function acMatches(q){
+  const nq=nname(q);
+  if(!nq) return DATA.ingredients.slice(0,12);
+  const isCho=[...nq].every(c=>CHO.includes(c));
+  return DATA.ingredients.filter(i=>{
+    const n=nname(i.name);
+    if(n.includes(nq)) return true;
+    if(isCho && chosung(n).includes(nq)) return true;
+    return false;
+  }).slice(0,20);
+}
+function acFilter(){
+  const inp=document.getElementById("nlIng"), box=document.getElementById("acList");
+  if(!inp||!box) return;
+  AC_LIST=acMatches(inp.value); AC_HL=0;
+  if(!AC_LIST.length){
+    box.innerHTML=`<div class="acnone">없는 재료입니다 — 자재 탭에서 먼저 등록하세요</div>`;
+    box.classList.add("on"); return;
+  }
+  box.innerHTML=AC_LIST.map((i,idx)=>
+    `<div class="acitem ${idx===AC_HL?"hl":""}" onmousedown="acPick(${idx})">
+      <span>${i.name}</span>
+      <span class="sub">${w1(unitCost(i))}원/${i.unit}</span></div>`).join("");
+  box.classList.add("on");
+}
+function acPick(idx){
+  const i=AC_LIST[idx]; if(!i) return;
+  AC_ID=i.id;
+  const inp=document.getElementById("nlIng");
+  inp.value=i.name;
+  document.getElementById("acList").classList.remove("on");
+  const q=document.getElementById("nlQty");
+  q.placeholder=`사용량 (${i.unit})`; q.focus();
+}
+function acKey(e){
+  const box=document.getElementById("acList");
+  if(e.key==="ArrowDown"||e.key==="ArrowUp"){
+    e.preventDefault();
+    AC_HL=Math.max(0,Math.min(AC_LIST.length-1,AC_HL+(e.key==="ArrowDown"?1:-1)));
+    [...box.querySelectorAll(".acitem")].forEach((el,i)=>el.classList.toggle("hl",i===AC_HL));
+    return;
+  }
+  if(e.key==="Enter"){ e.preventDefault(); if(AC_LIST.length) acPick(AC_HL); return; }
+  if(e.key==="Escape"){ box.classList.remove("on"); }
+  AC_ID=null;   // 다시 타이핑하면 선택 해제
+}
+function acBlur(){ setTimeout(()=>document.getElementById("acList")?.classList.remove("on"),150); }
+
 function editQty(td,rid,iid,cur){
   if(td.querySelector("input"))return;
   td.innerHTML=`<input type="number" step="any" value="${cur}">`;
@@ -389,12 +464,15 @@ function editQty(td,rid,iid,cur){
 async function addLine(){
   const v=document.getElementById("nlIng").value.trim();
   const qty=+document.getElementById("nlQty").value;
-  const m=v.match(/^(.*) \(([^)]+)\)$/);
-  const ing=DATA.ingredients.find(i=>m?(i.name===m[1]&&i.unit===m[2]):i.name===v);
+  let ing=AC_ID?DATA.ingredients.find(i=>i.id===AC_ID):null;
+  if(!ing){                                  // 직접 타이핑만 한 경우 이름으로 찾기
+    const cands=DATA.ingredients.filter(i=>nname(i.name)===nname(v));
+    ing=cands.length===1?cands[0]:null;
+  }
   if(!ing){toast("목록에서 재료를 선택하세요 (없으면 자재 탭에서 먼저 등록)");return;}
   if(!qty){toast("사용량을 입력하세요");return;}
   const j=await api("/recipe",{sku:SKU,ingredient_id:ing.id,qty});
-  if(j) syncRecipe(j);
+  if(j){ AC_ID=null; syncRecipe(j); }
   render();
 }
 async function delLine(rid){
