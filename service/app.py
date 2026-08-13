@@ -682,6 +682,22 @@ def menu_ingredients(path_key):
     return render_template("menu_ingredients.html", key=path_key)
 
 
+@app.route("/<path_key>/menu/ingredients/seed", methods=["POST"])
+def menu_ingredients_seed(path_key):
+    """자재·레시피 초기 데이터 주입 — 웹에서 1회 클릭. 재실행해도 안전."""
+    check(path_key)
+    try:
+        import json as _json
+        spec_path = ROOT / "data" / "ingredients_seed.json"
+        spec = _json.loads(spec_path.read_text(encoding="utf-8"))
+        result = db.seed_ingredients_bulk(spec)
+        return jsonify({"ok": True, **result})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"자재 시드 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
 @app.route("/<path_key>/menu/ingredient", methods=["POST"])
 def menu_ingredient_save(path_key):
     check(path_key)
