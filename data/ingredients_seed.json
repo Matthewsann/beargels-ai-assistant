@@ -1,0 +1,4616 @@
+{
+ "ingredients": [
+  {
+   "name": "L자봉투 23x23",
+   "unit": "ea",
+   "pack_qty": 1000.0,
+   "pack_cost": 66000.0,
+   "category": null
+  },
+  {
+   "name": "PET 돔형 뚜껑 (92파이 전용) 국산",
+   "unit": "ea",
+   "pack_qty": 1000.0,
+   "pack_cost": 20000.0,
+   "category": null
+  },
+  {
+   "name": "강력분",
+   "unit": "g",
+   "pack_qty": 1000.0,
+   "pack_cost": 2060.0,
+   "category": null
+  },
+  {
+   "name": "계란",
+   "unit": "g",
+   "pack_qty": 1800.0,
+   "pack_cost": 16680.0,
+   "category": null
+  },
+  {
+   "name": "계란듬뿍샐러드_쿠팡",
+   "unit": "g",
+   "pack_qty": 1800.0,
+   "pack_cost": 25700.0,
+   "category": null
+  },
+  {
+   "name": "귤",
+   "unit": "ea",
+   "pack_qty": 15.0,
+   "pack_cost": 13890.0,
+   "category": null
+  },
+  {
+   "name": "냉동애플망고",
+   "unit": "ea",
+   "pack_qty": 2000.0,
+   "pack_cost": 11120.0,
+   "category": null
+  },
+  {
+   "name": "냉동애플망고",
+   "unit": "g",
+   "pack_qty": 1000.0,
+   "pack_cost": 15990.0,
+   "category": null
+  },
+  {
+   "name": "녹차케이크",
+   "unit": "ea",
+   "pack_qty": 6.0,
+   "pack_cost": 17600.0,
+   "category": null
+  },
+  {
+   "name": "뉴욕치즈케이크",
+   "unit": "ea",
+   "pack_qty": 5.0,
+   "pack_cost": 19800.0,
+   "category": null
+  },
+  {
+   "name": "당근케이크",
+   "unit": "ea",
+   "pack_qty": 6.0,
+   "pack_cost": 20350.0,
+   "category": null
+  },
+  {
+   "name": "동물성생크림",
+   "unit": "ea",
+   "pack_qty": 5000.0,
+   "pack_cost": 44900.0,
+   "category": null
+  },
+  {
+   "name": "두바이필링",
+   "unit": "ea",
+   "pack_qty": 810.0,
+   "pack_cost": 25.85,
+   "category": null
+  },
+  {
+   "name": "땅콩버터",
+   "unit": "g",
+   "pack_qty": 900.0,
+   "pack_cost": 9900.0,
+   "category": null
+  },
+  {
+   "name": "레몬주스",
+   "unit": "g",
+   "pack_qty": 930.0,
+   "pack_cost": 3322.0,
+   "category": null
+  },
+  {
+   "name": "로투스",
+   "unit": "ea",
+   "pack_qty": 50.0,
+   "pack_cost": 5900.0,
+   "category": null
+  },
+  {
+   "name": "리본",
+   "unit": "ea",
+   "pack_qty": 100.0,
+   "pack_cost": 10000.0,
+   "category": null
+  },
+  {
+   "name": "리와인드 펄프용기(2칸)",
+   "unit": "ea",
+   "pack_qty": 50.0,
+   "pack_cost": 14300.0,
+   "category": null
+  },
+  {
+   "name": "리와인드 펄프용기(2칸)뚜껑",
+   "unit": "ea",
+   "pack_qty": 50.0,
+   "pack_cost": 8470.0,
+   "category": null
+  },
+  {
+   "name": "망고",
+   "unit": "ea",
+   "pack_qty": 4.0,
+   "pack_cost": 14890.0,
+   "category": null
+  },
+  {
+   "name": "멜론",
+   "unit": "ea",
+   "pack_qty": 12.0,
+   "pack_cost": 29980.0,
+   "category": null
+  },
+  {
+   "name": "모짜렐라베이글",
+   "unit": "ea",
+   "pack_qty": 6.0,
+   "pack_cost": 5687.0,
+   "category": null
+  },
+  {
+   "name": "바나나",
+   "unit": "ea",
+   "pack_qty": 2.0,
+   "pack_cost": 2690.0,
+   "category": null
+  },
+  {
+   "name": "박력분",
+   "unit": "g",
+   "pack_qty": 2000.0,
+   "pack_cost": 4120.0,
+   "category": null
+  },
+  {
+   "name": "배달료",
+   "unit": "ea",
+   "pack_qty": 1.0,
+   "pack_cost": 3300.0,
+   "category": null
+  },
+  {
+   "name": "베이글 반조각",
+   "unit": "ea",
+   "pack_qty": 6.0,
+   "pack_cost": 4345.0,
+   "category": null
+  },
+  {
+   "name": "베이킹소다",
+   "unit": "g",
+   "pack_qty": 170.0,
+   "pack_cost": 3190.0,
+   "category": null
+  },
+  {
+   "name": "베이킹파우더",
+   "unit": "g",
+   "pack_qty": 170.0,
+   "pack_cost": 3180.0,
+   "category": null
+  },
+  {
+   "name": "샐러드믹스",
+   "unit": "ea",
+   "pack_qty": 1500.0,
+   "pack_cost": 10580.0,
+   "category": null
+  },
+  {
+   "name": "샤인머스켓",
+   "unit": "ea",
+   "pack_qty": 80.0,
+   "pack_cost": 21170.0,
+   "category": null
+  },
+  {
+   "name": "설탕시럽",
+   "unit": "ml",
+   "pack_qty": 3000.0,
+   "pack_cost": 8100.0,
+   "category": null
+  },
+  {
+   "name": "쇼콜라케이크",
+   "unit": "ea",
+   "pack_qty": 5.0,
+   "pack_cost": 13200.0,
+   "category": null
+  },
+  {
+   "name": "수박",
+   "unit": "ea",
+   "pack_qty": 4000.0,
+   "pack_cost": 19900.0,
+   "category": null
+  },
+  {
+   "name": "순수우유케이크",
+   "unit": "ea",
+   "pack_qty": 5.0,
+   "pack_cost": 19140.0,
+   "category": null
+  },
+  {
+   "name": "스트로우",
+   "unit": "ea",
+   "pack_qty": 500.0,
+   "pack_cost": 5280.0,
+   "category": null
+  },
+  {
+   "name": "스프링클",
+   "unit": "g",
+   "pack_qty": 200.0,
+   "pack_cost": 4400.0,
+   "category": null
+  },
+  {
+   "name": "실링지",
+   "unit": "ea",
+   "pack_qty": 500.0,
+   "pack_cost": 6500.0,
+   "category": null
+  },
+  {
+   "name": "악마의초코케이크",
+   "unit": "ea",
+   "pack_qty": 5.0,
+   "pack_cost": 20900.0,
+   "category": null
+  },
+  {
+   "name": "앙앙버터 치아바타 샌드위치",
+   "unit": "ea",
+   "pack_qty": 1.0,
+   "pack_cost": 3035.67,
+   "category": null
+  },
+  {
+   "name": "애플망고스무디",
+   "unit": "ml",
+   "pack_qty": 1800.0,
+   "pack_cost": 15950.0,
+   "category": null
+  },
+  {
+   "name": "양상추",
+   "unit": "g",
+   "pack_qty": 1000.0,
+   "pack_cost": 8500.0,
+   "category": null
+  },
+  {
+   "name": "어니언후레이크",
+   "unit": "g",
+   "pack_qty": 1000.0,
+   "pack_cost": 13200.0,
+   "category": null
+  },
+  {
+   "name": "에그마요 무슈 치아바타 샌드위치",
+   "unit": "ea",
+   "pack_qty": 1.0,
+   "pack_cost": 2873.35,
+   "category": null
+  },
+  {
+   "name": "에스프레소",
+   "unit": "g",
+   "pack_qty": 1000.0,
+   "pack_cost": 25300.0,
+   "category": null
+  },
+  {
+   "name": "연유",
+   "unit": "g",
+   "pack_qty": 3000.0,
+   "pack_cost": 25740.0,
+   "category": null
+  },
+  {
+   "name": "오렌지 3중 내열컵",
+   "unit": "ea",
+   "pack_qty": 500.0,
+   "pack_cost": 45000.0,
+   "category": null
+  },
+  {
+   "name": "오리엔탈",
+   "unit": "g",
+   "pack_qty": 2000.0,
+   "pack_cost": 7590.0,
+   "category": null
+  },
+  {
+   "name": "요거트 크림치즈 생크림",
+   "unit": "ea",
+   "pack_qty": 1.0,
+   "pack_cost": 6985.48,
+   "category": null
+  },
+  {
+   "name": "요거트파우더",
+   "unit": "ea",
+   "pack_qty": 2000.0,
+   "pack_cost": 15720.0,
+   "category": null
+  },
+  {
+   "name": "인절미가루",
+   "unit": "g",
+   "pack_qty": 1000.0,
+   "pack_cost": 8300.0,
+   "category": null
+  },
+  {
+   "name": "자몽",
+   "unit": "ea",
+   "pack_qty": 800.0,
+   "pack_cost": 7490.0,
+   "category": null
+  },
+  {
+   "name": "잠봉뵈르 베이글 샌드위치",
+   "unit": "ea",
+   "pack_qty": 1.0,
+   "pack_cost": 3794.42,
+   "category": null
+  },
+  {
+   "name": "잠봉뵈르 치아바타 샌드위치",
+   "unit": "ea",
+   "pack_qty": 1.0,
+   "pack_cost": 4400.41,
+   "category": null
+  },
+  {
+   "name": "천도복숭아",
+   "unit": "ea",
+   "pack_qty": 7.0,
+   "pack_cost": 7900.0,
+   "category": null
+  },
+  {
+   "name": "초코펜_초코",
+   "unit": "ea",
+   "pack_qty": 40.0,
+   "pack_cost": 20799.0,
+   "category": null
+  },
+  {
+   "name": "초코펜_화이트",
+   "unit": "ea",
+   "pack_qty": 40.0,
+   "pack_cost": 23920.0,
+   "category": null
+  },
+  {
+   "name": "치즈케이크",
+   "unit": "ea",
+   "pack_qty": 5.0,
+   "pack_cost": 12650.0,
+   "category": null
+  },
+  {
+   "name": "치킨베이스",
+   "unit": "g",
+   "pack_qty": 1600.0,
+   "pack_cost": 18523.0,
+   "category": null
+  },
+  {
+   "name": "카라카라오렌지",
+   "unit": "ea",
+   "pack_qty": 12.0,
+   "pack_cost": 16990.0,
+   "category": null
+  },
+  {
+   "name": "카페라떼",
+   "unit": "ea",
+   "pack_qty": 1.0,
+   "pack_cost": 1020.26,
+   "category": null
+  },
+  {
+   "name": "컵홀더",
+   "unit": "ea",
+   "pack_qty": 1000.0,
+   "pack_cost": 12450.0,
+   "category": null
+  },
+  {
+   "name": "케이크박스",
+   "unit": "ea",
+   "pack_qty": 50.0,
+   "pack_cost": 26500.0,
+   "category": null
+  },
+  {
+   "name": "크림치즈",
+   "unit": "g",
+   "pack_qty": 13000.0,
+   "pack_cost": 141625.0,
+   "category": null
+  },
+  {
+   "name": "타피오카전분",
+   "unit": "ea",
+   "pack_qty": 1000.0,
+   "pack_cost": 5030.0,
+   "category": null
+  },
+  {
+   "name": "터키쉬 베이글 샌드위치",
+   "unit": "ea",
+   "pack_qty": 1.0,
+   "pack_cost": 2937.47,
+   "category": null
+  },
+  {
+   "name": "토마토",
+   "unit": "g",
+   "pack_qty": 3000.0,
+   "pack_cost": 5950.0,
+   "category": null
+  },
+  {
+   "name": "투명컵 뚜껑",
+   "unit": "ea",
+   "pack_qty": 1000.0,
+   "pack_cost": 28000.0,
+   "category": null
+  },
+  {
+   "name": "투명컵(160z)",
+   "unit": "ea",
+   "pack_qty": 500.0,
+   "pack_cost": 50000.0,
+   "category": null
+  },
+  {
+   "name": "티라미수케이크",
+   "unit": "ea",
+   "pack_qty": 5.0,
+   "pack_cost": 19030.0,
+   "category": null
+  },
+  {
+   "name": "파인애플",
+   "unit": "ea",
+   "pack_qty": 6.0,
+   "pack_cost": 6990.0,
+   "category": null
+  },
+  {
+   "name": "팥빙수 팥",
+   "unit": "g",
+   "pack_qty": 3000.0,
+   "pack_cost": 10670.0,
+   "category": null
+  },
+  {
+   "name": "플레인스콘",
+   "unit": "ea",
+   "pack_qty": 1.0,
+   "pack_cost": 347.93,
+   "category": null
+  },
+  {
+   "name": "플레인크림치즈",
+   "unit": "g",
+   "pack_qty": 60.0,
+   "pack_cost": 614.17,
+   "category": null
+  },
+  {
+   "name": "햄버거박스",
+   "unit": "ea",
+   "pack_qty": 500.0,
+   "pack_cost": 45000.0,
+   "category": null
+  },
+  {
+   "name": "홀스레디쉬크림치즈",
+   "unit": "g",
+   "pack_qty": 850.0,
+   "pack_cost": 7826.83,
+   "category": null
+  },
+  {
+   "name": "휘핑크림",
+   "unit": "g",
+   "pack_qty": 950.0,
+   "pack_cost": 5665.0,
+   "category": null
+  },
+  {
+   "name": "건크랜베리",
+   "unit": "g",
+   "pack_qty": 800.0,
+   "pack_cost": 9730.0,
+   "category": "공산품"
+  },
+  {
+   "name": "계란듬뿍샐러드_CJ",
+   "unit": "ea",
+   "pack_qty": 1000.0,
+   "pack_cost": 9878.0,
+   "category": "공산품"
+  },
+  {
+   "name": "계란샐러드",
+   "unit": "g",
+   "pack_qty": 1000.0,
+   "pack_cost": 10450.0,
+   "category": "공산품"
+  },
+  {
+   "name": "고다치즈",
+   "unit": "ea",
+   "pack_qty": 39.0,
+   "pack_cost": 15642.0,
+   "category": "공산품"
+  },
+  {
+   "name": "고메버터",
+   "unit": "g",
+   "pack_qty": 500.0,
+   "pack_cost": 12383.33,
+   "category": "공산품"
+  },
+  {
+   "name": "구운 카다이프",
+   "unit": "ea",
+   "pack_qty": 10000.0,
+   "pack_cost": 169000.0,
+   "category": "공산품"
+  },
+  {
+   "name": "그래놀라",
+   "unit": "g",
+   "pack_qty": 400.0,
+   "pack_cost": 6974.0,
+   "category": "공산품"
+  },
+  {
+   "name": "꽃소금",
+   "unit": "ea",
+   "pack_qty": 100.0,
+   "pack_cost": 173.0,
+   "category": "공산품"
+  },
+  {
+   "name": "도노 크림치즈",
+   "unit": "g",
+   "pack_qty": 1360.0,
+   "pack_cost": 12900.0,
+   "category": "공산품"
+  },
+  {
+   "name": "르씨엘 레몬주스",
+   "unit": "g",
+   "pack_qty": 946.0,
+   "pack_cost": 3322.0,
+   "category": "공산품"
+  },
+  {
+   "name": "리치골드 휘핑크림",
+   "unit": "L",
+   "pack_qty": 1000.0,
+   "pack_cost": 6644.0,
+   "category": "공산품"
+  },
+  {
+   "name": "마쉬멜로우",
+   "unit": "ea",
+   "pack_qty": 5000.0,
+   "pack_cost": 37250.0,
+   "category": "공산품"
+  },
+  {
+   "name": "마요네즈",
+   "unit": "g",
+   "pack_qty": 3200.0,
+   "pack_cost": 14806.0,
+   "category": "공산품"
+  },
+  {
+   "name": "무염버터",
+   "unit": "ea",
+   "pack_qty": 450.0,
+   "pack_cost": 7425.0,
+   "category": "공산품"
+  },
+  {
+   "name": "무화과케이스",
+   "unit": "ea",
+   "pack_qty": 100.0,
+   "pack_cost": 11670.0,
+   "category": "공산품"
+  },
+  {
+   "name": "바닐라익스트렉",
+   "unit": "ea",
+   "pack_qty": 100.0,
+   "pack_cost": 19800.0,
+   "category": "공산품"
+  },
+  {
+   "name": "발사믹",
+   "unit": "g",
+   "pack_qty": 500.0,
+   "pack_cost": 9878.0,
+   "category": "공산품"
+  },
+  {
+   "name": "백설 하얀설탕",
+   "unit": "g",
+   "pack_qty": 3000.0,
+   "pack_cost": 5170.0,
+   "category": "공산품"
+  },
+  {
+   "name": "설탕",
+   "unit": "ea",
+   "pack_qty": 100.0,
+   "pack_cost": 206.0,
+   "category": "공산품"
+  },
+  {
+   "name": "소금",
+   "unit": "g",
+   "pack_qty": 3000.0,
+   "pack_cost": 4543.0,
+   "category": "공산품"
+  },
+  {
+   "name": "스위트콘",
+   "unit": "g",
+   "pack_qty": 425.0,
+   "pack_cost": 1199.0,
+   "category": "공산품"
+  },
+  {
+   "name": "아몬드슬라이스",
+   "unit": "ea",
+   "pack_qty": 900.0,
+   "pack_cost": 13390.0,
+   "category": "공산품"
+  },
+  {
+   "name": "아임요요거트파우더",
+   "unit": "ea",
+   "pack_qty": 600.0,
+   "pack_cost": 5104.0,
+   "category": "공산품"
+  },
+  {
+   "name": "오리엔탈 소스",
+   "unit": "g",
+   "pack_qty": 1502.0,
+   "pack_cost": 7612.0,
+   "category": "공산품"
+  },
+  {
+   "name": "올리브",
+   "unit": "g",
+   "pack_qty": 400.0,
+   "pack_cost": 2420.0,
+   "category": "공산품"
+  },
+  {
+   "name": "우유",
+   "unit": "ea",
+   "pack_qty": 1800.0,
+   "pack_cost": 3690.0,
+   "category": "공산품"
+  },
+  {
+   "name": "원형소스통",
+   "unit": "ea",
+   "pack_qty": 1500.0,
+   "pack_cost": 50050.0,
+   "category": "공산품"
+  },
+  {
+   "name": "유산지컵",
+   "unit": "ea",
+   "pack_qty": 450.0,
+   "pack_cost": 11310.0,
+   "category": "공산품"
+  },
+  {
+   "name": "잠봉햄",
+   "unit": "ea",
+   "pack_qty": 30.0,
+   "pack_cost": 15510.0,
+   "category": "공산품"
+  },
+  {
+   "name": "짜주머니",
+   "unit": "ea",
+   "pack_qty": 100.0,
+   "pack_cost": 11319.0,
+   "category": "공산품"
+  },
+  {
+   "name": "찹쌀가루",
+   "unit": "ea",
+   "pack_qty": 100.0,
+   "pack_cost": 950.0,
+   "category": "공산품"
+  },
+  {
+   "name": "체다치즈",
+   "unit": "ea",
+   "pack_qty": 100.0,
+   "pack_cost": 18249.0,
+   "category": "공산품"
+  },
+  {
+   "name": "치킨토핑",
+   "unit": "g",
+   "pack_qty": 1000.0,
+   "pack_cost": 13497.0,
+   "category": "공산품"
+  },
+  {
+   "name": "코코아파우더",
+   "unit": "ea",
+   "pack_qty": 800.0,
+   "pack_cost": 27560.0,
+   "category": "공산품"
+  },
+  {
+   "name": "크라프트 원형(1300cc)",
+   "unit": "ea",
+   "pack_qty": 300.0,
+   "pack_cost": 32500.0,
+   "category": "공산품"
+  },
+  {
+   "name": "크라프트 원형(1300cc)뚜껑",
+   "unit": "ea",
+   "pack_qty": 300.0,
+   "pack_cost": 25000.0,
+   "category": "공산품"
+  },
+  {
+   "name": "크래미 베이스",
+   "unit": "g",
+   "pack_qty": 351.0,
+   "pack_cost": 2276.0,
+   "category": "공산품"
+  },
+  {
+   "name": "터키햄",
+   "unit": "ea",
+   "pack_qty": 20.0,
+   "pack_cost": 5775.0,
+   "category": "공산품"
+  },
+  {
+   "name": "팥앙금",
+   "unit": "g",
+   "pack_qty": 5000.0,
+   "pack_cost": 22500.0,
+   "category": "공산품"
+  },
+  {
+   "name": "펄프용기(2칸)",
+   "unit": "ea",
+   "pack_qty": 50.0,
+   "pack_cost": 10340.0,
+   "category": "공산품"
+  },
+  {
+   "name": "펄프용기(2칸)뚜껑",
+   "unit": "ea",
+   "pack_qty": 50.0,
+   "pack_cost": 6270.0,
+   "category": "공산품"
+  },
+  {
+   "name": "풀드포크",
+   "unit": "g",
+   "pack_qty": 500.0,
+   "pack_cost": 10681.0,
+   "category": "공산품"
+  },
+  {
+   "name": "피스티 아몬드 스프레드",
+   "unit": "ea",
+   "pack_qty": 600.0,
+   "pack_cost": 20000.0,
+   "category": "공산품"
+  },
+  {
+   "name": "피스티 피스타치오 스프레드",
+   "unit": "ea",
+   "pack_qty": 600.0,
+   "pack_cost": 18194.0,
+   "category": "공산품"
+  },
+  {
+   "name": "홀그레인머스타드",
+   "unit": "g",
+   "pack_qty": 820.0,
+   "pack_cost": 10373.0,
+   "category": "공산품"
+  },
+  {
+   "name": "후추",
+   "unit": "g",
+   "pack_qty": 100.0,
+   "pack_cost": 7830.0,
+   "category": "공산품"
+  },
+  {
+   "name": "베이글 샌드위치",
+   "unit": "ea",
+   "pack_qty": 1.0,
+   "pack_cost": 2749.66,
+   "category": "메뉴"
+  },
+  {
+   "name": "아메리카노",
+   "unit": "ea",
+   "pack_qty": 1.0,
+   "pack_cost": 680.18,
+   "category": "메뉴"
+  },
+  {
+   "name": "그린티 파우더",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 42.86,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "단백질 파우더",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 33.0,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "디카페인 원액",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 23.1,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "딸기 스무디 시럽",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 5.53,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "딸기청",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 5.22,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "레몬딜",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 38.5,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "레몬딜 원액",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 38.5,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "민트 초코 파우더",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 22.0,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "밀크티 파우더",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 31.37,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "바닐라 시럽",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 12.74,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "바닐라 파우더",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 14.61,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "밤 파우더",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 21.07,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "보틀병",
+   "unit": "ea",
+   "pack_qty": 1,
+   "pack_cost": 880.0,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "복숭아아이스티 파우더",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 10.05,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "블루소다 원액",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 38.5,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "비닐컵캐리어1구",
+   "unit": "ea",
+   "pack_qty": 1,
+   "pack_cost": 35.62,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "비타민 파우더",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 80.67,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "사이다",
+   "unit": "ea",
+   "pack_qty": 1,
+   "pack_cost": 649.0,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "샷",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 25.3,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "설탕 시럽",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 4.22,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "소금크림",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 6.99,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "시나몬 파우더",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 45.65,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "애플망고 스무디 시럽",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 14.96,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "애플티 베이스",
+   "unit": "ea",
+   "pack_qty": 1,
+   "pack_cost": 632.72,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "얼그레이 티백",
+   "unit": "ea",
+   "pack_qty": 1,
+   "pack_cost": 397.47,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "엘제이드 수박주스",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 7.42,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "요거트 파우더",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 20.99,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "우유생크림 코르네",
+   "unit": "ea",
+   "pack_qty": 1,
+   "pack_cost": 2200.0,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "위스키 시럽",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 26.71,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "위스키시럽",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 26.71,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "유자청",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 9.62,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "잉글리쉬블랙퍼스트 티백",
+   "unit": "ea",
+   "pack_qty": 1,
+   "pack_cost": 363.73,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "자몽농축액",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 17.89,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "자몽청",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 7.62,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "제로당",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 38.5,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "청포도 에이드 시럽",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 1.84,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "청포도에이드 시럽",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 17.42,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "초코 소스",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 15.86,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "초코 파우더",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 9.18,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "초코소스",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 15.86,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "초코파우더",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 9.19,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "코코아 파우더",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 9.18,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "콜드브루 원액",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 23.1,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "키위 스무디 시럽",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 5.53,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "키위스무디 시럽",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 5.53,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "탄산수",
+   "unit": "ea",
+   "pack_qty": 1,
+   "pack_cost": 440.0,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "티백",
+   "unit": "ea",
+   "pack_qty": 1,
+   "pack_cost": 397.47,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "헤이즐넛 시럽",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 19.62,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "홍백향차 원액",
+   "unit": "g",
+   "pack_qty": 1,
+   "pack_cost": 38.5,
+   "category": "반제품(역산)"
+  },
+  {
+   "name": "말렌카 허니 케이크",
+   "unit": "ea",
+   "pack_qty": 800.0,
+   "pack_cost": 27500.0,
+   "category": "베이커리"
+  },
+  {
+   "name": "버라이어티쿠키",
+   "unit": "ea",
+   "pack_qty": 24.0,
+   "pack_cost": 14990.0,
+   "category": "베이커리"
+  },
+  {
+   "name": "브라운 치아바타",
+   "unit": "ea",
+   "pack_qty": 5.0,
+   "pack_cost": 5775.0,
+   "category": "베이커리"
+  },
+  {
+   "name": "초코베이글",
+   "unit": "ea",
+   "pack_qty": 6.0,
+   "pack_cost": 5038.0,
+   "category": "베이커리"
+  },
+  {
+   "name": "테디케이크",
+   "unit": "ea",
+   "pack_qty": 6.0,
+   "pack_cost": 29040.0,
+   "category": "베이커리"
+  },
+  {
+   "name": "플레인베이글",
+   "unit": "ea",
+   "pack_qty": 6.0,
+   "pack_cost": 4345.0,
+   "category": "베이커리"
+  },
+  {
+   "name": "L자봉투",
+   "unit": "ea",
+   "pack_qty": 500.0,
+   "pack_cost": 66000.0,
+   "category": "비품"
+  },
+  {
+   "name": "각대봉투(중)",
+   "unit": "ea",
+   "pack_qty": 1000.0,
+   "pack_cost": 28000.0,
+   "category": "비품"
+  },
+  {
+   "name": "스티커",
+   "unit": "ea",
+   "pack_qty": 500.0,
+   "pack_cost": 27500.0,
+   "category": "비품"
+  },
+  {
+   "name": "청상추",
+   "unit": "g",
+   "pack_qty": 500.0,
+   "pack_cost": 4400.0,
+   "category": "신선식품"
+  },
+  {
+   "name": "토마토",
+   "unit": "ea",
+   "pack_qty": 175.0,
+   "pack_cost": 26125.0,
+   "category": "신선식품"
+  },
+  {
+   "name": "스프라이트",
+   "unit": "ea",
+   "pack_qty": 24.0,
+   "pack_cost": 16840.0,
+   "category": "음료"
+  },
+  {
+   "name": "스프라이트제로",
+   "unit": "ea",
+   "pack_qty": 24.0,
+   "pack_cost": 19680.0,
+   "category": "음료"
+  },
+  {
+   "name": "코카콜라",
+   "unit": "ea",
+   "pack_qty": 24.0,
+   "pack_cost": 23430.0,
+   "category": "음료"
+  },
+  {
+   "name": "코카콜라제로",
+   "unit": "ea",
+   "pack_qty": 24.0,
+   "pack_cost": 19240.0,
+   "category": "음료"
+  }
+ ],
+ "recipes": [
+  {
+   "sku": "SAND-001",
+   "ingredient": "플레인베이글",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-001",
+   "ingredient": "플레인크림치즈",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SAND-001",
+   "ingredient": "홀그레인머스타드",
+   "unit": "g",
+   "qty": 10.0
+  },
+  {
+   "sku": "SAND-001",
+   "ingredient": "마요네즈",
+   "unit": "g",
+   "qty": 5.0
+  },
+  {
+   "sku": "SAND-001",
+   "ingredient": "잠봉햄",
+   "unit": "ea",
+   "qty": 3.0
+  },
+  {
+   "sku": "SAND-001",
+   "ingredient": "고메버터",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SAND-001",
+   "ingredient": "고다치즈",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-001",
+   "ingredient": "L자봉투",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-001",
+   "ingredient": "스티커",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-001",
+   "ingredient": "각대봉투(중)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-002",
+   "ingredient": "플레인베이글",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-002",
+   "ingredient": "홀스레디쉬크림치즈",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SAND-002",
+   "ingredient": "청상추",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SAND-002",
+   "ingredient": "토마토",
+   "unit": "ea",
+   "qty": 3.0
+  },
+  {
+   "sku": "SAND-002",
+   "ingredient": "풀드포크",
+   "unit": "g",
+   "qty": 50.0
+  },
+  {
+   "sku": "SAND-002",
+   "ingredient": "체다치즈",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-002",
+   "ingredient": "L자봉투",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-002",
+   "ingredient": "스티커",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-002",
+   "ingredient": "각대봉투(중)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-003",
+   "ingredient": "플레인베이글",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-003",
+   "ingredient": "홀스레디쉬크림치즈",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SAND-003",
+   "ingredient": "청상추",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SAND-003",
+   "ingredient": "토마토",
+   "unit": "ea",
+   "qty": 3.0
+  },
+  {
+   "sku": "SAND-003",
+   "ingredient": "터키햄",
+   "unit": "ea",
+   "qty": 3.0
+  },
+  {
+   "sku": "SAND-003",
+   "ingredient": "체다치즈",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-003",
+   "ingredient": "고다치즈",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-003",
+   "ingredient": "L자봉투",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-003",
+   "ingredient": "스티커",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-003",
+   "ingredient": "각대봉투(중)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-004",
+   "ingredient": "플레인베이글",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-004",
+   "ingredient": "청상추",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SAND-004",
+   "ingredient": "토마토",
+   "unit": "ea",
+   "qty": 3.0
+  },
+  {
+   "sku": "SAND-004",
+   "ingredient": "치킨베이스",
+   "unit": "g",
+   "qty": 100.0
+  },
+  {
+   "sku": "SAND-004",
+   "ingredient": "고다치즈",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-004",
+   "ingredient": "L자봉투",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-004",
+   "ingredient": "스티커",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-004",
+   "ingredient": "각대봉투(중)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-005",
+   "ingredient": "플레인베이글",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-005",
+   "ingredient": "발사믹",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SAND-005",
+   "ingredient": "플레인크림치즈",
+   "unit": "g",
+   "qty": 40.0
+  },
+  {
+   "sku": "SAND-005",
+   "ingredient": "토마토",
+   "unit": "ea",
+   "qty": 3.0
+  },
+  {
+   "sku": "SAND-005",
+   "ingredient": "후추",
+   "unit": "g",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-005",
+   "ingredient": "청상추",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SAND-005",
+   "ingredient": "L자봉투",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-005",
+   "ingredient": "스티커",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-005",
+   "ingredient": "각대봉투(중)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-006",
+   "ingredient": "브라운 치아바타",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-006",
+   "ingredient": "플레인크림치즈",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SAND-006",
+   "ingredient": "홀그레인머스타드",
+   "unit": "g",
+   "qty": 5.0
+  },
+  {
+   "sku": "SAND-006",
+   "ingredient": "마요네즈",
+   "unit": "g",
+   "qty": 3.0
+  },
+  {
+   "sku": "SAND-006",
+   "ingredient": "고다치즈",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-006",
+   "ingredient": "고메버터",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SAND-006",
+   "ingredient": "잠봉햄",
+   "unit": "ea",
+   "qty": 3.0
+  },
+  {
+   "sku": "SAND-006",
+   "ingredient": "L자봉투",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-006",
+   "ingredient": "스티커",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-006",
+   "ingredient": "각대봉투(중)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-007",
+   "ingredient": "브라운 치아바타",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-007",
+   "ingredient": "홀스레디쉬크림치즈",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SAND-007",
+   "ingredient": "청상추",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SAND-007",
+   "ingredient": "체다치즈",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-007",
+   "ingredient": "토마토",
+   "unit": "ea",
+   "qty": 3.0
+  },
+  {
+   "sku": "SAND-007",
+   "ingredient": "풀드포크",
+   "unit": "g",
+   "qty": 50.0
+  },
+  {
+   "sku": "SAND-007",
+   "ingredient": "계란듬뿍샐러드_CJ",
+   "unit": "ea",
+   "qty": 50.0
+  },
+  {
+   "sku": "SAND-007",
+   "ingredient": "L자봉투",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-007",
+   "ingredient": "스티커",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-007",
+   "ingredient": "각대봉투(중)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-008",
+   "ingredient": "브라운 치아바타",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-008",
+   "ingredient": "홀스레디쉬크림치즈",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SAND-008",
+   "ingredient": "청상추",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SAND-008",
+   "ingredient": "고다치즈",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-008",
+   "ingredient": "체다치즈",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-008",
+   "ingredient": "토마토",
+   "unit": "ea",
+   "qty": 3.0
+  },
+  {
+   "sku": "SAND-008",
+   "ingredient": "터키햄",
+   "unit": "ea",
+   "qty": 3.0
+  },
+  {
+   "sku": "SAND-008",
+   "ingredient": "L자봉투",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-008",
+   "ingredient": "스티커",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-008",
+   "ingredient": "각대봉투(중)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-009",
+   "ingredient": "브라운 치아바타",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-009",
+   "ingredient": "청상추",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SAND-009",
+   "ingredient": "토마토",
+   "unit": "ea",
+   "qty": 3.0
+  },
+  {
+   "sku": "SAND-009",
+   "ingredient": "치킨베이스",
+   "unit": "g",
+   "qty": 100.0
+  },
+  {
+   "sku": "SAND-009",
+   "ingredient": "고다치즈",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-009",
+   "ingredient": "L자봉투",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-009",
+   "ingredient": "스티커",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-009",
+   "ingredient": "각대봉투(중)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-010",
+   "ingredient": "브라운 치아바타",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-010",
+   "ingredient": "발사믹",
+   "unit": "g",
+   "qty": 35.0
+  },
+  {
+   "sku": "SAND-010",
+   "ingredient": "청상추",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SAND-010",
+   "ingredient": "토마토",
+   "unit": "ea",
+   "qty": 3.0
+  },
+  {
+   "sku": "SAND-010",
+   "ingredient": "플레인크림치즈",
+   "unit": "g",
+   "qty": 60.0
+  },
+  {
+   "sku": "SAND-010",
+   "ingredient": "L자봉투",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-010",
+   "ingredient": "스티커",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-010",
+   "ingredient": "각대봉투(중)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-011",
+   "ingredient": "브라운 치아바타",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-011",
+   "ingredient": "팥앙금",
+   "unit": "g",
+   "qty": 150.0
+  },
+  {
+   "sku": "SAND-011",
+   "ingredient": "고메버터",
+   "unit": "g",
+   "qty": 40.0
+  },
+  {
+   "sku": "SAND-012",
+   "ingredient": "브라운 치아바타",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-012",
+   "ingredient": "청상추",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SAND-012",
+   "ingredient": "토마토",
+   "unit": "ea",
+   "qty": 3.0
+  },
+  {
+   "sku": "SAND-012",
+   "ingredient": "계란듬뿍샐러드_CJ",
+   "unit": "ea",
+   "qty": 100.0
+  },
+  {
+   "sku": "SAND-012",
+   "ingredient": "후추",
+   "unit": "g",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-012",
+   "ingredient": "L자봉투",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-012",
+   "ingredient": "스티커",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SAND-012",
+   "ingredient": "각대봉투(중)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SALAD-001",
+   "ingredient": "샐러드믹스",
+   "unit": "ea",
+   "qty": 80.0
+  },
+  {
+   "sku": "SALAD-001",
+   "ingredient": "올리브",
+   "unit": "g",
+   "qty": 16.0
+  },
+  {
+   "sku": "SALAD-001",
+   "ingredient": "스위트콘",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SALAD-001",
+   "ingredient": "토마토",
+   "unit": "ea",
+   "qty": 2.0
+  },
+  {
+   "sku": "SALAD-001",
+   "ingredient": "그래놀라",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SALAD-001",
+   "ingredient": "건크랜베리",
+   "unit": "g",
+   "qty": 23.0
+  },
+  {
+   "sku": "SALAD-001",
+   "ingredient": "베이글 반조각",
+   "unit": "ea",
+   "qty": 0.5
+  },
+  {
+   "sku": "SALAD-001",
+   "ingredient": "오리엔탈 소스",
+   "unit": "g",
+   "qty": 50.0
+  },
+  {
+   "sku": "SALAD-001",
+   "ingredient": "터키햄",
+   "unit": "ea",
+   "qty": 3.0
+  },
+  {
+   "sku": "SALAD-001",
+   "ingredient": "크라프트 원형(1300cc)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SALAD-001",
+   "ingredient": "크라프트 원형(1300cc)뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SALAD-002",
+   "ingredient": "샐러드믹스",
+   "unit": "ea",
+   "qty": 80.0
+  },
+  {
+   "sku": "SALAD-002",
+   "ingredient": "올리브",
+   "unit": "g",
+   "qty": 16.0
+  },
+  {
+   "sku": "SALAD-002",
+   "ingredient": "스위트콘",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SALAD-002",
+   "ingredient": "토마토",
+   "unit": "ea",
+   "qty": 2.0
+  },
+  {
+   "sku": "SALAD-002",
+   "ingredient": "그래놀라",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SALAD-002",
+   "ingredient": "건크랜베리",
+   "unit": "g",
+   "qty": 23.0
+  },
+  {
+   "sku": "SALAD-002",
+   "ingredient": "베이글 반조각",
+   "unit": "ea",
+   "qty": 0.5
+  },
+  {
+   "sku": "SALAD-002",
+   "ingredient": "오리엔탈 소스",
+   "unit": "g",
+   "qty": 50.0
+  },
+  {
+   "sku": "SALAD-002",
+   "ingredient": "잠봉햄",
+   "unit": "ea",
+   "qty": 3.0
+  },
+  {
+   "sku": "SALAD-002",
+   "ingredient": "리와인드 펄프용기(2칸)뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SALAD-002",
+   "ingredient": "리와인드 펄프용기(2칸)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SALAD-003",
+   "ingredient": "샐러드믹스",
+   "unit": "ea",
+   "qty": 100.0
+  },
+  {
+   "sku": "SALAD-003",
+   "ingredient": "올리브",
+   "unit": "g",
+   "qty": 16.0
+  },
+  {
+   "sku": "SALAD-003",
+   "ingredient": "스위트콘",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SALAD-003",
+   "ingredient": "토마토",
+   "unit": "ea",
+   "qty": 1.5
+  },
+  {
+   "sku": "SALAD-003",
+   "ingredient": "그래놀라",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SALAD-003",
+   "ingredient": "건크랜베리",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SALAD-003",
+   "ingredient": "베이글 반조각",
+   "unit": "ea",
+   "qty": 0.5
+  },
+  {
+   "sku": "SALAD-003",
+   "ingredient": "오리엔탈 소스",
+   "unit": "g",
+   "qty": 45.0
+  },
+  {
+   "sku": "SALAD-003",
+   "ingredient": "풀드포크",
+   "unit": "g",
+   "qty": 50.0
+  },
+  {
+   "sku": "SALAD-003",
+   "ingredient": "크라프트 원형(1300cc)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SALAD-003",
+   "ingredient": "크라프트 원형(1300cc)뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SALAD-004",
+   "ingredient": "샐러드믹스",
+   "unit": "ea",
+   "qty": 100.0
+  },
+  {
+   "sku": "SALAD-004",
+   "ingredient": "올리브",
+   "unit": "g",
+   "qty": 16.0
+  },
+  {
+   "sku": "SALAD-004",
+   "ingredient": "스위트콘",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SALAD-004",
+   "ingredient": "토마토",
+   "unit": "ea",
+   "qty": 2.0
+  },
+  {
+   "sku": "SALAD-004",
+   "ingredient": "그래놀라",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SALAD-004",
+   "ingredient": "건크랜베리",
+   "unit": "g",
+   "qty": 23.0
+  },
+  {
+   "sku": "SALAD-004",
+   "ingredient": "베이글 반조각",
+   "unit": "ea",
+   "qty": 0.5
+  },
+  {
+   "sku": "SALAD-004",
+   "ingredient": "오리엔탈 소스",
+   "unit": "g",
+   "qty": 45.0
+  },
+  {
+   "sku": "SALAD-004",
+   "ingredient": "치킨베이스",
+   "unit": "g",
+   "qty": 100.0
+  },
+  {
+   "sku": "SALAD-004",
+   "ingredient": "리와인드 펄프용기(2칸)뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SALAD-004",
+   "ingredient": "리와인드 펄프용기(2칸)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SALAD-005",
+   "ingredient": "샐러드믹스",
+   "unit": "ea",
+   "qty": 100.0
+  },
+  {
+   "sku": "SALAD-005",
+   "ingredient": "올리브",
+   "unit": "g",
+   "qty": 16.0
+  },
+  {
+   "sku": "SALAD-005",
+   "ingredient": "스위트콘",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SALAD-005",
+   "ingredient": "토마토",
+   "unit": "ea",
+   "qty": 2.0
+  },
+  {
+   "sku": "SALAD-005",
+   "ingredient": "그래놀라",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SALAD-005",
+   "ingredient": "건크랜베리",
+   "unit": "g",
+   "qty": 23.0
+  },
+  {
+   "sku": "SALAD-005",
+   "ingredient": "베이글 반조각",
+   "unit": "ea",
+   "qty": 0.5
+  },
+  {
+   "sku": "SALAD-005",
+   "ingredient": "오리엔탈 소스",
+   "unit": "g",
+   "qty": 50.0
+  },
+  {
+   "sku": "SALAD-005",
+   "ingredient": "크래미 베이스",
+   "unit": "g",
+   "qty": 100.0
+  },
+  {
+   "sku": "COF-001",
+   "ingredient": "에스프레소",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "COF-001",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-001",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-001",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-001",
+   "ingredient": "비닐컵캐리어1구",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-002",
+   "ingredient": "에스프레소",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "COF-002",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-002",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-002",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-002",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-002",
+   "ingredient": "비닐컵캐리어1구",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-003",
+   "ingredient": "에스프레소",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "COF-003",
+   "ingredient": "복숭아아이스티 파우더",
+   "unit": "g",
+   "qty": 40.0
+  },
+  {
+   "sku": "COF-003",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-003",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-003",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-003",
+   "ingredient": "비닐컵캐리어1구",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-004",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "COF-004",
+   "ingredient": "에스프레소",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "COF-004",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-004",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-004",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-005",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "COF-005",
+   "ingredient": "에스프레소",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "COF-005",
+   "ingredient": "바닐라 파우더",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "COF-005",
+   "ingredient": "바닐라 시럽",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "COF-005",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-005",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-005",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-006",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "COF-006",
+   "ingredient": "에스프레소",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "COF-006",
+   "ingredient": "헤이즐넛 시럽",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "COF-006",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-006",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-006",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-007",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "COF-007",
+   "ingredient": "에스프레소",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "COF-007",
+   "ingredient": "연유",
+   "unit": "g",
+   "qty": 50.0
+  },
+  {
+   "sku": "COF-007",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-007",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-007",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-008",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "COF-008",
+   "ingredient": "에스프레소",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "COF-008",
+   "ingredient": "초코파우더",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "COF-008",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-008",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-008",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-009",
+   "ingredient": "콜드브루 원액",
+   "unit": "g",
+   "qty": 25.0
+  },
+  {
+   "sku": "COF-009",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-009",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-009",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-010",
+   "ingredient": "디카페인 원액",
+   "unit": "g",
+   "qty": 25.0
+  },
+  {
+   "sku": "COF-010",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-010",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-010",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-010",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-011",
+   "ingredient": "콜드브루 원액",
+   "unit": "g",
+   "qty": 25.0
+  },
+  {
+   "sku": "COF-011",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "COF-011",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-011",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-011",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-011",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-012",
+   "ingredient": "디카페인 원액",
+   "unit": "g",
+   "qty": 25.0
+  },
+  {
+   "sku": "COF-012",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "COF-012",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-012",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-012",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "COF-012",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-001",
+   "ingredient": "에스프레소",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SIG-001",
+   "ingredient": "소금크림",
+   "unit": "g",
+   "qty": 50.0
+  },
+  {
+   "sku": "SIG-001",
+   "ingredient": "시나몬 파우더",
+   "unit": "g",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-001",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-001",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-001",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-001",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-002",
+   "ingredient": "연유",
+   "unit": "g",
+   "qty": 50.0
+  },
+  {
+   "sku": "SIG-002",
+   "ingredient": "에스프레소",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SIG-002",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 150.0
+  },
+  {
+   "sku": "SIG-002",
+   "ingredient": "소금크림",
+   "unit": "g",
+   "qty": 50.0
+  },
+  {
+   "sku": "SIG-002",
+   "ingredient": "시나몬 파우더",
+   "unit": "g",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-002",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-002",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-002",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-002",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-003",
+   "ingredient": "콜드브루 원액",
+   "unit": "g",
+   "qty": 60.0
+  },
+  {
+   "sku": "SIG-003",
+   "ingredient": "소금크림",
+   "unit": "g",
+   "qty": 50.0
+  },
+  {
+   "sku": "SIG-003",
+   "ingredient": "시나몬 파우더",
+   "unit": "g",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-003",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-003",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-003",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-003",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-004",
+   "ingredient": "디카페인 원액",
+   "unit": "g",
+   "qty": 60.0
+  },
+  {
+   "sku": "SIG-004",
+   "ingredient": "소금크림",
+   "unit": "g",
+   "qty": 50.0
+  },
+  {
+   "sku": "SIG-004",
+   "ingredient": "시나몬 파우더",
+   "unit": "g",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-004",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-004",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-004",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-004",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-006",
+   "ingredient": "에스프레소",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SIG-006",
+   "ingredient": "제로당",
+   "unit": "g",
+   "qty": 10.0
+  },
+  {
+   "sku": "SIG-006",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-006",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-006",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-006",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-007",
+   "ingredient": "에스프레소",
+   "unit": "g",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-007",
+   "ingredient": "밤 파우더",
+   "unit": "g",
+   "qty": 40.0
+  },
+  {
+   "sku": "SIG-007",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "SIG-007",
+   "ingredient": "휘핑크림",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SIG-007",
+   "ingredient": "제로당",
+   "unit": "g",
+   "qty": 5.0
+  },
+  {
+   "sku": "SIG-007",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-007",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-007",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-007",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-008",
+   "ingredient": "에스프레소",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SIG-008",
+   "ingredient": "단백질 파우더",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SIG-008",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-008",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-008",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-008",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-009",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "SIG-009",
+   "ingredient": "코코아 파우더",
+   "unit": "g",
+   "qty": 40.0
+  },
+  {
+   "sku": "SIG-009",
+   "ingredient": "단백질 파우더",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SIG-009",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-009",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-009",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-009",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-010",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "SIG-010",
+   "ingredient": "바닐라 파우더",
+   "unit": "g",
+   "qty": 40.0
+  },
+  {
+   "sku": "SIG-010",
+   "ingredient": "단백질 파우더",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SIG-010",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-010",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-010",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-010",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-011",
+   "ingredient": "밤 파우더",
+   "unit": "g",
+   "qty": 40.0
+  },
+  {
+   "sku": "SIG-011",
+   "ingredient": "단백질 파우더",
+   "unit": "g",
+   "qty": 10.0
+  },
+  {
+   "sku": "SIG-011",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "SIG-011",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-011",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-011",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-011",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-012",
+   "ingredient": "샷",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SIG-012",
+   "ingredient": "위스키시럽",
+   "unit": "g",
+   "qty": 50.0
+  },
+  {
+   "sku": "SIG-012",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 80.0
+  },
+  {
+   "sku": "SIG-012",
+   "ingredient": "휘핑크림",
+   "unit": "g",
+   "qty": 40.0
+  },
+  {
+   "sku": "SIG-012",
+   "ingredient": "제로당",
+   "unit": "g",
+   "qty": 10.0
+  },
+  {
+   "sku": "SIG-012",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-012",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-012",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-012",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-013",
+   "ingredient": "사이다",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-013",
+   "ingredient": "레몬딜",
+   "unit": "g",
+   "qty": 10.0
+  },
+  {
+   "sku": "SIG-013",
+   "ingredient": "위스키시럽",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "SIG-013",
+   "ingredient": "얼그레이 티백",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-013",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-013",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-013",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-013",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-014",
+   "ingredient": "사이다",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-014",
+   "ingredient": "자몽농축액",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SIG-014",
+   "ingredient": "위스키시럽",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SIG-014",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-014",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-014",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-014",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-015",
+   "ingredient": "사이다",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-015",
+   "ingredient": "레몬딜 원액",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SIG-015",
+   "ingredient": "위스키 시럽",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "SIG-015",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-015",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-015",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-015",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-016",
+   "ingredient": "사이다",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-016",
+   "ingredient": "홍백향차 원액",
+   "unit": "g",
+   "qty": 60.0
+  },
+  {
+   "sku": "SIG-016",
+   "ingredient": "비타민 파우더",
+   "unit": "g",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-016",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-016",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-016",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-016",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-017",
+   "ingredient": "사이다",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-017",
+   "ingredient": "레몬딜 원액",
+   "unit": "g",
+   "qty": 40.0
+  },
+  {
+   "sku": "SIG-017",
+   "ingredient": "비타민 파우더",
+   "unit": "g",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-017",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-017",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-017",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-017",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-018",
+   "ingredient": "사이다",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-018",
+   "ingredient": "블루소다 원액",
+   "unit": "g",
+   "qty": 60.0
+  },
+  {
+   "sku": "SIG-018",
+   "ingredient": "비타민 파우더",
+   "unit": "g",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-018",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-018",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-018",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "SIG-018",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-001",
+   "ingredient": "엘제이드 수박주스",
+   "unit": "g",
+   "qty": 250.0
+  },
+  {
+   "sku": "NCOF-001",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-001",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-001",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-001",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-002",
+   "ingredient": "밤 파우더",
+   "unit": "g",
+   "qty": 40.0
+  },
+  {
+   "sku": "NCOF-002",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "NCOF-002",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-002",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-002",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-002",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-005",
+   "ingredient": "딸기청",
+   "unit": "g",
+   "qty": 90.0
+  },
+  {
+   "sku": "NCOF-005",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "NCOF-005",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-005",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-005",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-005",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-006",
+   "ingredient": "초코 파우더",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "NCOF-006",
+   "ingredient": "초코 소스",
+   "unit": "g",
+   "qty": 20.0
+  },
+  {
+   "sku": "NCOF-006",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "NCOF-006",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-006",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-006",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-006",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-007",
+   "ingredient": "민트 초코 파우더",
+   "unit": "g",
+   "qty": 40.0
+  },
+  {
+   "sku": "NCOF-007",
+   "ingredient": "초코 소스",
+   "unit": "g",
+   "qty": 10.0
+  },
+  {
+   "sku": "NCOF-007",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "NCOF-007",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-007",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-007",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-007",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-008",
+   "ingredient": "그린티 파우더",
+   "unit": "g",
+   "qty": 40.0
+  },
+  {
+   "sku": "NCOF-008",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "NCOF-008",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-008",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-008",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-008",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-009",
+   "ingredient": "밀크티 파우더",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "NCOF-009",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "NCOF-009",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-009",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-009",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "NCOF-009",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-001",
+   "ingredient": "자몽청",
+   "unit": "g",
+   "qty": 70.0
+  },
+  {
+   "sku": "ADSM-001",
+   "ingredient": "자몽농축액",
+   "unit": "g",
+   "qty": 30.0
+  },
+  {
+   "sku": "ADSM-001",
+   "ingredient": "탄산수",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-001",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-001",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-001",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-001",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-002",
+   "ingredient": "청포도 에이드 시럽",
+   "unit": "g",
+   "qty": 70.0
+  },
+  {
+   "sku": "ADSM-002",
+   "ingredient": "설탕 시럽",
+   "unit": "g",
+   "qty": 10.0
+  },
+  {
+   "sku": "ADSM-002",
+   "ingredient": "탄산수",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-002",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-002",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-002",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-002",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-003",
+   "ingredient": "딸기청",
+   "unit": "g",
+   "qty": 70.0
+  },
+  {
+   "sku": "ADSM-003",
+   "ingredient": "탄산수",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-003",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-003",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-003",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-003",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-004",
+   "ingredient": "키위스무디 시럽",
+   "unit": "g",
+   "qty": 70.0
+  },
+  {
+   "sku": "ADSM-004",
+   "ingredient": "탄산수",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-004",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-004",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-004",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-004",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-005",
+   "ingredient": "유자청",
+   "unit": "g",
+   "qty": 100.0
+  },
+  {
+   "sku": "ADSM-005",
+   "ingredient": "설탕시럽",
+   "unit": "ml",
+   "qty": 30.0
+  },
+  {
+   "sku": "ADSM-005",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-005",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-005",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-005",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-006",
+   "ingredient": "자몽청",
+   "unit": "g",
+   "qty": 100.0
+  },
+  {
+   "sku": "ADSM-006",
+   "ingredient": "설탕시럽",
+   "unit": "ml",
+   "qty": 30.0
+  },
+  {
+   "sku": "ADSM-006",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-006",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-006",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-006",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-007",
+   "ingredient": "청포도에이드 시럽",
+   "unit": "g",
+   "qty": 100.0
+  },
+  {
+   "sku": "ADSM-007",
+   "ingredient": "설탕시럽",
+   "unit": "ml",
+   "qty": 20.0
+  },
+  {
+   "sku": "ADSM-007",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-007",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-007",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-007",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-008",
+   "ingredient": "애플망고 스무디 시럽",
+   "unit": "g",
+   "qty": 100.0
+  },
+  {
+   "sku": "ADSM-008",
+   "ingredient": "설탕시럽",
+   "unit": "ml",
+   "qty": 20.0
+  },
+  {
+   "sku": "ADSM-008",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-008",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-008",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-008",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-009",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "ADSM-009",
+   "ingredient": "요거트 파우더",
+   "unit": "g",
+   "qty": 60.0
+  },
+  {
+   "sku": "ADSM-009",
+   "ingredient": "설탕시럽",
+   "unit": "ml",
+   "qty": 10.0
+  },
+  {
+   "sku": "ADSM-009",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-009",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-009",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-009",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-010",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "ADSM-010",
+   "ingredient": "딸기 스무디 시럽",
+   "unit": "g",
+   "qty": 70.0
+  },
+  {
+   "sku": "ADSM-010",
+   "ingredient": "요거트 파우더",
+   "unit": "g",
+   "qty": 60.0
+  },
+  {
+   "sku": "ADSM-010",
+   "ingredient": "설탕시럽",
+   "unit": "ml",
+   "qty": 10.0
+  },
+  {
+   "sku": "ADSM-010",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-010",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-010",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-010",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-011",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "ADSM-011",
+   "ingredient": "키위 스무디 시럽",
+   "unit": "g",
+   "qty": 70.0
+  },
+  {
+   "sku": "ADSM-011",
+   "ingredient": "요거트 파우더",
+   "unit": "g",
+   "qty": 60.0
+  },
+  {
+   "sku": "ADSM-011",
+   "ingredient": "설탕시럽",
+   "unit": "ml",
+   "qty": 10.0
+  },
+  {
+   "sku": "ADSM-011",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-011",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-011",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-011",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-012",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 180.0
+  },
+  {
+   "sku": "ADSM-012",
+   "ingredient": "애플망고 스무디 시럽",
+   "unit": "g",
+   "qty": 70.0
+  },
+  {
+   "sku": "ADSM-012",
+   "ingredient": "요거트 파우더",
+   "unit": "g",
+   "qty": 60.0
+  },
+  {
+   "sku": "ADSM-012",
+   "ingredient": "설탕시럽",
+   "unit": "ml",
+   "qty": 10.0
+  },
+  {
+   "sku": "ADSM-012",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-012",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-012",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "ADSM-012",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-001",
+   "ingredient": "복숭아아이스티 파우더",
+   "unit": "g",
+   "qty": 60.0
+  },
+  {
+   "sku": "TEA-001",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-001",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-001",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-001",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-005",
+   "ingredient": "복숭아아이스티 파우더",
+   "unit": "g",
+   "qty": 40.0
+  },
+  {
+   "sku": "TEA-005",
+   "ingredient": "얼그레이 티백",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-005",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-005",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-005",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-005",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-006",
+   "ingredient": "자몽청",
+   "unit": "g",
+   "qty": 80.0
+  },
+  {
+   "sku": "TEA-006",
+   "ingredient": "잉글리쉬블랙퍼스트 티백",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-006",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-006",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-006",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-006",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-007",
+   "ingredient": "유자청",
+   "unit": "g",
+   "qty": 80.0
+  },
+  {
+   "sku": "TEA-007",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-007",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-007",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-007",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-008",
+   "ingredient": "자몽청",
+   "unit": "g",
+   "qty": 80.0
+  },
+  {
+   "sku": "TEA-008",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-008",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-008",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-008",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-009",
+   "ingredient": "딸기청",
+   "unit": "g",
+   "qty": 80.0
+  },
+  {
+   "sku": "TEA-009",
+   "ingredient": "애플티 베이스",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-009",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-009",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-009",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-009",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-010",
+   "ingredient": "유자청",
+   "unit": "g",
+   "qty": 80.0
+  },
+  {
+   "sku": "TEA-010",
+   "ingredient": "애플티 베이스",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-010",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-010",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-010",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-010",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-011",
+   "ingredient": "자몽청",
+   "unit": "g",
+   "qty": 80.0
+  },
+  {
+   "sku": "TEA-011",
+   "ingredient": "애플티 베이스",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-011",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-011",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-011",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-011",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-012",
+   "ingredient": "티백",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-012",
+   "ingredient": "제로당",
+   "unit": "g",
+   "qty": 10.0
+  },
+  {
+   "sku": "TEA-012",
+   "ingredient": "투명컵(160z)",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-012",
+   "ingredient": "투명컵 뚜껑",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-012",
+   "ingredient": "컵홀더",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "TEA-012",
+   "ingredient": "스트로우",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "BOT-001",
+   "ingredient": "에스프레소",
+   "unit": "g",
+   "qty": 50.0
+  },
+  {
+   "sku": "BOT-001",
+   "ingredient": "보틀병",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "BOT-002",
+   "ingredient": "디카페인 원액",
+   "unit": "g",
+   "qty": 200.0
+  },
+  {
+   "sku": "BOT-002",
+   "ingredient": "보틀병",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "BOT-003",
+   "ingredient": "에스프레소",
+   "unit": "g",
+   "qty": 6.0
+  },
+  {
+   "sku": "BOT-003",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 850.0
+  },
+  {
+   "sku": "BOT-003",
+   "ingredient": "보틀병",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "BOT-004",
+   "ingredient": "초코파우더",
+   "unit": "g",
+   "qty": 80.0
+  },
+  {
+   "sku": "BOT-004",
+   "ingredient": "초코소스",
+   "unit": "g",
+   "qty": 80.0
+  },
+  {
+   "sku": "BOT-004",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 900.0
+  },
+  {
+   "sku": "BOT-004",
+   "ingredient": "보틀병",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "BOT-004",
+   "ingredient": "스티커",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "BOT-005",
+   "ingredient": "딸기청",
+   "unit": "g",
+   "qty": 250.0
+  },
+  {
+   "sku": "BOT-005",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 800.0
+  },
+  {
+   "sku": "BOT-005",
+   "ingredient": "보틀병",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "BOT-005",
+   "ingredient": "스티커",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "BOT-006",
+   "ingredient": "복숭아아이스티 파우더",
+   "unit": "g",
+   "qty": 150.0
+  },
+  {
+   "sku": "BOT-006",
+   "ingredient": "보틀병",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "BOT-006",
+   "ingredient": "스티커",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "BOT-007",
+   "ingredient": "밀크티 파우더",
+   "unit": "g",
+   "qty": 80.0
+  },
+  {
+   "sku": "BOT-007",
+   "ingredient": "우유",
+   "unit": "ea",
+   "qty": 950.0
+  },
+  {
+   "sku": "BOT-007",
+   "ingredient": "보틀병",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "BOT-007",
+   "ingredient": "스티커",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "DESRT-001",
+   "ingredient": "우유생크림 코르네",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "DESRT-002",
+   "ingredient": "우유생크림 코르네",
+   "unit": "ea",
+   "qty": 1.0
+  },
+  {
+   "sku": "DESRT-003",
+   "ingredient": "우유생크림 코르네",
+   "unit": "ea",
+   "qty": 1.0
+  }
+ ]
+}

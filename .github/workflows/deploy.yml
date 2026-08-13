@@ -72,6 +72,7 @@ jobs:
           upload service/templates/blog_post.html
           upload service/templates/menu.html
           upload service/templates/menu_tasks.html
+          upload service/templates/menu_ingredients.html
           upload database/supabase_client.py
           upload database/blog_store.py
 

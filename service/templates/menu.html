@@ -74,6 +74,7 @@ padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:opacity 
     <button onclick="openDiff()">📡 채널 대조</button>
     <button onclick="openSim()">🧮 주문 손익</button>
     <button onclick="location.href='/{{ key }}/menu/tasks'">📋 작업지시서</button>
+    <button onclick="location.href='/{{ key }}/menu/ingredients'">🧺 자재/레시피</button>
     <label style="font-size:11px;color:var(--sub)"><input type="checkbox" id="onlyProblem" onchange="render()"> 문제만</label>
   </div>
   <div class="stats" id="stats"></div>
@@ -340,6 +341,7 @@ function toggleDetail(sku){
       <input class="wide" type="text" id="nm-${sku}" value="${(it.name||"").replace(/"/g,"&quot;")}" style="width:min(320px,80%);padding:4px 6px;border:1px solid var(--line);border-radius:4px">
       <button onclick="saveName('${sku}')" style="font-size:11px">이름 저장</button>
       ${it.cost_source?`<div class="note">원가 출처: ${it.cost_source}</div>`:""}
+      <div class="note"><a href="/{{ key }}/menu/ingredients?sku=${sku}">📖 이 메뉴 레시피 편집(원가 자동계산)</a></div>
       ${it.composition?`<div class="note">구성: ${it.composition}</div>`:""}</div>
     <div class="chgrid">${CH.map(([ch,label])=>{
       const o = chOverride(sku, ch) || {};

@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>베어글스 · 자재/레시피</title>
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--ink:#2b2620;--sub:#8b8378;--line:#e7e2d8;
+--brown:#7a5c3e;--brownbg:#efe7db;--red:#c0392b;--redbg:#fdecea;--amber:#b7791f;--amberbg:#fdf6e3;
+--green:#1e7b4f;--greenbg:#e9f2ea}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5;
+font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+header{position:sticky;top:0;z-index:10;background:var(--card);border-bottom:1px solid var(--line);padding:10px 14px}
+h1{font-size:16px;margin:0}
+h1 a{font-size:12px;font-weight:400;margin-left:8px;color:var(--brown)}
+.tabs{display:flex;gap:6px;margin-top:8px}
+.tab{flex:1;text-align:center;border:1px solid var(--line);background:var(--card);border-radius:10px;
+padding:8px 4px;font-size:13px;cursor:pointer}
+.tab.on{background:var(--brown);border-color:var(--brown);color:#fff}
+.bar{display:flex;gap:8px;margin-top:8px}
+.bar input{flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px}
+.bar button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap}
+main{padding:10px;max-width:860px;margin:0 auto}
+.wrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;min-width:560px}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;
+font-variant-numeric:tabular-nums}
+th{position:sticky;top:0;background:var(--brownbg);font-size:11px;color:var(--brown);font-weight:600}
+td.l,th.l{text-align:left}
+tr:last-child td{border-bottom:none}
+tr.cat td{background:#f1ede4;text-align:left;font-weight:700;font-size:12px;color:var(--brown)}
+.ed{cursor:pointer;border-bottom:1px dashed #cbc2b4}
+.ed:hover{background:#fdf9ef}
+td input{width:80px;font-size:13px;padding:2px 5px;border:1px solid var(--brown);border-radius:4px;text-align:right}
+td input.l{width:150px;text-align:left}
+.del{color:var(--red);cursor:pointer;font-size:12px}
+.sub{color:var(--sub);font-size:11px}
+.note{font-size:11.5px;color:var(--sub);margin:12px 4px}
+.sum{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0;font-size:13px}
+.sum b.big{font-size:18px}
+.sum .rec{color:var(--green)}
+.pill{display:inline-block;border-radius:10px;padding:1px 8px;font-size:11px;background:var(--brownbg);color:var(--brown);margin-left:6px}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#333;color:#fff;
+padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:opacity .3s;pointer-events:none}
+#toast.show{opacity:1}
+.addrow{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0;align-items:center}
+.addrow input,.addrow select{border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13px}
+.addrow button{border:none;background:var(--brown);color:#fff;border-radius:8px;padding:7px 14px;font-size:13px;cursor:pointer}
+.menu-pick{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:14px;margin-bottom:8px}
+.empty{text-align:center;color:var(--sub);padding:36px 12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧺 자재 · 레시피 <a href="/{{ key }}/menu">← 메뉴/원가</a></h1>
+  <div class="tabs">
+    <div class="tab on" id="tabIng" onclick="TAB='ing';render()">🧺 자재 목록</div>
+    <div class="tab" id="tabRec" onclick="TAB='rec';render()">📖 메뉴 레시피</div>
+  </div>
+</header>
+<main id="main"><div class="empty">불러오는 중…</div></main>
+<div id="toast"></div>
+
+<script>
+const BASE = "/{{ key }}/menu";
+let DATA=null, TAB='ing', Q='', SKU=null;
+const won=n=>n==null?"–":Math.round(n).toLocaleString("ko-KR");
+const w1=n=>n==null?"–":(Math.round(n*100)/100).toLocaleString("ko-KR");
+function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");
+setTimeout(()=>t.classList.remove("show"),1600);}
+async function api(path, body){
+  const r=await fetch(BASE+path,{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body||{})});
+  const j=await r.json().catch(()=>({ok:false}));
+  if(!j.ok){toast("⚠ "+(j.error||"실패"));return null;}
+  return j;
+}
+const unitCost=i=>i.pack_qty?i.pack_cost/i.pack_qty:0;
+const usedCount=id=>DATA.recipes.filter(r=>r.ingredient_id===id).length;
+
+// ── 자재 탭 ──────────────────────────────────────────────
+function renderIng(){
+  const q=Q.trim();
+  let list=DATA.ingredients.filter(i=>!q||i.name.includes(q));
+  let html=`<div class="bar">
+    <input placeholder="자재 검색…" value="${Q}" oninput="Q=this.value;renderIng2()">
+  </div>
+  <div class="addrow">
+    <input id="niName" placeholder="새 자재 이름" style="flex:1;min-width:120px">
+    <select id="niUnit"><option>g</option><option>ml</option><option>ea</option></select>
+    <input id="niQty" type="number" placeholder="구매량" style="width:80px">
+    <input id="niCost" type="number" placeholder="구매가(원)" style="width:95px">
+    <button onclick="addIng()">+ 등록</button>
+  </div>
+  <div class="wrap"><table>
+    <tr><th class="l">자재</th><th>단위</th><th>구매량</th><th>구매가</th><th>단위단가</th><th>사용<br>메뉴</th><th></th></tr>
+    <tbody id="ingBody"></tbody>
+  </table></div>
+  <p class="note">· 구매량/구매가를 탭해서 고치면 <b>그 자재를 쓰는 모든 메뉴의 원가가 즉시 재계산</b>됩니다.<br>
+  · "반제품(역산)" 분류는 옛 원가표에서 역산해 등록한 것 — 실제 구매 단위·가격으로 고쳐주시면 더 정확해집니다.</p>`;
+  document.getElementById("main").innerHTML=html;
+  renderIng2();
+}
+function renderIng2(){
+  const q=Q.trim();
+  const list=DATA.ingredients.filter(i=>!q||i.name.includes(q)||(i.category||'').includes(q));
+  let html="",cat=null;
+  for(const i of list){
+    const c=i.category||"미분류";
+    if(c!==cat){cat=c;html+=`<tr class="cat"><td colspan="7">${c}</td></tr>`;}
+    const n=usedCount(i.id);
+    html+=`<tr>
+      <td class="l ed" onclick="editCell(this,${i.id},'name',true)">${i.name}</td>
+      <td class="ed" onclick="editCell(this,${i.id},'unit',true)">${i.unit}</td>
+      <td class="ed" onclick="editCell(this,${i.id},'pack_qty')">${w1(i.pack_qty)}</td>
+      <td class="ed" onclick="editCell(this,${i.id},'pack_cost')">${won(i.pack_cost)}</td>
+      <td><b>${w1(unitCost(i))}</b><span class="sub">/${i.unit}</span></td>
+      <td>${n||"–"}</td>
+      <td>${n?"":`<span class="del" onclick="delIng(${i.id})">삭제</span>`}</td>
+    </tr>`;
+  }
+  document.getElementById("ingBody").innerHTML=html||`<tr><td colspan="7" class="empty">없음</td></tr>`;
+}
+function editCell(td,id,field,isText){
+  if(td.querySelector("input"))return;
+  const i=DATA.ingredients.find(x=>x.id===id);
+  td.innerHTML=`<input class="${isText?'l':''}" type="${isText?'text':'number'}" step="any" value="${i[field]??''}">`;
+  const inp=td.querySelector("input");inp.focus();inp.select();
+  const done=async(save)=>{
+    if(save){
+      const v=isText?inp.value.trim():(inp.value===""?null:+inp.value);
+      if(v!==null&&v!==""&&v!==i[field]){
+        i[field]=v;
+        const j=await api("/ingredient",{...i});
+        if(j){
+          const n=Object.keys(j.recomputed||{}).length;
+          for(const [sku,c] of Object.entries(j.recomputed||{})){
+            const it=DATA.items.find(x=>x.sku===sku); if(it) it.ingredient_cost=c;
+          }
+          toast(n?`저장 ✓ 메뉴 ${n}개 원가 재계산됨`:"저장 ✓");
+        }
+      }
+    }
+    render();
+  };
+  inp.onkeydown=e=>{if(e.key==="Enter")done(true);if(e.key==="Escape")done(false);};
+  inp.onblur=()=>done(true);
+}
+async function addIng(){
+  const name=document.getElementById("niName").value.trim();
+  const unit=document.getElementById("niUnit").value;
+  const qty=+document.getElementById("niQty").value, cost=+document.getElementById("niCost").value;
+  if(!name||!qty||!cost){toast("이름·구매량·구매가를 채워주세요");return;}
+  const j=await api("/ingredient",{name,unit,pack_qty:qty,pack_cost:cost,category:"직접 등록"});
+  if(j){DATA.ingredients.push(j.ingredient);toast("등록 ✓");render();}
+}
+async function delIng(id){
+  if(!confirm("이 자재를 삭제할까요?"))return;
+  const j=await api(`/ingredient/${id}/delete`);
+  if(j){DATA.ingredients=DATA.ingredients.filter(i=>i.id!==id);toast("삭제 ✓");render();}
+}
+
+// ── 레시피 탭 ──────────────────────────────────────────────
+function fee(ch){return (DATA.settings.channel_fees||{})[ch]||{};}
+function feeRate(ch){const f=fee(ch);const b=((+f.commission||0)+(+f.payment||0))/100;
+  return f.vat_on_fees===false?b:b*1.1;}
+function target(cat){const t=DATA.settings.target_cost_rates||{};return (t[cat]??t["기타"]??35)/100;}
+
+function renderRec(){
+  const opts=DATA.items.map(i=>`<option value="${i.sku}" ${i.sku===SKU?"selected":""}>${i.name} (${i.sku})</option>`).join("");
+  let html=`<select class="menu-pick" onchange="SKU=this.value;render()">
+    <option value="">— 메뉴를 선택하세요 —</option>${opts}</select>`;
+  if(SKU){
+    const it=DATA.items.find(i=>i.sku===SKU);
+    const lines=DATA.recipes.filter(r=>r.sku===SKU);
+    let total=0, rows="";
+    for(const ln of lines){
+      const ing=DATA.ingredients.find(i=>i.id===ln.ingredient_id);
+      if(!ing) continue;
+      const amt=ln.qty*unitCost(ing); total+=amt;
+      rows+=`<tr>
+        <td class="l">${ing.name}<span class="sub"> ${w1(unitCost(ing))}/${ing.unit}</span></td>
+        <td class="ed" onclick="editQty(this,${ln.id},${ln.ingredient_id},${ln.qty})">${w1(ln.qty)} ${ing.unit}</td>
+        <td>${won(amt)}</td>
+        <td><span class="del" onclick="delLine(${ln.id})">빼기</span></td></tr>`;
+    }
+    const tg=target(it.category);
+    const recStore=total?Math.ceil(total/tg/100)*100:null;
+    const recDeliv=total?Math.ceil(total/tg/(1-feeRate("coupang"))/100)*100:null;
+    html+=`<div class="sum">
+      <div>재료원가 합계 <b class="big">${won(total)}원</b>
+        <span class="sub">(정본에 저장된 원가: ${won(it.ingredient_cost)}원)</span></div>
+      <div style="margin-top:6px">목표 원가율 ${(tg*100).toFixed(0)}% 기준 —
+        권장 매장가 <b class="rec">${won(recStore)}원</b> ·
+        권장 배달가 <b class="rec">${won(recDeliv)}원</b>
+        <span class="sub">(쿠팡 수수료 ${(feeRate("coupang")*100).toFixed(1)}% 감안)</span></div>
+      <div class="sub" style="margin-top:4px">현재 판매가: 매장 ${won(it.store_price)} · 배달 ${won(it.delivery_price)}
+        — <a href="/{{ key }}/menu">가격 수정은 메뉴/원가에서</a></div>
+    </div>
+    <div class="wrap"><table>
+      <tr><th class="l">재료</th><th>사용량</th><th>금액</th><th></th></tr>
+      ${rows||`<tr><td colspan="4" class="empty">아직 레시피가 없습니다. 아래에서 재료를 추가하세요.</td></tr>`}
+    </table></div>
+    <div class="addrow">
+      <input id="nlIng" list="ingList" placeholder="재료 검색·선택" style="flex:1;min-width:140px">
+      <datalist id="ingList">${DATA.ingredients.map(i=>`<option value="${i.name} (${i.unit})">`).join("")}</datalist>
+      <input id="nlQty" type="number" step="any" placeholder="사용량" style="width:80px">
+      <button onclick="addLine()">+ 추가</button>
+    </div>
+    <p class="note">· 사용량을 고치거나 재료를 넣고 빼면 <b>원가가 즉시 재계산되어 정본에 저장</b>됩니다.<br>
+    · 신메뉴는 메뉴/원가 화면에서 먼저 등록한 뒤, 여기서 레시피를 붙이세요.</p>`;
+  }
+  document.getElementById("main").innerHTML=html;
+}
+function editQty(td,rid,iid,cur){
+  if(td.querySelector("input"))return;
+  td.innerHTML=`<input type="number" step="any" value="${cur}">`;
+  const inp=td.querySelector("input");inp.focus();inp.select();
+  const done=async(save)=>{
+    if(save&&inp.value!==""&&+inp.value!==cur){
+      const j=await api("/recipe",{sku:SKU,ingredient_id:iid,qty:+inp.value});
+      if(j) syncRecipe(j);
+    }
+    render();
+  };
+  inp.onkeydown=e=>{if(e.key==="Enter")done(true);if(e.key==="Escape")done(false);};
+  inp.onblur=()=>done(true);
+}
+async function addLine(){
+  const v=document.getElementById("nlIng").value.trim();
+  const qty=+document.getElementById("nlQty").value;
+  const m=v.match(/^(.*) \(([^)]+)\)$/);
+  const ing=DATA.ingredients.find(i=>m?(i.name===m[1]&&i.unit===m[2]):i.name===v);
+  if(!ing){toast("목록에서 재료를 선택하세요 (없으면 자재 탭에서 먼저 등록)");return;}
+  if(!qty){toast("사용량을 입력하세요");return;}
+  const j=await api("/recipe",{sku:SKU,ingredient_id:ing.id,qty});
+  if(j) syncRecipe(j);
+  render();
+}
+async function delLine(rid){
+  const j=await api(`/recipe/${rid}/delete`);
+  if(j){DATA.recipes=DATA.recipes.filter(r=>r.id!==rid);syncRecipe(j);render();}
+}
+function syncRecipe(j){
+  if(j.line){
+    const i=DATA.recipes.findIndex(r=>r.id===j.line.id);
+    if(i>=0) DATA.recipes[i]=j.line; else DATA.recipes.push(j.line);
+  }
+  for(const [sku,c] of Object.entries(j.recomputed||{})){
+    const it=DATA.items.find(x=>x.sku===sku); if(it){it.ingredient_cost=c;}
+  }
+  toast("저장 ✓ 원가 재계산됨");
+}
+
+function render(){
+  document.getElementById("tabIng").classList.toggle("on",TAB==='ing');
+  document.getElementById("tabRec").classList.toggle("on",TAB==='rec');
+  if(!DATA)return;
+  if(!DATA.ingredients.length&&TAB==='ing'){
+    document.getElementById("main").innerHTML=`<div class="empty">자재 데이터가 없습니다.<br><br>
+      Supabase에서 <code>supabase/migrations/007_ingredients.sql</code> 실행 후<br>
+      집 PC에서 <code>python scripts/seed_ingredients.py --apply</code> 를 실행하세요.</div>`;
+    return;
+  }
+  TAB==='ing'?renderIng():renderRec();
+}
+fetch(BASE+"/data").then(r=>r.json()).then(d=>{
+  if(d.error){document.getElementById("main").innerHTML=`<div class="empty">⚠ ${d.error}</div>`;return;}
+  DATA=d; DATA.ingredients=d.ingredients||[]; DATA.recipes=d.recipes||[];
+  const p=new URLSearchParams(location.search); SKU=p.get("sku")||null;
+  if(SKU) TAB='rec';
+  render();
+});
+</script>
+</body>
+</html>
