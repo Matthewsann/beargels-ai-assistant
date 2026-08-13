@@ -74,6 +74,31 @@ display:flex;justify-content:space-between;gap:8px}
 .acnone{padding:10px 11px;font-size:12px;color:var(--sub)}
 .ewrap{display:inline-flex;gap:4px;align-items:center}
 .supsel{font-size:12px;padding:3px 5px;border:1px solid var(--brown);border-radius:5px;background:var(--card);color:var(--ink)}
+/* 짝 맞추기 */
+.badge{display:inline-block;background:var(--red);color:#fff;border-radius:9px;
+padding:0 6px;font-size:10px;margin-left:4px;vertical-align:1px}
+.tab.on .badge{background:#fff;color:var(--brown)}
+.mcard{background:var(--card);border:1px solid var(--line);border-radius:12px;
+padding:16px;margin:10px 0;text-align:center}
+.mcard .nm{font-size:19px;font-weight:700;line-height:1.35}
+.mcard .sp{color:var(--sub);font-size:12.5px;margin-top:6px}
+.mcard .up{font-size:15px;color:var(--brown);font-weight:700;margin-top:8px}
+.mbar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:2px 0 8px}
+.mbar i{display:block;height:100%;background:var(--brown)}
+.cand{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+background:var(--card);border:1px solid var(--line);border-radius:10px;
+padding:12px 13px;margin-bottom:7px;cursor:pointer;font-size:14px;color:var(--ink)}
+.cand:hover{border-color:var(--brown);background:#fffdf6}
+.cand.bad{opacity:.62}
+.cand .k{flex:0 0 22px;height:22px;border-radius:6px;background:var(--brownbg);
+color:var(--brown);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.cand .t{flex:1;min-width:0}
+.cand .t b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cand .sc{flex:0 0 auto;font-size:11px;color:var(--sub)}
+.mact{display:flex;gap:8px;margin-top:12px}
+.mact button{flex:1;border:1px solid var(--line);background:var(--card);border-radius:10px;
+padding:12px 8px;font-size:13px;cursor:pointer;color:var(--ink)}
+.mact button.pri{background:var(--green);border-color:var(--green);color:#fff}
 .okbtn{border:none;background:var(--green);color:#fff;border-radius:5px;
 padding:3px 8px;font-size:12px;cursor:pointer;line-height:1.4}
 /* 엑셀식 일괄편집 */
@@ -108,6 +133,7 @@ td.ck input{width:16px;height:16px}
   <div class="tabs">
     <div class="tab on" id="tabIng" onclick="TAB='ing';render()">🧺 자재 목록</div>
     <div class="tab" id="tabRec" onclick="TAB='rec';render()">📖 메뉴 레시피</div>
+    <div class="tab" id="tabMatch" onclick="TAB='match';render()">🔗 짝 맞추기</div>
   </div>
 </header>
 <main id="main"><div class="empty">불러오는 중…</div></main>
@@ -234,6 +260,11 @@ function renderIng(){
     <input id="npQty" type="number" step="any" placeholder="산출량" style="width:90px">
     <select id="npUnit"><option>g</option><option>ml</option><option>ea</option></select>
     <button onclick="addPrep()">+ 반제품 만들기</button>
+  </div>
+  <div class="addrow">
+    <span class="sub" style="align-self:center">📦 발주 사이트</span>
+    <button class="bulkbtn" id="msfsBtn" onclick="importMsfs()">엠즈푸드 품목 169개 넣기/갱신</button>
+    <span class="sub">이미 있는 이름은 값만 갱신 · 여러 번 눌러도 안전</span>
   </div>
   <div class="wrap"><table id="ingTable"></table></div>
   <p class="note">· 값을 고친 뒤 <b>엔터</b> 또는 <b>✓</b> 를 눌러야 저장됩니다(입력 도중엔 저장되지 않아요).<br>\n  · 구매량/구매가를 탭해서 고치면 <b>그 자재를 쓰는 모든 메뉴의 원가가 즉시 재계산</b>됩니다.<br>
@@ -378,6 +409,123 @@ function renderIng2(){
   tbl.innerHTML=head+(html||`<tr><td colspan="${span}" class="empty">없음</td></tr>`);
   bBar();
 }
+
+// ── 짝 맞추기 ───────────────────────────────────────────────
+// 발주 사이트에서 받은 자재는 이름이 우리가 쓰던 이름과 조금씩 다르다
+// ('투명컵(160z)' vs '투명컵(무지) 16oz(92파이)'). 한 번에 하나씩 보여주고
+// 후보를 눌러 잇는다 — 누르면 값은 새 것, 레시피는 기존 것을 그대로 쓴다.
+const MSFS="엠즈푸드";
+// 이번 등록으로 새로 들어온 줄만 본다('신규등록' 표시). 기존 자재에
+// 발주처만 엠즈푸드로 해 두신 것까지 끌어오면 소음이 된다.
+const isNew=i=>(i.note||"").includes("신규등록") && !usedCount(i.id)
+               && !(i.note||"").includes("확인함");
+function bigrams(t){const o=new Set();for(let k=0;k<t.length-1;k++)o.add(t.slice(k,k+2));return o;}
+function simScore(a,b){
+  const A=nname(a), B=nname(b);
+  if(!A||!B) return 0;
+  if(A===B) return 1;
+  if(A.includes(B)||B.includes(A)) return 0.9;
+  const ga=bigrams(A), gb=bigrams(B);
+  if(!ga.size||!gb.size) return 0;
+  let hit=0; for(const g of ga) if(gb.has(g)) hit++;
+  return hit/Math.min(ga.size,gb.size);
+}
+// 아직 안 이은 신규 자재 중, 그럴듯한 후보가 있는 것만 줄 세운다
+function matchQueue(){
+  if(typeof MLATER==="undefined") return [];
+  if(!DATA) return [];
+  // 후보는 '이번에 새로 들어온 것'을 뺀 나머지 전부 — 발주처를 엠즈푸드로
+  // 적어두신 기존 자재도 후보가 되어야 한다.
+  const olds=DATA.ingredients.filter(i=>!(i.note||"").includes("신규등록"));
+  const out=[];
+  for(const n of DATA.ingredients.filter(isNew)){
+    const c=olds.map(o=>({o,s:simScore(n.name,o.name)}))
+      .filter(x=>x.s>=0.34).sort((a,b)=>b.s-a.s).slice(0,5);
+    if(c.length && !MLATER.has(n.id)) out.push({n,c});
+  }
+  return out.sort((a,b)=>b.c[0].s-a.c[0].s);
+}
+let MDONE=0;
+function renderMatch(){
+  const q=matchQueue();
+  const main=document.getElementById("main");
+  if(!q.length){
+    main.innerHTML=`<div class="empty">
+      ${MDONE?`짝 맞추기 ${MDONE}건 끝냈습니다 👍<br><br>`:""}
+      더 이을 자재가 없습니다.<br>
+      <span class="sub">발주 사이트 품목을 아직 안 넣으셨다면 자재 목록 위쪽 버튼을 눌러주세요.</span>
+      ${MLATER.size?`<br><br><button class="bulkbtn" onclick="mLaterBack()">
+        나중에 미뤄둔 ${MLATER.size}건 다시 보기</button>`:""}
+      </div>`;
+    return;
+  }
+  const {n,c}=q[0];
+  const total=q.length+MDONE;
+  main.innerHTML=`
+    <div class="cnt">${MDONE+1} / ${total} · 남은 ${q.length}건</div>
+    <div class="mbar"><i style="width:${Math.round(MDONE/total*100)}%"></i></div>
+    <div class="mcard">
+      <div class="sub" style="font-size:11px">엠즈푸드에서 새로 받은 자재</div>
+      <div class="nm">${n.name}</div>
+      <div class="sp">${w1(n.pack_qty)}${n.unit} · ${won(n.pack_cost)}원 · ${n.category||"미분류"}</div>
+      <div class="up">${w1(unitCost(n))}원 / ${n.unit}</div>
+      ${n.note?`<div class="sub" style="font-size:11px;margin-top:4px">${n.note}</div>`:""}
+    </div>
+    <div class="cnt">쓰던 자재 중 <b>같은 것</b>을 누르세요 — 값은 새 것으로 바뀌고 레시피는 그대로 갑니다</div>
+    ${c.map((x,k)=>{const bad=x.o.unit!==n.unit;
+      return `<button class="cand${bad?" bad":""}" onclick="mLink(${n.id},${x.o.id})">
+      <span class="k">${k+1}</span>
+      <span class="t"><b>${x.o.name}${bad?'<span class="pill" style="background:var(--redbg);color:var(--red)">단위 다름</span>':""}</b>
+        <span class="sub">${w1(unitCost(x.o))}원/${x.o.unit} · ${usedCount(x.o.id)}개 메뉴에 사용</span></span>
+      <span class="sc">${Math.round(x.s*100)}%</span>
+    </button>`;}).join("")}
+    <div class="mact">
+      <button class="pri" onclick="mKeep(${n.id})">✨ 다른 자재임 (그냥 두기)</button>
+      <button onclick="mSkip()">나중에 →</button>
+    </div>
+    <p class="note">· 누르면 <b>쓰던 자재의 구매량·가격·발주처가 새 값으로 바뀌고</b>, 새로 받은 쪽은 사라집니다.
+      레시피와 원가는 그대로 이어집니다.<br>
+    · 단위가 다르면(g ↔ ea) 사용량 뜻이 달라져 막습니다 — 자재 목록에서 단위를 먼저 맞춰주세요.<br>
+    · <b>다른 자재임</b>을 누르면 둘 다 남고 다시 묻지 않습니다. 키보드 <b>1~5</b>, <b>N</b>, <b>S</b> 로도 됩니다.</p>`;
+}
+// '나중에' 는 이번 화면에서만 미뤄 둔다(새로고침하면 다시 나온다) —
+// 애매한 걸 억지로 결정하게 만들지 않기 위함.
+let MLATER=new Set();
+function mSkip(){
+  const q=matchQueue();
+  if(q.length<2){toast("남은 게 이것뿐입니다");return;}
+  MLATER.add(q[0].n.id); render();
+}
+function mLaterBack(){ MLATER=new Set(); render(); }
+async function mKeep(id){
+  const i=DATA.ingredients.find(x=>x.id===id); if(!i) return;
+  const j=await api("/ingredient",{...i,note:((i.note||"")+" · 확인함").trim()});
+  if(j){ i.note=j.ingredient?j.ingredient.note:(i.note||"")+" · 확인함"; MDONE++;
+    toast("그대로 두었습니다"); render(); }
+}
+async function mLink(newId, oldId){
+  const n=DATA.ingredients.find(x=>x.id===newId);
+  const o=DATA.ingredients.find(x=>x.id===oldId);
+  if(!n||!o) return;
+  if(n.unit!==o.unit){
+    toast(`⚠ 단위가 다릅니다 (${o.unit} vs ${n.unit}) — 자재 목록에서 먼저 맞춰주세요`); return;
+  }
+  const j=await api("/ingredient/merge",{keep_id:oldId,drop_id:newId,price_from:"drop"});
+  if(!j) return;
+  const d=await fetch(BASE+"/data").then(r=>r.json());
+  DATA=d; DATA.ingredients=d.ingredients||[]; DATA.recipes=d.recipes||[]; _mcMap=null;
+  MDONE++;
+  const cnt=Object.keys(j.recomputed||{}).length;
+  toast(`'${o.name}' 값 갱신 ✓${cnt?` · 메뉴 ${cnt}개 원가 재계산`:""}`);
+  render();
+}
+document.addEventListener("keydown",e=>{
+  if(TAB!=='match'||e.target.tagName==="INPUT") return;
+  const q=matchQueue(); if(!q.length) return;
+  const {n,c}=q[0];
+  if(e.key>="1"&&e.key<="5"){ const x=c[+e.key-1]; if(x) mLink(n.id,x.o.id); }
+  else if(e.key.toLowerCase()==="n") mKeep(n.id);
+});
 
 // ── 중복 자재 보기 ──────────────────────────────────────────
 // 목록에 섞어 두면 짝을 눈으로 찾아야 한다. 짝끼리 붙여 놓고, 어느 쪽을
@@ -640,6 +788,19 @@ async function addPrep(){
   DATA=d; DATA.ingredients=d.ingredients||[]; DATA.recipes=d.recipes||[]; _mcMap=null;
   toast(`'${j.name}' 생성 ✓ — 이제 들어가는 재료를 넣어주세요`);
   TAB='rec'; SKU=j.sku; BULK=false; EDITS={}; SEL.clear(); render();
+}
+async function importMsfs(){
+  const b=document.getElementById("msfsBtn");
+  if(b){b.disabled=true;b.textContent="넣는 중… (30초쯤)";}
+  const j=await api("/ingredients/import_msfs");
+  if(!j){ if(b){b.disabled=false;b.textContent="엠즈푸드 품목 169개 넣기/갱신";} return; }
+  const d=await fetch(BASE+"/data").then(r=>r.json());
+  DATA=d; DATA.ingredients=d.ingredients||[]; DATA.recipes=d.recipes||[]; _mcMap=null;
+  toast(`새 자재 ${j.added} · 값 갱신 ${j.updated} · 메뉴 원가 ${j.recomputed}개 재계산`);
+  const q=matchQueue().length;
+  if(q){ TAB='match'; }        // 바로 짝 맞추기로 넘긴다
+  render();
+  if(q) setTimeout(()=>toast(`이름이 비슷한 ${q}건 — 하나씩 확인해 주세요`),1800);
 }
 async function delIng(id){
   if(!confirm("이 자재를 삭제할까요?"))return;
@@ -1093,6 +1254,10 @@ function render(){
   if(bb&&!BULK&&!RBULK){bb.remove();document.body.classList.remove("padded");}
   document.getElementById("tabIng").classList.toggle("on",TAB==='ing');
   document.getElementById("tabRec").classList.toggle("on",TAB==='rec');
+  const tm=document.getElementById("tabMatch");
+  if(tm&&DATA){ const n=matchQueue().length;
+    tm.classList.toggle("on",TAB==='match');
+    tm.innerHTML=`🔗 짝 맞추기${n?`<span class="badge">${n}</span>`:""}`; }
   if(!DATA)return;
   if(!DATA.ingredients.length&&TAB==='ing'){
     document.getElementById("main").innerHTML=`<div class="empty">자재 데이터가 아직 없습니다.<br><br>
@@ -1103,7 +1268,9 @@ function render(){
       한 번만 누르면 되고, 실수로 다시 눌러도 안전합니다.</p></div>`;
     return;
   }
-  TAB==='ing'?renderIng():renderRec();
+  if(TAB==='match') renderMatch();
+  else if(TAB==='ing') renderIng();
+  else renderRec();
 }
 fetch(BASE+"/data").then(r=>r.json()).then(d=>{
   if(d.error){document.getElementById("main").innerHTML=`<div class="empty">⚠ ${d.error}</div>`;return;}

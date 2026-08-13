@@ -731,7 +731,8 @@ def menu_ingredient_merge(path_key):
     check(path_key)
     body = request.get_json(force=True) or {}
     try:
-        out = db.ingredient_merge(body.get("keep_id"), body.get("drop_id"))
+        out = db.ingredient_merge(body.get("keep_id"), body.get("drop_id"),
+                                  price_from=body.get("price_from") or "keep")
         return jsonify({"ok": True, **out})
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
@@ -751,6 +752,21 @@ def menu_ingredient_delete(path_key, ing_id):
         return jsonify({"ok": False,
                         "error": "레시피에서 사용 중이라 삭제할 수 없습니다. "
                                  "먼저 해당 메뉴 레시피에서 빼주세요."}), 400
+
+
+@app.route("/<path_key>/menu/ingredients/import_msfs", methods=["POST"])
+def menu_ingredients_import_msfs(path_key):
+    """엠즈푸드 발주품목(orderlink) → 자재 등록. 재실행해도 안전."""
+    check(path_key)
+    try:
+        import json as _json
+        spec = _json.loads((ROOT / "data" / "msfs_ingredients.json")
+                           .read_text(encoding="utf-8"))
+        return jsonify({"ok": True, **db.import_msfs(spec)})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"엠즈푸드 자재 등록 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
 @app.route("/<path_key>/menu/prep", methods=["POST"])

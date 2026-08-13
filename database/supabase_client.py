@@ -943,7 +943,58 @@ def _norm_ing_name(s):
     return re.sub(r"[\s·\-_/,.()\[\]]+", "", (s or "")).lower()
 
 
-def ingredient_merge(keep_id, drop_id):
+def import_msfs(spec):
+    """엠즈푸드 발주품목을 자재로 넣는다. 이미 있는 이름은 값만 갱신.
+
+    레시피는 건드리지 않는다 — 이름이 조금씩 달라 자동으로 이어붙이면 틀린
+    자재에 붙을 수 있다. 이어붙이기는 화면에서 사장님이 눈으로 확인해 고른다.
+    """
+    sb = get_client()
+    existing = {_norm_ing_name(i["name"]): i for i in ingredients_all()}
+    added, updated, touched = 0, 0, set()
+
+    for it in spec["ingredients"]:
+        key = _norm_ing_name(it["name"])
+        cur = existing.get(key)
+        payload = {k: it.get(k) for k in _ING_COLS if k in it}
+        payload["updated_at"] = datetime.utcnow().isoformat() + "Z"
+        if cur:
+            # 이미 손으로 분류해 둔 것은 덮어쓰지 않는다
+            if (cur.get("category") or "미분류") != "미분류":
+                payload.pop("category", None)
+            # 짝 맞추기 표시는 지키다 — 두 번째 등록에서 지워지면 대기열이 사라진다
+            old_note = cur.get("note") or ""
+            for mark in ("신규등록", "확인함"):
+                if mark in old_note and mark not in (payload.get("note") or ""):
+                    payload["note"] = ((payload.get("note") or "")
+                                       + f" · {mark}").strip(" ·")
+            if cur.get("unit") and cur["unit"] != it.get("unit"):
+                # 단위가 다르면 사용량 뜻이 달라진다 — 값을 덮으면 원가가 틀어진다
+                continue
+            sb.table("ingredients").update(payload).eq("id", cur["id"]).execute()
+            updated += 1
+            touched.update(skus_using_ingredient(cur["id"]))
+        else:
+            # 새로 넣은 줄만 표시해 둔다 — 화면의 '짝 맞추기'가 이 표시로
+            # 대상을 고른다(기존 자재까지 끌려 들어오면 소음이 된다).
+            payload["note"] = ((payload.get("note") or "") + " · 신규등록").strip(" ·")
+            try:
+                sb.table("ingredients").upsert(
+                    payload, on_conflict="name,unit").execute()
+                added += 1
+            except Exception as e:  # noqa: BLE001
+                if getattr(e, "code", None) not in _MISSING_COLUMN_CODES:
+                    raise
+                payload.pop("supplier", None)
+                sb.table("ingredients").upsert(
+                    payload, on_conflict="name,unit").execute()
+                added += 1
+
+    recomputed = recompute_costs(sorted(touched)) if touched else {}
+    return {"added": added, "updated": updated, "recomputed": len(recomputed)}
+
+
+def ingredient_merge(keep_id, drop_id, price_from="keep"):
     """자재 둘을 하나로 합친다 — 레시피를 옮기고 남는 쪽을 지운다.
 
     같은 메뉴에 둘 다 들어가 있으면 사용량을 더한다(둘로 나눠 적어둔 것이므로).
@@ -961,6 +1012,17 @@ def ingredient_merge(keep_id, drop_id):
         raise ValueError(
             f"단위가 다릅니다({keep['unit']} vs {drop['unit']}). "
             f"사용량 뜻이 달라 자동으로 합칠 수 없습니다 — 단위를 먼저 맞춰주세요.")
+
+    # 발주 사이트에서 새로 받은 쪽이 구매 단위·가격은 정확하다. 레시피는
+    # 기존 자재에 붙어 있으므로, 껍데기는 기존을 두고 값만 새 것으로 가져온다.
+    if price_from == "drop":
+        sb.table("ingredients").update({
+            "pack_qty": drop.get("pack_qty"),
+            "pack_cost": drop.get("pack_cost"),
+            "supplier": drop.get("supplier") or keep.get("supplier"),
+            "note": drop.get("note") or keep.get("note"),
+            "updated_at": datetime.utcnow().isoformat() + "Z",
+        }).eq("id", keep_id).execute()
 
     rows = sb.table("menu_recipes").select("*").execute().data
     keep_by_sku = {r["sku"]: r for r in rows if r["ingredient_id"] == keep_id}
