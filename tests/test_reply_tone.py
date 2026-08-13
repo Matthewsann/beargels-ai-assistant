@@ -6,7 +6,7 @@
 
 import pytest
 
-from assistant.beargels import _template_reply, _THANKS_VARIANTS
+from assistant.beargels import _template_reply, _THANKS_VARIANTS, _truncate_at_sentence
 
 # 모든 답글 공통 금지(AI 말투·방문 표현).
 BANNED = [
@@ -74,3 +74,42 @@ def test_persona_has_delivery_and_nofabrication_rules():
     from assistant.beargels import REPLY_PERSONA
     assert "주문 주세요" in REPLY_PERSONA           # 배달 표현
     assert "지어내지 않는다" in REPLY_PERSONA         # 없는 사실 금지
+
+
+# 실사고 재현(2026-08, 리뷰1198): 쿠팡 300자 한도를 넘는 모델 응답을
+# text[:max_len]로 그냥 잘라 "...훨씬 더 만족스러운" 처럼 문장 중간에서
+# 끊긴 채 실제로 게시됐다. 문장부호 뒤에서 자르도록 고쳤다.
+def test_truncate_at_sentence_cuts_on_boundary_not_mid_word():
+    text = ("다음번에 다시 주문을 주신다면 그때는 훨씬 더 만족스러운 경험을 "
+            "드릴 수 있도록 노력하겠습니다. 감사합니다.")
+    cut = _truncate_at_sentence(text, 58)
+    assert cut == text[:len(cut)]          # 접두사 그대로(내용 변형 없음)
+    assert cut.endswith((".", "!", "?", "~"))  # 문장부호에서 끝남
+    assert not cut.endswith("만족스러운")       # 예전 버그: 여기서 끊겼었다
+
+
+def test_truncate_at_sentence_returns_unchanged_when_within_limit():
+    text = "짧은 답글입니다."
+    assert _truncate_at_sentence(text, 300) == text
+
+
+def test_truncate_at_sentence_falls_back_when_no_boundary_found():
+    text = "가" * 500  # 문장부호가 전혀 없는 극단적인 경우
+    cut = _truncate_at_sentence(text, 300)
+    assert len(cut) == 300
+
+
+def test_generate_review_reply_never_exceeds_platform_limit(monkeypatch):
+    # 모델이 한도를 넘겨 응답해도(300자 한도에 320자짜리 응답), 최종 초안은
+    # 한도 안에서 문장 끝까지만 담아야 한다.
+    import assistant.beargels as beargels
+
+    overlong = ("맛있게 드셨다니 정말 기쁘네요. " * 20) + "감사합니다."
+    assert len(overlong) > 300
+    monkeypatch.setattr(beargels, "_ask_claude", lambda *a, **k: overlong)
+
+    review = {"platform": "coupang", "review_no": "10", "author": "김손님",
+              "rating": 5, "content": "너무 맛있어요", "order_count": 1}
+    draft = beargels.generate_review_reply(review)
+    assert len(draft) <= 300
+    assert draft.endswith((".", "!", "?", "~"))

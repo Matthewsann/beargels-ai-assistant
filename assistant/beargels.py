@@ -503,6 +503,26 @@ def classify_review(review):
     return "praise_detail" if len(content) >= 15 else "neutral"
 
 
+_SENTENCE_ENDS = (".", "!", "?", "~", "😊", "🥯", "🐻", "✨", "☕", "🍪", "🥗", "💗", ")")
+
+
+def _truncate_at_sentence(text, max_len):
+    """모델 응답이 max_len을 넘으면 문장 끝에서 자른다.
+
+    단순히 text[:max_len]로 자르면 "...훨씬 더 만족스러운" 처럼 문장 중간에서
+    끊긴 채 실고객에게 나갈 뻔한 사고가 있었다(2026-08, 리뷰1198 쿠팡 300자
+    한도). 잘라낼 자리를 max_len 이전 구간에서 마지막 문장부호/이모지 뒤로
+    찾는다 — 못 찾으면 어쩔 수 없이 그 자리에서 자른다.
+    """
+    if len(text) <= max_len:
+        return text
+    window = text[:max_len]
+    cut = max(window.rfind(c) for c in _SENTENCE_ENDS)
+    if cut >= max_len // 2:  # 너무 앞쪽이면(잘라낼 게 거의 없으면) 포기
+        return window[:cut + 1]
+    return window
+
+
 def _clean_author(name):
     """작성자명을 답글 호칭용으로 안전화한다.
 
@@ -572,7 +592,8 @@ def generate_review_reply(review):
             f"채운다(사진은 실제로 있는 리뷰에서만 언급). 다른 답글과 겹치지 않게 "
             f"자연스럽게."
         )
-        draft = _ask_claude(REPLY_PERSONA, user, max_tokens=600)[:max_len]
+        draft = _truncate_at_sentence(
+            _ask_claude(REPLY_PERSONA, user, max_tokens=600), max_len)
         return _strip_banned(draft, max_len)
     except LLMUnavailable:
         return _template_reply(typ, review, author, oc, rating, max_len)
@@ -604,7 +625,8 @@ def _strip_banned(text, max_len):
             "다음 답글에서 금지 표현(" + ", ".join(hits) + ")이 들어간 부분만 "
             "자연스러운 다른 말로 바꿔줘. 나머지 내용·말투·길이는 그대로 두고, "
             "답글 본문만 출력해:\n\n" + text,
-            max_tokens=600)[:max_len].strip()
+            max_tokens=600)
+        fixed = _truncate_at_sentence(fixed, max_len).strip()
         return fixed or text
     except LLMUnavailable:
         return text
