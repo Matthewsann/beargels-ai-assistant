@@ -1,0 +1,76 @@
+{# 나이트모드(다크 테마) 공통 파일 — _sidebar.html 이 include 하므로 전 화면에 적용.
+   동작: 기본은 휴대폰/PC 시스템 설정을 따라가고, 우하단 🌙/☀️ 버튼으로 직접 전환.
+   선택은 localStorage 에 저장되어 다음 방문에도 유지된다.
+   토큰: 각 화면의 :root 라이트 값은 그대로 두고, 다크일 때만 여기서 덮어쓴다. #}
+<script>
+  (function () {
+    var saved = null;
+    try { saved = localStorage.getItem("bg_theme"); } catch (e) {}
+    if (saved === "dark" || saved === "light") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  })();
+</script>
+<style>
+  /* ── 다크 팔레트 (리뷰·블로그·가이드 계열 + 메뉴/원가 계열 토큰 전부) ── */
+  html[data-theme="dark"] {
+    --bg:#181716; --card:#22211f; --ink:#e9e7e1; --muted:#9a978c; --line:#3a3833;
+    --accent:#5b9bd8; --accent-bg:#20344c; --warn:#dcb264; --warn-bg:#3a2e15;
+    --ok:#93c46e; --ok-bg:#263a19; --bad:#e07d74; --bad-bg:#41211d;
+    --soft:#2b2a27; --hover:#2e2c29; --dim:#4b4842;
+    --esc-line:#5c3a33; --esc-bg:#33231f; --warn-line:#5c4720; --bad-line:#5c332e;
+    --sub:#9a978c; --brown:#c2996a; --brownbg:#342a1e; --red:#e07d74; --redbg:#41211d;
+    --green:#82c49a; --greenbg:#1f3324; --amber:#d9b05c; --amberbg:#3a2e15;
+  }
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+      --bg:#181716; --card:#22211f; --ink:#e9e7e1; --muted:#9a978c; --line:#3a3833;
+      --accent:#5b9bd8; --accent-bg:#20344c; --warn:#dcb264; --warn-bg:#3a2e15;
+      --ok:#93c46e; --ok-bg:#263a19; --bad:#e07d74; --bad-bg:#41211d;
+      --soft:#2b2a27; --hover:#2e2c29; --dim:#4b4842;
+      --esc-line:#5c3a33; --esc-bg:#33231f; --warn-line:#5c4720; --bad-line:#5c332e;
+      --sub:#9a978c; --brown:#c2996a; --brownbg:#342a1e; --red:#e07d74; --redbg:#41211d;
+      --green:#82c49a; --greenbg:#1f3324; --amber:#d9b05c; --amberbg:#3a2e15;
+    }
+  }
+  /* 밝은 배경 버튼 위 흰 글씨 → 다크에선 배경색이 밝아지므로 어두운 글씨로 */
+  html[data-theme="dark"] .btn.primary, html[data-theme="dark"] .b.p,
+  html[data-theme="dark"] .chip.on, html[data-theme="dark"] .tab.on,
+  html[data-theme="dark"] .fchip.on, html[data-theme="dark"] .addrow button,
+  html[data-theme="dark"] .okbtn, html[data-theme="dark"] #seedBtn { color:#161310; }
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) .btn.primary, html:not([data-theme="light"]) .b.p,
+    html:not([data-theme="light"]) .chip.on, html:not([data-theme="light"]) .tab.on,
+    html:not([data-theme="light"]) .fchip.on, html:not([data-theme="light"]) .addrow button,
+    html:not([data-theme="light"]) .okbtn, html:not([data-theme="light"]) #seedBtn { color:#161310; }
+  }
+  /* ── 우하단 전환 버튼 ── */
+  .theme-btn {
+    position:fixed; right:14px; bottom:14px; z-index:200;
+    width:42px; height:42px; border-radius:50%;
+    border:1px solid var(--line,#e7e5de); background:var(--card,#fff);
+    font-size:19px; line-height:1; cursor:pointer;
+    box-shadow:0 2px 8px rgba(0,0,0,.14);
+  }
+</style>
+<button type="button" id="themeBtn" class="theme-btn" aria-label="화면 밝기 모드 전환">🌙</button>
+<script>
+  (function () {
+    var root = document.documentElement;
+    var btn = document.getElementById("themeBtn");
+    function current() {
+      var t = root.getAttribute("data-theme");
+      if (t) return t;
+      return (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches)
+        ? "dark" : "light";
+    }
+    function paint() { btn.textContent = current() === "dark" ? "☀️" : "🌙"; }
+    btn.addEventListener("click", function () {
+      var next = current() === "dark" ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem("bg_theme", next); } catch (e) {}
+      paint();
+    });
+    paint();
+  })();
+</script>

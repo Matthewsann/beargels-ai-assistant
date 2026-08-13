@@ -27,7 +27,7 @@
   .tag.b { background:var(--accent-bg); color:var(--accent); }
   .tag.c { background:var(--warn-bg); color:var(--warn); }
   .stars { color:#c98a12; letter-spacing:1px; }
-  .stars .dim { color:#dcd8cc; }
+  .stars .dim { color:var(--dim,#dcd8cc); }
   /* 배민·쿠팡 리뷰 관리 화면과 같은 2단 배치(작성자 | 주문정보) */
   .rvhead { display:flex; gap:14px; align-items:flex-start; padding-bottom:11px;
             border-bottom:1px solid var(--line); margin-bottom:11px; }
@@ -44,7 +44,7 @@
     .rvhead { flex-direction:column; gap:9px; }
     .who { flex:none; }
   }
-  .rv { font-size:14px; background:#f6f5f1; border-radius:9px; padding:10px 12px;
+  .rv { font-size:14px; background:var(--soft,#f6f5f1); border-radius:9px; padding:10px 12px;
         margin-bottom:11px; white-space:pre-wrap; word-break:break-word; }
   .lbl { font-size:12px; color:var(--muted); margin-bottom:5px; display:block; }
   textarea { font-family:inherit; font-size:14px; border:1px solid var(--line);

@@ -48,7 +48,7 @@
   </form>
 
   {% if error %}
-  <div style="border:1px solid #f0c9a8; background:#faeeda; color:#854f0b; border-radius:12px; padding:16px 18px; margin-bottom:16px; font-size:14px;">
+  <div style="border:1px solid var(--warn-line,#f0c9a8); background:var(--warn-bg); color:var(--warn); border-radius:12px; padding:16px 18px; margin-bottom:16px; font-size:14px;">
     ⚠️ {{ error }}
   </div>
   {% endif %}
@@ -62,7 +62,7 @@
     <div style="font-size:13px; font-weight:600; margin-bottom:6px;">🔑 키워드</div>
     <div style="margin-bottom:16px;">
       <span class="tag accent" style="margin-right:6px;">{{ plan.main_keyword }}</span>
-      {% for k in plan.sub_keywords %}<span class="tag" style="background:#f1efe8; color:#5f5e5a; margin-right:4px;">{{ k }}</span>{% endfor %}
+      {% for k in plan.sub_keywords %}<span class="tag" style="background:var(--soft,#f1efe8); color:var(--muted); margin-right:4px;">{{ k }}</span>{% endfor %}
     </div>
 
     <div style="font-size:13px; font-weight:600; margin-bottom:6px;">🧱 글 구성</div>

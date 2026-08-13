@@ -5,19 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>베어글스 AI 비서</title>
 <style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --accent-ink:#fff;
+          --warn:#854f0b; --warn-bg:#faeeda; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#181716; --card:#22211f; --ink:#e9e7e1; --muted:#9a978c; --line:#3a3833;
+            --accent:#5b9bd8; --accent-bg:#20344c; --accent-ink:#161310;
+            --warn:#dcb264; --warn-bg:#3a2e15; }
+  }
   body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
-         background:#faf9f7; color:#232320; font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
-  .box { width:100%; max-width:340px; padding:28px 24px; background:#fff;
-         border:1px solid #e7e5de; border-radius:14px; margin:16px; }
-  .logo { width:46px; height:46px; border-radius:12px; background:#e6f1fb; color:#185fa5;
+         background:var(--bg); color:var(--ink); font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .box { width:100%; max-width:340px; padding:28px 24px; background:var(--card);
+         border:1px solid var(--line); border-radius:14px; margin:16px; }
+  .logo { width:46px; height:46px; border-radius:12px; background:var(--accent-bg); color:var(--accent);
           display:flex; align-items:center; justify-content:center; font-size:24px; margin-bottom:14px; }
-  b { font-size:17px; } p { color:#8a897f; font-size:13px; margin:4px 0 20px; }
-  input { width:100%; box-sizing:border-box; border:1px solid #e7e5de; border-radius:8px;
-          padding:12px; font-size:16px; font-family:inherit; }
-  button { width:100%; margin-top:12px; padding:12px; border:1px solid #185fa5; background:#185fa5;
-           color:#fff; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer;
+  b { font-size:17px; } p { color:var(--muted); font-size:13px; margin:4px 0 20px; }
+  input { width:100%; box-sizing:border-box; border:1px solid var(--line); border-radius:8px;
+          padding:12px; font-size:16px; font-family:inherit; background:var(--card); color:var(--ink); }
+  button { width:100%; margin-top:12px; padding:12px; border:1px solid var(--accent); background:var(--accent);
+           color:var(--accent-ink); border-radius:8px; font-size:15px; font-weight:600; cursor:pointer;
            font-family:inherit; }
-  .err { margin-top:12px; padding:10px 12px; background:#faeeda; color:#854f0b;
+  .err { margin-top:12px; padding:10px 12px; background:var(--warn-bg); color:var(--warn);
          border-radius:8px; font-size:13px; }
 </style>
 </head>

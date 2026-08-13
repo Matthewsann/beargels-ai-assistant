@@ -70,16 +70,16 @@
 
 <style>
   .drop { border:2px dashed var(--line); border-radius:10px; padding:22px; text-align:center;
-          color:var(--muted); background:#f6f4ee; cursor:pointer; font-size:14px; }
+          color:var(--muted); background:var(--soft,#f6f4ee); cursor:pointer; font-size:14px; }
   .drop.over { border-color:var(--accent); color:var(--accent); background:var(--accent-bg); }
   .fileschips { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
-  .fchip { font-size:12px; background:#f1efe8; border:1px solid var(--line); border-radius:6px; padding:4px 8px; }
+  .fchip { font-size:12px; background:var(--soft,#f1efe8); border:1px solid var(--line); border-radius:6px; padding:4px 8px; }
   .pathbox { margin-top:12px; font-size:12px; color:var(--muted); }
-  .pathbox code { display:block; background:#f1efe8; border:1px solid var(--line); border-radius:6px;
+  .pathbox code { display:block; background:var(--soft,#f1efe8); border:1px solid var(--line); border-radius:6px;
                   padding:6px 8px; margin:4px 0; word-break:break-all; color:var(--ink); font-size:11px; }
   .stepbar { display:flex; gap:4px; margin:14px 0 4px; flex-wrap:wrap; }
   .stepbar span { flex:1; min-width:64px; text-align:center; font-size:11px; padding:5px 3px;
-                  border-radius:6px; background:#f1efe8; color:var(--muted); }
+                  border-radius:6px; background:var(--soft,#f1efe8); color:var(--muted); }
   .stepbar span.on { background:var(--accent-bg); color:var(--accent); font-weight:600; }
   .stepbar span.done { background:var(--ok-bg); color:var(--ok); }
   #detail video { width:100%; max-width:260px; border-radius:10px; border:1px solid var(--line); background:#000; }

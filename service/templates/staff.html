@@ -34,7 +34,7 @@
   textarea { resize:vertical; line-height:1.65; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
           padding:14px; margin-bottom:12px; }
-  .card.esc { border-color:#e8bdb7; background:#fffaf9; }
+  .card.esc { border-color:var(--esc-line,#e8bdb7); background:var(--esc-bg,#fffaf9); }
   .meta { display:flex; align-items:center; gap:7px; flex-wrap:wrap; font-size:12px;
           color:var(--muted); margin-bottom:8px; }
   /* 배민·쿠팡 리뷰 관리 화면과 같은 2단 배치(작성자 | 주문정보) */
@@ -59,8 +59,8 @@
   .tag.c { background:var(--warn-bg); color:var(--warn); }
   .tag.bad { background:var(--bad-bg); color:var(--bad); }
   .stars { color:#c98a12; letter-spacing:1px; }
-  .stars .dim { color:#dcd8cc; }
-  .rv { font-size:14px; background:#f6f5f1; border-radius:9px; padding:10px 12px; margin-bottom:11px;
+  .stars .dim { color:var(--dim,#dcd8cc); }
+  .rv { font-size:14px; background:var(--soft,#f6f5f1); border-radius:9px; padding:10px 12px; margin-bottom:11px;
         white-space:pre-wrap; word-break:break-word; }
   .lbl { font-size:12px; color:var(--muted); margin-bottom:5px; display:block; }
   .acts { display:flex; gap:7px; margin-top:9px; }

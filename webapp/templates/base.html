@@ -8,6 +8,24 @@
   :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
           --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
           --ok:#3b6d11; --ok-bg:#eaf3de; }
+  /* 나이트모드 — 기본은 시스템 설정을 따르고, 우하단 🌙 버튼으로 직접 전환 */
+  html[data-theme="dark"] {
+    --bg:#181716; --card:#22211f; --ink:#e9e7e1; --muted:#9a978c; --line:#3a3833;
+    --accent:#5b9bd8; --accent-bg:#20344c; --warn:#dcb264; --warn-bg:#3a2e15;
+    --ok:#93c46e; --ok-bg:#263a19; --bad:#e07d74; --bad-line:#5c332e;
+    --soft:#2b2a27; --hover:#2e2c29; --warn-line:#5c4720;
+  }
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+      --bg:#181716; --card:#22211f; --ink:#e9e7e1; --muted:#9a978c; --line:#3a3833;
+      --accent:#5b9bd8; --accent-bg:#20344c; --warn:#dcb264; --warn-bg:#3a2e15;
+      --ok:#93c46e; --ok-bg:#263a19; --bad:#e07d74; --bad-line:#5c332e;
+      --soft:#2b2a27; --hover:#2e2c29; --warn-line:#5c4720;
+    }
+  }
+  .theme-btn { position:fixed; right:14px; bottom:14px; z-index:200; width:42px; height:42px;
+               border-radius:50%; border:1px solid var(--line); background:var(--card);
+               font-size:19px; line-height:1; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.14); }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink);
          font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; line-height:1.6; }
@@ -22,12 +40,12 @@
   .side .brand2 b { font-size:14px; } .side .brand2 small { display:block; font-size:11px; color:var(--muted); }
   .side a.m { display:flex; align-items:center; gap:8px; padding:10px 10px; border-radius:9px;
           text-decoration:none; color:var(--ink); font-size:14px; margin-bottom:2px; }
-  .side a.m:hover { background:#f4f2ec; }
+  .side a.m:hover { background:var(--hover,#f4f2ec); }
   .side a.m.on { background:var(--accent-bg); color:var(--accent); font-weight:600; }
   .side .sub { margin:0 0 6px 26px; }
   .side .sub a { display:block; padding:6px 10px; font-size:13px; color:var(--muted);
           text-decoration:none; border-radius:7px; }
-  .side .sub a:hover { background:#f4f2ec; }
+  .side .sub a:hover { background:var(--hover,#f4f2ec); }
   .side .sub a.on { color:var(--accent); font-weight:600; }
   .side .foot { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
   .main { flex:1; min-width:0; }
@@ -51,14 +69,14 @@
          align-items:center; gap:5px; }
   .btn.primary { border-color:var(--accent); color:var(--accent); font-weight:600; }
   .cards { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:24px; }
-  .stat { background:#f1efe8; border-radius:8px; padding:14px; }
+  .stat { background:var(--soft,#f1efe8); border-radius:8px; padding:14px; }
   .stat .n { font-size:24px; font-weight:600; } .stat .l { font-size:13px; color:var(--muted); margin-bottom:4px; }
   .sec { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
   .sec b { font-size:16px; font-weight:600; } .sec small { color:var(--muted); font-size:13px; }
   .list { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card); }
   .row { display:flex; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid var(--line);
          text-decoration:none; color:inherit; }
-  .row:last-child { border-bottom:none; } .row:hover { background:#faf9f4; }
+  .row:last-child { border-bottom:none; } .row:hover { background:var(--hover,#faf9f4); }
   .row .t { flex:1; min-width:0; }
   .row .t b { font-size:14px; font-weight:600; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .row .t small { color:var(--muted); font-size:12px; }
@@ -96,6 +114,36 @@
 </style>
 </head>
 <body>
+  <script>
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem("bg_theme"); } catch (e) {}
+      if (saved === "dark" || saved === "light") {
+        document.documentElement.setAttribute("data-theme", saved);
+      }
+    })();
+  </script>
+  <button type="button" id="themeBtn" class="theme-btn" aria-label="화면 밝기 모드 전환">🌙</button>
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var btn = document.getElementById("themeBtn");
+      function current() {
+        var t = root.getAttribute("data-theme");
+        if (t) return t;
+        return (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches)
+          ? "dark" : "light";
+      }
+      function paint() { btn.textContent = current() === "dark" ? "☀️" : "🌙"; }
+      btn.addEventListener("click", function () {
+        var next = current() === "dark" ? "light" : "dark";
+        root.setAttribute("data-theme", next);
+        try { localStorage.setItem("bg_theme", next); } catch (e) {}
+        paint();
+      });
+      paint();
+    })();
+  </script>
   {% set blog_on = request.path == '/' or request.path.startswith(('/plan', '/calendar', '/analytics', '/post')) %}
   <div class="layout">
     <nav class="side">

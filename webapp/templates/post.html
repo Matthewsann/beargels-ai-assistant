@@ -57,7 +57,7 @@
     {% endif %}
     <form method="post" action="/post/{{ '%04d'|format(item_id) }}/delete" style="display:inline;"
           onsubmit="return confirm('이 글을 휴지통으로 옮길까요? (되살릴 수 있어요)');">
-      <button type="submit" class="btn" style="color:#a32d2d; border-color:#e0b4b4;">🗑 삭제</button>
+      <button type="submit" class="btn" style="color:var(--bad,#a32d2d); border-color:var(--bad-line,#e0b4b4);">🗑 삭제</button>
     </form>
   </div>
 {% endblock %}

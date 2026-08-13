@@ -41,7 +41,7 @@
       <div style="font-size:13px; color:var(--muted); margin-top:12px;">🐻 브랜드 부합도: {{ review.brand_fit }}</div>
       {% endif %}
     {% elif review_error %}
-      <div style="margin-top:12px; padding:14px 16px; background:#faeeda; color:#854f0b; border-radius:8px; font-size:14px;">⚠️ {{ review_error }}</div>
+      <div style="margin-top:12px; padding:14px 16px; background:var(--warn-bg); color:var(--warn); border-radius:8px; font-size:14px;">⚠️ {{ review_error }}</div>
     {% else %}
       <div style="font-size:13px; color:var(--muted); margin:10px 0 14px;">전문가가 금고(철학·톤)·SEO 기준으로 점수와 개선점을 매겨줘요.</div>
       <a class="btn primary" href="/post/{{ '%04d'|format(item_id) }}/evaluate?ai=1">🤖 AI 전문가 평가 받기</a>

@@ -1,29 +1,30 @@
 {# 공통 좌측 기능 메뉴 — 각 템플릿 <body> 바로 다음에 {% include "_sidebar.html" %}.
    자기 스타일을 갖고 다녀서 템플릿 쪽 CSS 는 건드릴 필요 없다.
    넓은 화면: 왼쪽 고정 세로 메뉴 / 좁은 화면(≤900px): 상단 가로 스크롤 메뉴 #}
+{% include "_theme.html" %}
 {% set _p = request.path %}
 {% set _sec = 'menu' if '/menu' in _p else ('blog' if '/blog' in _p else ('place' if '/place' in _p else ('insta' if '/instagram' in _p else 'review'))) %}
 <style>
-  .sbar { position:fixed; left:0; top:0; bottom:0; width:198px; background:#fff;
-          border-right:1px solid #e7e5de; padding:16px 10px; overflow-y:auto; z-index:50;
+  .sbar { position:fixed; left:0; top:0; bottom:0; width:198px; background:var(--card,#fff);
+          border-right:1px solid var(--line,#e7e5de); padding:16px 10px; overflow-y:auto; z-index:50;
           font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
   .sbar .bhead { display:flex; align-items:center; gap:8px; padding:2px 8px 14px; }
-  .sbar .bhead .blogo { width:32px; height:32px; border-radius:9px; background:#e6f1fb;
-          color:#185fa5; display:flex; align-items:center; justify-content:center; font-size:17px; }
-  .sbar .bhead b { font-size:13px; color:#232320; } .sbar .bhead small { display:block; font-size:11px; color:#8a897f; }
+  .sbar .bhead .blogo { width:32px; height:32px; border-radius:9px; background:var(--accent-bg,#e6f1fb);
+          color:var(--accent,#185fa5); display:flex; align-items:center; justify-content:center; font-size:17px; }
+  .sbar .bhead b { font-size:13px; color:var(--ink,#232320); } .sbar .bhead small { display:block; font-size:11px; color:var(--muted,#8a897f); }
   .sbar a.sm { display:flex; align-items:center; gap:8px; padding:10px 10px; border-radius:9px;
-          text-decoration:none; color:#232320; font-size:13.5px; margin-bottom:2px; }
-  .sbar a.sm:hover { background:#f4f2ec; }
-  .sbar a.sm.on { background:#e6f1fb; color:#185fa5; font-weight:600; }
+          text-decoration:none; color:var(--ink,#232320); font-size:13.5px; margin-bottom:2px; }
+  .sbar a.sm:hover { background:var(--hover,#f4f2ec); }
+  .sbar a.sm.on { background:var(--accent-bg,#e6f1fb); color:var(--accent,#185fa5); font-weight:600; }
   .sbar .ssub { margin:0 0 4px 24px; }
-  .sbar .ssub a { display:block; padding:5px 10px; font-size:12.5px; color:#8a897f;
+  .sbar .ssub a { display:block; padding:5px 10px; font-size:12.5px; color:var(--muted,#8a897f);
           text-decoration:none; border-radius:7px; }
-  .sbar .ssub a:hover { background:#f4f2ec; }
-  .sbar .ssub a.on { color:#185fa5; font-weight:600; }
+  .sbar .ssub a:hover { background:var(--hover,#f4f2ec); }
+  .sbar .ssub a.on { color:var(--accent,#185fa5); font-weight:600; }
   body { padding-left:198px; }
   @media (max-width:900px) {
     body { padding-left:0; }
-    .sbar { position:static; width:auto; border-right:none; border-bottom:1px solid #e7e5de;
+    .sbar { position:static; width:auto; border-right:none; border-bottom:1px solid var(--line,#e7e5de);
             padding:8px 10px; display:flex; align-items:center; gap:2px; overflow-x:auto;
             white-space:nowrap; }
     .sbar .bhead { padding:0 6px 0 0; } .sbar .bhead b, .sbar .bhead small { display:none; }
