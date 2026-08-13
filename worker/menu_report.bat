@@ -10,6 +10,7 @@ rem GitHub 로 올린다. 클라우드 세션은 git pull 로 그 리포트를 �
 rem Claude 가 필요 없다. 파이썬만 있으면 된다.
 rem
 rem 수동 실행: worker\menu_report.bat
+rem 한 채널만: worker\menu_report.bat naver   (배민·쿠팡 로그인 없이 네이버만)
 rem 자동 실행: 작업 스케줄러에 이 파일을 등록(예: 매일 04:00)
 
 rem 그냥 python 은 스토어 스텁이라 실행되지 않는다 — 실제 경로를 먼저 쓴다.
@@ -23,7 +24,7 @@ echo [1/4] 최신 코드 받기...
 git pull --rebase --autostash >> "%LOG%" 2>&1
 
 echo [2/4] 메뉴 수집 + 리포트 작성...
-"%PY%" scripts\menu_report.py >> "%LOG%" 2>&1
+"%PY%" scripts\menu_report.py %* >> "%LOG%" 2>&1
 set RESULT=%ERRORLEVEL%
 
 echo [3/4] 리포트 커밋...

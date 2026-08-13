@@ -19,6 +19,7 @@ r"""채널 메뉴 수집 + 결과 리포트 — 집 PC 무인 실행용.
 실행:
     worker\menu_report.bat        (수집 → 리포트 → 자동 commit+push)
     python scripts/menu_report.py (리포트만, push 안 함)
+    python scripts/menu_report.py naver   (네이버만 — 배민·쿠팡 로그인 없이)
 """
 from __future__ import annotations
 
@@ -85,7 +86,7 @@ def _recent_dumps(since: datetime, limit: int = 10) -> list[str]:
     return sorted(names)[:limit]
 
 
-def collect() -> tuple[list[dict], list[str]]:
+def collect(only: set[str] | None = None) -> tuple[list[dict], list[str]]:
     """세 채널을 순서대로 수집하고 채널별 결과와 상세 오류를 돌려준다."""
     from crawler import menu_scrape
 
@@ -94,6 +95,9 @@ def collect() -> tuple[list[dict], list[str]]:
         ("coupang", "쿠팡이츠", menu_scrape.fetch_coupang_menus),
         ("naver", "네이버", menu_scrape.fetch_naver_menus),
     )
+    if only:
+        fetchers = tuple(f for f in fetchers if f[0] in only)
+        logger.info("지정한 채널만 수집: %s", ", ".join(f[1] for f in fetchers))
     results, details = [], []
     for key, label, fetch in fetchers:
         rows, error = None, None
@@ -180,12 +184,21 @@ def main() -> int:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S")
 
+    # 인자로 채널 이름을 주면 그것만 수집한다 — 네이버만 다시 볼 때 배민·쿠팡
+    # 로그인까지 확인할 필요가 없어진다.
+    valid = {"baemin", "coupang", "naver"}
+    only = {a.lower() for a in sys.argv[1:] if a.lower() in valid} or None
+    bad = [a for a in sys.argv[1:] if a.lower() not in valid]
+    if bad:
+        logger.warning("모르는 채널은 무시합니다: %s (쓸 수 있는 값: %s)",
+                       ", ".join(bad), ", ".join(sorted(valid)))
+
     started = datetime.now()
     chrome_ok = _cdp_alive()
     if not chrome_ok:
         logger.warning("디버그 크롬(9222)이 꺼져 있음 — 수집이 대부분 실패할 수 있음")
 
-    results, details = collect()
+    results, details = collect(only)
     saved = save_snapshots(results)
     logger.info("DB 저장 — %s", saved)
     dumps = _recent_dumps(started)
