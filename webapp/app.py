@@ -75,6 +75,20 @@ from instagram import bp as instagram_bp  # noqa: E402
 app.register_blueprint(instagram_bp)
 
 
+@app.context_processor
+def inject_menu_cost_url():
+    """좌측 메뉴의 '메뉴/원가' 링크 — 직원용 서비스 앱(service/app.py, 5060)에 있다.
+
+    비밀주소(SERVICE_PATH)가 없으면 링크를 아예 숨긴다. 호스트명은 지금 접속한
+    주소를 따라가므로 localhost 로 열든 집 IP 로 열든 같은 기기의 5060 을 가리킨다.
+    """
+    key = (os.getenv("SERVICE_PATH") or "").strip()
+    if not key:
+        return {"menu_cost_url": None}
+    host = request.host.split(":")[0]
+    return {"menu_cost_url": f"http://{host}:5060/{key}/menu"}
+
+
 @app.before_request
 def require_login():
     if not WEB_PASSWORD or session.get("ok"):
