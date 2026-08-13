@@ -1,0 +1,512 @@
+<title>베어글스 플레이스 루틴</title>
+<style>
+  :root {
+    --bg: #F8F5EF;
+    --card: #FFFFFF;
+    --ink: #292019;
+    --muted: #6E5F4E;
+    --line: #E5DCCB;
+    --soft: #F1EADD;
+    --accent: #059B52;
+    --accent-soft: #E2F3E9;
+    --danger: #B23A32;
+    --danger-soft: #F9E9E7;
+    --warn: #8A6D1F;
+    --warn-soft: #F5EDD6;
+    --shadow: 0 1px 3px rgba(41, 32, 25, 0.07);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1D1915;
+      --card: #262019;
+      --ink: #EFE7DA;
+      --muted: #A79781;
+      --line: #3A3128;
+      --soft: #2E2720;
+      --accent: #2BD57E;
+      --accent-soft: #1F3529;
+      --danger: #E0716A;
+      --danger-soft: #3C2422;
+      --warn: #D9B95C;
+      --warn-soft: #363019;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1D1915;
+    --card: #262019;
+    --ink: #EFE7DA;
+    --muted: #A79781;
+    --line: #3A3128;
+    --soft: #2E2720;
+    --accent: #2BD57E;
+    --accent-soft: #1F3529;
+    --danger: #E0716A;
+    --danger-soft: #3C2422;
+    --warn: #D9B95C;
+    --warn-soft: #363019;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 28px 20px 80px; }
+
+  /* ── header ── */
+  header h1 {
+    font-size: 27px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin: 6px 0 4px;
+    text-wrap: balance;
+  }
+  .eyebrow {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+  header p.lede { color: var(--muted); margin: 6px 0 0; max-width: 60ch; }
+
+  .goalbar {
+    margin-top: 18px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 14px 18px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 24px;
+    align-items: baseline;
+  }
+  .goalbar strong { font-weight: 700; }
+  .goalbar .num {
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    font-weight: 800;
+  }
+
+  /* ── section nav ── */
+  nav.jump {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--bg);
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 12px 0;
+    margin-top: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  nav.jump a {
+    flex: none;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    text-decoration: none;
+    border: 1px solid var(--line);
+    background: var(--card);
+    border-radius: 999px;
+    padding: 5px 13px;
+    white-space: nowrap;
+  }
+  nav.jump a:hover, nav.jump a:focus-visible { color: var(--ink); border-color: var(--muted); }
+  nav.jump a.no { color: var(--danger); border-color: var(--danger); }
+
+  /* ── sections ── */
+  section { margin-top: 44px; scroll-margin-top: 70px; }
+  .sec-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .sec-head h2 {
+    font-size: 21px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .sec-head .when {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 999px;
+    padding: 3px 11px;
+  }
+  .sec-head .count { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; margin-left: auto; }
+  section > p.note { color: var(--muted); margin: 8px 0 0; max-width: 62ch; }
+
+  /* ── checklist ── */
+  ul.check { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  ul.check li {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+  }
+  ul.check label {
+    display: flex;
+    gap: 12px;
+    padding: 12px 15px;
+    cursor: pointer;
+    align-items: flex-start;
+  }
+  ul.check input[type="checkbox"] {
+    flex: none;
+    width: 19px;
+    height: 19px;
+    margin-top: 2px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  ul.check .t { font-weight: 700; }
+  ul.check .d { display: block; color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+  ul.check li.done { border-color: var(--accent); background: var(--accent-soft); }
+  ul.check li.done .t { text-decoration: line-through; text-decoration-thickness: 1.5px; opacity: 0.75; }
+  .owner {
+    display: inline-block;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--warn);
+    background: var(--warn-soft);
+    border-radius: 4px;
+    padding: 1px 7px;
+    margin-left: 6px;
+    vertical-align: 1px;
+  }
+
+  /* ── keyword chips ── */
+  .kw { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .kw span {
+    background: var(--card);
+    border: 1.5px solid var(--accent);
+    color: var(--ink);
+    border-radius: 999px;
+    padding: 6px 15px;
+    font-weight: 700;
+    font-size: 14px;
+  }
+  .kw span:first-child { background: var(--accent); color: #fff; }
+  :root[data-theme="dark"] .kw span:first-child { color: #10281B; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .kw span:first-child { color: #10281B; }
+  }
+
+  /* ── copy block ── */
+  .copyblock {
+    position: relative;
+    margin-top: 16px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 16px 18px 18px;
+  }
+  .copyblock h3 { margin: 0 0 8px; font-size: 14px; font-weight: 800; color: var(--muted); letter-spacing: 0.04em; }
+  .copyblock p { margin: 0; white-space: pre-line; font-size: 14.5px; }
+  .copyblock button {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: none;
+    border-radius: 7px;
+    padding: 6px 13px;
+    cursor: pointer;
+  }
+  .copyblock button:hover, .copyblock button:focus-visible { filter: brightness(0.95); }
+
+  /* ── routine cards ── */
+  .routine { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 16px; }
+  .routine .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 15px 17px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .routine .freq {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+  }
+  .routine h3 { margin: 0; font-size: 16px; font-weight: 800; }
+  .routine p { margin: 0; font-size: 13.5px; color: var(--muted); }
+  .routine .ex {
+    margin-top: 4px;
+    background: var(--soft);
+    border-radius: 7px;
+    padding: 8px 11px;
+    font-size: 13px;
+    color: var(--ink);
+  }
+
+  /* ── speech / mention ── */
+  .say { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .say .bubble {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    border-radius: 0 10px 10px 0;
+    padding: 11px 15px;
+    box-shadow: var(--shadow);
+  }
+  .say .bubble b { display: block; font-size: 12.5px; color: var(--muted); font-weight: 700; margin-bottom: 2px; }
+
+  /* ── forbidden ── */
+  #forbidden .sec-head h2 { color: var(--danger); }
+  ul.no { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  ul.no li {
+    background: var(--danger-soft);
+    border: 1px solid var(--danger);
+    border-radius: 10px;
+    padding: 11px 15px;
+  }
+  ul.no b { color: var(--danger); }
+  ul.no .why { display: block; font-size: 13px; color: var(--muted); margin-top: 1px; }
+
+  /* ── 30-day table ── */
+  .tablewrap { overflow-x: auto; margin-top: 16px; }
+  table.plan { border-collapse: collapse; width: 100%; min-width: 460px; background: var(--card); border-radius: 10px; box-shadow: var(--shadow); }
+  table.plan th, table.plan td { border: 1px solid var(--line); padding: 10px 14px; text-align: left; vertical-align: top; }
+  table.plan th { background: var(--soft); font-size: 13px; letter-spacing: 0.03em; white-space: nowrap; }
+  table.plan td.wk { font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  /* ── footer ── */
+  footer { margin-top: 56px; border-top: 1px solid var(--line); padding-top: 18px; font-size: 13px; color: var(--muted); }
+  footer a { color: var(--accent); }
+  #resetBtn {
+    font: inherit; font-size: 13px; color: var(--muted);
+    background: none; border: 1px solid var(--line); border-radius: 7px;
+    padding: 4px 12px; cursor: pointer; margin-top: 10px;
+  }
+  #resetBtn:hover { color: var(--danger); border-color: var(--danger); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    ul.check li, .copyblock button { transition: background 0.15s, border-color 0.15s; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Beargels Songdo · 네이버 스마트플레이스</div>
+    <h1>베어글스 플레이스 루틴 🐻🥯</h1>
+    <p class="lede">"송도 베이글" 검색에서 베어글스가 자연스럽게 위로 올라가게 만드는 실행 가이드예요.
+    체크하면 이 기기에 저장되니, 하나씩 끝내면서 표시해 주세요.</p>
+    <div class="goalbar">
+      <span><strong>목표</strong> — 검색 → 클릭 → 저장·길찾기 → 방문으로 이어지게</span>
+      <span>세팅 진행률 <span class="num" id="setupCount">0/0</span></span>
+    </div>
+  </header>
+
+  <nav class="jump" aria-label="바로가기">
+    <a href="#setup">① 한 번만 세팅</a>
+    <a href="#keywords">② 키워드·문안</a>
+    <a href="#routine">③ 매일·매주 루틴</a>
+    <a href="#talk">④ 손님 응대 멘트</a>
+    <a href="#forbidden" class="no">⑤ 절대 금지</a>
+    <a href="#plan30">⑥ 30일 플랜</a>
+  </nav>
+
+  <!-- ────────────────────────────── -->
+  <section id="setup">
+    <div class="sec-head">
+      <h2>① 한 번만 하면 되는 세팅</h2>
+      <span class="when">스마트플레이스센터에서</span>
+      <span class="count" id="setupSecCount"></span>
+    </div>
+    <p class="note">PC나 폰에서 <b>new.smartplace.naver.com</b> 접속 → 사장님 네이버 계정으로 로그인.
+    정보를 100% 채우는 게 기본 점수예요. <span class="owner">사장님</span> 표시는 사장님 결정·계정이 필요한 항목.</p>
+
+    <ul class="check" data-group="setup">
+      <li><label><input type="checkbox" id="c-kw"><span><span class="t">대표 키워드 5개 등록</span><span class="d">업체정보 → 대표키워드. 아래 ② 섹션의 5개를 순서대로 그대로 입력.</span></span></label></li>
+      <li><label><input type="checkbox" id="c-desc"><span><span class="t">상세설명 붙여넣기</span><span class="d">아래 ②의 문안을 복사해서 업체정보 → 상세설명에. 좌석·주차 안내를 덧붙여 최대한 길게(2,000자까지).</span></span></label></li>
+      <li><label><input type="checkbox" id="c-way"><span><span class="t">찾아오는 길 입력</span><span class="d">"인천대입구역 3번 출구 도보 3분, 송도 타임스페이스 C동 광장 앞 108호" — 역·랜드마크 기준으로.</span></span></label></li>
+      <li><label><input type="checkbox" id="c-hours"><span><span class="t">영업시간 정확히 입력</span><span class="d">요일별 시간 + 휴무 + 베이글 소진 시 조기 마감까지. 틀리면 손님이 헛걸음해요.</span></span></label></li>
+      <li><label><input type="checkbox" id="c-amenity"><span><span class="t">편의시설·부가정보 전부 체크</span><span class="d">포장, 주차, 좌석, 콘센트, 결제수단 등 해당하는 건 하나도 빼지 말고.</span></span></label></li>
+      <li><label><input type="checkbox" id="c-sns"><span><span class="t">SNS 연동</span><span class="d">인스타 @beargels_songdo, 블로그 blog.naver.com/beargels_songdo 링크 등록.</span></span></label></li>
+      <li><label><input type="checkbox" id="c-call"><span><span class="t">스마트콜 신청 <span class="owner">사장님</span></span><span class="d">무료. 전화 유입이 통계에 잡히고, 전화 연결도 순위에 반영되는 행동 데이터.</span></span></label></li>
+      <li><label><input type="checkbox" id="c-photo"><span><span class="t">사진 10장 이상 업로드</span><span class="d">대표사진 = 크림치즈 베이글 가로형 클로즈업(가로 1200px 이상). 메뉴판·가격 사진 꼭 포함. 순서: 메뉴 → 내부 → 외관. 파일명에 "송도베이글" 넣기.</span></span></label></li>
+      <li><label><input type="checkbox" id="c-menu"><span><span class="t">메뉴 전부 등록 + 개별 사진</span><span class="d">시그니처(크림치즈 베이글, [SET] 베이글 샌드위치 세트, 잠봉뵈르)를 맨 위로 — 입력 순서가 곧 노출 순서. 설명에 "매일 아침 직접 반죽해 굽는 수제 베이글" 식으로 키워드 자연스럽게.</span></span></label></li>
+      <li><label><input type="checkbox" id="c-coupon"><span><span class="t">알림받기 쿠폰 등록 <span class="owner">사장님</span></span><span class="d">"알림받기 누르면 음료 500원 할인" 수준의 소액. 쿠폰이 있으면 검색 결과에 쿠폰 아이콘이 붙어서 클릭률이 올라가요.</span></span></label></li>
+      <li><label><input type="checkbox" id="c-pop"><span><span class="t">계산대 POP·QR 비치</span><span class="d">"네이버에 '베어글스 송도' 검색 → 저장+알림받기 하면 쿠폰!" 안내문.</span></span></label></li>
+      <li><label><input type="checkbox" id="c-talk"><span><span class="t">톡톡 켜고 자동응답 설정</span><span class="d">영업시간·베이글 소진·주차 FAQ를 자동응답으로. 응답이 늦으면 오히려 마이너스라 자동응답 필수.</span></span></label></li>
+      <li><label><input type="checkbox" id="c-order"><span><span class="t">네이버주문(픽업) 연동 검토 <span class="owner">사장님</span></span><span class="d">"미리 주문하고 출근길에 픽업" — 송도 직장인 손님과 딱 맞는 기능.</span></span></label></li>
+    </ul>
+  </section>
+
+  <!-- ────────────────────────────── -->
+  <section id="keywords">
+    <div class="sec-head"><h2>② 우리 가게 키워드 · 상세설명 문안</h2></div>
+    <p class="note">플레이스·블로그·인스타에서 <b>같은 단어</b>를 쓰는 게 핵심이에요.
+    "송도 카페"·"송도 맛집"은 경쟁 가게가 100곳이 넘어서 아직 안 써요 — 아래 5개부터.</p>
+
+    <div class="kw">
+      <span>1. 송도 베이글</span>
+      <span>2. 인천대입구역 카페</span>
+      <span>3. 송도 브런치</span>
+      <span>4. 송도 베이글샌드위치</span>
+      <span>5. 송도 빵집</span>
+    </div>
+
+    <div class="copyblock">
+      <h3>상세설명 문안 — 그대로 붙여넣기</h3>
+      <button type="button" data-copy="desc">복사</button>
+      <p id="copy-desc">베어글스 송도 타임스페이스점은 매일 아침 직접 반죽해 굽는 수제 베이글 카페입니다. 인천대입구역에서 도보 3분, 송도 타임스페이스 C동 광장 앞에 있어요. 쫀득한 수제 베이글에 직접 개발한 요거트 크림치즈 생크림을 듬뿍 올린 크림치즈 베이글, 파리지엔 잠봉뵈르와 베이글 샌드위치 세트가 대표 메뉴입니다. 아침 브런치, 점심 샌드위치, 포장·배달 모두 가능하고, 제철 과일로 만드는 과일 산도(멜론·복숭아·망고)와 말차 소금 크림 라떼도 준비되어 있어요. 송도 주민들이 루틴처럼 들를 수 있는 따뜻한 동네 베이글 카페를 만들어가고 있습니다.</p>
+    </div>
+  </section>
+
+  <!-- ────────────────────────────── -->
+  <section id="routine">
+    <div class="sec-head"><h2>③ 매일·매주 루틴</h2><span class="when">합쳐서 하루 10분</span></div>
+    <p class="note">네이버는 "꾸준히 관리되는 가게"에 점수를 줘요. 몰아서 하는 것보다 조금씩 매일이 유리해요.</p>
+
+    <div class="routine">
+      <div class="card">
+        <span class="freq">매일 · 5~10분</span>
+        <h3>영수증 리뷰 답글</h3>
+        <p>24시간 안에, 복사·붙여넣기 금지. 리뷰 내용을 읽고 메뉴명과 "송도"를 자연스럽게 넣어서.</p>
+        <div class="ex">"○○님, 잠봉뵈르 맛있게 드셨다니 기뻐요. 송도 오시는 길에 또 들러주세요 🐻"</div>
+        <p>나쁜 리뷰 → 변명 금지, 사과 + "매장으로 연락 주시면 도와드릴게요" + <b>사장님께 바로 공유</b>.</p>
+      </div>
+      <div class="card">
+        <span class="freq">주 1~2회 · 5분</span>
+        <h3>소식 발행</h3>
+        <p>한두 줄 + 사진 한 장이면 충분. 소재: 신메뉴, 시즌 과일산도, 휴무 안내.</p>
+        <div class="ex">"오늘 2차 베이글 아웃 15시예요. 늦으시면 알림받기로 소식 받아보세요!"</div>
+        <p>당일 소진 공지는 발행 횟수(가점)와 재방문 유도를 동시에 잡는 우리 가게 필살기.</p>
+      </div>
+      <div class="card">
+        <span class="freq">주 1회 · 5분</span>
+        <h3>통계 확인</h3>
+        <p>스마트플레이스센터 → 통계 → 유입 키워드. "송도 베이글"로 들어오는지 확인.</p>
+        <p>의외의 키워드(예: "송도 포장 브런치")가 보이면 메모해서 사장님께 공유 — 메뉴 설명·소식에 반영해요.</p>
+      </div>
+      <div class="card">
+        <span class="freq">2~3개월마다</span>
+        <h3>키워드 점검 <span class="owner">사장님</span></h3>
+        <p>placewizard.kr 등에서 "송도 베이글" 순위 확인. 성과 없는 대표키워드는 교체 테스트.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ────────────────────────────── -->
+  <section id="talk">
+    <div class="sec-head"><h2>④ 손님 응대 멘트</h2><span class="when">계산·포장할 때</span></div>
+    <p class="note">리뷰 수에 가장 크게 영향을 주는 건 이벤트가 아니라 <b>직원의 한마디</b>예요. 부담 없이, 강요 없이.</p>
+    <div class="say">
+      <div class="bubble"><b>리뷰 부탁 — 계산할 때</b>"베이글 어떠셨어요? 네이버에 영수증으로 리뷰 남기실 수 있어요."</div>
+      <div class="bubble"><b>저장·알림받기 — 포장 건넬 때</b>"네이버에 '베어글스 송도' 검색해서 저장이랑 알림받기 눌러주시면 쿠폰 드려요."</div>
+      <div class="bubble"><b>지켜야 할 선</b>리워드(러스크 서비스 등)는 실제로 방문한 손님에게만. "별점 5점 주시면"처럼 조건 거는 말은 절대 금지예요.</div>
+    </div>
+  </section>
+
+  <!-- ────────────────────────────── -->
+  <section id="forbidden">
+    <div class="sec-head"><h2>⑤ 절대 하면 안 되는 것</h2></div>
+    <p class="note">2026년부터 네이버가 단속을 크게 강화했어요. 아래는 <b>단 1번 적발로 가게 전체가 페널티</b>를 받는 것들 — 누가 권유해도 거절하고 사장님께 알려주세요.</p>
+    <ul class="no">
+      <li><b>리뷰 대행·"리뷰 작업" 업체</b><span class="why">"일주일 상위노출 보장" 전화·DM은 전부 어뷰징 업체. 제재는 우리 가게가 받아요.</span></li>
+      <li><b>별점 5점 조건, "좋은 내용만 써주세요" 요구</b><span class="why">리뷰 이벤트 자체는 괜찮지만 내용·별점에 조건을 걸면 조작으로 분류돼요.</span></li>
+      <li><b>지인 동원 미방문 리뷰 · 체험단에게 영수증 리뷰 요청</b><span class="why">방문 없이 쓰는 리뷰, 대가성 방문자 리뷰는 적발 시 리뷰 탭이 통째로 가려져요.</span></li>
+      <li><b>트래픽·저장 작업 프로그램, 키워드 도배</b><span class="why">리워드앱 유입은 실시간 감지·무효화. 업체명에 "송도베이글맛집" 붙이기도 스팸 분류 역효과.</span></li>
+    </ul>
+  </section>
+
+  <!-- ────────────────────────────── -->
+  <section id="plan30">
+    <div class="sec-head"><h2>⑥ 30일 플랜</h2><span class="count" id="planSecCount"></span></div>
+    <div class="tablewrap">
+      <table class="plan">
+        <tr><th></th><th>주차</th><th>실행</th></tr>
+        <tr><td><input type="checkbox" id="p-w1" aria-label="1주차 완료"></td><td class="wk">1주차</td><td>① 세팅 체크리스트 전부 완료 + 사장님이 검색광고 키워드도구로 검색량 확인</td></tr>
+        <tr><td><input type="checkbox" id="p-w2" aria-label="2주차 완료"></td><td class="wk">2주차</td><td>알림받기 쿠폰 오픈 + POP/QR 비치 + 응대 멘트 정착 + 소식 발행 시작</td></tr>
+        <tr><td><input type="checkbox" id="p-w3" aria-label="3주차 완료"></td><td class="wk">3주차</td><td>네이버주문(픽업)·톡톡 자동응답 가동 + 블로그 글 2편 발행("송도 베이글" 제목 + 지도 장소 첨부)</td></tr>
+        <tr><td><input type="checkbox" id="p-w4" aria-label="4주차 완료"></td><td class="wk">4주차</td><td>통계로 유입 키워드 점검 → 설명·메뉴 문구 보정 + 플레이스광고 소액 테스트 여부 사장님 결정</td></tr>
+      </table>
+    </div>
+    <p class="note">이후에는 ③ 루틴만 유지하면 돼요. 순위 변화는 사장님이 주 1회 확인.</p>
+  </section>
+
+  <footer>
+    <p>근거 자료: 저장소의 <b>스마트플레이스-최적화.md</b> (2026-08 조사 — 네이버 공식 공지·보도 + 업계 실무 자료 교차 검증).
+    체크 상태는 이 기기 브라우저에만 저장돼요.</p>
+    <button type="button" id="resetBtn">체크 전체 초기화</button>
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var KEY = "beargels-place-";
+    var boxes = Array.prototype.slice.call(document.querySelectorAll('input[type="checkbox"]'));
+
+    function refresh() {
+      var setup = boxes.filter(function (b) { return b.id.indexOf("c-") === 0; });
+      var plan = boxes.filter(function (b) { return b.id.indexOf("p-") === 0; });
+      var sd = setup.filter(function (b) { return b.checked; }).length;
+      var pd = plan.filter(function (b) { return b.checked; }).length;
+      document.getElementById("setupCount").textContent = sd + "/" + setup.length;
+      document.getElementById("setupSecCount").textContent = sd + "/" + setup.length + " 완료";
+      document.getElementById("planSecCount").textContent = pd + "/" + plan.length + " 완료";
+      boxes.forEach(function (b) {
+        var li = b.closest("li");
+        if (li) li.classList.toggle("done", b.checked);
+      });
+    }
+
+    boxes.forEach(function (b) {
+      try { b.checked = localStorage.getItem(KEY + b.id) === "1"; } catch (e) {}
+      b.addEventListener("change", function () {
+        try { localStorage.setItem(KEY + b.id, b.checked ? "1" : "0"); } catch (e) {}
+        refresh();
+      });
+    });
+
+    document.getElementById("resetBtn").addEventListener("click", function () {
+      if (!confirm("체크 표시를 전부 지울까요?")) return;
+      boxes.forEach(function (b) {
+        b.checked = false;
+        try { localStorage.removeItem(KEY + b.id); } catch (e) {}
+      });
+      refresh();
+    });
+
+    document.querySelectorAll("button[data-copy]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var el = document.getElementById("copy-" + btn.getAttribute("data-copy"));
+        var text = el ? el.textContent : "";
+        function ok() { btn.textContent = "복사됨 ✓"; setTimeout(function () { btn.textContent = "복사"; }, 1800); }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(ok, function () { fallback(); });
+        } else { fallback(); }
+        function fallback() {
+          var ta = document.createElement("textarea");
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand("copy"); ok(); } catch (e) {}
+          document.body.removeChild(ta);
+        }
+      });
+    });
+
+    refresh();
+  })();
+</script>
