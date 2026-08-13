@@ -47,6 +47,18 @@ class _Q:
 
     def or_(self, expr):
         self.calls.append(("or", expr))
+        # PostgREST or_ 흉내 — "col.ilike.%값%,col2.ilike.%값%" 중 하나라도
+        # 맞으면 남긴다. 검색이 or_ 로 바뀐 뒤에도 필터 동작을 검증하려면
+        # 이 가짜도 실제처럼 걸러야 한다(2026-08-13).
+        terms = []
+        for part in expr.split(","):
+            bits = part.split(".", 2)
+            if len(bits) == 3 and bits[1] == "ilike":
+                terms.append((bits[0], bits[2].strip("%")))
+        if not terms:
+            return self
+        self.rows = [r for r in self.rows
+                     if any(n in (r.get(c) or "") for c, n in terms)]
         return self
 
     def order(self, col, desc=False):
@@ -103,7 +115,26 @@ def test_rating_filter(monkeypatch):
 def test_content_search(monkeypatch):
     rows, _, calls = _call(monkeypatch, q="늦게")
     assert [r["id"] for r in rows] == [2]
-    assert ("ilike", "content", "%늦게%") in calls
+    expr = next(e for k, e in [(c[0], c[1]) for c in calls if c[0] == "or"])
+    assert "content.ilike.%늦게%" in expr
+    assert "author.ilike.%늦게%" in expr      # 닉네임으로도 찾는다
+
+
+def test_search_ignores_spaces(monkeypatch):
+    """'크림 치즈'로도 '크림치즈'가 걸려야 한다 — 0건 나오던 버그
+    (사장님 보고 2026-08-13)."""
+    from database import supabase_client as db
+    expr = db._search_filter("늦 게")
+    assert "content.ilike.%늦게%" in expr     # 공백 뺀 검색어도 함께 본다
+    assert "content.ilike.%늦 게%" in expr    # 원본도 유지
+
+
+def test_search_strips_or_breaking_chars(monkeypatch):
+    # 쉼표·괄호는 PostgREST or_ 문법을 깨뜨린다.
+    from database import supabase_client as db
+    expr = db._search_filter("맛(있),어요")
+    assert "(" not in expr and ")" not in expr
+    assert ",어요" not in expr.replace("%,", "%")
 
 
 def test_replied_yes_covers_both_sources(monkeypatch):

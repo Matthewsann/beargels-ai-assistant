@@ -465,8 +465,12 @@ function renderMatch(){
   }
   const {n,c}=q[0];
   const total=q.length+MDONE;
+  // 원가가 걸린 건이 몇 개 남았는지 알려준다 — 나머지는 급하지 않다.
+  const hot=q.filter(x=>x.c.some(y=>usedCount(y.o.id)>0)).length;
   main.innerHTML=`
-    <div class="cnt">${MDONE+1} / ${total} · 남은 ${q.length}건</div>
+    <div class="cnt">${MDONE+1} / ${total} · 남은 ${q.length}건
+      ${hot?` · <b style="color:var(--accent)">이 중 ${hot}건은 메뉴 원가에 바로 영향</b>`
+           :` · <span class="sub">남은 건 레시피에 안 쓰는 자재예요 — 안 하셔도 원가는 안 바뀝니다</span>`}</div>
     <div class="mbar"><i style="width:${Math.round(MDONE/total*100)}%"></i></div>
     <div class="mcard">
       <div class="sub" style="font-size:11px">엠즈푸드에서 새로 받은 자재</div>
