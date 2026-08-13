@@ -1,10 +1,12 @@
 """
 스케줄러 잡(job)
 
-정해진 시간에 크롤링 → 저장 → 분석 → 알림 파이프라인을 실행한다.
+정해진 시간에 크롤링 → 저장 → 분석 → 기록 파이프라인을 실행한다.
+(알림 수단은 텔레그램에서 '로그 + 화면 오류기록 + reports/ 파일'로
+ 바뀌었다 — 사장님 지시 2026-08-13.)
 
   crawl_job   : 배민(향후 쿠팡) 주문/리뷰 수집 → Supabase 저장
-  report_job  : 수집 데이터로 일일 리포트 생성 → 텔레그램 전송
+  report_job  : 수집 데이터로 일일 리포트 생성 → reports/ 저장
   main        : APScheduler 로 정기 실행 (기본: 2시간마다 수집, 매일 09시 리포트)
 
 각 잡은 예외를 삼켜 로깅한다(한 번 실패해도 스케줄러가 죽지 않도록).
@@ -14,13 +16,15 @@
 import json
 import logging
 import re
+from datetime import datetime
+from pathlib import Path
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from assistant.beargels import (
     format_complaint_report, generate_daily_report, is_serious_review,
 )
-from bot.notify import send_message
+from alerts import notify_owner
 from crawler.baemin import BaeminCrawler
 from crawler.browser import SessionExpiredError
 from crawler.coupang import CoupangCrawler
@@ -29,6 +33,25 @@ from database import supabase_client
 logger = logging.getLogger(__name__)
 
 TIMEZONE = "Asia/Seoul"
+REPORTS_DIR = Path(__file__).resolve().parent.parent / "reports"
+
+
+def save_report(name, text):
+    """리포트를 reports/ 에 파일로 남긴다(텔레그램 대체). 저장 경로 반환.
+
+    쓰기에 실패해도 예외를 올리지 않는다 — 저장 실패로 스케줄러가 죽으면
+    다음 수집까지 통째로 멈춘다.
+    """
+    try:
+        REPORTS_DIR.mkdir(exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M")
+        path = REPORTS_DIR / f"{name}-{stamp}.md"
+        path.write_text(text, encoding="utf-8")
+        (REPORTS_DIR / f"latest-{name}.md").write_text(text, encoding="utf-8")
+        return path
+    except Exception:  # noqa: BLE001
+        logger.exception("리포트 저장 실패(%s)", name)
+        return None
 
 
 def _crawl_baemin():
@@ -88,14 +111,15 @@ def crawl_job():
 
 
 def report_job():
-    """리포트 생성 → 텔레그램 전송 파이프라인."""
+    """리포트 생성 → reports/ 파일 저장(텔레그램 제거, 2026-08-13)."""
     orders, reviews = crawl_job()
     if not orders and not reviews:
-        send_message("⚠️ 오늘 수집된 데이터가 없습니다(세션/크롤링 확인).")
+        notify_owner("오늘 수집된 데이터가 없습니다(세션·크롤링 확인 필요).",
+                     kind="NoDataToday", source="scheduler", path="report_job")
         return
     report = generate_daily_report(orders, reviews)
-    send_message(report)
-    logger.info("report_job 완료: 리포트 전송")
+    path = save_report("daily", report)
+    logger.info("report_job 완료: 리포트 저장 %s", path)
 
 
 def check_complaint_reviews(label=""):
@@ -116,10 +140,17 @@ def check_complaint_reviews(label=""):
            if r.get("review_no") and r["review_no"] not in alerted]
 
     if not new:
-        send_message(f"✅ 심각 리뷰 체크{(' — ' + label) if label else ''}: "
-                     "신규 불만 리뷰 없음.")
+        logger.info("심각 리뷰 체크%s: 신규 불만 리뷰 없음",
+                    (" — " + label) if label else "")
         return
-    send_message(format_complaint_report(new, label))
+    # 불만 리뷰는 사장님이 바로 알아야 하므로 화면(오류기록)에 올린다.
+    report = format_complaint_report(new, label)
+    save_report("complaint", report)
+    notify_owner(f"불만 리뷰 {len(new)}건 — 확인이 필요합니다"
+                 f"{(' (' + label + ')') if label else ''}. "
+                 f"자세한 내용은 reports/ 최신 complaint 파일 참고.",
+                 kind="SeriousReview", source="scheduler",
+                 path="check_complaint_reviews")
     alerted |= {r["review_no"] for r in new if r.get("review_no")}
     try:
         supabase_client.save_summary("complaint_alert_log", json.dumps(list(alerted)))
@@ -168,13 +199,17 @@ def check_platform_news(label=""):
     new = [it for it in items if it["url"] not in seen]
 
     if first_run:
-        send_message(_format_news(
+        save_report("platform_news", _format_news(
             items[:8], "플랫폼 소식 점검 시작(현재 공지)", label, total=len(items)))
     elif new:
-        send_message(_format_news(new, "신규 공지/정책/혜택", label))
+        save_report("platform_news", _format_news(new, "신규 공지/정책/혜택", label))
+        notify_owner(f"배민·쿠팡 신규 공지 {len(new)}건 — reports/ 최신 "
+                     f"platform_news 파일을 확인해 주세요.",
+                     kind="PlatformNews", source="scheduler",
+                     path="check_platform_news")
     else:
-        send_message(f"✅ 플랫폼 공지 점검{(' — ' + label) if label else ''}: "
-                     "신규 없음.")
+        logger.info("플랫폼 공지 점검%s: 신규 없음",
+                    (" — " + label) if label else "")
 
     seen |= {it["url"] for it in items}
     try:

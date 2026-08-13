@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
-from bot.notify import send_manual_login_alert
+from alerts import session_expired
 from crawler.browser import (
     BrowserSession, SessionExpiredError, human_pause, is_session_expired,
 )
@@ -166,7 +166,7 @@ class BaeminCrawler:
         self.page.goto(url, wait_until="domcontentloaded")
         human_pause()
         if is_session_expired(self.page):
-            send_manual_login_alert(PLATFORM)
+            session_expired(PLATFORM)
             raise SessionExpiredError(
                 f"[{PLATFORM}] 로그인 세션이 만료되었습니다. "
                 f"launch_chrome.bat 로 띄운 Chrome 에서 다시 로그인하세요.")

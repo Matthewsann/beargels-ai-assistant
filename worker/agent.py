@@ -35,6 +35,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from assistant.beargels import classify_review, generate_review_reply  # noqa: E402
+from alerts import notify_owner  # noqa: E402
 from database import supabase_client as db  # noqa: E402
 
 logger = logging.getLogger("worker")
@@ -366,7 +367,7 @@ def run_auto_post() -> None:
       · .env WRITE_DRY_RUN=true 면 게시하지 않고 미리보기 로그만 남긴다.
       · 에스컬레이션 리뷰는 액션이 스스로 거부한다(직원 화면에서도 승인 불가).
     성공한 건만 posted 로 바꾸고, 실패한 건은 approved 로 남아 다음
-    슬롯에 재시도된다. 결과는 텔레그램으로 사장님께 보고.
+    슬롯에 재시도된다. 결과는 로그와 화면(오류기록)에 남는다.
     """
     approved = db.get_approved_reviews()
     if not approved:
@@ -416,47 +417,36 @@ def run_auto_post() -> None:
 
     if dry:
         # ⚠️ 조용히 끝내지 않는다: 연습 모드면 대기열이 영영 줄지 않는데
-        #    화면·텔레그램에 아무 표시가 없어 '왜 등록이 안 되지'로 이어진다
-        #    (사장님 제보 2026-08-11). 상태·오류로그·텔레그램에 모두 남긴다.
+        #    화면에 아무 표시가 없어 '왜 등록이 안 되지'로 이어진다
+        #    (사장님 제보 2026-08-11). 상태와 오류로그(화면)에 남긴다.
         msg = (f"자동 등록이 '연습 모드(WRITE_DRY_RUN=true)'라 {len(approved)}건이 "
                f"등록되지 않고 대기로 남았습니다. 집 PC .env 에서 "
                f"WRITE_DRY_RUN=false 로 바꾸고 일꾼을 재시작하세요.")
         logger.warning(msg)
         db.worker_ping("idle", f"⚠️ {msg}")
         db.log_error("worker", msg, kind="DryRunSkipped", path="run_auto_post")
-        try:
-            from bot import notify
-            notify.send_message(f"⚠️ {msg}")
-        except Exception:  # noqa: BLE001 — 알림 실패가 일꾼을 막지 않게
-            logger.warning("dry-run 안내 전송 실패")
         return
-    try:
-        from bot import notify
-        lines = [f"📮 답글 자동 등록 결과 — 성공 {len(posted)}건, 실패 {len(failed)}건"]
-        for r in posted[:10]:
-            lines.append(f"  ✅ [{r.get('platform')}] {r.get('author')} ★{r.get('rating')}")
-        for r, msg in failed[:5]:
-            lines.append(f"  ❌ [{r.get('platform')}] {r.get('author')} — {msg}")
-        if posted or failed:
-            notify.send_message("\n".join(lines))
-    except Exception as e:  # noqa: BLE001 — 보고 실패는 치명적이지 않다
-        logger.warning("자동 등록 결과 보고 실패: %s", e)
+    logger.info("답글 자동 등록 결과 — 성공 %d건, 실패 %d건",
+                len(posted), len(failed))
+    if failed:
+        notify_owner(
+            f"답글 자동 등록 {len(failed)}건 실패 — "
+            + " · ".join(f"[{r.get('platform')}] {r.get('author')}: {m}"
+                         for r, m in failed[:5]),
+            kind="AutoPostFailed", path="run_auto_post")
 
 
 def _notify_replaced(row) -> None:
-    """이미 달려 있던 답글을 덮어쓴 사실을 사장님께 알린다.
+    """이미 달려 있던 답글을 덮어쓴 사실을 알린다(화면 오류기록 + 로그).
 
     사장님이 배민·쿠팡 앱에서 직접 단 답글일 수도 있으므로 조용히 넘기지
-    않는다. 알림이 실패해도 등록 자체는 이미 끝났으니 예외를 올리지 않는다.
+    않는다. 기록이 실패해도 등록 자체는 이미 끝났으니 예외를 올리지 않는다.
     """
-    try:
-        from bot import notify
-        notify.send_message(
-            f"✏️ [{row.get('platform')}] {row.get('author')} 님 리뷰에 이미 "
-            f"답글이 달려 있어, 직원이 등록한 내용으로 **수정**했습니다.\n"
-            f"앱에서 직접 답글을 다셨다면 내용이 바뀌었을 수 있어요.")
-    except Exception:  # noqa: BLE001
-        logger.warning("답글 덮어쓰기 알림 전송 실패")
+    notify_owner(
+        f"[{row.get('platform')}] {row.get('author')} 님 리뷰에 이미 답글이 "
+        f"달려 있어, 직원이 등록한 내용으로 수정했습니다. 앱에서 직접 답글을 "
+        f"다셨다면 내용이 바뀌었을 수 있어요.",
+        kind="ReplyReplaced", path="run_post_job")
 
 
 def run_post_job(job) -> None:
