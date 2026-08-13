@@ -5,7 +5,7 @@
 
 사용:
     python -m scripts.supervisor                # 텔레그램 봇 감시(기본)
-    python -m scripts.supervisor bot.telegram_bot
+    python -m scripts.supervisor worker.agent
     python -m scripts.supervisor scheduler.jobs # 스케줄러 감시
 
 동작:
@@ -36,7 +36,8 @@ PROFILE_DIR = PROJECT_ROOT / ".browser_profile"
 CDP_PORT = int(os.getenv("CDP_PORT", "9222"))
 KST = timezone(timedelta(hours=9))
 
-DEFAULT_TARGET = "bot.telegram_bot"
+# 텔레그램 봇을 걷어낸 뒤 기본 감시 대상은 답글 일꾼(2026-08-13).
+DEFAULT_TARGET = "worker.agent"
 
 # 재시작 백오프(초): 짧게 죽으면 점점 늘림, 오래 살면 리셋.
 BACKOFF_START = 3

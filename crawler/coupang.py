@@ -27,7 +27,7 @@ import logging
 import re
 from datetime import date, datetime, timedelta, timezone
 
-from bot.notify import send_manual_login_alert
+from alerts import session_expired
 from crawler.browser import (
     BrowserSession, SessionExpiredError, human_pause, is_session_expired,
 )
@@ -130,7 +130,7 @@ class CoupangCrawler:
         except Exception:  # noqa: BLE001
             # 응답 캡처 실패 — 세션 만료 여부 확인
             if is_session_expired(self.page):
-                send_manual_login_alert(PLATFORM)
+                session_expired(PLATFORM)
                 raise SessionExpiredError(
                     f"[{PLATFORM}] 로그인 세션이 만료되었습니다. "
                     f"launch_chrome.bat 로 띄운 Chrome 에서 다시 로그인하세요.")
@@ -296,7 +296,7 @@ class CoupangCrawler:
                 resp = ri.value
             except Exception:  # noqa: BLE001
                 if is_session_expired(self.page):
-                    send_manual_login_alert(PLATFORM)
+                    session_expired(PLATFORM)
                     raise SessionExpiredError(
                         f"[{PLATFORM}] 로그인 세션이 만료되었습니다. "
                         f"launch_chrome.bat 로 띄운 Chrome 에서 다시 로그인하세요.")
