@@ -72,7 +72,7 @@ padding:4px 11px;font-size:12px;cursor:pointer;white-space:nowrap;color:var(--in
 
 <script>
 const BASE = "/{{ key }}/menu";
-let DATA=null, TAB='ing', Q='', SKU=null, CATF='전체', SORT='cat';
+let DATA=null, TAB='ing', Q='', SKU=null, CATF='전체', SORT='cat', MQ='', MCAT='전체';
 const won=n=>n==null?"–":Math.round(n).toLocaleString("ko-KR");
 const w1=n=>n==null?"–":(Math.round(n*100)/100).toLocaleString("ko-KR");
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");
@@ -243,12 +243,59 @@ function feeRate(ch){const f=fee(ch);const b=((+f.commission||0)+(+f.payment||0)
   return f.vat_on_fees===false?b:b*1.1;}
 function target(cat){const t=DATA.settings.target_cost_rates||{};return (t[cat]??t["기타"]??35)/100;}
 
+const lineCount=sku=>DATA.recipes.filter(r=>r.sku===sku).length;
+
+// 메뉴 목록 — 검색·분류·'레시피 없음' 필터. 탭하면 편집 화면으로.
+function renderRecList(){
+  const q=MQ.trim();
+  const mcats=[...new Set(DATA.items.map(i=>i.category).filter(Boolean))];
+  const noRecipe=DATA.items.filter(i=>!lineCount(i.sku)).length;
+  const chipDefs=[["전체",DATA.items.length],["레시피 없음",noRecipe],
+    ...mcats.map(c=>[c,DATA.items.filter(i=>i.category===c).length])];
+  let list=DATA.items.filter(i=>{
+    if(q && !(i.name.includes(q)||(i.sku||"").toUpperCase().includes(q.toUpperCase()))) return false;
+    if(MCAT==="전체") return true;
+    if(MCAT==="레시피 없음") return !lineCount(i.sku);
+    return i.category===MCAT;
+  });
+  let rows="";
+  for(const it of list){
+    const n=lineCount(it.sku);
+    const cost=it.ingredient_cost;
+    const price=it.delivery_price??it.store_price;
+    const rate=(cost!=null&&price)?cost/price:null;
+    const tg=target(it.category);
+    rows+=`<tr onclick="SKU='${it.sku}';render()" style="cursor:pointer">
+      <td class="l"><b>${it.name}</b><br><span class="sub">${it.sku} · ${it.category||""}</span></td>
+      <td>${cost==null?'<span class="sub">원가 없음</span>':won(cost)}</td>
+      <td class="${rate!=null&&rate>tg?"":""}" style="${rate!=null&&rate>tg?"color:var(--red);font-weight:700":""}">${rate==null?"–":(rate*100).toFixed(1)+"%"}</td>
+      <td>${n?`${n}줄`:'<span class="pill" style="background:var(--amberbg);color:var(--amber)">없음</span>'}</td>
+      <td class="sub">›</td></tr>`;
+  }
+  document.getElementById("main").innerHTML=`
+    <div class="bar"><input placeholder="메뉴 검색 (이름·SKU)…" value="${MQ}"
+      oninput="MQ=this.value;renderRecList()"></div>
+    <div class="fchips">${chipDefs.map(([c,n])=>
+      `<span class="fchip ${c===MCAT?"on":""}" onclick="MCAT='${c}';renderRecList()">${c}<small>${n}</small></span>`).join("")}</div>
+    <div class="cnt">${list.length}개 표시 · 탭하면 레시피 편집</div>
+    <div class="wrap"><table>
+      <tr><th class="l">메뉴</th><th>재료원가</th><th>원가율<br>(배달)</th><th>레시피</th><th></th></tr>
+      ${rows||`<tr><td colspan="5" class="empty">해당 메뉴 없음</td></tr>`}
+    </table></div>
+    <p class="note">· <b>레시피 없음</b> 칩을 누르면 원가가 아직 없는 메뉴만 모아 봅니다 — 여기부터 채우면 됩니다.<br>
+    · 원가율은 배달가 기준이며, 카테고리 목표를 넘으면 빨간색입니다.</p>`;
+}
+
 function renderRec(){
-  const opts=DATA.items.map(i=>`<option value="${i.sku}" ${i.sku===SKU?"selected":""}>${i.name} (${i.sku})</option>`).join("");
-  let html=`<select class="menu-pick" onchange="SKU=this.value;render()">
-    <option value="">— 메뉴를 선택하세요 —</option>${opts}</select>`;
-  if(SKU){
-    const it=DATA.items.find(i=>i.sku===SKU);
+  if(!SKU){ renderRecList(); return; }
+  const it=DATA.items.find(i=>i.sku===SKU);
+  if(!it){ SKU=null; renderRecList(); return; }
+  let html=`<div class="bar" style="margin-bottom:8px">
+    <button onclick="SKU=null;render()">← 메뉴 목록</button>
+    <div style="flex:1;font-weight:700;align-self:center">${it.name}
+      <span class="sub">${it.sku}</span></div>
+  </div>`;
+  {
     const lines=DATA.recipes.filter(r=>r.sku===SKU);
     let total=0, rows="";
     for(const ln of lines){
@@ -279,8 +326,8 @@ function renderRec(){
       ${rows||`<tr><td colspan="4" class="empty">아직 레시피가 없습니다. 아래에서 재료를 추가하세요.</td></tr>`}
     </table></div>
     <div class="addrow">
-      <input id="nlIng" list="ingList" placeholder="재료 검색·선택" style="flex:1;min-width:140px">
-      <datalist id="ingList">${DATA.ingredients.map(i=>`<option value="${i.name} (${i.unit})">`).join("")}</datalist>
+      <input id="nlIng" list="ingList" placeholder="재료 이름 입력·선택" style="flex:1;min-width:140px">
+      <datalist id="ingList">${DATA.ingredients.map(i=>`<option value="${i.name} (${i.unit})">${w1(unitCost(i))}원/${i.unit}</option>`).join("")}</datalist>
       <input id="nlQty" type="number" step="any" placeholder="사용량" style="width:80px">
       <button onclick="addLine()">+ 추가</button>
     </div>
