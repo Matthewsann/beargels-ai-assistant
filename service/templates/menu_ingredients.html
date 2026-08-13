@@ -133,6 +133,20 @@ const unitCost=i=>i.pack_qty?i.pack_cost/i.pack_qty:0;
 const usedCount=id=>DATA.recipes.filter(r=>r.ingredient_id===id).length;
 const cats=()=>[...new Set(DATA.ingredients.map(i=>i.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ko"));
 const nname=s=>(s||"").replace(/\s+/g,"").toLowerCase();
+// 검색 매칭 — 띄어쓰기·대소문자·기호를 무시한다(사장님 보고 2026-08-13).
+// 메뉴명에 &·[]·+ 가 섞여 있어("파리지엔 잠봉&뵈르 샌드위치") 보이는 대로
+// "잠봉 뵈르"를 쳐도 안 잡혔다.
+const skey=s=>(s||"").toLowerCase().replace(/[\s&·・+\-_/.,()\[\]'"]/g,"");
+const hit=(q,...fields)=>{
+  const n=skey(q);
+  return !n || fields.some(f=>skey(f).includes(n));
+};
+// 검색어 지우기 — 껍데기를 다시 그리지 않으므로 입력칸 값도 직접 비운다.
+function clearSearch(id,setter){
+  setter("");
+  const el=document.getElementById(id);
+  if(el){ el.value=""; el.focus(); }
+}
 const findDup=(name,exceptId)=>DATA.ingredients.find(i=>i.id!==exceptId&&nname(i.name)===nname(name));
 // 자재 id → 그 자재가 들어가는 메뉴 분류들. 한 자재가 여러 분류에 걸치므로
 // 자재의 '분류'(구매·보관 기준)를 대체하지 않고, 보는 축을 하나 더 두는 것.
@@ -165,7 +179,9 @@ function renderIng(){
   const q=Q.trim();
   let list=DATA.ingredients.filter(i=>!q||i.name.includes(q));
   let html=`<div class="bar">
-    <input placeholder="자재 검색…" value="${Q}" oninput="Q=this.value;renderIng2()">
+    <input id="ingSearch" placeholder="자재 검색 (이름·분류·발주처)…" value="${Q}"
+           oninput="Q=this.value;renderIng2()">
+    <button onclick="clearSearch('ingSearch',v=>{Q=v;renderIng2()})">✕</button>
     <select onchange="SORT=this.value;renderIng2()">
       ${SORTS.map(([v,l])=>`<option value="${v}" ${v===SORT?"selected":""}>${l}</option>`).join("")}
     </select>
@@ -244,7 +260,7 @@ function renderIng2(){
       .map(([c,n])=>`<span class="fchip ${c===SUPF?"on":""}" onclick="SUPF='${c}';renderIng2()">${c}<small>${n}</small></span>`).join("");
 
   let list=DATA.ingredients.filter(i=>{
-    if(q && !(i.name.includes(q)||(i.category||'').includes(q))) return false;
+    if(!hit(q,i.name,i.category,i.supplier)) return false;
     if(SUPF!=="전체" && (i.supplier||"미지정")!==SUPF) return false;
     if(CATF==="전체") return true;
     if(CATF==="미사용") return !usedCount(i.id);
@@ -577,7 +593,7 @@ function renderRecList(){
   const chipDefs=[["전체",DATA.items.length],["레시피 없음",noRecipe],
     ...mcats.map(c=>[c,DATA.items.filter(i=>i.category===c).length])];
   let list=DATA.items.filter(i=>{
-    if(q && !(i.name.includes(q)||(i.sku||"").toUpperCase().includes(q.toUpperCase()))) return false;
+    if(!hit(q,i.name,i.sku,i.category)) return false;
     if(MCAT==="전체") return true;
     if(MCAT==="레시피 없음") return !lineCount(i.sku);
     return i.category===MCAT;
@@ -603,20 +619,31 @@ function renderRecList(){
       <td>${n?`${n}줄`:'<span class="pill" style="background:var(--amberbg);color:var(--amber)">없음</span>'}</td>
       <td class="sub">›</td></tr>`;
   }
-  document.getElementById("main").innerHTML=`
-    <div class="bar"><input placeholder="메뉴 검색 (이름·SKU)…" value="${MQ}"
-      oninput="MQ=this.value;renderRecList()"></div>
-    <div class="fchips">${chipDefs.map(([c,n])=>
-      `<span class="fchip ${c===MCAT?"on":""}" onclick="MCAT='${c}';renderRecList()">${c}<small>${n}</small></span>`).join("")}</div>
-    <div class="cnt">${list.length}개 표시 · 탭하면 레시피 편집</div>
-    <div class="wrap"><table>
-      <tr><th class="l">메뉴</th><th>원가<br>(식자재+포장)</th><th>원가율<br>(식자재)</th><th>레시피</th><th></th></tr>
-      ${rows||`<tr><td colspan="5" class="empty">해당 메뉴 없음</td></tr>`}
-    </table></div>
+  // ⚠️ 검색창은 다시 그리지 않는다. 예전엔 한 글자마다 화면 전체를 새로 그려
+  //    입력칸이 통째로 사라졌다가 다시 생겨서, 포커스가 풀리고 한글 조합이
+  //    깨졌다("크림치즈"가 "ㅋㄹㅁ…"으로)(사장님 보고 2026-08-13).
+  //    그래서 껍데기(검색창 포함)는 한 번만 만들고, 이후엔 칩·건수·표만 갱신한다.
+  const main=document.getElementById("main");
+  if(!document.getElementById("recSearch")){
+    main.innerHTML=`
+    <div class="bar"><input id="recSearch" placeholder="메뉴 검색 (이름·SKU·분류)…" value="${MQ}"
+      oninput="MQ=this.value;renderRecList()">
+      <button onclick="clearSearch('recSearch',v=>{MQ=v;renderRecList()})">✕ 지우기</button></div>
+    <div class="fchips" id="recChips"></div>
+    <div class="cnt" id="recCnt"></div>
+    <div class="wrap"><table id="recTable"></table></div>
     <p class="note">· <b>레시피 없음</b> 칩을 누르면 원가가 아직 없는 메뉴만 모아 봅니다 — 여기부터 채우면 됩니다.<br>
     · 원가율은 <b>매장가 · 식자재</b> 기준입니다 — 배달가는 수수료만큼 올려둔 값이라 원가율이 실제보다 낮게 보이고,
       컵·뚜껑 같은 <b>포장비는 식자재가 아니라서</b> 목표 원가율(35% 등)과 견주면 안 됩니다. 포장비는 옆에 따로 표시됩니다.
       매장에서 안 파는 메뉴만 배달가 기준(칸에 표시). 목표 초과는 빨간색.</p>`;
+  }
+  document.getElementById("recChips").innerHTML=chipDefs.map(([c,n])=>
+    `<span class="fchip ${c===MCAT?"on":""}" onclick="MCAT='${c}';renderRecList()">${c}<small>${n}</small></span>`).join("");
+  document.getElementById("recCnt").textContent=
+    `${list.length}개 표시 · 탭하면 레시피 편집`+(q?` · 검색: "${q}"`:"");
+  document.getElementById("recTable").innerHTML=`
+      <tr><th class="l">메뉴</th><th>원가<br>(식자재+포장)</th><th>원가율<br>(식자재)</th><th>레시피</th><th></th></tr>
+      ${rows||`<tr><td colspan="5" class="empty">해당 메뉴 없음</td></tr>`}`;
 }
 
 function renderRec(){
