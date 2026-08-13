@@ -79,6 +79,7 @@ async function api(path, body){
 }
 const unitCost=i=>i.pack_qty?i.pack_cost/i.pack_qty:0;
 const usedCount=id=>DATA.recipes.filter(r=>r.ingredient_id===id).length;
+const cats=()=>[...new Set(DATA.ingredients.map(i=>i.category).filter(Boolean))].sort();
 
 // ── 자재 탭 ──────────────────────────────────────────────
 function renderIng(){
@@ -89,30 +90,36 @@ function renderIng(){
   </div>
   <div class="addrow">
     <input id="niName" placeholder="새 자재 이름" style="flex:1;min-width:120px">
+    <input id="niCat" list="catList" placeholder="분류" style="width:110px">
+    <datalist id="catList">${cats().map(c=>`<option value="${c}">`).join("")}</datalist>
     <select id="niUnit"><option>g</option><option>ml</option><option>ea</option></select>
     <input id="niQty" type="number" placeholder="구매량" style="width:80px">
     <input id="niCost" type="number" placeholder="구매가(원)" style="width:95px">
     <button onclick="addIng()">+ 등록</button>
   </div>
   <div class="wrap"><table>
-    <tr><th class="l">자재</th><th>단위</th><th>구매량</th><th>구매가</th><th>단위단가</th><th>사용<br>메뉴</th><th></th></tr>
+    <tr><th class="l">자재</th><th class="l">분류</th><th>단위</th><th>구매량</th><th>구매가</th><th>단위단가</th><th>사용<br>메뉴</th><th></th></tr>
     <tbody id="ingBody"></tbody>
   </table></div>
   <p class="note">· 구매량/구매가를 탭해서 고치면 <b>그 자재를 쓰는 모든 메뉴의 원가가 즉시 재계산</b>됩니다.<br>
+  · 분류는 직접 입력하거나 기존 분류에서 고르면 됩니다(빈칸이면 "미분류"). 표에서 분류를 탭해 나중에 바꿀 수도 있습니다.<br>
   · "반제품(역산)" 분류는 옛 원가표에서 역산해 등록한 것 — 실제 구매 단위·가격으로 고쳐주시면 더 정확해집니다.</p>`;
   document.getElementById("main").innerHTML=html;
   renderIng2();
 }
 function renderIng2(){
   const q=Q.trim();
-  const list=DATA.ingredients.filter(i=>!q||i.name.includes(q)||(i.category||'').includes(q));
+  const list=DATA.ingredients.filter(i=>!q||i.name.includes(q)||(i.category||'').includes(q))
+    .sort((a,b)=>(a.category||"미분류").localeCompare(b.category||"미분류","ko")
+                 ||a.name.localeCompare(b.name,"ko"));
   let html="",cat=null;
   for(const i of list){
     const c=i.category||"미분류";
-    if(c!==cat){cat=c;html+=`<tr class="cat"><td colspan="7">${c}</td></tr>`;}
+    if(c!==cat){cat=c;html+=`<tr class="cat"><td colspan="8">${c}</td></tr>`;}
     const n=usedCount(i.id);
     html+=`<tr>
       <td class="l ed" onclick="editCell(this,${i.id},'name',true)">${i.name}</td>
+      <td class="l ed" onclick="editCell(this,${i.id},'category',true)">${i.category||"미분류"}</td>
       <td class="ed" onclick="editCell(this,${i.id},'unit',true)">${i.unit}</td>
       <td class="ed" onclick="editCell(this,${i.id},'pack_qty')">${w1(i.pack_qty)}</td>
       <td class="ed" onclick="editCell(this,${i.id},'pack_cost')">${won(i.pack_cost)}</td>
@@ -121,7 +128,7 @@ function renderIng2(){
       <td>${n?"":`<span class="del" onclick="delIng(${i.id})">삭제</span>`}</td>
     </tr>`;
   }
-  document.getElementById("ingBody").innerHTML=html||`<tr><td colspan="7" class="empty">없음</td></tr>`;
+  document.getElementById("ingBody").innerHTML=html||`<tr><td colspan="8" class="empty">없음</td></tr>`;
 }
 function editCell(td,id,field,isText){
   if(td.querySelector("input"))return;
@@ -151,9 +158,10 @@ function editCell(td,id,field,isText){
 async function addIng(){
   const name=document.getElementById("niName").value.trim();
   const unit=document.getElementById("niUnit").value;
+  const category=document.getElementById("niCat").value.trim()||"미분류";
   const qty=+document.getElementById("niQty").value, cost=+document.getElementById("niCost").value;
   if(!name||!qty||!cost){toast("이름·구매량·구매가를 채워주세요");return;}
-  const j=await api("/ingredient",{name,unit,pack_qty:qty,pack_cost:cost,category:"직접 등록"});
+  const j=await api("/ingredient",{name,unit,pack_qty:qty,pack_cost:cost,category});
   if(j){DATA.ingredients.push(j.ingredient);toast("등록 ✓");render();}
 }
 async function delIng(id){

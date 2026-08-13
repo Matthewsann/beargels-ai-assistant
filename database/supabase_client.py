@@ -850,7 +850,19 @@ def ingredient_upsert(fields, ing_id=None):
     else:
         rows = sb.table("ingredients").upsert(
             payload, on_conflict="name,unit").execute().data
-    return (rows or [None])[0]
+    row = (rows or [None])[0]
+    # 응답에 id 가 없을 수 있다(설정에 따라 빈 응답). 그때는 다시 찾아서 채운다 —
+    # 호출부가 id 로 '이 자재를 쓰는 메뉴'를 재계산하기 때문.
+    if not row or "id" not in row:
+        q = sb.table("ingredients").select("*")
+        if ing_id:
+            q = q.eq("id", ing_id)
+        else:
+            q = q.eq("name", payload.get("name")).eq("unit", payload.get("unit"))
+        found = q.execute().data
+        if found:
+            row = found[0]
+    return row
 
 
 def ingredient_delete(ing_id):
