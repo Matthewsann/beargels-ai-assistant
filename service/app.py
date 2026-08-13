@@ -276,6 +276,26 @@ def guide(path_key):
     return render_template("guide.html", key=path_key)
 
 
+@app.route("/<path_key>/place")
+def place_guide(path_key):
+    """네이버 스마트플레이스 실행 가이드 — 저장소 루트의 정적 HTML을 그대로 서빙.
+
+    내용 수정은 루트의 `스마트플레이스-직원가이드.html` 을 고치고 git pull + Reload.
+    """
+    check(path_key)
+    page = ROOT / "스마트플레이스-직원가이드.html"
+    try:
+        body = page.read_text(encoding="utf-8")
+    except OSError:
+        abort(404)
+    return (
+        '<!doctype html>\n<html lang="ko">\n'
+        '<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f"{body}\n</html>"
+    )
+
+
 @app.route("/<path_key>/collect", methods=["POST"])
 def collect(path_key):
     check(path_key)

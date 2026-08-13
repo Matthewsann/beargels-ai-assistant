@@ -100,6 +100,7 @@
     <a href="{{ url_for('history', path_key=key) }}">📜 등록한 답글</a>
     <a href="{{ url_for('reviews_all', path_key=key) }}">🗂️ 전체 리뷰</a>
     <a href="{{ url_for('blog_home', path_key=key) }}">📝 블로그</a>
+    <a href="{{ url_for('place_guide', path_key=key) }}">📍 플레이스</a>
   </div>
 
   {% if error %}<div class="note bad">{{ error }}</div>{% endif %}
