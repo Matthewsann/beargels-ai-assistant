@@ -75,6 +75,20 @@ from instagram import bp as instagram_bp  # noqa: E402
 app.register_blueprint(instagram_bp)
 
 
+@app.context_processor
+def inject_menu_cost_url():
+    """좌측 메뉴의 '메뉴/원가' 링크 — 직원용 서비스 앱(service/app.py, 5060)에 있다.
+
+    비밀주소(SERVICE_PATH)가 없으면 링크를 아예 숨긴다. 호스트명은 지금 접속한
+    주소를 따라가므로 localhost 로 열든 집 IP 로 열든 같은 기기의 5060 을 가리킨다.
+    """
+    key = (os.getenv("SERVICE_PATH") or "").strip()
+    if not key:
+        return {"menu_cost_url": None}
+    host = request.host.split(":")[0]
+    return {"menu_cost_url": f"http://{host}:5060/{key}/menu"}
+
+
 @app.before_request
 def require_login():
     if not WEB_PASSWORD or session.get("ok"):
@@ -497,6 +511,28 @@ def edit_post(item_id: int):
         meta = yaml.safe_load((d / "meta.yaml").read_text(encoding="utf-8")) or {}
     body = md_path.read_text(encoding="utf-8")
     return render_template("edit.html", meta=meta, body=body, item_id=item_id)
+
+
+@app.route("/place")
+def place_guide():
+    """네이버 스마트플레이스 실행 가이드 — 저장소 루트의 정적 HTML 을 그대로 서빙.
+
+    직원용 서비스 앱(service/app.py)의 `/<key>/place` 와 같은 파일을 본다.
+    내용을 고칠 때는 루트의 `스마트플레이스-직원가이드.html` 한 곳만 고치면
+    양쪽에 같이 반영된다.
+    """
+    page = ROOT / "스마트플레이스-직원가이드.html"
+    try:
+        body = page.read_text(encoding="utf-8")
+    except OSError:
+        abort(404)
+    # 파일이 <title> 부터 시작하는 조각이라 문서 껍데기를 씌워 준다.
+    return (
+        '<!doctype html>\n<html lang="ko">\n'
+        '<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f"{body}\n</html>"
+    )
 
 
 if __name__ == "__main__":

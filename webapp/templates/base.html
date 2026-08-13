@@ -12,6 +12,35 @@
   body { margin:0; background:var(--bg); color:var(--ink);
          font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; line-height:1.6; }
   .wrap { max-width:720px; margin:0 auto; padding:20px 16px 60px; }
+  /* ---- 좌측 기능 메뉴 ---- */
+  .layout { display:flex; min-height:100vh; }
+  .side { width:200px; flex-shrink:0; background:var(--card); border-right:1px solid var(--line);
+          padding:18px 12px; position:sticky; top:0; height:100vh; overflow-y:auto; }
+  .side .brand2 { display:flex; align-items:center; gap:8px; padding:4px 8px 16px; }
+  .side .brand2 .logo { width:32px; height:32px; border-radius:9px; background:var(--accent-bg);
+          color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:17px; }
+  .side .brand2 b { font-size:14px; } .side .brand2 small { display:block; font-size:11px; color:var(--muted); }
+  .side a.m { display:flex; align-items:center; gap:8px; padding:10px 10px; border-radius:9px;
+          text-decoration:none; color:var(--ink); font-size:14px; margin-bottom:2px; }
+  .side a.m:hover { background:#f4f2ec; }
+  .side a.m.on { background:var(--accent-bg); color:var(--accent); font-weight:600; }
+  .side .sub { margin:0 0 6px 26px; }
+  .side .sub a { display:block; padding:6px 10px; font-size:13px; color:var(--muted);
+          text-decoration:none; border-radius:7px; }
+  .side .sub a:hover { background:#f4f2ec; }
+  .side .sub a.on { color:var(--accent); font-weight:600; }
+  .side .foot { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+  .main { flex:1; min-width:0; }
+  @media (max-width:700px) {
+    .layout { display:block; }
+    .side { width:auto; height:auto; position:static; border-right:none;
+            border-bottom:1px solid var(--line); padding:10px 12px; }
+    .side .brand2 { padding-bottom:8px; }
+    .side a.m { display:inline-flex; padding:8px 11px; font-size:13px; }
+    .side .sub { display:inline; margin:0; }
+    .side .sub a { display:inline-block; padding:8px 9px; font-size:12px; }
+    .side .foot { margin-top:6px; padding-top:6px; }
+  }
   .top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:22px; }
   .brand { display:flex; align-items:center; gap:10px; }
   .logo { width:38px; height:38px; border-radius:10px; background:var(--accent-bg); color:var(--accent);
@@ -67,19 +96,43 @@
 </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="nav">
-      <a href="/plan" class="{{ 'on' if request.path.startswith('/plan') else '' }}">🧭 기획실</a>
-      <a href="/" class="{{ 'on' if request.path == '/' else '' }}">📚 글 창고</a>
-      <a href="/calendar" class="{{ 'on' if request.path.startswith('/calendar') else '' }}">📅 캘린더</a>
-      <a href="/analytics" class="{{ 'on' if request.path.startswith('/analytics') else '' }}">📊 분석</a>
-      <a href="/replies" class="{{ 'on' if request.path.startswith('/replies') else '' }}">💬 리뷰 답글</a>
-      <a href="/instagram" class="{{ 'on' if request.path.startswith('/instagram') else '' }}">🎬 인스타 릴스</a>
-      {% if session.get('ok') %}
-        <a href="/logout" style="margin-left:auto;">나가기</a>
+  {% set blog_on = request.path == '/' or request.path.startswith(('/plan', '/calendar', '/analytics', '/post')) %}
+  <div class="layout">
+    <nav class="side">
+      <div class="brand2">
+        <div class="logo">🐻</div>
+        <div><b>베어글스 AI 비서</b><small>송도타임스페이스점</small></div>
+      </div>
+
+      <a class="m {{ 'on' if request.path.startswith('/replies') else '' }}" href="/replies">💬 리뷰 답글</a>
+
+      <a class="m {{ 'on' if blog_on else '' }}" href="/">📝 네이버 블로그</a>
+      {% if blog_on %}
+      <div class="sub">
+        <a class="{{ 'on' if request.path == '/' or request.path.startswith('/post') else '' }}" href="/">📚 글 창고</a>
+        <a class="{{ 'on' if request.path.startswith('/plan') else '' }}" href="/plan">🧭 기획실</a>
+        <a class="{{ 'on' if request.path.startswith('/calendar') else '' }}" href="/calendar">📅 캘린더</a>
+        <a class="{{ 'on' if request.path.startswith('/analytics') else '' }}" href="/analytics">📊 분석</a>
+      </div>
       {% endif %}
+
+      {% if menu_cost_url %}
+      <a class="m" href="{{ menu_cost_url }}">🥯 메뉴/원가</a>
+      {% endif %}
+
+      <a class="m {{ 'on' if request.path.startswith('/instagram') else '' }}" href="/instagram">🎬 인스타 파이프라인</a>
+
+      <a class="m {{ 'on' if request.path.startswith('/place') else '' }}" href="/place">📍 스마트플레이스</a>
+
+      {% if session.get('ok') %}
+      <div class="foot"><a class="m" href="/logout">🚪 나가기</a></div>
+      {% endif %}
+    </nav>
+    <div class="main">
+      <div class="wrap">
+        {% block content %}{% endblock %}
+      </div>
     </div>
-    {% block content %}{% endblock %}
   </div>
 </body>
 </html>

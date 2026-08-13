@@ -276,6 +276,56 @@ def guide(path_key):
     return render_template("guide.html", key=path_key)
 
 
+@app.route("/<path_key>/place")
+def place_guide(path_key):
+    """네이버 스마트플레이스 실행 가이드 — 저장소 루트의 정적 HTML을 그대로 서빙.
+
+    내용 수정은 루트의 `스마트플레이스-직원가이드.html` 을 고치고 git pull + Reload.
+    """
+    check(path_key)
+    page = ROOT / "스마트플레이스-직원가이드.html"
+    try:
+        body = page.read_text(encoding="utf-8")
+    except OSError:
+        abort(404)
+    sidebar = render_template("_sidebar.html", key=path_key)
+    return (
+        '<!doctype html>\n<html lang="ko">\n'
+        '<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f"<body>\n{sidebar}\n{body}\n</body>\n</html>"
+    )
+
+
+@app.route("/<path_key>/instagram")
+def instagram_info(path_key):
+    """인스타 파이프라인 안내 — 파이프라인 자체는 집 PC 웹앱(5051)에서 돌아간다.
+
+    여기(외부 서버)서는 영상 편집·파일 접근이 안 되므로, 메뉴 자리는 만들되
+    무엇을 어디서 하는지 알려주는 안내 페이지만 둔다.
+    """
+    check(path_key)
+    sidebar = render_template("_sidebar.html", key=path_key)
+    return (
+        '<!doctype html>\n<html lang="ko">\n<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        '<body style="margin:0;background:#faf9f7;color:#232320;'
+        "font-family:-apple-system,'Malgun Gothic',sans-serif;\">\n"
+        f"{sidebar}\n"
+        '<div style="max-width:640px;margin:0 auto;padding:24px 16px;">\n'
+        '<h2 style="font-size:18px;">🎬 인스타 파이프라인</h2>\n'
+        '<div style="background:#fff;border:1px solid #e7e5de;border-radius:12px;'
+        'padding:18px;line-height:1.8;font-size:14px;">\n'
+        '릴스 기획 → 촬영 목록 → 자동 편집 → 완성본까지 만드는 파이프라인은\n'
+        '<b>집 PC 웹앱</b>에서 돌아갑니다 (영상 파일을 다뤄야 해서 이 서버에서는 안 돼요).\n'
+        '<ul style="margin:12px 0 0;padding-left:20px;">\n'
+        '<li>집 안 와이파이: <code>http://집PC주소:5051/instagram</code></li>\n'
+        '<li>밖에서: Tailscale 주소로 접속 (webapp/밖에서-쓰기.md 참고)</li>\n'
+        '<li>촬영 주제·대본 아이디어는 담당자(사장님)께 요청</li>\n'
+        '</ul>\n</div>\n</div>\n</body>\n</html>'
+    )
+
+
 @app.route("/<path_key>/collect", methods=["POST"])
 def collect(path_key):
     check(path_key)
