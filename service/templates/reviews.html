@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>전체 리뷰 — 베어글스</title>
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
+          --ok:#3b6d11; --ok-bg:#eaf3de; --bad:#a3271f; --bad-bg:#fbe9e7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px 14px 64px; }
+  .head { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .logo { width:36px; height:36px; border-radius:10px; background:var(--accent-bg);
+          color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:19px; }
+  .head b { font-size:16px; } .head small { display:block; color:var(--muted); font-size:12px; }
+  .back { margin-left:auto; font-size:13px; text-decoration:none; color:var(--accent);
+          background:var(--accent-bg); padding:7px 13px; border-radius:20px; white-space:nowrap; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px;
+           padding:12px; margin-bottom:14px; }
+  .filters { display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+  .filters a { font-size:13px; padding:6px 13px; border-radius:20px; text-decoration:none;
+               color:var(--muted); background:var(--card); border:1px solid var(--line); }
+  .filters a.on { background:var(--accent-bg); color:var(--accent);
+                  border-color:var(--accent-bg); font-weight:600; }
+  .srch { display:flex; gap:7px; }
+  .srch input { flex:1; font-family:inherit; font-size:14px; border:1px solid var(--line);
+                border-radius:9px; padding:10px 11px; background:var(--card); color:var(--ink); }
+  .btn { border:1px solid var(--line); background:var(--card); color:var(--ink);
+         border-radius:9px; padding:10px 14px; font-size:14px; font-family:inherit;
+         cursor:pointer; text-decoration:none; display:inline-block; text-align:center; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  .btn.wide { width:100%; margin-top:8px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:13px; margin-bottom:10px; }
+  .meta { display:flex; align-items:center; gap:7px; flex-wrap:wrap; font-size:12px;
+          color:var(--muted); margin-bottom:7px; }
+  .tag { font-size:11px; padding:2px 9px; border-radius:20px; }
+  .tag.b { background:var(--accent-bg); color:var(--accent); }
+  .tag.c { background:var(--warn-bg); color:var(--warn); }
+  .tag.ok { background:var(--ok-bg); color:var(--ok); }
+  .tag.no { background:var(--bad-bg); color:var(--bad); }
+  .stars { color:#c98a12; letter-spacing:1px; }
+  .stars .dim { color:#dcd8cc; }
+  .whoname { font-weight:700; font-size:14px; word-break:break-all; }
+  .rv { font-size:14px; background:#f6f5f1; border-radius:9px; padding:9px 11px;
+        margin:8px 0; white-space:pre-wrap; word-break:break-word; }
+  .reply { font-size:13px; border-left:3px solid var(--ok); padding:2px 0 2px 10px;
+           color:#444; white-space:pre-wrap; word-break:break-word; }
+  .lbl { font-size:12px; color:var(--muted); }
+  .empty { text-align:center; color:var(--muted); padding:44px 16px; font-size:14px; }
+  .note { font-size:12px; padding:11px 12px; border-radius:9px; margin-bottom:14px;
+          background:var(--accent-bg); color:var(--accent); }
+  .note.bad { background:var(--bad-bg); color:var(--bad); }
+  .pager { display:flex; gap:8px; align-items:center; justify-content:center; margin-top:16px; }
+  .pager a, .pager span { font-size:13px; padding:8px 14px; border-radius:9px;
+                          text-decoration:none; border:1px solid var(--line);
+                          background:var(--card); color:var(--ink); }
+  .pager span.cur { color:var(--muted); border:0; background:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="head">
+    <div class="logo">🗂️</div>
+    <div><b>전체 리뷰</b>
+      <small>배민·쿠팡에 달린 모든 리뷰를 찾아볼 수 있어요</small></div>
+    <a class="back" href="{{ url_for('home', path_key=key) }}">← 답글 화면</a>
+  </div>
+
+  {% if error %}<div class="note bad">{{ error }}</div>{% endif %}
+
+  <div class="panel">
+    <form class="srch" method="get">
+      {# 검색해도 지금 보고 있던 조건은 유지된다 #}
+      {% if plat %}<input type="hidden" name="plat" value="{{ plat }}">{% endif %}
+      {% if rating %}<input type="hidden" name="rating" value="{{ rating }}">{% endif %}
+      {% if rep %}<input type="hidden" name="replied" value="{{ rep }}">{% endif %}
+      {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+      <input type="search" name="q" value="{{ q }}" placeholder="리뷰 내용 검색 (예: 늦게)">
+      <button class="btn primary" type="submit">검색</button>
+    </form>
+    <form method="post" action="{{ url_for('collect_all', path_key=key) }}">
+      <button class="btn wide" type="submit"
+              {{ 'disabled' if not worker.alive else '' }}
+              title="배민·쿠팡에 남아 있는 리뷰를 끝까지 긁어옵니다">
+        📥 전체 리뷰 가져오기 (오래 걸려요)
+      </button>
+    </form>
+    <div class="lbl" style="margin-top:7px;">
+      집 PC: {{ worker.text }}{% if job %} · {{ job.text }}{% endif %}
+    </div>
+  </div>
+
+  {# 플랫폼 #}
+  <div class="filters">
+    <a href="{{ url_for('reviews_all', path_key=key, q=q or None, rating=rating, replied=rep or None, sort=sort) }}"
+       class="{{ 'on' if not plat }}">전체</a>
+    <a href="{{ url_for('reviews_all', path_key=key, plat='baemin', q=q or None, rating=rating, replied=rep or None, sort=sort) }}"
+       class="{{ 'on' if plat == 'baemin' }}">🔵 배민</a>
+    <a href="{{ url_for('reviews_all', path_key=key, plat='coupang', q=q or None, rating=rating, replied=rep or None, sort=sort) }}"
+       class="{{ 'on' if plat == 'coupang' }}">🟠 쿠팡</a>
+  </div>
+  {# 답글 유무 #}
+  <div class="filters">
+    <a href="{{ url_for('reviews_all', path_key=key, plat=plat, q=q or None, rating=rating, sort=sort) }}"
+       class="{{ 'on' if not rep }}">답글 전체</a>
+    <a href="{{ url_for('reviews_all', path_key=key, plat=plat, q=q or None, rating=rating, replied='y', sort=sort) }}"
+       class="{{ 'on' if rep == 'y' }}">✅ 답글 있음</a>
+    <a href="{{ url_for('reviews_all', path_key=key, plat=plat, q=q or None, rating=rating, replied='n', sort=sort) }}"
+       class="{{ 'on' if rep == 'n' }}">⬜ 답글 없음</a>
+  </div>
+  {# 별점 · 정렬 #}
+  <div class="filters">
+    <a href="{{ url_for('reviews_all', path_key=key, plat=plat, q=q or None, replied=rep or None, sort=sort) }}"
+       class="{{ 'on' if not rating }}">별점 전체</a>
+    {% for n in [5, 4, 3, 2, 1] %}
+    <a href="{{ url_for('reviews_all', path_key=key, plat=plat, q=q or None, rating=n, replied=rep or None, sort=sort) }}"
+       class="{{ 'on' if rating == n }}">★{{ n }}</a>
+    {% endfor %}
+  </div>
+  <div class="filters">
+    <a href="{{ url_for('reviews_all', path_key=key, plat=plat, q=q or None, rating=rating, replied=rep or None) }}"
+       class="{{ 'on' if sort == 'new' }}">🕒 최신순</a>
+    <a href="{{ url_for('reviews_all', path_key=key, plat=plat, q=q or None, rating=rating, replied=rep or None, sort='old') }}"
+       class="{{ 'on' if sort == 'old' }}">⏳ 오래된순</a>
+    <a href="{{ url_for('reviews_all', path_key=key, plat=plat, q=q or None, rating=rating, replied=rep or None, sort='low') }}"
+       class="{{ 'on' if sort == 'low' }}">⭐ 낮은 별점순</a>
+  </div>
+
+  <div class="lbl" style="margin-bottom:9px;">
+    조건에 맞는 리뷰 <b style="color:var(--ink);">{{ total }}건</b>
+    {% if pages > 1 %}· {{ page }}/{{ pages }} 쪽{% endif %}
+  </div>
+
+  {% for r in rows %}
+  <div class="card">
+    <div class="meta">
+      <span class="tag {{ 'b' if r.platform == '배민' else 'c' }}">{{ r.platform }}</span>
+      <span class="stars">{{ '★' * (r.rating or 0) }}<span class="dim">{{ '☆' * (5 - (r.rating or 0)) }}</span></span>
+      <span>{{ r.date }}</span>
+      {% if r.replied %}<span class="tag ok">답글 있음</span>
+      {% else %}<span class="tag no">답글 없음</span>{% endif %}
+    </div>
+    <div class="whoname">{{ r.author }}
+      {% if r.order_count %}<span class="lbl">· {{ r.order_count }}회 주문</span>{% endif %}
+    </div>
+    {% if r.menus %}<div class="lbl">{{ r.menus }}</div>{% endif %}
+    <div class="rv">{{ r.content or '(사진/별점만, 텍스트 없음)' }}</div>
+    {% if r.replied and r.reply_text %}
+      <div class="lbl">우리 답글</div>
+      <div class="reply">{{ r.reply_text }}</div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="empty">
+    조건에 맞는 리뷰가 없어요.<br>
+    아직 안 가져왔다면 위 <b>📥 전체 리뷰 가져오기</b>를 눌러주세요.
+  </div>
+  {% endfor %}
+
+  {% if pages > 1 %}
+  <div class="pager">
+    {% if page > 1 %}
+    <a href="{{ url_for('reviews_all', path_key=key, plat=plat, q=q or None, rating=rating, replied=rep or None, sort=sort, page=page-1) }}">← 이전</a>
+    {% endif %}
+    <span class="cur">{{ page }} / {{ pages }}</span>
+    {% if page < pages %}
+    <a href="{{ url_for('reviews_all', path_key=key, plat=plat, q=q or None, rating=rating, replied=rep or None, sort=sort, page=page+1) }}">다음 →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+</body>
+</html>

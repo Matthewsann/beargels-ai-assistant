@@ -422,6 +422,63 @@ def history(path_key):
                            error=error, plat=plat, sort=sort)
 
 
+PAGE_SIZE = 30
+
+
+@app.route("/<path_key>/reviews")
+def reviews_all(path_key):
+    """전체 리뷰 관리 — 수집된 모든 리뷰를 조건으로 찾아본다(사장님 요청).
+
+    답글 화면(/)은 '지금 답글 달 것'만 보여주므로, 지난 리뷰를 찾아보거나
+    답글 유무를 확인할 데가 없었다. 여기서 플랫폼·별점·답글유무·검색어로
+    전체를 훑는다.
+    """
+    check(path_key)
+    plat = request.args.get("plat") or None
+    sort = request.args.get("sort") or "new"
+    q = (request.args.get("q") or "").strip() or None
+    rating = request.args.get("rating", type=int)
+    rep = request.args.get("replied")
+    replied = True if rep == "y" else False if rep == "n" else None
+    page = max(1, request.args.get("page", default=1, type=int))
+
+    error, rows, total = None, [], 0
+    try:
+        found, total = db.search_reviews(
+            platform=plat, rating=rating, replied=replied, q=q, sort=sort,
+            limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE)
+        for r in found:
+            v = _review_view(r)
+            v["replied"] = (r.get("reply_status") == "posted"
+                            or bool(r.get("platform_replied")))
+            v["reply_text"] = (r.get("reply_draft")
+                               or r.get("platform_reply") or "")
+            v["status"] = r.get("reply_status") or ""
+            rows.append(v)
+    except Exception as e:  # noqa: BLE001
+        error = f"리뷰를 불러오지 못했어요: {str(e)[:150]}"
+
+    return render_template(
+        "reviews.html", key=path_key, rows=rows, error=error, total=total,
+        plat=plat, sort=sort, q=q or "", rating=rating, rep=rep or "",
+        page=page, pages=max(1, -(-total // PAGE_SIZE)),
+        worker=_worker_view(), job=_job_view(db.latest_job()),
+    )
+
+
+@app.route("/<path_key>/collect-all", methods=["POST"])
+def collect_all(path_key):
+    """'전체 리뷰 수집' — 남아 있는 리뷰를 끝까지 긁어오라고 요청한다."""
+    check(path_key)
+    try:
+        db.request_collect_all(by="직원")
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"전체 수집 요청 실패: {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+    return redirect(url_for("reviews_all", path_key=path_key))
+
+
 @app.route("/<path_key>/review/<int:review_id>/edit_post", methods=["POST"])
 def edit_post(path_key, review_id):
     """게시된 답글 수정 — 새 내용 저장 후 일꾼에게 재게시 요청."""
