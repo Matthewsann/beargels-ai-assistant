@@ -29,7 +29,8 @@ CH_LABEL = {"baemin": "배민 (self.baemin.com)",
             "coupang": "쿠팡이츠 (store.coupangeats.com)",
             "naver": "네이버 스마트플레이스"}
 # 채널별 기준가 — 네이버는 매장 메뉴 기준(사장님 확인), 배달앱은 배달가.
-PRICE_BASE = {"baemin": "delivery", "coupang": "delivery", "naver": "store"}
+PRICE_BASE = {"baemin": "delivery", "coupang": "delivery",
+              "naver": "store", "store": "store"}
 
 # 쿠팡 메뉴 화면에서 카테고리 제목이 메뉴처럼 잡히는 노이즈(실조사 2026-08).
 NOISE = re.compile(
@@ -38,10 +39,12 @@ NOISE = re.compile(
 
 
 def expected_price(item, override, channel):
-    if override and override.get("price_override") is not None:
-        return override["price_override"]
+    # 가격이 갈리는 곳은 배달앱뿐 — 매장·네이버는 매장가 그대로다(사장님 확인
+    # 2026-08). 그래서 이 둘은 채널 오버라이드도 보지 않는다.
     if PRICE_BASE.get(channel) == "store":
         return item.get("store_price")
+    if override and override.get("price_override") is not None:
+        return override["price_override"]
     return item.get("delivery_price") or item.get("store_price")
 
 
