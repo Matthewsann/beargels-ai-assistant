@@ -732,6 +732,95 @@ def menu_update_item(sku, fields: dict):
             .eq("sku", sku).execute().data)
 
 
+PREP_CATEGORY = "반제품"          # 매장에서 만들어 쓰는 것 — 판매 메뉴가 아니다
+PREP_SUFFIX = "(반제품)"
+PREP_SUPPLIER = "직접제조"
+
+
+def next_prep_sku():
+    rows = (get_client().table("menu_items").select("sku")
+            .eq("category", PREP_CATEGORY).execute().data)
+    n = 0
+    for r in rows:
+        try:
+            n = max(n, int(str(r["sku"]).rsplit("-", 1)[-1]))
+        except ValueError:
+            pass
+    return f"PREP-{n + 1:03d}"
+
+
+def prep_create(name, yield_qty, unit="g"):
+    """반제품 하나를 만든다 — 자재 1줄 + 제조용 메뉴 1줄을 이름으로 묶는다.
+
+    이름이 연결고리다(자재명 == 메뉴명). 따로 컬럼을 두지 않아 마이그레이션이
+    필요 없고, 화면에서도 무엇과 무엇이 짝인지 그대로 보인다.
+    산출량(yield_qty)은 자재의 pack_qty 로 두고, 배치 원가가 pack_cost 가 된다.
+    """
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("이름이 필요합니다")
+    if not name.endswith(PREP_SUFFIX):
+        name += PREP_SUFFIX
+    yield_qty = float(yield_qty or 0)
+    if yield_qty <= 0:
+        raise ValueError("산출량(한 번 만들면 몇 g/ml/개 나오는지)을 입력하세요")
+
+    sb = get_client()
+    exists = [i for i in ingredients_all() if _norm_ing_name(i["name"]) == _norm_ing_name(name)]
+    if exists:
+        raise DuplicateIngredient(f"'{name}' 자재가 이미 있습니다.")
+
+    sku = next_prep_sku()
+    sb.table("menu_items").upsert({
+        "sku": sku, "name": name, "category": PREP_CATEGORY,
+        "menu_type": PREP_CATEGORY,
+        "store_price": None, "delivery_price": None,
+        "store_active": False, "delivery_active": False,
+        "description": f"반제품 — 한 번 만들면 {yield_qty:g}{unit} 산출",
+        "sort_order": 9000,
+    }, on_conflict="sku").execute()
+
+    ing = ingredient_upsert({
+        "name": name, "unit": unit,
+        "pack_qty": yield_qty, "pack_cost": 0,
+        "category": "반제품 재료", "supplier": PREP_SUPPLIER,
+        "note": f"제조 레시피: {sku}",
+    })
+    return {"sku": sku, "ingredient": ing, "name": name}
+
+
+def prep_sync(skus=None):
+    """반제품 메뉴의 원가 → 짝인 자재의 pack_cost 로 흘려보낸다.
+
+    자재값이 바뀌었으니 그 자재를 쓰는 메뉴 원가도 다시 계산해야 한다.
+    Returns: (자재가 바뀐 수, 뒤이어 재계산된 {sku: cost})
+    """
+    sb = get_client()
+    preps = [i for i in sb.table("menu_items").select("sku,name,ingredient_cost")
+             .eq("category", PREP_CATEGORY).execute().data
+             if skus is None or i["sku"] in set(skus)]
+    if not preps:
+        return 0, {}
+    by_name = {_norm_ing_name(i["name"]): i for i in ingredients_all()}
+    touched, downstream = 0, set()
+    for m in preps:
+        ing = by_name.get(_norm_ing_name(m["name"]))
+        cost = m.get("ingredient_cost")
+        if not ing or cost is None:
+            continue
+        if float(ing.get("pack_cost") or 0) == float(cost):
+            continue
+        sb.table("ingredients").update(
+            {"pack_cost": cost,
+             "updated_at": datetime.utcnow().isoformat() + "Z"}
+        ).eq("id", ing["id"]).execute()
+        touched += 1
+        downstream.update(skus_using_ingredient(ing["id"]))
+    downstream -= {m["sku"] for m in preps}     # 자기 자신은 다시 돌지 않는다
+    updated = recompute_costs(list(downstream), force=True) if downstream else {}
+    return touched, updated
+
+
 def menu_upsert_channel(sku, channel, fields: dict):
     allowed = ("name_override", "price_override", "active", "note")
     payload = {k: fields.get(k) for k in allowed if k in fields}
