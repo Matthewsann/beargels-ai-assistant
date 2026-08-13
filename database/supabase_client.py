@@ -931,12 +931,16 @@ def seed_ingredients_bulk(spec):
     ing_id = {(i["name"], i["unit"]): i["id"] for i in ingredients_all()}
     valid = {i["sku"] for i in sb.table("menu_items").select("sku").execute().data}
     have = {(r["sku"], r["ingredient_id"]) for r in recipes_all()}
-    lines = []
+    # 같은 메뉴에 같은 자재가 두 줄이면 사용량을 합친다 — 한 upsert 안에
+    # 키가 중복되면 Postgres 가 21000 오류를 낸다(실사고 2026-08).
+    merged = {}
     for ln in spec["recipes"]:
         iid = ing_id.get((ln["ingredient"], ln["unit"]))
         if not iid or ln["sku"] not in valid or (ln["sku"], iid) in have:
             continue
-        lines.append({"sku": ln["sku"], "ingredient_id": iid, "qty": ln["qty"]})
+        merged[(ln["sku"], iid)] = merged.get((ln["sku"], iid), 0) + ln["qty"]
+    lines = [{"sku": s, "ingredient_id": i, "qty": round(q, 3)}
+             for (s, i), q in merged.items()]
     if lines:
         sb.table("menu_recipes").upsert(
             lines, on_conflict="sku,ingredient_id").execute()
