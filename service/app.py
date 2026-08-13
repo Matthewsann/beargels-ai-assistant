@@ -717,6 +717,7 @@ def menu_ingredient_save(path_key):
     try:
         affected = db.skus_using_ingredient(row["id"]) if row else []
         updated = db.recompute_costs(affected) if affected else {}
+        updated = _prep_cascade(list(updated), updated)
         return jsonify({"ok": True, "ingredient": row, "recomputed": updated})
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"자재 저장 실패: {e}", kind=type(e).__name__,
@@ -736,6 +737,96 @@ def menu_ingredient_delete(path_key, ing_id):
                                  "먼저 해당 메뉴 레시피에서 빼주세요."}), 400
 
 
+@app.route("/<path_key>/menu/prep", methods=["POST"])
+def menu_prep_create(path_key):
+    """반제품 만들기 — 자재 1줄 + 제조 레시피용 항목 1줄을 한 번에."""
+    check(path_key)
+    body = request.get_json(force=True) or {}
+    try:
+        out = db.prep_create(body.get("name"), body.get("yield_qty"),
+                             body.get("unit") or "g")
+        return jsonify({"ok": True, **out})
+    except db.DuplicateIngredient as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"반제품 생성 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+def _prep_cascade(skus, updated):
+    """반제품 원가가 움직였으면 그 자재값과 하위 메뉴 원가까지 흘려보낸다.
+
+    두 갈래 모두 여기로 온다 — 반제품 레시피를 직접 고친 경우, 그리고
+    반제품에 들어가는 자재(크림치즈 등) 가격을 고쳐 반제품 원가가 바뀐 경우.
+    """
+    if isinstance(skus, str):
+        skus = [skus]
+    skus = [s for s in (skus or []) if s]
+    if not skus:
+        return updated
+    try:
+        _, more = db.prep_sync(skus)
+        updated = {**updated, **more}
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"반제품 연쇄 재계산 실패({skus}): {e}",
+                     kind=type(e).__name__, detail=traceback.format_exc())
+    return updated
+
+
+@app.route("/<path_key>/menu/ingredients/batch", methods=["POST"])
+def menu_ingredients_batch(path_key):
+    """자재 여러 줄 한 번에 저장 — 엑셀처럼 붙여넣은 뒤 한 번에 커밋."""
+    check(path_key)
+    body = request.get_json(force=True) or {}
+    rows = body.get("rows") or []
+    saved, errors = [], []
+    affected = set()
+    for r in rows:
+        try:
+            row = db.ingredient_upsert(r, r.get("id"))
+            saved.append(row)
+            for sku in db.skus_using_ingredient(row["id"]):
+                affected.add(sku)
+        except db.DuplicateIngredient as e:
+            errors.append({"id": r.get("id"), "name": r.get("name"), "error": str(e)})
+        except Exception as e:  # noqa: BLE001
+            errors.append({"id": r.get("id"), "name": r.get("name"), "error": str(e)[:200]})
+    try:
+        updated = db.recompute_costs(list(affected)) if affected else {}
+        updated = _prep_cascade(list(updated), updated)
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"자재 일괄저장 재계산 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        updated = {}
+    return jsonify({"ok": True, "saved": saved, "errors": errors, "recomputed": updated})
+
+
+@app.route("/<path_key>/menu/recipe/batch", methods=["POST"])
+def menu_recipe_batch(path_key):
+    """한 메뉴의 레시피 사용량 여러 줄 한 번에 저장."""
+    check(path_key)
+    body = request.get_json(force=True) or {}
+    sku = body.get("sku")
+    lines = body.get("lines") or []
+    saved, errors = [], []
+    for ln in lines:
+        try:
+            row = db.recipe_upsert(sku, ln["ingredient_id"], ln["qty"])
+            saved.append(row)
+        except Exception as e:  # noqa: BLE001
+            errors.append({"ingredient_id": ln.get("ingredient_id"), "error": str(e)[:200]})
+    try:
+        updated = db.recompute_costs([sku], force=True) if sku else {}
+        if sku:
+            updated = _prep_cascade(sku, updated)
+    except Exception as e:  # noqa: BLE001
+        updated = {}
+    return jsonify({"ok": True, "saved": saved, "errors": errors, "recomputed": updated})
+
+
 @app.route("/<path_key>/menu/recipe", methods=["POST"])
 def menu_recipe_save(path_key):
     check(path_key)
@@ -744,6 +835,7 @@ def menu_recipe_save(path_key):
         row = db.recipe_upsert(body["sku"], body["ingredient_id"], body["qty"])
         # 레시피를 사람이 직접 고친 것 — 수기 원가보다 레시피가 최신 의사표시.
         updated = db.recompute_costs([body["sku"]], force=True)
+        updated = _prep_cascade(body["sku"], updated)
         return jsonify({"ok": True, "line": row, "recomputed": updated})
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"레시피 저장 실패: {e}", kind=type(e).__name__,
@@ -757,6 +849,8 @@ def menu_recipe_delete(path_key, rid):
     try:
         sku = db.recipe_delete(rid)
         updated = db.recompute_costs([sku], force=True) if sku else {}
+        if sku:
+            updated = _prep_cascade(sku, updated)
         return jsonify({"ok": True, "recomputed": updated})
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
