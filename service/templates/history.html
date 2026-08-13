@@ -157,10 +157,13 @@ function editIt(id, editUrl, stateUrl) {
   const body = new URLSearchParams({draft: t.value});
   fetch(editUrl, {method: 'POST', body: body}).then(r => r.json()).then(res => {
     if (!res.ok) { restore(); alert('요청 실패: ' + (res.error || '')); return; }
+    // 이 요청이 만든 '그 작업'을 id 로 따라간다 — 문구로 찾으면 일꾼이 남긴
+    // 오류(예: 옛 버전이라 수정을 모름)를 놓쳐 이유 없이 시간만 흐른다.
+    const url = stateUrl + (res.job ? (stateUrl.includes('?') ? '&' : '?') + 'job=' + res.job : '');
     let tries = 0;
     const poll = setInterval(() => {
       tries += 1;
-      fetch(stateUrl).then(r => r.json()).then(st => {
+      fetch(url).then(r => r.json()).then(st => {
         if (st.status === 'done') {
           clearInterval(poll);
           btn.textContent = '✅ 수정 완료!';
@@ -176,9 +179,18 @@ function editIt(id, editUrl, stateUrl) {
                 '\n\n고객에게 보이는 답글은 이전 내용 그대로예요. ' +
                 '잠시 후 다시 시도해주세요.');
         } else if (tries >= 60) {
+          // 실패가 아니라 '아직 처리 전'이다 — 요청은 줄에 남아 있으므로
+          // 다시 누르지 말라고 알린다(2026-08-13).
           clearInterval(poll);
           restore();
-          alert('아직 확인이 안 돼요. 집 PC 상태를 확인하고 다시 시도해주세요.');
+          if (st.worker_alive) {
+            alert('집 PC가 다른 작업 중이라 시간이 걸리고 있어요.\n\n' +
+                  '수정 요청은 그대로 남아 있으니 다시 누르지 않아도 돼요. ' +
+                  '잠시 후 새로고침해서 확인해주세요.');
+          } else {
+            alert('집 PC 프로그램이 꺼져 있어요.\n답글 화면의 "집 PC 깨우기"를 ' +
+                  '누르면 켜진 뒤 이 수정이 이어서 처리됩니다.');
+          }
         }
       }).catch(() => {});
     }, 3000);

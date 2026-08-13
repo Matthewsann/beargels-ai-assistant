@@ -491,6 +491,20 @@ def request_post_edit(review_id, by=None):
     return _request_review_job("post_edit", review_id, by)
 
 
+def get_job(job_id):
+    """잡 1건을 id 로 정확히 가져온다(없으면 None) — 화면 폴링용.
+
+    ⚠️ latest_review_job 은 message 문구로 찾는다. 그런데 finish_job 이
+    '알 수 없는 잡 종류: post_edit — 일꾼 업데이트 필요' 처럼 리뷰 id 가 없는
+    문구로 덮어쓰면 그 잡을 영영 못 찾아, 화면은 이유도 모른 채 3분 폴링
+    끝에 '아직 확인이 안 돼요'만 띄운다(사장님 제보 2026-08-13). id 로 찾으면
+    문구가 무엇이든 상태와 사유를 그대로 보여줄 수 있다.
+    """
+    rows = (get_client().table("jobs").select("*")
+            .eq("id", job_id).limit(1).execute().data)
+    return rows[0] if rows else None
+
+
 def latest_review_job(kind, review_id):
     """이 리뷰를 대상으로 한 최근 잡 1건(없으면 None) — 화면 폴링용.
 

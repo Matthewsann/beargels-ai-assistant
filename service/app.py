@@ -488,8 +488,10 @@ def edit_post(path_key, review_id):
         if not text:
             return jsonify({"ok": False, "error": "내용이 비어 있어요"}), 200
         db.save_reply_draft(review_id, text, status="posted")
-        db.request_post_edit(review_id)
-        return jsonify({"ok": True})
+        job = db.request_post_edit(review_id)
+        # 잡 id 를 넘겨 화면이 '그 잡'을 정확히 따라가게 한다 — 문구로 찾으면
+        # 일꾼이 남긴 오류(예: 잡 종류를 모름)를 놓친다.
+        return jsonify({"ok": True, "job": (job or {}).get("id")})
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"답글 수정 요청 실패(review {review_id}): {e}",
                      kind=type(e).__name__, path=request.path,
@@ -501,10 +503,16 @@ def edit_post(path_key, review_id):
 def edit_state(path_key, review_id):
     """답글 수정 진행 상태 — 최근 post_edit 잡의 status/message."""
     check(path_key)
+    job_id = request.args.get("job", type=int)
     try:
-        j = db.latest_review_job("post_edit", review_id) or {}
-        return jsonify({"status": j.get("status") or "",
-                        "message": (j.get("message") or "")[:200]})
+        j = (db.get_job(job_id) if job_id
+             else db.latest_review_job("post_edit", review_id)) or {}
+        msg = (j.get("message") or "")[:300]
+        if "알 수 없는 잡 종류" in msg:
+            msg = ("집 PC 프로그램이 옛 버전이라 '답글 수정'을 모릅니다. "
+                   "집 PC에서 5_자동등록_고치기.bat 을 한 번 실행해 주세요.")
+        return jsonify({"status": j.get("status") or "", "message": msg,
+                        "worker_alive": bool(_worker_view().get("alive"))})
     except Exception as e:  # noqa: BLE001
         return jsonify({"error": str(e)[:150]}), 200
 
