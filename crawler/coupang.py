@@ -97,18 +97,32 @@ class CoupangCrawler:
         end = (date.today() + timedelta(days=1)).isoformat()
 
         reviews = []
+        total = 0
         for page_num in range(1, max_pages + 1):
-            data = self._fetch_review_page(page_num, start, end)
+            # 응답 캡처는 가끔 타이밍 문제로 실패한다 — 한 번 실패했다고
+            # 수집 전체를 접으면 '전체 수집'이 0건으로 끝난다(2026-08-13).
+            data = None
+            for attempt in range(3):
+                data = self._fetch_review_page(page_num, start, end)
+                if data is not None:
+                    break
+                logger.warning("쿠팡 %d페이지 재시도 %d/2", page_num, attempt + 1)
+                human_pause(3.0, 5.0)
             if data is None:
+                logger.warning("쿠팡 %d페이지 실패 — 여기까지 수집(%d건)",
+                               page_num, len(reviews))
                 break
             content = data.get("content", [])
             reviews.extend(self._normalize_review(r) for r in content)
-            total = data.get("total", 0)
+            total = data.get("total", 0) or total
             if not content or len(reviews) >= total:
                 break
+            if page_num % 20 == 0:      # 전체 수집은 수백 페이지라 진행 로그
+                logger.info("쿠팡 수집 진행 %d/%d건", len(reviews), total)
             human_pause(2.0, 3.5)
 
-        logger.info("쿠팡 리뷰 %d건 수집 (최근 %d일)", len(reviews), days)
+        logger.info("쿠팡 리뷰 %d건 수집 (최근 %d일, 전체 %d건)",
+                    len(reviews), days, total)
         return reviews
 
     def _fetch_review_page(self, page_num, start, end):

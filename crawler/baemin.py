@@ -267,19 +267,40 @@ class BaeminCrawler:
             logger.info("리뷰 항목을 찾지 못함 (리뷰 없음이거나 셀렉터 확인 필요)")
             return []
 
-        # 지연 로딩: 카드 수가 늘지 않을 때까지 아래로 스크롤
-        prev = 0
-        for _ in range(max_scroll):
-            self.page.evaluate(
-                "window.scrollTo(0, document.body.scrollHeight)")
-            human_pause(2.0, 3.5)
-            cur = len(self.page.query_selector_all(SELECTORS["review_item"]))
-            if cur == prev:
-                break
-            prev = cur
+        # 팝업(공지 등)이 떠 있으면 '더보기' 클릭을 가로챈다 — 먼저 닫는다.
+        try:
+            self.page.keyboard.press("Escape")
+            human_pause(0.8, 1.5)
+        except Exception:  # noqa: BLE001
+            pass
 
-        soup = BeautifulSoup(self.page.content(), "html.parser")
-        reviews = self.parse_review_cards(soup)
+        # ⚠️ 배민 리뷰 목록은 **가상 목록**이다 — 화면 밖 카드는 DOM 에서
+        #    지워져 마지막에 한 번만 파싱하면 13건쯤에서 멈춘다(2026-08-13).
+        #    그래서 매 라운드마다 현재 보이는 카드를 파싱해 누적하고,
+        #    스크롤 + '더보기' 클릭으로 다음 묶음을 불러온다.
+        seen, empty_rounds = {}, 0
+        for _ in range(max_scroll):
+            soup = BeautifulSoup(self.page.content(), "html.parser")
+            before = len(seen)
+            for r in self.parse_review_cards(soup):
+                if r.get("review_no"):
+                    seen[r["review_no"]] = r
+            self.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            human_pause(1.5, 2.5)
+            # '더보기'는 헤더가 클릭을 가로채므로 DOM 클릭으로 누른다.
+            more = self.page.evaluate(
+                """() => { const b = [...document.querySelectorAll('button')]
+                     .find(e => (e.textContent || '').trim() === '더보기');
+                   if (!b) return false; b.click(); return true; }""")
+            human_pause(2.0, 3.0)
+            if len(seen) == before:
+                empty_rounds += 1
+                if empty_rounds >= 2 or not more:
+                    break            # 더 나올 게 없다
+            else:
+                empty_rounds = 0
+
+        reviews = list(seen.values())
         logger.info("리뷰 %d건 수집 (답글 달린 리뷰 %d건)",
                     len(reviews),
                     sum(1 for r in reviews if r.get("platform_reply")))
