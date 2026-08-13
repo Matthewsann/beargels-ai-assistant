@@ -254,14 +254,29 @@ function syncRecipe(j){
   toast("저장 ✓ 원가 재계산됨");
 }
 
+async function runSeed(){
+  const btn=document.getElementById("seedBtn");
+  btn.disabled=true; btn.textContent="넣는 중… (최대 1분, 화면을 닫지 마세요)";
+  const j=await api("/ingredients/seed");
+  if(j){
+    toast(`완료: 자재 ${j.ingredients_added} · 레시피 ${j.lines_added} · 원가 재계산 ${j.recomputed}개`);
+    const d=await fetch(BASE+"/data").then(r=>r.json());
+    DATA=d; DATA.ingredients=d.ingredients||[]; DATA.recipes=d.recipes||[];
+  } else { btn.disabled=false; btn.textContent="📦 초기 데이터 넣기 (다시 시도)"; }
+  render();
+}
+
 function render(){
   document.getElementById("tabIng").classList.toggle("on",TAB==='ing');
   document.getElementById("tabRec").classList.toggle("on",TAB==='rec');
   if(!DATA)return;
   if(!DATA.ingredients.length&&TAB==='ing'){
-    document.getElementById("main").innerHTML=`<div class="empty">자재 데이터가 없습니다.<br><br>
-      Supabase에서 <code>supabase/migrations/007_ingredients.sql</code> 실행 후<br>
-      집 PC에서 <code>python scripts/seed_ingredients.py --apply</code> 를 실행하세요.</div>`;
+    document.getElementById("main").innerHTML=`<div class="empty">자재 데이터가 아직 없습니다.<br><br>
+      <button id="seedBtn" style="border:none;background:var(--brown);color:#fff;border-radius:10px;
+        padding:12px 22px;font-size:14px;cursor:pointer" onclick="runSeed()">
+        📦 초기 데이터 넣기 (자재 188개 + 레시피 549줄, 1분 소요)</button>
+      <p class="note" style="margin-top:10px">2026-08 자재리스트와 기존 원가계산기 레시피를 넣습니다.<br>
+      한 번만 누르면 되고, 실수로 다시 눌러도 안전합니다.</p></div>`;
     return;
   }
   TAB==='ing'?renderIng():renderRec();

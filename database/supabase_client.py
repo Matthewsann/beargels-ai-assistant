@@ -842,6 +842,39 @@ def recompute_costs(skus=None, force=False):
     return updated
 
 
+def seed_ingredients_bulk(spec):
+    """자재·레시피 시드를 일괄 주입(웹에서 버튼 1회용).
+
+    이미 있는 자재의 가격은 건드리지 않고, 없는 것만 넣는다.
+    레시피도 없는 라인만 추가. 끝으로 관련 메뉴 원가를 재계산한다
+    ('웹에서 직접 입력' 원가는 보존).
+    """
+    sb = get_client()
+    existing = {(i["name"], i["unit"]) for i in ingredients_all()}
+    new_rows = [{k: ing.get(k) for k in _ING_COLS}
+                for ing in spec["ingredients"]
+                if (ing["name"], ing["unit"]) not in existing]
+    if new_rows:
+        sb.table("ingredients").upsert(new_rows, on_conflict="name,unit").execute()
+
+    ing_id = {(i["name"], i["unit"]): i["id"] for i in ingredients_all()}
+    valid = {i["sku"] for i in sb.table("menu_items").select("sku").execute().data}
+    have = {(r["sku"], r["ingredient_id"]) for r in recipes_all()}
+    lines = []
+    for ln in spec["recipes"]:
+        iid = ing_id.get((ln["ingredient"], ln["unit"]))
+        if not iid or ln["sku"] not in valid or (ln["sku"], iid) in have:
+            continue
+        lines.append({"sku": ln["sku"], "ingredient_id": iid, "qty": ln["qty"]})
+    if lines:
+        sb.table("menu_recipes").upsert(
+            lines, on_conflict="sku,ingredient_id").execute()
+    touched = sorted({ln["sku"] for ln in lines})
+    updated = recompute_costs(touched) if touched else {}
+    return {"ingredients_added": len(new_rows), "lines_added": len(lines),
+            "recomputed": len(updated)}
+
+
 def skus_using_ingredient(ing_id):
     rows = (get_client().table("menu_recipes").select("sku")
             .eq("ingredient_id", ing_id).execute().data)
