@@ -70,7 +70,7 @@
     <div class="logo">🗂️</div>
     <div><b>전체 리뷰</b>
       <small>배민·쿠팡에 달린 모든 리뷰를 찾아볼 수 있어요</small></div>
-    <a class="back" href="{{ url_for('home', path_key=key) }}">← 답글 화면</a>
+    {# 백링크 제거 — 상단 공용 메뉴의 '💬 리뷰 답글'과 중복(2026-08-13 점검). #}
   </div>
 
   {% if error %}<div class="note bad">{{ error }}</div>{% endif %}

@@ -536,6 +536,22 @@ def mark_skipped(review_id):
     _update_review(review_id, {"reply_status": "skipped"})
 
 
+def _search_filter(q):
+    """검색어 → PostgREST or_ 조건 문자열.
+
+    - 리뷰 본문뿐 아니라 **작성자**도 찾는다(닉네임으로 찾는 일이 잦다).
+    - 띄어쓰기를 무시한다: '크림 치즈'로도 '크림치즈'가 걸리도록 공백을 뺀
+      검색어를 함께 본다(사장님 보고 2026-08-13 — 0건이 나왔다).
+    - or_ 문법을 깨뜨리는 쉼표·괄호는 제거한다.
+    """
+    base = re.sub(r"[,()]", " ", q or "").strip()
+    terms = {base, base.replace(" ", "")} - {""}
+    parts = []
+    for t in terms:
+        parts += [f"content.ilike.%{t}%", f"author.ilike.%{t}%"]
+    return ",".join(parts)
+
+
 def search_reviews(platform=None, rating=None, replied=None, q=None,
                    limit=50, offset=0, sort="new"):
     """수집된 **모든** 리뷰를 조건으로 찾는다 — 전체 리뷰 관리 화면용.
@@ -557,7 +573,7 @@ def search_reviews(platform=None, rating=None, replied=None, q=None,
         if rating:
             s = s.eq("rating", int(rating))
         if q:
-            s = s.ilike("content", f"%{q}%")
+            s = s.or_(_search_filter(q))
         if replied is True:
             s = s.or_("reply_status.eq.posted,platform_replied.is.true")
         elif replied is False:

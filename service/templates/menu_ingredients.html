@@ -444,7 +444,10 @@ function matchQueue(){
       .filter(x=>x.s>=0.34).sort((a,b)=>b.s-a.s).slice(0,5);
     if(c.length && !MLATER.has(n.id)) out.push({n,c});
   }
-  return out.sort((a,b)=>b.c[0].s-a.c[0].s);
+  // 레시피에 실제로 쓰이는 자재의 짝을 먼저 묻는다 — 안 쓰는 자재를 이어봐야
+  // 메뉴 원가는 1원도 안 바뀐다. 쓰는 것부터 끝내면 그 자리에서 원가가 맞아간다.
+  const uses=x=>x.c.some(y=>usedCount(y.o.id)>0);
+  return out.sort((a,b)=>(uses(b)-uses(a)) || (b.c[0].s-a.c[0].s));
 }
 let MDONE=0;
 function renderMatch(){

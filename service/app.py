@@ -456,8 +456,10 @@ def history(path_key):
     error, rows = None, []
     plat = (request.args.get("plat") or "").strip()   # baemin|coupang|빈값(전체)
     sort = (request.args.get("sort") or "").strip()   # rating|빈값(최신순)
+    page = max(1, request.args.get("page", default=1, type=int))
+    pages = 1
     try:
-        for r in db.get_posted_reviews(limit=100):
+        for r in db.get_posted_reviews(limit=500):
             if plat and r.get("platform") != plat:
                 continue
             v = _review_view(r)
@@ -466,10 +468,15 @@ def history(path_key):
         if sort == "rating":
             # 낮은 별점 먼저 — 문제 리뷰의 답글을 먼저 점검하기 위함.
             rows.sort(key=lambda v: (v.get("rating") or 0, v.get("posted_at") or ""))
+        # 답글이 쌓일수록 한 화면이 끝없이 길어져 쪽 단위로 끊는다(2026-08-13).
+        pages = max(1, -(-len(rows) // PAGE_SIZE))
+        page = min(page, pages)
+        rows = rows[(page - 1) * PAGE_SIZE: page * PAGE_SIZE]
     except Exception as e:  # noqa: BLE001
         error = f"데이터를 불러오지 못했어요: {str(e)[:150]}"
     return render_template("history.html", key=path_key, rows=rows,
-                           error=error, plat=plat, sort=sort)
+                           error=error, plat=plat, sort=sort,
+                           page=page, pages=pages)
 
 
 PAGE_SIZE = 30

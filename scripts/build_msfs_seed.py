@@ -202,7 +202,8 @@ def main():
             "code": r.get("품목코드"),
         })
 
-    # 이름이 겹치면 브랜드를 붙여 구분한다(같은 이름은 하나만 등록되므로)
+    # 이름이 겹치면 브랜드를 붙여 구분한다. 자재는 (이름, 단위)로 한 줄이라
+    # 겹친 채로 두면 뒤엣것이 앞엣것을 덮어써서 한 종류가 조용히 사라진다.
     seen = {}
     for it in out:
         seen.setdefault(it["name"], []).append(it)
@@ -211,6 +212,18 @@ def main():
             for it in group:
                 if it["brand"]:
                     it["name"] = f"{it['brand']} {name}"
+    # 브랜드로도 안 갈리면(같은 이름·무브랜드) 크기로 가른다 — 수박 7kg/20kg 처럼
+    # 규격만 다른 같은 품목이 실제로 있다.
+    seen = {}
+    for it in out:
+        seen.setdefault((it["name"], it["unit"]), []).append(it)
+    for (name, unit), group in seen.items():
+        if len(group) > 1:
+            for it in group:
+                size = it["pack_qty"] / 1000 if unit in ("g", "ml") else it["pack_qty"]
+                label = (f"{size:g}kg" if unit == "g" else
+                         f"{size:g}L" if unit == "ml" else f"{size:g}개")
+                it["name"] = f"{name} {label}"
 
     OUT.write_text(json.dumps({"ingredients": out, "skipped": skipped},
                               ensure_ascii=False, indent=1), encoding="utf-8")

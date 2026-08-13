@@ -277,9 +277,13 @@ function regenIt(id, regenUrl, draftUrl) {
 }
 
 // 초안 칸 자동 높이 — 긴 답글(300자 가까이)이 6줄 칸에 잘려 스크롤해야 했다.
+// 내용에 맞춰 늘리되 상한을 둔다 — 300자 답글을 전부 펼치면 17건에
+// 아이폰 25화면 길이가 돼 목록을 훑기 어려웠다(2026-08-13 점검).
+const TA_MAX = 300;
 function fitTextarea(t) {
   t.style.height = 'auto';
-  t.style.height = (t.scrollHeight + 2) + 'px';
+  t.style.height = Math.min(t.scrollHeight + 2, TA_MAX) + 'px';
+  t.style.overflowY = t.scrollHeight > TA_MAX ? 'auto' : 'hidden';
 }
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('textarea').forEach(t => {

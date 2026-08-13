@@ -59,6 +59,16 @@
   .note { font-size:12px; padding:11px 12px; border-radius:9px; margin-bottom:14px;
           background:var(--accent-bg); color:var(--accent); }
   .note.bad { background:var(--bad-bg); color:var(--bad); }
+  /* 접어둔 답글 미리보기 — 3줄까지만 보이고 나머지는 …로 줄인다 */
+  .peek { font-size:13.5px; color:var(--ink); background:#f6f5f1; border-radius:9px;
+          padding:10px 12px; white-space:pre-wrap; word-break:break-word;
+          display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;
+          overflow:hidden; }
+  .editbox { display:none; }
+  .pager { display:flex; gap:8px; align-items:center; justify-content:center; margin-top:16px; }
+  .pager a, .pager span { font-size:13px; padding:10px 14px; border-radius:9px;
+    border:1px solid var(--line); background:var(--card); color:var(--ink); text-decoration:none; }
+  .pager .cur { border:0; color:var(--muted); }
   .done-box { display:none; background:var(--ok-bg); color:var(--ok);
               border-radius:9px; padding:11px 12px; margin-top:9px; font-size:13px; }
   .btn.golink { background:var(--card); color:var(--ok); border-color:var(--ok);
@@ -78,8 +88,8 @@
     <div class="logo">📜</div>
     <div><b>등록한 답글</b>
       <small>최근 등록순 · 여기서 바로 고쳐 재게시할 수 있어요</small></div>
-    <a class="back" href="{{ url_for('reviews_all', path_key=key) }}">🗂️ 전체 리뷰</a>
-    <a class="back" href="{{ url_for('home', path_key=key) }}">← 답글 화면</a>
+    {# 상단 공용 메뉴에 이미 '전체 리뷰'·'리뷰 답글'이 있어 백링크는 두지
+       않는다 — 같은 링크가 두 번 보여 헷갈렸다(2026-08-13 점검). #}
   </div>
 
   <div class="filters">
@@ -125,12 +135,19 @@
       </div>
     </div>
     <div class="rv">{{ r.content or '(사진/별점만, 텍스트 없음)' }}</div>
-    <label class="lbl">등록된 답글 (고치면 실제 답글이 바뀌어요)</label>
-    <textarea id="d{{ r.id }}" rows="5">{{ r.draft }}</textarea>
-    <button class="btn primary" type="button" id="e{{ r.id }}"
-            onclick="editIt({{ r.id }}, '{{ url_for('edit_post', path_key=key, review_id=r.id) }}', '{{ url_for('edit_state', path_key=key, review_id=r.id) }}')">
-      ✏️ 수정 등록 — 실제 답글 바꾸기
-    </button>
+    {# 기본은 접어 둔다 — 답글이 300자쯤이라 전부 펼치면 44건에 아이폰
+       40화면 길이가 됐다(2026-08-13 점검). [고치기]를 눌러야 편집칸이 열린다. #}
+    <label class="lbl">등록된 답글</label>
+    <div class="peek" id="p{{ r.id }}">{{ r.draft }}</div>
+    <button class="btn" type="button" id="o{{ r.id }}"
+            onclick="openEdit({{ r.id }})">✏️ 고치기</button>
+    <div class="editbox" id="b{{ r.id }}">
+      <textarea id="d{{ r.id }}" rows="5">{{ r.draft }}</textarea>
+      <button class="btn primary" type="button" id="e{{ r.id }}"
+              onclick="editIt({{ r.id }}, '{{ url_for('edit_post', path_key=key, review_id=r.id) }}', '{{ url_for('edit_state', path_key=key, review_id=r.id) }}')">
+        ✏️ 수정 등록 — 실제 답글 바꾸기
+      </button>
+    </div>
     {# 수정 완료 후에만 보이는 확인 띠 + 실제 답글 바로가기 #}
     <div class="done-box" id="ok{{ r.id }}">
       <b>✅ 수정 완료! 고객에게 새 답글이 보여요.</b>
@@ -145,9 +162,32 @@
   <div class="empty">아직 등록한 답글이 없어요.</div>
   {% endfor %}
 
+  {% if pages > 1 %}
+  <div class="pager">
+    {% if page > 1 %}
+    <a href="{{ url_for('history', path_key=key, plat=plat or None, sort=sort or None, page=page-1) }}">← 이전</a>
+    {% endif %}
+    <span class="cur">{{ page }} / {{ pages }}</span>
+    {% if page < pages %}
+    <a href="{{ url_for('history', path_key=key, plat=plat or None, sort=sort or None, page=page+1) }}">다음 →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
 </div>
 
 <script>
+// [고치기] — 접힌 미리보기를 편집칸으로 바꾼다(길이 문제로 기본은 접힘).
+function openEdit(id) {
+  document.getElementById('p' + id).style.display = 'none';
+  document.getElementById('o' + id).style.display = 'none';
+  const box = document.getElementById('b' + id);
+  box.style.display = 'block';
+  const t = document.getElementById('d' + id);
+  t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px';
+  t.focus();
+}
+
 function editIt(id, editUrl, stateUrl) {
   const t = document.getElementById('d' + id);
   const btn = document.getElementById('e' + id);

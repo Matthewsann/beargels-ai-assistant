@@ -27,7 +27,8 @@
             padding:8px 10px; display:flex; align-items:center; gap:2px; overflow-x:auto;
             white-space:nowrap; }
     .sbar .bhead { padding:0 6px 0 0; } .sbar .bhead b, .sbar .bhead small { display:none; }
-    .sbar a.sm { display:inline-flex; padding:8px 10px; font-size:12.5px; margin:0; flex-shrink:0; }
+    /* 모바일 탭은 손가락으로 누르는 곳 — 36px 였다(권장 44px, 2026-08-13 점검) */
+    .sbar a.sm { display:inline-flex; padding:12px 12px; font-size:12.5px; margin:0; flex-shrink:0; }
     .sbar .ssub { display:none; }
   }
 </style>
