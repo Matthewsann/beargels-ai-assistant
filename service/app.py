@@ -351,9 +351,13 @@ def draft_state(path_key, review_id):
     check(path_key)
     try:
         r = db.get_review(review_id) or {}
+        # 오래 걸릴 때 화면이 '왜 안 되는지' 말해줄 수 있게 일꾼 상태도 함께.
+        w = _worker_view()
         return jsonify({"draft": r.get("reply_draft") or "",
                         "at": r.get("draft_updated_at") or "",
-                        "reply_status": r.get("reply_status") or ""})
+                        "reply_status": r.get("reply_status") or "",
+                        "worker_alive": bool(w.get("alive")),
+                        "worker_text": w.get("text") or ""})
     except Exception as e:  # noqa: BLE001
         return jsonify({"error": str(e)[:150]}), 200
 
