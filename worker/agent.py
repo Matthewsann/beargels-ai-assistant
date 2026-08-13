@@ -105,8 +105,19 @@ def ensure_chrome(wait_seconds=60) -> bool:
     return False
 
 
-def collect_reviews() -> tuple[int, list[str]]:
+# '전체 수집' 범위 — 평소 수집(최근분)과 달리 남아 있는 리뷰를 끝까지 긁는다.
+# 크롤러가 리뷰 소진 시 스스로 멈추므로 상한만 넉넉히 준다.
+FULL_COUPANG_DAYS = int(os.getenv("WORKER_FULL_COUPANG_DAYS", "1095"))
+FULL_COUPANG_PAGES = int(os.getenv("WORKER_FULL_COUPANG_PAGES", "300"))
+FULL_BAEMIN_SCROLL = int(os.getenv("WORKER_FULL_BAEMIN_SCROLL", "300"))
+
+
+def collect_reviews(full=False) -> tuple[int, list[str]]:
     """배민·쿠팡 리뷰를 긁어 DB 에 저장한다. (저장 건수, 경고 메시지들)
+
+    Args:
+        full: True 면 최근분이 아니라 **남아 있는 전체 리뷰**를 수집한다
+              (전체 리뷰 관리 화면용. 수 분~수십 분 걸릴 수 있다).
 
     한쪽 플랫폼이 실패해도 다른 쪽은 계속한다(로그인 만료 등).
     """
@@ -120,7 +131,8 @@ def collect_reviews() -> tuple[int, list[str]]:
     try:
         from crawler.baemin import BaeminCrawler
         with BaeminCrawler() as c:
-            revs = c.fetch_reviews(max_scroll=BAEMIN_SCROLL)
+            revs = c.fetch_reviews(
+                max_scroll=FULL_BAEMIN_SCROLL if full else BAEMIN_SCROLL)
         saved += db.save_reviews(revs)
         logger.info("배민 리뷰 %d건 수집", len(revs))
     except Exception as e:  # noqa: BLE001 — 한쪽 실패가 전체를 막지 않게
@@ -132,7 +144,9 @@ def collect_reviews() -> tuple[int, list[str]]:
     try:
         from crawler.coupang import CoupangCrawler
         with CoupangCrawler() as c:
-            revs = c.fetch_reviews(days=COUPANG_DAYS)
+            revs = (c.fetch_reviews(days=FULL_COUPANG_DAYS,
+                                    max_pages=FULL_COUPANG_PAGES) if full
+                    else c.fetch_reviews(days=COUPANG_DAYS))
         saved += db.save_reviews(revs)
         logger.info("쿠팡 리뷰 %d건 수집", len(revs))
     except Exception as e:  # noqa: BLE001
@@ -681,7 +695,7 @@ def run_job(job) -> None:
         return run_post_edit_job(job)
     if job.get("kind") == "menu_collect":
         return run_menu_job(job)
-    if job.get("kind") not in (None, "", "collect"):
+    if job.get("kind") not in (None, "", "collect", "collect_all"):
         # 모르는 종류를 수집으로 오처리하지 않는다 — 구버전 일꾼이 새 종류의
         # 잡(post_edit)을 수집으로 돌려버린 사고(2026-08-12).
         db.finish_job(job["id"], "error",
@@ -690,10 +704,13 @@ def run_job(job) -> None:
     jid = job["id"]
     if str(job.get("kind") or "").startswith("blog_"):
         return run_blog_job(job)
-    logger.info("수집 요청 #%s 처리 시작 (요청자: %s)", jid, job.get("requested_by") or "?")
-    db.worker_ping("working", "리뷰 수집 중")
+    full = job.get("kind") == "collect_all"
+    logger.info("%s 요청 #%s 처리 시작 (요청자: %s)",
+                "전체 수집" if full else "수집", jid,
+                job.get("requested_by") or "?")
+    db.worker_ping("working", "전체 리뷰 수집 중" if full else "리뷰 수집 중")
     try:
-        saved, warnings = collect_reviews()
+        saved, warnings = collect_reviews(full=full)
         db.worker_ping("working", "답글 초안 만드는 중")
         made = make_drafts()
         msg = f"리뷰 {saved}건 저장, 답글 초안 {made}건 생성"

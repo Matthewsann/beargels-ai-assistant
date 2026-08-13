@@ -269,6 +269,22 @@ def request_collect(by=None):
     return (get_client().table("jobs").insert(row).execute().data or [None])[0]
 
 
+def request_collect_all(by=None):
+    """'전체 리뷰 수집' — 남아 있는 리뷰를 끝까지 긁어오는 요청.
+
+    평소 수집(collect)과 달리 오래 걸리므로 별도 종류로 둔다. 연타 방지는
+    같다(대기·진행 중이면 그걸 재사용).
+    """
+    live = (get_client().table("jobs").select("*")
+            .eq("kind", "collect_all")
+            .in_("status", ["pending", "running"])
+            .order("requested_at", desc=True).limit(1).execute().data)
+    if live:
+        return live[0]
+    row = {"kind": "collect_all", "status": "pending", "requested_by": by or ""}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
 def request_wake():
     """웹의 '프로그램 깨우기' — wake 요청 1건을 대기열에 넣는다.
 
@@ -504,6 +520,47 @@ def mark_skipped(review_id):
     우리가 게시한 최종본이 아니라서 AI 학습 데이터로 쓰면 오염된다.
     """
     _update_review(review_id, {"reply_status": "skipped"})
+
+
+def search_reviews(platform=None, rating=None, replied=None, q=None,
+                   limit=50, offset=0, sort="new"):
+    """수집된 **모든** 리뷰를 조건으로 찾는다 — 전체 리뷰 관리 화면용.
+
+    Args:
+        platform: 'baemin' | 'coupang' | None(전체)
+        rating: 1~5 정수면 그 별점만, None 이면 전체.
+        replied: True=답글 있는 것, False=답글 없는 것, None=전체.
+                 '답글 있음'의 기준은 ①우리가 등록(posted)했거나
+                 ②플랫폼에 이미 달려 있는(platform_replied) 경우다.
+        q: 리뷰 본문 부분 검색어(없으면 무시).
+        sort: 'new'(최신순) | 'old' | 'low'(낮은 별점순)
+    Returns: (행 목록, 조건에 맞는 전체 건수)
+    """
+    def _base():
+        s = get_client().table("reviews").select("*", count="exact")
+        if platform:
+            s = s.eq("platform", platform)
+        if rating:
+            s = s.eq("rating", int(rating))
+        if q:
+            s = s.ilike("content", f"%{q}%")
+        if replied is True:
+            s = s.or_("reply_status.eq.posted,platform_replied.is.true")
+        elif replied is False:
+            s = (s.neq("reply_status", "posted")
+                  .not_.is_("platform_replied", "true"))
+        return s
+
+    order = {"old": ("written_date", False),
+             "low": ("rating", False)}.get(sort, ("written_date", True))
+    try:
+        resp = (_base().order(order[0], desc=order[1])
+                .range(offset, offset + limit - 1).execute())
+    except Exception:  # noqa: BLE001 — platform_replied 미적용 스키마 대비
+        logger.exception("리뷰 검색 실패")
+        return [], 0
+    return resp.data or [], (resp.count if resp.count is not None
+                             else len(resp.data or []))
 
 
 def get_approved_reviews(limit=50):
