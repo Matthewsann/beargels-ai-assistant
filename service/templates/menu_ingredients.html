@@ -71,6 +71,7 @@ display:flex;justify-content:space-between;gap:8px}
 .acitem .sub{white-space:nowrap}
 .acnone{padding:10px 11px;font-size:12px;color:var(--sub)}
 .ewrap{display:inline-flex;gap:4px;align-items:center}
+.supsel{font-size:12px;padding:3px 5px;border:1px solid var(--brown);border-radius:5px;background:var(--card);color:var(--ink)}
 .okbtn{border:none;background:var(--green);color:#fff;border-radius:5px;
 padding:3px 8px;font-size:12px;cursor:pointer;line-height:1.4}
 </style>
@@ -88,7 +89,7 @@ padding:3px 8px;font-size:12px;cursor:pointer;line-height:1.4}
 
 <script>
 const BASE = "/{{ key }}/menu";
-let DATA=null, TAB='ing', Q='', SKU=null, CATF='전체', SORT='cat', MQ='', MCAT='전체', ICATM='전체';
+let DATA=null, TAB='ing', Q='', SKU=null, CATF='전체', SORT='cat', MQ='', MCAT='전체', ICATM='전체', SUPF='전체';
 const won=n=>n==null?"–":Math.round(n).toLocaleString("ko-KR");
 const w1=n=>n==null?"–":(Math.round(n*100)/100).toLocaleString("ko-KR");
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");
@@ -122,8 +123,9 @@ const dupNames=()=>{const seen={},out=new Set();
   for(const i of DATA.ingredients){const k=nname(i.name);
     if(seen[k]){out.add(k);out.add(nname(seen[k].name));}else seen[k]=i;}
   return out;};
+const SUPPLIERS=["쿠팡","엠즈푸드","본사","그외"];
 const SORTS=[["cat","분류순"],["name","이름순"],["unit_desc","단위단가 높은순"],["unit_asc","단위단가 낮은순"],
-             ["cost_desc","구매가 높은순"],["used_desc","많이 쓰는 순"],["used_asc","적게 쓰는 순"]];
+             ["cost_desc","구매가 높은순"],["used_desc","많이 쓰는 순"],["used_asc","적게 쓰는 순"],["sup","발주처순"]];
 
 // ── 자재 탭 ──────────────────────────────────────────────
 function renderIng(){
@@ -137,23 +139,25 @@ function renderIng(){
   </div>
   <div class="fchips" id="catChips"></div>
   <div class="fchips" id="menuCatChips"></div>
+  <div class="fchips" id="supChips"></div>
   <div class="cnt" id="cnt"></div>
   <div class="addrow">
     <input id="niName" placeholder="새 자재 이름" style="flex:1;min-width:120px">
     <input id="niCat" list="catList" placeholder="분류" style="width:110px">
     <datalist id="catList">${cats().map(c=>`<option value="${c}">`).join("")}</datalist>
+    <select id="niSup"><option value="">발주처</option>${SUPPLIERS.map(x=>`<option>${x}</option>`).join("")}</select>
     <select id="niUnit"><option>g</option><option>ml</option><option>ea</option></select>
     <input id="niQty" type="number" placeholder="구매량" style="width:80px">
     <input id="niCost" type="number" placeholder="구매가(원)" style="width:95px">
     <button onclick="addIng()">+ 등록</button>
   </div>
   <div class="wrap"><table>
-    <tr><th class="l">자재</th><th class="l">분류</th><th>단위</th><th>구매량</th><th>구매가</th><th>단위단가</th><th>사용<br>메뉴</th><th></th></tr>
+    <tr><th class="l">자재</th><th class="l">분류</th><th class="l">발주처</th><th>단위</th><th>구매량</th><th>구매가</th><th>단위단가</th><th>사용<br>메뉴</th><th></th></tr>
     <tbody id="ingBody"></tbody>
   </table></div>
   <p class="note">· 값을 고친 뒤 <b>엔터</b> 또는 <b>✓</b> 를 눌러야 저장됩니다(입력 도중엔 저장되지 않아요).<br>\n  · 구매량/구매가를 탭해서 고치면 <b>그 자재를 쓰는 모든 메뉴의 원가가 즉시 재계산</b>됩니다.<br>
   · 같은 이름은 하나만 등록됩니다(단위가 달라도). 이미 있는 자재는 새로 만들지 말고 수정하세요.<br>
-  · 필터는 두 축입니다 — <b>자재</b> 줄은 구매·보관 기준, <b>메뉴</b> 줄은 그 자재가 들어가는 메뉴 분류(레시피로 자동, 한 자재가 여러 분류에 걸칠 수 있음). 두 축을 함께 걸 수 있습니다.<br>
+  · 필터는 세 축입니다 — <b>발주처</b> 줄로 "쿠팡에서 시킬 것"만 모아 볼 수 있습니다.<br>\n  · 나머지 두 축은 — <b>자재</b> 줄은 구매·보관 기준, <b>메뉴</b> 줄은 그 자재가 들어가는 메뉴 분류(레시피로 자동, 한 자재가 여러 분류에 걸칠 수 있음). 두 축을 함께 걸 수 있습니다.<br>
   · 위 칩으로 분류를 걸러 보고, 오른쪽 드롭다운으로 정렬을 바꿉니다("미사용"은 어떤 레시피에도 안 쓰는 자재).<br>
   · 분류는 직접 입력하거나 기존 분류에서 고르면 됩니다(빈칸이면 "미분류"). 표에서 분류를 탭해 나중에 바꿀 수도 있습니다.<br>
   · "반제품(역산)" 분류는 옛 원가표에서 역산해 등록한 것 — 실제 구매 단위·가격으로 고쳐주시면 더 정확해집니다.</p>`;
@@ -186,8 +190,18 @@ function renderIng2(){
     +[["전체",DATA.ingredients.length],...mcOrder.filter(c=>mcCount[c]).map(c=>[c,mcCount[c]])]
       .map(([c,n])=>`<span class="fchip ${c===ICATM?"on":""}" onclick="ICATM='${c}';renderIng2()">${c}<small>${n}</small></span>`).join("");
 
+  // 발주처 축 — 발주할 때 "쿠팡에서 뭘 시키지"로 바로 거르기 위함
+  const supCount={};
+  for(const i of DATA.ingredients){const v=i.supplier||"미지정";supCount[v]=(supCount[v]||0)+1;}
+  const sups=document.getElementById("supChips");
+  if(sups) sups.innerHTML=`<span class="faxis">발주처</span>`
+    +[["전체",DATA.ingredients.length],...SUPPLIERS.filter(x=>supCount[x]).map(x=>[x,supCount[x]]),
+      ...(supCount["미지정"]?[["미지정",supCount["미지정"]]]:[])]
+      .map(([c,n])=>`<span class="fchip ${c===SUPF?"on":""}" onclick="SUPF='${c}';renderIng2()">${c}<small>${n}</small></span>`).join("");
+
   let list=DATA.ingredients.filter(i=>{
     if(q && !(i.name.includes(q)||(i.category||'').includes(q))) return false;
+    if(SUPF!=="전체" && (i.supplier||"미지정")!==SUPF) return false;
     if(CATF==="전체") return true;
     if(CATF==="미사용") return !usedCount(i.id);
     if(CATF==="이름중복") return dupNames().has(nname(i.name));
@@ -202,6 +216,7 @@ function renderIng2(){
     cost_desc:(a,b)=>(b.pack_cost||0)-(a.pack_cost||0)||byName(a,b),
     used_desc:(a,b)=>usedCount(b.id)-usedCount(a.id)||byName(a,b),
     used_asc:(a,b)=>usedCount(a.id)-usedCount(b.id)||byName(a,b),
+    sup:(a,b)=>(a.supplier||"힣미지정").localeCompare(b.supplier||"힣미지정","ko")||byName(a,b),
   };
   list=list.sort(S[SORT]||S.cat);
   const cnt=document.getElementById("cnt");
@@ -212,13 +227,15 @@ function renderIng2(){
   const dupSet=dupNames();
   let html="",cat=null;
   for(const i of list){
-    const c=i.category||"미분류";
-    if(SORT==="cat"&&c!==cat){cat=c;html+=`<tr class="cat"><td colspan="8">${c}</td></tr>`;}
+    const c=SORT==="sup"?(i.supplier||"미지정"):(i.category||"미분류");
+    if((SORT==="cat"||SORT==="sup")&&c!==cat){cat=c;
+      html+=`<tr class="cat"><td colspan="9">${SORT==="sup"?"발주처: ":""}${c}</td></tr>`;}
     const n=usedCount(i.id);
     html+=`<tr>
       <td class="l ed" onclick="editCell(this,${i.id},'name',true)">${i.name}${
         dupSet.has(nname(i.name))?'<span class="pill" style="background:var(--redbg);color:var(--red)">중복</span>':""}</td>
       <td class="l ed" onclick="editCell(this,${i.id},'category',true)">${i.category||"미분류"}</td>
+      <td class="l ed" onclick="editSupplier(this,${i.id})">${i.supplier||'<span class="sub">미지정</span>'}</td>
       <td class="ed" onclick="editCell(this,${i.id},'unit',true)">${i.unit}</td>
       <td class="ed" onclick="editCell(this,${i.id},'pack_qty')">${w1(i.pack_qty)}</td>
       <td class="ed" onclick="editCell(this,${i.id},'pack_cost')">${won(i.pack_cost)}</td>
@@ -227,7 +244,7 @@ function renderIng2(){
       <td>${n?"":`<span class="del" onclick="delIng(${i.id})">삭제</span>`}</td>
     </tr>`;
   }
-  document.getElementById("ingBody").innerHTML=html||`<tr><td colspan="8" class="empty">없음</td></tr>`;
+  document.getElementById("ingBody").innerHTML=html||`<tr><td colspan="9" class="empty">없음</td></tr>`;
 }
 // ── 인라인 편집 ────────────────────────────────────────────
 // 저장은 '엔터' 또는 '✓' 를 눌렀을 때만. 입력 도중 포커스가 빠져도(모바일
@@ -253,6 +270,23 @@ function inlineEdit(td, value, {isText=false, onSave}){
   ok.onmousedown=e=>{ e.preventDefault(); save(); };   // blur 보다 먼저 실행
   inp.onblur=()=>setTimeout(()=>cancel(false),120);
   inp.focus(); inp.select();
+}
+
+function editSupplier(td,id){
+  if(td.querySelector("select")) return;
+  const i=DATA.ingredients.find(x=>x.id===id), prev=td.innerHTML;
+  td.innerHTML=`<select class="supsel"><option value="">미지정</option>${
+    SUPPLIERS.map(x=>`<option ${x===i.supplier?"selected":""}>${x}</option>`).join("")}</select>`;
+  const sel=td.querySelector("select"); sel.focus();
+  sel.onchange=async()=>{
+    const v=sel.value||null;
+    if(v===(i.supplier||null)){ td.innerHTML=prev; return; }
+    const before=i.supplier; i.supplier=v;
+    const j=await api("/ingredient",{...i});
+    if(!j) i.supplier=before; else toast("저장 ✓");
+    render();
+  };
+  sel.onblur=()=>setTimeout(()=>{ if(td.querySelector("select")) td.innerHTML=prev; },150);
 }
 
 function editCell(td,id,field,isText){
@@ -281,6 +315,7 @@ async function addIng(){
   const name=document.getElementById("niName").value.trim();
   const unit=document.getElementById("niUnit").value;
   const category=document.getElementById("niCat").value.trim()||"미분류";
+  const supplier=document.getElementById("niSup").value||null;
   const qty=+document.getElementById("niQty").value, cost=+document.getElementById("niCost").value;
   if(!name||!qty||!cost){toast("이름·구매량·구매가를 채워주세요");return;}
   const dup=findDup(name);
@@ -289,7 +324,7 @@ async function addIng(){
     Q=dup.name; CATF="전체"; render();       // 기존 자재를 바로 찾아준다
     return;
   }
-  const j=await api("/ingredient",{name,unit,pack_qty:qty,pack_cost:cost,category});
+  const j=await api("/ingredient",{name,unit,pack_qty:qty,pack_cost:cost,category,supplier});
   if(j){DATA.ingredients.push(j.ingredient);toast("등록 ✓");render();}
 }
 async function delIng(id){

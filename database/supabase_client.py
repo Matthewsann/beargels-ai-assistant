@@ -829,7 +829,7 @@ def order_stats(days=90):
 # 자재(원부자재) · 레시피 · 원가 자동 계산
 # ---------------------------------------------------------------------------
 
-_ING_COLS = ("name", "unit", "pack_qty", "pack_cost", "category", "note")
+_ING_COLS = ("name", "unit", "pack_qty", "pack_cost", "category", "supplier", "note")
 
 
 def ingredients_all():
@@ -866,11 +866,21 @@ def ingredient_upsert(fields, ing_id=None):
                 raise DuplicateIngredient(
                     f"'{row['name']}'({row['unit']})가 이미 있습니다. "
                     f"새로 만들지 말고 그 자재를 수정해 주세요.")
-    if ing_id:
-        rows = sb.table("ingredients").update(payload).eq("id", ing_id).execute().data
-    else:
-        rows = sb.table("ingredients").upsert(
-            payload, on_conflict="name,unit").execute().data
+    def _write(p):
+        if ing_id:
+            return sb.table("ingredients").update(p).eq("id", ing_id).execute().data
+        return sb.table("ingredients").upsert(
+            p, on_conflict="name,unit").execute().data
+
+    try:
+        rows = _write(payload)
+    except Exception as e:  # noqa: BLE001 — 008 마이그레이션 전이면 supplier 컬럼이 없다
+        if getattr(e, "code", None) not in _MISSING_COLUMN_CODES:
+            raise
+        logger.warning("008 미적용 — supplier 없이 저장 "
+                       "(SQL Editor 에서 supabase/migrations/008_ingredient_supplier.sql 실행)")
+        payload.pop("supplier", None)
+        rows = _write(payload)
     row = (rows or [None])[0]
     # 응답에 id 가 없을 수 있다(설정에 따라 빈 응답). 그때는 다시 찾아서 채운다 —
     # 호출부가 id 로 '이 자재를 쓰는 메뉴'를 재계산하기 때문.
