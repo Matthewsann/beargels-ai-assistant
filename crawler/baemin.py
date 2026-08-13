@@ -287,12 +287,17 @@ class BaeminCrawler:
                     seen[r["review_no"]] = r
             self.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             human_pause(1.5, 2.5)
-            # '더보기'는 헤더가 클릭을 가로채므로 DOM 클릭으로 누른다.
-            more = self.page.evaluate(
-                """() => { const b = [...document.querySelectorAll('button')]
-                     .find(e => (e.textContent || '').trim() === '더보기');
-                   if (!b) return false; b.click(); return true; }""")
+            more = self._click_review_more()
             human_pause(2.0, 3.0)
+            # 잘못된 '더보기'(도움말 등)를 눌러 다른 페이지로 튕기면 되돌린다.
+            # ⚠️ 정상 이동(리다이렉트)로 URL 에 매장 id 가 붙는다:
+            #    /shops/reviews → /shops/14794435/reviews. 이건 이탈이 아니다.
+            url = self.page.url or ""
+            if "self.baemin.com" not in url or "reviews" not in url:
+                logger.warning("리뷰 목록을 벗어남(%s) — 돌아갑니다", self.page.url)
+                self.page.goto(REVIEWS_URL, wait_until="domcontentloaded")
+                human_pause(2.0, 3.0)
+                break
             if len(seen) == before:
                 empty_rounds += 1
                 if empty_rounds >= 2 or not more:
@@ -305,6 +310,36 @@ class BaeminCrawler:
                     len(reviews),
                     sum(1 for r in reviews if r.get("platform_reply")))
         return reviews
+
+    def _click_review_more(self):
+        """리뷰 목록의 '더보기'만 눌러 다음 묶음을 불러온다(눌렀으면 True).
+
+        ⚠️ 페이지에는 도움말('자주 묻는 질문' 등) 쪽 '더보기'도 있어서 아무거나
+           누르면 ceo.baemin.com/qna 로 튕긴다(2026-08-13 사장님 발견). 그래서
+           **마지막 리뷰 카드보다 아래**에 있는 버튼만 고르고, 링크(a)나
+           헤더·푸터·네비 안에 있는 것은 제외한다. 헤더가 클릭을 가로채므로
+           DOM click 을 쓴다.
+        """
+        return self.page.evaluate(
+            """() => {
+                const cards = document.querySelectorAll(
+                    '[class*="ReviewContent-module__"]');
+                if (!cards.length) return false;
+                const lastTop = cards[cards.length - 1].getBoundingClientRect().top;
+                const bad = /footer|nav|gnb|header|help|faq|qna/i;
+                const btn = [...document.querySelectorAll('button')].find(b => {
+                    if ((b.textContent || '').trim() !== '더보기') return false;
+                    if (b.closest('a, footer, nav, header')) return false;
+                    for (let e = b; e; e = e.parentElement) {
+                        if (typeof e.className === 'string' && bad.test(e.className))
+                            return false;
+                    }
+                    return b.getBoundingClientRect().top > lastTop;
+                });
+                if (!btn) return false;
+                btn.click();
+                return true;
+            }""")
 
     @staticmethod
     def parse_review_cards(soup):
