@@ -736,6 +736,54 @@ def menu_ingredient_delete(path_key, ing_id):
                                  "먼저 해당 메뉴 레시피에서 빼주세요."}), 400
 
 
+@app.route("/<path_key>/menu/ingredients/batch", methods=["POST"])
+def menu_ingredients_batch(path_key):
+    """자재 여러 줄 한 번에 저장 — 엑셀처럼 붙여넣은 뒤 한 번에 커밋."""
+    check(path_key)
+    body = request.get_json(force=True) or {}
+    rows = body.get("rows") or []
+    saved, errors = [], []
+    affected = set()
+    for r in rows:
+        try:
+            row = db.ingredient_upsert(r, r.get("id"))
+            saved.append(row)
+            for sku in db.skus_using_ingredient(row["id"]):
+                affected.add(sku)
+        except db.DuplicateIngredient as e:
+            errors.append({"id": r.get("id"), "name": r.get("name"), "error": str(e)})
+        except Exception as e:  # noqa: BLE001
+            errors.append({"id": r.get("id"), "name": r.get("name"), "error": str(e)[:200]})
+    try:
+        updated = db.recompute_costs(list(affected)) if affected else {}
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"자재 일괄저장 재계산 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        updated = {}
+    return jsonify({"ok": True, "saved": saved, "errors": errors, "recomputed": updated})
+
+
+@app.route("/<path_key>/menu/recipe/batch", methods=["POST"])
+def menu_recipe_batch(path_key):
+    """한 메뉴의 레시피 사용량 여러 줄 한 번에 저장."""
+    check(path_key)
+    body = request.get_json(force=True) or {}
+    sku = body.get("sku")
+    lines = body.get("lines") or []
+    saved, errors = [], []
+    for ln in lines:
+        try:
+            row = db.recipe_upsert(sku, ln["ingredient_id"], ln["qty"])
+            saved.append(row)
+        except Exception as e:  # noqa: BLE001
+            errors.append({"ingredient_id": ln.get("ingredient_id"), "error": str(e)[:200]})
+    try:
+        updated = db.recompute_costs([sku], force=True) if sku else {}
+    except Exception as e:  # noqa: BLE001
+        updated = {}
+    return jsonify({"ok": True, "saved": saved, "errors": errors, "recomputed": updated})
+
+
 @app.route("/<path_key>/menu/recipe", methods=["POST"])
 def menu_recipe_save(path_key):
     check(path_key)

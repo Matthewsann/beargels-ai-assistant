@@ -74,6 +74,30 @@ display:flex;justify-content:space-between;gap:8px}
 .supsel{font-size:12px;padding:3px 5px;border:1px solid var(--brown);border-radius:5px;background:var(--card);color:var(--ink)}
 .okbtn{border:none;background:var(--green);color:#fff;border-radius:5px;
 padding:3px 8px;font-size:12px;cursor:pointer;line-height:1.4}
+/* 엑셀식 일괄편집 */
+.bcell{width:100%;min-width:62px;font-size:12.5px;padding:4px 5px;border:1px solid var(--line);
+border-radius:4px;text-align:right;background:#fff;font-variant-numeric:tabular-nums}
+.bcell.l{text-align:left;min-width:92px}
+.bcell:focus{outline:none;border-color:var(--brown);background:#fffdf6}
+.bcell.chg{border-color:var(--amber);background:var(--amberbg)}
+table.bulk th,table.bulk td{padding:4px 6px}
+table.bulk{min-width:760px}
+.bulkbtn{border:1px solid var(--brown);background:var(--card);color:var(--brown);border-radius:8px;
+padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap}
+.bulkbtn.on{background:var(--brown);color:#fff}
+.bulkbar{position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--card);
+border-top:1px solid var(--line);box-shadow:0 -4px 16px rgba(0,0,0,.10);
+padding:9px 12px;display:flex;gap:7px;align-items:center;flex-wrap:wrap;font-size:12.5px}
+.bulkbar select{border:1px solid var(--line);border-radius:7px;padding:6px 7px;font-size:12px;background:var(--card);color:var(--ink)}
+.bulkbar button{border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer}
+.bulkbar .save{background:var(--green);color:#fff}
+.bulkbar .save:disabled{background:var(--line);color:var(--sub);cursor:default}
+.bulkbar .cancel{background:var(--brownbg);color:var(--brown)}
+.bulkbar .cnt2{margin-right:auto;color:var(--sub)}
+.bulkbar .cnt2 b{color:var(--amber)}
+body.padded main{padding-bottom:76px}
+td.ck,th.ck{width:26px;text-align:center;padding-left:6px;padding-right:2px}
+td.ck input{width:16px;height:16px}
 </style>
 </head>
 <body>
@@ -90,6 +114,10 @@ padding:3px 8px;font-size:12px;cursor:pointer;line-height:1.4}
 <script>
 const BASE = "/{{ key }}/menu";
 let DATA=null, TAB='ing', Q='', SKU=null, CATF='전체', SORT='cat', MQ='', MCAT='전체', ICATM='전체', SUPF='전체';
+let BULK=false;          // 엑셀식 일괄편집 모드
+let EDITS={};            // {자재id: {필드: 값}}  — 저장 전 변경분
+let SEL=new Set();       // 일괄 적용용 선택 줄
+let RBULK=false, REDITS={};   // 레시피 탭 일괄편집
 const won=n=>n==null?"–":Math.round(n).toLocaleString("ko-KR");
 const w1=n=>n==null?"–":(Math.round(n*100)/100).toLocaleString("ko-KR");
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");
@@ -123,7 +151,12 @@ const dupNames=()=>{const seen={},out=new Set();
   for(const i of DATA.ingredients){const k=nname(i.name);
     if(seen[k]){out.add(k);out.add(nname(seen[k].name));}else seen[k]=i;}
   return out;};
-const SUPPLIERS=["쿠팡","엠즈푸드","본사","그외"];
+const SUPPLIERS=["쿠팡","엠즈푸드","본사","직접제조","그외"];
+// 자재 분류 — 구매·보관 기준(메뉴 분류와 별개 축). 발주할 때 묶이는 단위로 잡았다.
+// 반제품은 분류가 아니라 이름에 "(반제품)"으로 표시하고, 발주처를 '직접제조'로 둔다.
+const CAT_PRESET=["유제품","베이커리","육류·계란","채소·과일","소스·시럽·잼",
+  "가루·당류·조미","커피·차","음료","냉동·냉장 완제품","포장·소모품","비품·청소"];
+const catOpts=()=>[...new Set([...CAT_PRESET,...cats()])];
 const SORTS=[["cat","분류순"],["name","이름순"],["unit_desc","단위단가 높은순"],["unit_asc","단위단가 낮은순"],
              ["cost_desc","구매가 높은순"],["used_desc","많이 쓰는 순"],["used_asc","적게 쓰는 순"],["sup","발주처순"]];
 
@@ -136,6 +169,7 @@ function renderIng(){
     <select onchange="SORT=this.value;renderIng2()">
       ${SORTS.map(([v,l])=>`<option value="${v}" ${v===SORT?"selected":""}>${l}</option>`).join("")}
     </select>
+    <button class="bulkbtn ${BULK?"on":""}" onclick="toggleBulk()">${BULK?"✏️ 편집중":"✏️ 일괄편집"}</button>
   </div>
   <div class="fchips" id="catChips"></div>
   <div class="fchips" id="menuCatChips"></div>
@@ -144,23 +178,23 @@ function renderIng(){
   <div class="addrow">
     <input id="niName" placeholder="새 자재 이름" style="flex:1;min-width:120px">
     <input id="niCat" list="catList" placeholder="분류" style="width:110px">
-    <datalist id="catList">${cats().map(c=>`<option value="${c}">`).join("")}</datalist>
+    <datalist id="catList">${catOpts().map(c=>`<option value="${c}">`).join("")}</datalist>
     <select id="niSup"><option value="">발주처</option>${SUPPLIERS.map(x=>`<option>${x}</option>`).join("")}</select>
     <select id="niUnit"><option>g</option><option>ml</option><option>ea</option></select>
     <input id="niQty" type="number" placeholder="구매량" style="width:80px">
     <input id="niCost" type="number" placeholder="구매가(원)" style="width:95px">
     <button onclick="addIng()">+ 등록</button>
   </div>
-  <div class="wrap"><table>
-    <tr><th class="l">자재</th><th class="l">분류</th><th class="l">발주처</th><th>단위</th><th>구매량</th><th>구매가</th><th>단위단가</th><th>사용<br>메뉴</th><th></th></tr>
-    <tbody id="ingBody"></tbody>
-  </table></div>
+  <div class="wrap"><table id="ingTable"></table></div>
   <p class="note">· 값을 고친 뒤 <b>엔터</b> 또는 <b>✓</b> 를 눌러야 저장됩니다(입력 도중엔 저장되지 않아요).<br>\n  · 구매량/구매가를 탭해서 고치면 <b>그 자재를 쓰는 모든 메뉴의 원가가 즉시 재계산</b>됩니다.<br>
   · 같은 이름은 하나만 등록됩니다(단위가 달라도). 이미 있는 자재는 새로 만들지 말고 수정하세요.<br>
   · 필터는 세 축입니다 — <b>발주처</b> 줄로 "쿠팡에서 시킬 것"만 모아 볼 수 있습니다.<br>\n  · 나머지 두 축은 — <b>자재</b> 줄은 구매·보관 기준, <b>메뉴</b> 줄은 그 자재가 들어가는 메뉴 분류(레시피로 자동, 한 자재가 여러 분류에 걸칠 수 있음). 두 축을 함께 걸 수 있습니다.<br>
   · 위 칩으로 분류를 걸러 보고, 오른쪽 드롭다운으로 정렬을 바꿉니다("미사용"은 어떤 레시피에도 안 쓰는 자재).<br>
   · 분류는 직접 입력하거나 기존 분류에서 고르면 됩니다(빈칸이면 "미분류"). 표에서 분류를 탭해 나중에 바꿀 수도 있습니다.<br>
-  · "반제품(역산)" 분류는 옛 원가표에서 역산해 등록한 것 — 실제 구매 단위·가격으로 고쳐주시면 더 정확해집니다.</p>`;
+  · <b>반제품</b>은 분류로 두지 않습니다 — 이름 뒤에 <b>(반제품)</b>을 붙이고 발주처를 <b>직접제조</b>로 두세요.
+    예) <i>플레인 크림치즈(반제품)</i>. 분류는 그 재료가 무엇인지(유제품 등)로 둡니다.<br>
+  · <b>✏️ 일괄편집</b>을 켜면 엑셀처럼 여러 칸을 연달아 고치고 <b>맨 아래 저장</b>으로 한 번에 반영합니다
+    (Tab=오른쪽, Enter=아래 줄, 체크한 줄에 분류·발주처를 한꺼번에 적용).</p>`;
   document.getElementById("main").innerHTML=html;
   renderIng2();
 }
@@ -171,7 +205,7 @@ function renderIng2(){
   for(const i of DATA.ingredients){const c=i.category||"미분류";catCount[c]=(catCount[c]||0)+1;}
   const unused=DATA.ingredients.filter(i=>!usedCount(i.id)).length;
   const chipDefs=[["전체",DATA.ingredients.length],
-                  ...cats().map(c=>[c,catCount[c]||0]),
+                  ...cats().filter(c=>c!=="미분류").map(c=>[c,catCount[c]||0]),
                   ...(catCount["미분류"]?[["미분류",catCount["미분류"]]]:[]),
                   ["미사용",unused]];
   const dups=dupNames();
@@ -225,12 +259,50 @@ function renderIng2(){
     + (q?` · 검색: "${q}"`:"");
 
   const dupSet=dupNames();
+  const tbl=document.getElementById("ingTable");
+  if(!tbl) return;
+  ING_VIEW=list;                       // 일괄편집 Enter 이동에 쓰는 현재 화면 순서
+  const head=BULK
+    ? `<tr><th class="ck"><input type="checkbox" onclick="bSelAll(this.checked)"></th>
+         <th class="l">자재</th><th class="l">분류</th><th class="l">발주처</th><th>단위</th>
+         <th>구매량</th><th>구매가</th><th>단위단가</th></tr>`
+    : `<tr><th class="l">자재</th><th class="l">분류</th><th class="l">발주처</th><th>단위</th>
+         <th>구매량</th><th>구매가</th><th>단위단가</th><th>사용<br>메뉴</th><th></th></tr>`;
+  const span=BULK?8:9;
   let html="",cat=null;
-  for(const i of list){
+  for(let r=0;r<list.length;r++){
+    const i=list[r];
     const c=SORT==="sup"?(i.supplier||"미지정"):(i.category||"미분류");
     if((SORT==="cat"||SORT==="sup")&&c!==cat){cat=c;
-      html+=`<tr class="cat"><td colspan="9">${SORT==="sup"?"발주처: ":""}${c}</td></tr>`;}
+      html+=`<tr class="cat"><td colspan="${span}">${SORT==="sup"?"발주처: ":""}${c}</td></tr>`;}
     const n=usedCount(i.id);
+    if(BULK){
+      const v=(f)=>{const e=EDITS[i.id]; return (e&&f in e)?e[f]:i[f];};
+      const chg=(f)=>{const e=EDITS[i.id]; return (e&&f in e)?" chg":"";};
+      const cur={...i,...(EDITS[i.id]||{})};
+      html+=`<tr>
+        <td class="ck"><input type="checkbox" ${SEL.has(i.id)?"checked":""}
+          onclick="bSel(${i.id},this.checked)"></td>
+        <td class="l"><input class="bcell l${chg("name")}" data-r="${r}" data-c="0" value="${(v("name")||"").replace(/"/g,"&quot;")}"
+          onchange="bEdit(${i.id},'name',this.value,this)" onkeydown="bKey(event)"></td>
+        <td class="l"><input class="bcell l${chg("category")}" list="catList" data-r="${r}" data-c="1"
+          value="${(v("category")||"").replace(/"/g,"&quot;")}"
+          onchange="bEdit(${i.id},'category',this.value,this)" onkeydown="bKey(event)"></td>
+        <td class="l"><select class="bcell l${chg("supplier")}" data-r="${r}" data-c="2"
+          onchange="bEdit(${i.id},'supplier',this.value,this)" onkeydown="bKey(event)">
+          <option value="">미지정</option>${SUPPLIERS.map(x=>
+            `<option ${x===v("supplier")?"selected":""}>${x}</option>`).join("")}</select></td>
+        <td><select class="bcell${chg("unit")}" data-r="${r}" data-c="3"
+          onchange="bEdit(${i.id},'unit',this.value,this)" onkeydown="bKey(event)">
+          ${["g","ml","ea"].map(u=>`<option ${u===v("unit")?"selected":""}>${u}</option>`).join("")}</select></td>
+        <td><input class="bcell${chg("pack_qty")}" type="number" step="any" data-r="${r}" data-c="4" value="${v("pack_qty")??""}"
+          onchange="bEdit(${i.id},'pack_qty',this.value,this)" onkeydown="bKey(event)"></td>
+        <td><input class="bcell${chg("pack_cost")}" type="number" step="any" data-r="${r}" data-c="5" value="${v("pack_cost")??""}"
+          onchange="bEdit(${i.id},'pack_cost',this.value,this)" onkeydown="bKey(event)"></td>
+        <td><b>${w1(unitCost(cur))}</b><span class="sub">/${cur.unit}</span></td>
+      </tr>`;
+      continue;
+    }
     html+=`<tr>
       <td class="l ed" onclick="editCell(this,${i.id},'name',true)">${i.name}${
         dupSet.has(nname(i.name))?'<span class="pill" style="background:var(--redbg);color:var(--red)">중복</span>':""}</td>
@@ -244,7 +316,114 @@ function renderIng2(){
       <td>${n?"":`<span class="del" onclick="delIng(${i.id})">삭제</span>`}</td>
     </tr>`;
   }
-  document.getElementById("ingBody").innerHTML=html||`<tr><td colspan="9" class="empty">없음</td></tr>`;
+  tbl.className=BULK?"bulk":"";
+  tbl.innerHTML=head+(html||`<tr><td colspan="${span}" class="empty">없음</td></tr>`);
+  bBar();
+}
+
+// ── 엑셀식 일괄편집 ─────────────────────────────────────────
+let ING_VIEW=[];
+const dirtyCount=()=>Object.keys(EDITS).length;
+function toggleBulk(){
+  if(BULK&&dirtyCount()&&!confirm(`저장 안 한 ${dirtyCount()}줄이 있습니다. 버릴까요?`)) return;
+  BULK=!BULK; EDITS={}; SEL.clear(); render();
+}
+function bEdit(id,field,val,el){
+  const i=DATA.ingredients.find(x=>x.id===id); if(!i) return;
+  let v = (field==="pack_qty"||field==="pack_cost") ? (val===""?null:+val) : (val.trim?val.trim():val);
+  if(field==="supplier"&&v==="") v=null;
+  if(field==="category"&&v==="") v="미분류";
+  const same = (v===i[field]) || (v==null&&i[field]==null);
+  EDITS[id]=EDITS[id]||{};
+  if(same) delete EDITS[id][field]; else EDITS[id][field]=v;
+  if(!Object.keys(EDITS[id]).length) delete EDITS[id];
+  el.classList.toggle("chg",!same);
+  // 단위단가 칸만 즉시 갱신 — 전체 재렌더는 포커스를 잃게 하므로 하지 않는다.
+  const cur={...i,...(EDITS[id]||{})};
+  const tr=el.closest("tr"), last=tr&&tr.lastElementChild;
+  if(last) last.innerHTML=`<b>${w1(unitCost(cur))}</b><span class="sub">/${cur.unit}</span>`;
+  bBar();
+}
+function bKey(e){
+  const el=e.target;
+  if(e.key==="Enter"){                     // 엔터 = 아래 줄 같은 칸
+    e.preventDefault(); if(e.isComposing) return;
+    el.dispatchEvent(new Event("change"));
+    const r=+el.dataset.r, c=+el.dataset.c;
+    const nx=document.querySelector(`[data-r="${r+1}"][data-c="${c}"]`);
+    if(nx){nx.focus(); if(nx.select) nx.select();}
+  }
+}
+function bSel(id,on){ on?SEL.add(id):SEL.delete(id); bBar(); }
+function bSelAll(on){
+  SEL.clear(); if(on) for(const i of ING_VIEW) SEL.add(i.id);
+  renderIng2();
+}
+function bApply(field,val){
+  if(!SEL.size){toast("먼저 왼쪽 체크박스로 줄을 고르세요");return;}
+  if(!val) return;
+  for(const id of SEL){
+    const i=DATA.ingredients.find(x=>x.id===id); if(!i) continue;
+    const v = (field==="supplier"&&val==="__none__")?null:val;
+    EDITS[id]=EDITS[id]||{};
+    if(v===i[field]) delete EDITS[id][field]; else EDITS[id][field]=v;
+    if(!Object.keys(EDITS[id]).length) delete EDITS[id];
+  }
+  toast(`${SEL.size}줄에 적용 — 아래 저장을 누르세요`);
+  renderIng2();
+}
+function bBar(){
+  let bar=document.getElementById("bulkBar");
+  if(!BULK){ if(bar) bar.remove(); document.body.classList.remove("padded"); return; }
+  if(!bar){ bar=document.createElement("div"); bar.id="bulkBar"; bar.className="bulkbar";
+    document.body.appendChild(bar); }
+  document.body.classList.add("padded");
+  const n=dirtyCount();
+  bar.innerHTML=`
+    <span class="cnt2">☑ ${SEL.size}줄 선택 · 변경 <b>${n}</b>줄</span>
+    <select onchange="bApply('category',this.value);this.value=''">
+      <option value="">선택줄 분류…</option>${catOpts().map(c=>`<option>${c}</option>`).join("")}</select>
+    <select onchange="bApply('supplier',this.value);this.value=''">
+      <option value="">선택줄 발주처…</option>${SUPPLIERS.map(x=>`<option>${x}</option>`).join("")}
+      <option value="__none__">미지정</option></select>
+    <button class="cancel" onclick="toggleBulk()">닫기</button>
+    <button class="save" ${n?"":"disabled"} onclick="bSave()">저장 ${n?`(${n}줄)`:""}</button>`;
+}
+async function bSave(){
+  const ids=Object.keys(EDITS).map(Number);
+  if(!ids.length) return;
+  const rows=ids.map(id=>({...DATA.ingredients.find(x=>x.id===id),...EDITS[id]}));
+  // 저장 전 이름 중복 자체검사 — 서버도 막지만, 여기서 먼저 알려주는 게 빠르다.
+  // 이번에 이름을 실제로 바꾼 줄만 본다 — 원래부터 겹쳐 있던 자재까지
+  // 막으면 상관없는 수정이 통째로 걸린다.
+  const clash=[];
+  for(const r of rows){
+    if(EDITS[r.id].name===undefined) continue;
+    const dup=DATA.ingredients.find(x=>x.id!==r.id&&nname(x.name)===nname(r.name)&&!ids.includes(x.id));
+    const twice=rows.filter(o=>nname(o.name)===nname(r.name)).length>1;
+    if(dup||twice) clash.push(r.name);
+  }
+  if(clash.length){
+    toast(`⚠ 이름이 겹칩니다: ${[...new Set(clash)].slice(0,3).join(", ")}`);
+    return;
+  }
+  const btn=document.querySelector("#bulkBar .save");
+  if(btn){btn.disabled=true;btn.textContent="저장 중…";}
+  const j=await api("/ingredients/batch",{rows});
+  if(!j){ if(btn){btn.disabled=false;btn.textContent=`저장 (${ids.length}줄)`;} return; }
+  for(const row of j.saved||[]){
+    const k=DATA.ingredients.findIndex(x=>x.id===row.id);
+    if(k>=0) DATA.ingredients[k]=row; else DATA.ingredients.push(row);
+    delete EDITS[row.id];
+  }
+  for(const [sku,c] of Object.entries(j.recomputed||{})){
+    const it=DATA.items.find(x=>x.sku===sku); if(it) it.ingredient_cost=c;
+  }
+  _mcMap=null;
+  const err=(j.errors||[]).length;
+  toast(err?`${(j.saved||[]).length}줄 저장 · ${err}줄 실패(${j.errors[0].error})`
+           :`${(j.saved||[]).length}줄 저장 ✓ · 메뉴 ${Object.keys(j.recomputed||{}).length}개 원가 재계산`);
+  renderIng2();
 }
 // ── 인라인 편집 ────────────────────────────────────────────
 // 저장은 '엔터' 또는 '✓' 를 눌렀을 때만. 입력 도중 포커스가 빠져도(모바일
@@ -394,19 +573,27 @@ function renderRec(){
     <button onclick="SKU=null;render()">← 메뉴 목록</button>
     <div style="flex:1;font-weight:700;align-self:center">${it.name}
       <span class="sub">${it.sku}</span></div>
+    <button class="bulkbtn ${RBULK?"on":""}" onclick="toggleRBulk()">${RBULK?"✏️ 편집중":"✏️ 사용량 일괄"}</button>
   </div>`;
   {
     const lines=DATA.recipes.filter(r=>r.sku===SKU);
-    let total=0, rows="";
+    let total=0, rows="", ri=0;
     for(const ln of lines){
       const ing=DATA.ingredients.find(i=>i.id===ln.ingredient_id);
       if(!ing) continue;
-      const amt=ln.qty*unitCost(ing); total+=amt;
+      const q=(ln.id in REDITS)?REDITS[ln.id]:ln.qty;
+      const amt=(+q||0)*unitCost(ing); total+=amt;
+      const qcell = RBULK
+        ? `<td><input class="bcell${(ln.id in REDITS)?" chg":""}" type="number" step="any"
+             data-r="${ri}" data-c="0" value="${q??""}"
+             onchange="rEdit(${ln.id},this.value,this)" onkeydown="bKey(event)"> ${ing.unit}</td>`
+        : `<td class="ed" onclick="editQty(this,${ln.id},${ln.ingredient_id},${ln.qty})">${w1(ln.qty)} ${ing.unit}</td>`;
       rows+=`<tr>
         <td class="l">${ing.name}<span class="sub"> ${w1(unitCost(ing))}/${ing.unit}</span></td>
-        <td class="ed" onclick="editQty(this,${ln.id},${ln.ingredient_id},${ln.qty})">${w1(ln.qty)} ${ing.unit}</td>
+        ${qcell}
         <td>${won(amt)}</td>
         <td><span class="del" onclick="delLine(${ln.id})">빼기</span></td></tr>`;
+      ri++;
     }
     const tg=target(it.category);
     const recStore=total?Math.ceil(total/tg/100)*100:null;
@@ -439,10 +626,62 @@ function renderRec(){
       <input id="nlQty" type="number" step="any" placeholder="사용량" style="width:80px">
       <button onclick="addLine()">+ 추가</button>
     </div>
-    <p class="note">· 사용량은 고친 뒤 <b>엔터</b>나 <b>✓</b> 로 저장합니다.<br>\n    · 사용량을 고치거나 재료를 넣고 빼면 <b>원가가 즉시 재계산되어 정본에 저장</b>됩니다.<br>
+    <p class="note">· 사용량은 고친 뒤 <b>엔터</b>나 <b>✓</b> 로 저장합니다.
+    여러 줄을 한꺼번에 고치려면 <b>✏️ 사용량 일괄</b>을 켜세요(Enter=아래 줄, 맨 아래 저장으로 한 번에 반영).<br>\n    · 사용량을 고치거나 재료를 넣고 빼면 <b>원가가 즉시 재계산되어 정본에 저장</b>됩니다.<br>
     · 신메뉴는 메뉴/원가 화면에서 먼저 등록한 뒤, 여기서 레시피를 붙이세요.</p>`;
   }
   document.getElementById("main").innerHTML=html;
+  rBar();
+}
+
+// ── 레시피 사용량 일괄편집 ───────────────────────────────────
+function toggleRBulk(){
+  const n=Object.keys(REDITS).length;
+  if(RBULK&&n&&!confirm(`저장 안 한 ${n}줄이 있습니다. 버릴까요?`)) return;
+  RBULK=!RBULK; REDITS={}; render();
+}
+function rEdit(rid,val,el){
+  const ln=DATA.recipes.find(r=>r.id===rid); if(!ln) return;
+  const v=val===""?null:+val;
+  if(v===null||v===ln.qty) delete REDITS[rid]; else REDITS[rid]=v;
+  el.classList.toggle("chg",rid in REDITS);
+  renderRec();                       // 합계·원가율을 바로 다시 계산해 보여준다
+  const nx=document.querySelector(`[data-r="${el.dataset.r}"][data-c="0"]`);
+  if(nx) nx.focus();
+}
+function rBar(){
+  let bar=document.getElementById("bulkBar");
+  if(!RBULK||TAB!=='rec'||!SKU){ if(bar&&!BULK) {bar.remove(); document.body.classList.remove("padded");} return; }
+  if(!bar){ bar=document.createElement("div"); bar.id="bulkBar"; bar.className="bulkbar";
+    document.body.appendChild(bar); }
+  document.body.classList.add("padded");
+  const n=Object.keys(REDITS).length;
+  bar.innerHTML=`<span class="cnt2">변경 <b>${n}</b>줄</span>
+    <button class="cancel" onclick="toggleRBulk()">닫기</button>
+    <button class="save" ${n?"":"disabled"} onclick="rSave()">저장 ${n?`(${n}줄)`:""}</button>`;
+}
+async function rSave(){
+  const rids=Object.keys(REDITS).map(Number);
+  if(!rids.length) return;
+  const lines=rids.map(rid=>{
+    const ln=DATA.recipes.find(r=>r.id===rid);
+    return {ingredient_id:ln.ingredient_id, qty:REDITS[rid]};
+  });
+  const btn=document.querySelector("#bulkBar .save");
+  if(btn){btn.disabled=true;btn.textContent="저장 중…";}
+  const j=await api("/recipe/batch",{sku:SKU,lines});
+  if(!j){ if(btn){btn.disabled=false;btn.textContent=`저장 (${rids.length}줄)`;} return; }
+  for(const row of j.saved||[]){
+    const k=DATA.recipes.findIndex(r=>r.id===row.id);
+    if(k>=0) DATA.recipes[k]=row; else DATA.recipes.push(row);
+  }
+  REDITS={}; _mcMap=null;
+  for(const [sku,c] of Object.entries(j.recomputed||{})){
+    const it=DATA.items.find(x=>x.sku===sku); if(it) it.ingredient_cost=c;
+  }
+  const err=(j.errors||[]).length;
+  toast(err?`${(j.saved||[]).length}줄 저장 · ${err}줄 실패`:`${(j.saved||[]).length}줄 저장 ✓ 원가 재계산됨`);
+  render();
 }
 // ── 재료 자동완성 ───────────────────────────────────────────
 // 브라우저 datalist 는 한글 조합 중 목록을 갱신하지 못해(두 글자부터 사라짐)
@@ -556,6 +795,10 @@ async function runSeed(){
 }
 
 function render(){
+  if(TAB!=='ing'&&BULK){BULK=false;EDITS={};SEL.clear();}
+  if((TAB!=='rec'||!SKU)&&RBULK){RBULK=false;REDITS={};}
+  const bb=document.getElementById("bulkBar");
+  if(bb&&!BULK&&!RBULK){bb.remove();document.body.classList.remove("padded");}
   document.getElementById("tabIng").classList.toggle("on",TAB==='ing');
   document.getElementById("tabRec").classList.toggle("on",TAB==='rec');
   if(!DATA)return;

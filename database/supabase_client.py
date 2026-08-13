@@ -859,7 +859,12 @@ def ingredient_upsert(fields, ing_id=None):
     name = payload.get("name")
     if name:
         target = _norm_ing_name(name)
-        for row in ingredients_all():
+        allrows = ingredients_all()
+        me = next((r for r in allrows if r["id"] == ing_id), None) if ing_id else None
+        # 이름을 안 바꾼 수정(분류·발주처만 고침)은 검사하지 않는다 — 예전부터
+        # 이름이 겹쳐 있던 자재까지 통째로 수정 불가가 되기 때문.
+        unchanged = me is not None and _norm_ing_name(me["name"]) == target
+        for row in ([] if unchanged else allrows):
             if row["id"] == ing_id:
                 continue                      # 자기 자신은 제외(단순 수정)
             if _norm_ing_name(row["name"]) == target:
