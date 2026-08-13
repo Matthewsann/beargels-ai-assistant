@@ -118,6 +118,8 @@ let BULK=false;          // 엑셀식 일괄편집 모드
 let EDITS={};            // {자재id: {필드: 값}}  — 저장 전 변경분
 let SEL=new Set();       // 일괄 적용용 선택 줄
 let RBULK=false, REDITS={};   // 레시피 탭 일괄편집
+let PICK=false, PQ='', PSEL=new Set();   // 재료 여러 개 고르기
+let DRAFT=[];                            // 아직 저장 안 한 새 재료 [{ingredient_id, qty}]
 const won=n=>n==null?"–":Math.round(n).toLocaleString("ko-KR");
 const w1=n=>n==null?"–":(Math.round(n*100)/100).toLocaleString("ko-KR");
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");
@@ -624,7 +626,7 @@ function renderRec(){
   const it=DATA.items.find(i=>i.sku===SKU);
   if(!it){ SKU=null; renderRecList(); return; }
   let html=`<div class="bar" style="margin-bottom:8px">
-    <button onclick="SKU=null;render()">← 메뉴 목록</button>
+    <button onclick="backToList()">← 메뉴 목록</button>
     <div style="flex:1;font-weight:700;align-self:center">${it.name}
       <span class="sub">${it.sku}</span></div>
     <button class="bulkbtn ${RBULK?"on":""}" onclick="toggleRBulk()">${RBULK?"✏️ 편집중":"✏️ 사용량 일괄"}</button>
@@ -649,6 +651,24 @@ function renderRec(){
         ${qcell}
         <td>${won(amt)}</td>
         <td><span class="del" onclick="delLine(${ln.id})">빼기</span></td></tr>`;
+      ri++;
+    }
+    // 아직 저장 안 한 새 재료 — 사용량만 채우면 된다
+    for(let k=0;k<DRAFT.length;k++){
+      const d=DRAFT[k];
+      const ing=DATA.ingredients.find(i=>i.id===d.ingredient_id);
+      if(!ing) continue;
+      const amt=(+d.qty||0)*unitCost(ing); total+=amt;
+      const pk=isPack(ing); if(pk) pack+=amt; else food+=amt;
+      rows+=`<tr style="background:var(--amberbg)">
+        <td class="l">${ing.name}${pk?'<span class="pill">포장</span>':""}
+          <span class="pill" style="background:var(--amber);color:#fff">새로</span>
+          <span class="sub"> ${w1(unitCost(ing))}/${ing.unit}</span></td>
+        <td><input class="bcell" type="number" step="any" data-r="${ri}" data-c="0"
+          value="${d.qty??""}" placeholder="사용량"
+          onchange="dEdit(${k},this.value)" onkeydown="bKey(event)"> ${ing.unit}</td>
+        <td>${d.qty?won(amt):'<span class="sub">–</span>'}</td>
+        <td><span class="del" onclick="dDrop(${k})">빼기</span></td></tr>`;
       ri++;
     }
     const tg=target(it.category);
@@ -680,7 +700,7 @@ function renderRec(){
       <tr><th class="l">재료</th><th>사용량</th><th>금액</th><th></th></tr>
       ${rows||`<tr><td colspan="4" class="empty">아직 레시피가 없습니다. 아래에서 재료를 추가하세요.</td></tr>`}
     </table></div>
-    <div class="addrow">
+    ${PICK?pickerHTML():`<div class="addrow">
       <div class="ac">
         <input id="nlIng" placeholder="재료 이름 (초성도 가능)" autocomplete="off"
           oninput="acFilter()" onfocus="acFilter()" onkeydown="acKey(event)" onblur="acBlur()">
@@ -688,19 +708,87 @@ function renderRec(){
       </div>
       <input id="nlQty" type="number" step="any" placeholder="사용량" style="width:80px">
       <button onclick="addLine()">+ 추가</button>
-    </div>
-    <p class="note">· 사용량은 고친 뒤 <b>엔터</b>나 <b>✓</b> 로 저장합니다.
-    여러 줄을 한꺼번에 고치려면 <b>✏️ 사용량 일괄</b>을 켜세요(Enter=아래 줄, 맨 아래 저장으로 한 번에 반영).<br>\n    · 사용량을 고치거나 재료를 넣고 빼면 <b>원가가 즉시 재계산되어 정본에 저장</b>됩니다.<br>
+      <button class="bulkbtn" onclick="openPick()">☰ 여러 개 고르기</button>
+    </div>`}
+    <p class="note">· 재료가 여러 개면 <b>☰ 여러 개 고르기</b> — 체크로 한꺼번에 고른 뒤 사용량만 쭉 채우고
+    맨 아래 <b>저장</b> 한 번이면 됩니다(Enter=아래 줄).<br>
+    · 사용량은 고친 뒤 <b>엔터</b>나 <b>✓</b> 로 저장합니다.
+    이미 있는 줄을 여러 개 고치려면 <b>✏️ 사용량 일괄</b>을 켜세요.<br>\n    · 사용량을 고치거나 재료를 넣고 빼면 <b>원가가 즉시 재계산되어 정본에 저장</b>됩니다.<br>
     · 신메뉴는 메뉴/원가 화면에서 먼저 등록한 뒤, 여기서 레시피를 붙이세요.<br>
     · <b>컵·뚜껑·스트로우 같은 포장은 레시피에 넣는 게 맞습니다</b> — 실제로 나가는 돈이니까요.
       다만 목표 원가율과 견줄 숫자는 <b>식자재</b>이므로 화면에서 따로 셉니다.
       분류를 <b>포장·소모품</b>으로 두면 확실히 갈라지고, 아직 분류가 없으면 이름으로 알아서 잡습니다(<span class="pill">포장</span> 표시).</p>`;
   }
   document.getElementById("main").innerHTML=html;
+  if(PICK) pkList();
   rBar();
 }
 
+// ── 재료 여러 개 고르기 ─────────────────────────────────────
+// 하나씩 넣으면 자동완성 → 사용량 → 추가를 재료 수만큼 반복해야 한다.
+// 체크로 한꺼번에 고르고, 사용량은 표에서 쭉 내려가며 채우게 한다.
+function openPick(){ PICK=true; PQ=''; PSEL=new Set(); render();
+  setTimeout(()=>document.getElementById("pkq")?.focus(),50); }
+function closePick(){ PICK=false; render(); }
+function pkFilter(v){ PQ=v; pkList(); }
+function pkToggle(id){ PSEL.has(id)?PSEL.delete(id):PSEL.add(id); pkList(); }
+function pkCands(){
+  const used=new Set(DATA.recipes.filter(r=>r.sku===SKU).map(r=>r.ingredient_id));
+  for(const d of DRAFT) used.add(d.ingredient_id);
+  const nq=nname(PQ), isCho=nq&&[...nq].every(c=>CHO.includes(c));
+  return DATA.ingredients.filter(i=>{
+    if(used.has(i.id)) return false;          // 이미 들어간 재료는 안 보여준다
+    if(!nq) return true;
+    const n=nname(i.name);
+    return n.includes(nq)||(isCho&&chosung(n).includes(nq));
+  }).sort((a,b)=>a.name.localeCompare(b.name,"ko"));
+}
+function pickerHTML(){
+  return `<div class="wrap" style="padding:10px;margin-top:8px">
+    <div class="bar" style="margin:0 0 6px">
+      <input id="pkq" placeholder="재료 검색 (초성도 가능)…" value="${PQ}"
+        oninput="pkFilter(this.value)" autocomplete="off">
+      <button class="bulkbtn" onclick="closePick()">닫기</button>
+    </div>
+    <div id="pkbox" style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:8px"></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+      <span class="sub" id="pkcnt" style="margin-right:auto"></span>
+      <button class="okbtn" style="padding:8px 16px;font-size:13px" onclick="pkAdd()">선택한 재료 넣기</button>
+    </div></div>`;
+}
+function pkList(){
+  const box=document.getElementById("pkbox"); if(!box) return;
+  const list=pkCands();
+  box.innerHTML=list.length?list.map(i=>
+    `<label class="acitem" style="cursor:pointer">
+      <span><input type="checkbox" ${PSEL.has(i.id)?"checked":""}
+        onchange="pkToggle(${i.id})" style="margin-right:8px;width:16px;height:16px;vertical-align:-2px">
+        ${i.name}${isPack(i)?'<span class="pill">포장</span>':""}</span>
+      <span class="sub">${w1(unitCost(i))}원/${i.unit}</span></label>`).join("")
+    : `<div class="acnone">해당 재료가 없습니다 — 자재 탭에서 먼저 등록하세요</div>`;
+  const c=document.getElementById("pkcnt");
+  if(c) c.textContent=`${PSEL.size}개 선택 · 목록 ${list.length}개`;
+}
+function pkAdd(){
+  if(!PSEL.size){toast("재료를 하나 이상 골라주세요");return;}
+  for(const id of PSEL) DRAFT.push({ingredient_id:id, qty:null});
+  const n=PSEL.size; PICK=false; PSEL=new Set(); render();
+  toast(`${n}개 추가 — 사용량을 채우고 저장하세요`);
+  setTimeout(()=>{const f=document.querySelector('table input.bcell[placeholder="사용량"]');
+    if(f){f.focus();f.select();}},60);
+}
+function dEdit(k,v){
+  if(!DRAFT[k]) return;
+  DRAFT[k].qty = v===""?null:+v;
+  renderRec();
+}
+function dDrop(k){ DRAFT.splice(k,1); render(); }
+
 // ── 레시피 사용량 일괄편집 ───────────────────────────────────
+function backToList(){
+  if(DRAFT.length&&!confirm(`저장 안 한 새 재료 ${DRAFT.length}줄이 있습니다. 버릴까요?`)) return;
+  DRAFT=[]; REDITS={}; RBULK=false; PICK=false; SKU=null; render();
+}
 function toggleRBulk(){
   const n=Object.keys(REDITS).length;
   if(RBULK&&n&&!confirm(`저장 안 한 ${n}줄이 있습니다. 버릴까요?`)) return;
@@ -717,26 +805,43 @@ function rEdit(rid,val,el){
 }
 function rBar(){
   let bar=document.getElementById("bulkBar");
-  if(!RBULK||TAB!=='rec'||!SKU){ if(bar&&!BULK) {bar.remove(); document.body.classList.remove("padded");} return; }
+  const nd=DRAFT.length, ne=Object.keys(REDITS).length;
+  const show=(RBULK||nd)&&TAB==='rec'&&SKU;
+  if(!show){ if(bar&&!BULK) {bar.remove(); document.body.classList.remove("padded");} return; }
   if(!bar){ bar=document.createElement("div"); bar.id="bulkBar"; bar.className="bulkbar";
     document.body.appendChild(bar); }
   document.body.classList.add("padded");
-  const n=Object.keys(REDITS).length;
-  bar.innerHTML=`<span class="cnt2">변경 <b>${n}</b>줄</span>
-    <button class="cancel" onclick="toggleRBulk()">닫기</button>
+  const ready=DRAFT.filter(d=>d.qty).length;
+  const n=ne+ready;
+  bar.innerHTML=`<span class="cnt2">${nd?`새 재료 <b>${ready}/${nd}</b>줄 준비`:""}${
+      nd&&ne?" · ":""}${ne?`수정 <b>${ne}</b>줄`:""}${
+      nd&&ready<nd?' <span style="color:var(--red)">— 사용량 빈 줄이 있습니다</span>':""}</span>
+    <button class="cancel" onclick="${nd?"rCancel()":"toggleRBulk()"}">${nd?"취소":"닫기"}</button>
     <button class="save" ${n?"":"disabled"} onclick="rSave()">저장 ${n?`(${n}줄)`:""}</button>`;
+}
+function rCancel(){
+  if(DRAFT.length&&!confirm(`넣던 새 재료 ${DRAFT.length}줄을 버릴까요?`)) return;
+  DRAFT=[]; REDITS={}; RBULK=false; render();
 }
 async function rSave(){
   const rids=Object.keys(REDITS).map(Number);
-  if(!rids.length) return;
-  const lines=rids.map(rid=>{
-    const ln=DATA.recipes.find(r=>r.id===rid);
-    return {ingredient_id:ln.ingredient_id, qty:REDITS[rid]};
-  });
+  const drafts=DRAFT.filter(d=>d.qty);
+  if(DRAFT.length&&drafts.length<DRAFT.length){
+    toast("사용량이 빈 줄이 있습니다 — 채우거나 '빼기' 하세요"); return;
+  }
+  if(!rids.length&&!drafts.length) return;
+  const lines=[
+    ...rids.map(rid=>{
+      const ln=DATA.recipes.find(r=>r.id===rid);
+      return {ingredient_id:ln.ingredient_id, qty:REDITS[rid]};
+    }),
+    ...drafts.map(d=>({ingredient_id:d.ingredient_id, qty:d.qty})),
+  ];
   const btn=document.querySelector("#bulkBar .save");
   if(btn){btn.disabled=true;btn.textContent="저장 중…";}
   const j=await api("/recipe/batch",{sku:SKU,lines});
-  if(!j){ if(btn){btn.disabled=false;btn.textContent=`저장 (${rids.length}줄)`;} return; }
+  if(!j){ if(btn){btn.disabled=false;btn.textContent=`저장 (${lines.length}줄)`;} return; }
+  DRAFT=[];
   for(const row of j.saved||[]){
     const k=DATA.recipes.findIndex(r=>r.id===row.id);
     if(k>=0) DATA.recipes[k]=row; else DATA.recipes.push(row);
@@ -863,6 +968,7 @@ async function runSeed(){
 function render(){
   if(TAB!=='ing'&&BULK){BULK=false;EDITS={};SEL.clear();}
   if((TAB!=='rec'||!SKU)&&RBULK){RBULK=false;REDITS={};}
+  if((TAB!=='rec'||!SKU)&&(DRAFT.length||PICK)){DRAFT=[];PICK=false;PSEL=new Set();}
   const bb=document.getElementById("bulkBar");
   if(bb&&!BULK&&!RBULK){bb.remove();document.body.classList.remove("padded");}
   document.getElementById("tabIng").classList.toggle("on",TAB==='ing');
