@@ -70,6 +70,11 @@
           background:var(--accent-bg); color:var(--accent); }
   .note.bad { background:var(--bad-bg); color:var(--bad); }
   .copied { color:var(--ok); font-size:12px; text-align:center; margin-top:6px; display:none; }
+  .alertbox { display:flex; gap:10px; align-items:flex-start; background:var(--warn-bg);
+              color:var(--warn); border:1px solid var(--warn); border-radius:10px;
+              padding:11px 12px; margin-bottom:10px; font-size:13px; }
+  .alertbox .alertmsg { flex:1; white-space:pre-wrap; word-break:break-word; }
+  .alertbox .btn { padding:8px 14px; font-size:13px; flex-shrink:0; }
   .postcopy { display:none; align-items:center; justify-content:space-between; gap:8px;
               background:var(--ok-bg); color:var(--ok); border-radius:9px;
               padding:10px 12px; margin-top:9px; font-size:13px; }
@@ -95,6 +100,16 @@
   </div>
 
   {% if error %}<div class="note bad">{{ error }}</div>{% endif %}
+
+  {# 알림함 — 민감 리뷰·로그인 만료 등 사장님이 봐야 할 일(확인하면 닫힘) #}
+  {% for a in alerts %}
+  <div class="alertbox">
+    <div class="alertmsg"><b>🔔 {{ a.at }}</b><br>{{ a.message }}</div>
+    <form method="post" action="{{ url_for('ack_alert', path_key=key, alert_id=a.id) }}">
+      <button class="btn" type="submit">확인</button>
+    </form>
+  </div>
+  {% endfor %}
 
   <div class="panel">
     <div class="status" id="wstat">

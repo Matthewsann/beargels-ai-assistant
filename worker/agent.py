@@ -384,10 +384,10 @@ _last_post_slot = None   # 같은 슬롯을 두 번 돌지 않게(메모리 — 
                          # 이미 게시된 건 posted 라 재게시는 없다)
 
 
-def post_slot_due(now, last_slot):
-    """지금이 게시 시각(슬롯 시작 후 10분 안)이고 아직 안 돈 슬롯이면 그
+def slot_due(times, now, last_slot):
+    """지금이 정해진 시각(슬롯 시작 후 10분 안)이고 아직 안 돈 슬롯이면 그
     슬롯 키("YYYY-MM-DD HH:MM")를, 아니면 None 을 반환한다. 순수 로직."""
-    for t in (AUTO_POST_TIMES or "").split(","):
+    for t in (times or "").split(","):
         t = t.strip()
         if not t:
             continue
@@ -400,6 +400,11 @@ def post_slot_due(now, last_slot):
             key = slot.strftime("%Y-%m-%d %H:%M")
             return None if key == last_slot else key
     return None
+
+
+def post_slot_due(now, last_slot):
+    """(호환 유지) 자동 일괄 게시 슬롯 판정 — AUTO_POST_TIMES 기준."""
+    return slot_due(AUTO_POST_TIMES, now, last_slot)
 
 
 def run_auto_post() -> None:
@@ -658,6 +663,66 @@ def maybe_auto_post() -> None:
         logger.warning("자동 등록 판단 실패: %s", e)
 
 
+# ---------------------------------------------------------------------------
+# 문제(심각) 리뷰 정기 보고 — 구 스케줄러(14/22시)에서 이식 (2026-08-16)
+# ---------------------------------------------------------------------------
+# 스케줄러가 퇴역하면서 이 보고도 함께 죽어, 민감 리뷰가 며칠씩 조용히
+# 방치됐다. 크롤은 하지 않는다 — 2시간 자동 수집이 이미 채워 둔 DB 를 읽는다.
+
+COMPLAINT_TIMES = os.getenv("WORKER_COMPLAINT_TIMES", "14:00,22:00")
+_last_complaint_slot = None
+
+
+def run_complaint_report(label="") -> None:
+    """최근 리뷰 중 심각(불만·민감·별점≤3) 리뷰를 알림함으로 보고한다.
+
+    같은 리뷰를 두 번 보고하지 않는다(daily_summaries 'complaint_alert_log',
+    구 스케줄러와 같은 키라 과거 보고분도 이어진다).
+    """
+    import json as _json
+    from assistant.beargels import format_complaint_report, is_serious_review
+
+    since = (datetime.now().date() - timedelta(days=3)).isoformat()
+    rows = (db.get_client().table("reviews").select("*")
+            .gte("written_date", since).limit(300).execute().data)
+    serious = [r for r in rows if is_serious_review(r)]
+
+    logrow = db.get_summary("complaint_alert_log")
+    try:
+        alerted = set(_json.loads(logrow["content"])) if logrow else set()
+    except Exception:  # noqa: BLE001
+        alerted = set()
+    new = [r for r in serious
+           if r.get("review_no") and str(r["review_no"]) not in
+           {str(a) for a in alerted}]
+    if not new:
+        logger.info("문제 리뷰 점검%s — 신규 없음", f"({label})" if label else "")
+        return
+
+    report = format_complaint_report(new, label)
+    notify_owner(f"문제 리뷰 {len(new)}건 — 주문 확인이 필요합니다. "
+                 f"내용은 아래 상세 참고.\n\n{report[:1200]}",
+                 kind="SeriousReview", source="worker",
+                 path="run_complaint_report")
+    alerted |= {str(r["review_no"]) for r in new}
+    try:
+        db.save_summary("complaint_alert_log", _json.dumps(sorted(alerted)))
+    except Exception:  # noqa: BLE001
+        logger.warning("문제 리뷰 보고 로그 저장 실패")
+    logger.info("문제 리뷰 보고: 신규 %d건", len(new))
+
+
+def maybe_complaint_report() -> None:
+    global _last_complaint_slot
+    try:
+        slot = slot_due(COMPLAINT_TIMES, datetime.now(), _last_complaint_slot)
+        if slot:
+            _last_complaint_slot = slot
+            run_complaint_report(slot[-5:])
+    except Exception as e:  # noqa: BLE001
+        logger.warning("문제 리뷰 보고 실패: %s", e)
+
+
 # 방치된 approved 를 다시 줄 세우는 주기(초) — 매 루프(15초)마다 DB 를
 # 훑을 필요는 없다.
 RESCUE_EVERY_SECONDS = int(os.getenv("WORKER_RESCUE_SECONDS", "300"))
@@ -788,6 +853,7 @@ def main() -> int:
             else:
                 maybe_auto_collect()
                 maybe_auto_post()
+                maybe_complaint_report()
                 maybe_rescue_stuck()
                 db.worker_ping("idle", "대기 중")
         except KeyboardInterrupt:

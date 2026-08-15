@@ -182,6 +182,46 @@ def _trusted_kinds() -> set:
             and s["rate"] <= TRUST_MAX_EDIT_RATE}
 
 
+# ── 알림함 ──────────────────────────────────────────────────────────────
+# notify_owner(alerts.py)가 error_log 에 남긴 '사장님이 봐야 할 일'을 화면에
+# 띄운다. 텔레그램을 걷어낸 뒤(2026-08-13) 알림을 보여주는 화면이 없어서
+# 민감 리뷰·세션 만료가 조용히 묻혔다(2026-08-16 점검). 기술 오류(새벽 점검
+# 몫)와 섞이지 않게 사장님용 kind 만 화이트리스트로 고른다.
+OWNER_ALERT_KINDS = ("SeriousReview", "SessionExpired", "ReplyReplaced",
+                     "Notice", "StuckApprovedRevived")
+
+
+def _owner_alerts(limit=5) -> list[dict]:
+    """미확인 알림(최신순, 최대 limit건). 실패해도 화면은 뜬다."""
+    try:
+        rows = db.get_errors(only_unfixed=True, limit=50)
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for r in rows:
+        if r.get("kind") not in OWNER_ALERT_KINDS:
+            continue
+        out.append({"id": r.get("id"),
+                    "kind": r.get("kind"),
+                    "at": (r.get("at") or "")[:16].replace("T", " "),
+                    "message": (r.get("message") or "").strip()})
+        if len(out) >= limit:
+            break
+    return out
+
+
+@app.route("/<path_key>/alert/<int:alert_id>/ack", methods=["POST"])
+def ack_alert(path_key, alert_id):
+    """알림 [확인] — 다시 안 보이게 닫는다."""
+    check(path_key)
+    try:
+        db.mark_error_fixed(alert_id, "사장님이 화면에서 확인")
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"알림 확인 실패({alert_id}): {e}",
+                     kind=type(e).__name__, path=request.path)
+    return redirect(request.referrer or url_for("home", path_key=path_key))
+
+
 # 플랫폼 리뷰 관리 페이지 — '실제 답글 보러가기' 바로가기용(리뷰별 딥링크는
 # 두 플랫폼 다 제공하지 않아 리뷰 목록 페이지로 보낸다).
 PLATFORM_REVIEW_URL = {
@@ -265,7 +305,7 @@ def home(path_key):
     return render_template(
         "staff.html", key=path_key, reviews=reviews, worker=_worker_view(),
         job=job, error=error, waiting=waiting, approved_count=approved_count,
-        plat=plat,
+        plat=plat, alerts=_owner_alerts(),
     )
 
 

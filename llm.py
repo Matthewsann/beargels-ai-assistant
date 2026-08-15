@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 
 import requests
 from dotenv import load_dotenv
@@ -145,6 +146,26 @@ def _is_credit_error(e: Exception) -> bool:
             or "insufficient" in m or "quota" in m or "429" in m)
 
 
+def _is_auth_error(e: Exception) -> bool:
+    """키 자체가 무효(401 등) — 재시도해도 영영 실패한다."""
+    m = str(e).lower()
+    return ("401" in m or "authentication_error" in m
+            or "api key is invalid" in m or "invalid x-api-key" in m)
+
+
+def _is_transient_error(e: Exception) -> bool:
+    """일시 장애(과부하·타임아웃) — 잠깐 뒤 다시 하면 대개 된다."""
+    m = str(e).lower()
+    return ("503" in m or "500 " in m or "502" in m or "504" in m
+            or "overloaded" in m or "timed out" in m or "timeout" in m)
+
+
+# 키가 무효(401)로 확인된 공급자 — 이 프로세스 동안 다시 시도하지 않는다.
+# (무효 키를 매 호출마다 먼저 두드려 로그가 401 로 도배되고 응답도 느려졌다,
+#  2026-08-16 점검. 키를 갈아끼우면 일꾼 재시작으로 풀린다.)
+_AUTH_DEAD: set = set()
+
+
 # ---------------------------------------------------------------------------
 # 공개 함수
 # ---------------------------------------------------------------------------
@@ -159,15 +180,28 @@ def complete(system: str = "", user: str = "", max_tokens: int = 1500) -> str:
         )
     last = None
     for name in providers:
-        try:
-            return _CALLERS[name](system, user, max_tokens)
-        except Exception as e:  # noqa: BLE001
-            last = e
-            if _is_credit_error(e) and len(providers) > 1:
-                logger.warning("%s 사용 불가(크레딧/한도) → 다음 공급자로", name)
-                continue
-            if name != providers[-1]:
-                logger.warning("%s 호출 실패(%s) → 다음 공급자로", name, str(e)[:120])
-                continue
-            raise
-    raise last if last else NoProviderError("AI 호출에 모두 실패했습니다.")
+        if name in _AUTH_DEAD:
+            continue                    # 무효 키 — 두드리지 않는다(로그 도배 방지)
+        # 일시 장애(503·타임아웃)는 잠깐 쉬고 한 번 더 — 바로 템플릿 폴백으로
+        # 떨어지면 멀쩡한 리뷰가 저품질 초안을 받는다(2026-08-16 점검).
+        for attempt in range(2):
+            try:
+                return _CALLERS[name](system, user, max_tokens)
+            except Exception as e:  # noqa: BLE001
+                last = e
+                if _is_auth_error(e):
+                    _AUTH_DEAD.add(name)
+                    logger.warning("%s 키가 무효(401) — 이번 실행 동안 건너뜀. "
+                                   "키를 갈아끼우면 일꾼 재시작으로 복구.", name)
+                    break
+                if _is_transient_error(e) and attempt == 0:
+                    logger.warning("%s 일시 장애(%s) → 5초 뒤 재시도",
+                                   name, str(e)[:80])
+                    time.sleep(5)
+                    continue
+                if _is_credit_error(e):
+                    logger.warning("%s 사용 불가(크레딧/한도) → 다음 공급자로", name)
+                break
+    if last:
+        raise last
+    raise NoProviderError("AI 호출에 모두 실패했습니다.")
