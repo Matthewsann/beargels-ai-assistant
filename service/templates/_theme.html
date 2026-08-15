@@ -1,0 +1,106 @@
+{# 나이트모드(다크모드) — 모든 화면 공통 (2026-08-14, 사장님 요청).
+
+   동작:
+   · 기본은 휴대폰/PC 시스템 설정을 따라간다(prefers-color-scheme).
+   · 사이드바의 🌙/☀️ 버튼으로 직접 바꿀 수 있고, 선택은 localStorage 에
+     남아 다음 방문에도 유지된다.
+   · 각 화면이 :root 에 정의한 밝은 팔레트를, 더 높은 특이도인
+     html[data-theme="dark"] 로 덮어쓴다 — 화면별 CSS 는 손대지 않는다.
+
+   ⚠️ 새 화면을 만들 땐 색을 하드코딩하지 말고 var(--bg) 계열을 쓸 것.
+      하드코딩하면 다크모드에서 흰 섬처럼 남는다(아래 '개별 패치' 참고). #}
+<script>
+  // 저장된 선택을 첫 페인트 전에 적용 — 늦으면 밝은 화면이 번쩍인다.
+  (function () {
+    var t = null;
+    try { t = localStorage.getItem("bg-theme"); } catch (e) {}
+    if (t === "dark" || t === "light")
+      document.documentElement.setAttribute("data-theme", t);
+  })();
+</script>
+<style>
+  /* ── 다크 팔레트 ─────────────────────────────────────────────
+     리뷰 계열(staff/history/reviews/guide/blog)과 메뉴 계열(menu/*)의
+     변수 이름을 모두 덮는다. */
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    /* 공통 */
+    --bg:#191917; --card:#232320; --ink:#eceae4; --line:#3a3a35;
+    /* 리뷰 계열 */
+    --muted:#a09e93;
+    --accent:#7fb3e8; --accent-bg:#1d2f42;
+    --warn:#e0b060;  --warn-bg:#3a2f1a;
+    --ok:#93c66b;    --ok-bg:#26331b;
+    --bad:#e8968c;   --bad-bg:#42221f;
+    /* 메뉴 계열 */
+    --sub:#a09e93;
+    --brown:#c9a06b; --brownbg:#33291d;
+    --red:#e8968c;   --redbg:#42221f;
+    --amber:#e0b060; --amberbg:#3a2f1a;
+    --green:#8fca70; --greenbg:#233a1d;
+  }
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg:#191917; --card:#232320; --ink:#eceae4; --line:#3a3a35;
+      --muted:#a09e93;
+      --accent:#7fb3e8; --accent-bg:#1d2f42;
+      --warn:#e0b060;  --warn-bg:#3a2f1a;
+      --ok:#93c66b;    --ok-bg:#26331b;
+      --bad:#e8968c;   --bad-bg:#42221f;
+      --sub:#a09e93;
+      --brown:#c9a06b; --brownbg:#33291d;
+      --red:#e8968c;   --redbg:#42221f;
+      --amber:#e0b060; --amberbg:#3a2f1a;
+      --green:#8fca70; --greenbg:#233a1d;
+    }
+  }
+
+  /* ── 개별 패치 — 변수 대신 색을 하드코딩한 자리들 ─────────────
+     (다크에서만 덮는다. html.dk 는 아래 JS 가 다크일 때 붙여 주는 표식 —
+      media query 와 수동 선택을 한 선택자로 다루기 위함) */
+  html.dk .rv { background:#2c2c28; }                    /* 리뷰 원문 상자 */
+  html.dk .peek { background:#2c2c28; }                  /* 접힌 답글 미리보기 */
+  html.dk .stars .dim { color:#4a4a44; }                 /* 빈 별 */
+  html.dk .card.esc { background:#2e2320; border-color:#5a3a33; }
+  html.dk .b { background:#2c2c28; }                     /* guide 버튼 예시 칩 */
+  /* 사이드바(자체 하드코딩) */
+  html.dk .sbar { background:#20201d; border-color:#3a3a35; }
+  html.dk .sbar .bhead b { color:#eceae4; }
+  html.dk .sbar a.sm { color:#eceae4; }
+  html.dk .sbar a.sm:hover, html.dk .sbar .ssub a:hover { background:#2c2c28; }
+  html.dk .sbar a.sm.on { background:#1d2f42; color:#7fb3e8; }
+  html.dk .sbar .bhead .blogo { background:#1d2f42; color:#7fb3e8; }
+  /* 메뉴/원가 계열 — 표 머리·묶음행·상세행·파란 배지 하드코딩 */
+  html.dk th { background:#26261f; }
+  html.dk tr.cat td { background:#2c2a24; }
+  html.dk .detail td { background:#211f1c; }
+  html.dk .badge.ovr, html.dk .tag.n { background:#1d2f42; color:#7fb3e8; }
+  /* 입력류 공통 — 흰 배경 하드코딩 대비 안전망 */
+  html.dk input, html.dk select, html.dk textarea, html.dk button {
+    background-color:var(--card); color:var(--ink); border-color:var(--line);
+  }
+</style>
+<script>
+  // 현재 실제 적용 테마(수동 선택 > 시스템)를 계산해 html.dk 표식과
+  // 토글 버튼 라벨을 맞춘다.
+  function bgApplyThemeMark() {
+    var manual = document.documentElement.getAttribute("data-theme");
+    var dark = manual ? manual === "dark"
+      : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.classList.toggle("dk", dark);
+    var b = document.getElementById("themeToggle");
+    if (b) b.textContent = dark ? "☀️ 라이트모드" : "🌙 나이트모드";
+    return dark;
+  }
+  function bgToggleTheme() {
+    var next = bgApplyThemeMark() ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("bg-theme", next); } catch (e) {}
+    bgApplyThemeMark();
+  }
+  bgApplyThemeMark();
+  // 시스템 설정이 바뀌면(해 질 녘 자동 전환 등) 따라간다 — 수동 선택 전까지만.
+  window.matchMedia("(prefers-color-scheme: dark)")
+        .addEventListener("change", bgApplyThemeMark);
+</script>
