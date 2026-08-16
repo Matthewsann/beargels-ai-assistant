@@ -24,10 +24,16 @@ padding:4px 10px;font-size:12px;cursor:pointer;white-space:nowrap}
 .stats{font-size:11px;color:var(--sub);margin-top:6px;display:flex;gap:10px;flex-wrap:wrap}
 .stats b.red{color:var(--red)} .stats b.amber{color:var(--amber)}
 main{padding:10px}
-.wrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:10px}
+/* 표 머리글을 스크롤에도 붙여 두려면 표 영역이 스스로 스크롤해야 한다.
+   overflow-x:auto 만 주면 세로축도 auto 로 계산돼 .wrap 이 스크롤 컨테이너가
+   되는데, 높이 제한이 없어 화면 밖으로 같이 밀려 나가 sticky 가 무력해진다.
+   --hh(위쪽 헤더 높이)는 화면 크기가 바뀔 때 JS 가 다시 재어 넣는다. */
+.wrap{overflow:auto;max-height:calc(100vh - var(--hh,150px) - 20px);
+background:var(--card);border:1px solid var(--line);border-radius:10px}
 table{border-collapse:collapse;width:100%;min-width:900px}
 th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
-th{position:sticky;top:0;background:#faf8f3;font-size:11px;color:var(--sub);font-weight:600}
+th{position:sticky;top:0;z-index:3;background:#faf8f3;font-size:11px;color:var(--sub);font-weight:600;
+box-shadow:inset 0 -1px 0 var(--line)}
 td.name,th.name{text-align:left;max-width:230px;white-space:normal}
 td.name{cursor:pointer}
 td.name .sku{color:var(--sub);font-size:10px}
@@ -86,19 +92,19 @@ padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:opacity 
       <thead><tr>
         <th class="name">메뉴 (탭하면 채널별 설정)</th>
         <th>매장가</th><th>배달가</th><th>재료원가</th>
-        <th>원가율<br>매장</th><th>원가율<br>배달</th>
-        <th title="판매가 − 수수료 − 재료원가. 배달비는 주문당 1회라 여기서 빼지 않습니다.">기여마진<br>매장</th>
-        <th>기여마진<br>배민</th><th>기여마진<br>쿠팡</th><th>기여마진<br>네이버</th>
+        <th title="재료원가 ÷ 매장가">원가율<br>매장</th>
+        <th title="(재료원가 + 배달비 몫) ÷ 배달가. 최소주문금액을 채운 주문에서 배달비를 판매가 비례로 나눠 물린 값입니다.">원가율<br>배달</th>
         <th title="이 메뉴 수준의 원가율로 주문이 채워졌을 때 배달비(3,300원)를 감당하는 최소 주문금액">배달<br>손익분기</th>
         <th>노출</th>
       </tr></thead>
       <tbody id="tb"></tbody>
     </table>
   </div>
-  <p class="note">· <b>기여마진</b> = 판매가 − 수수료(중개+결제+부가세) − 재료원가.
-  <b>배달비는 빼지 않습니다</b> — 배달비 3,300원은 주문당 1회라 메뉴 하나에 물리면 실제보다 나쁘게 보입니다
-  (최소주문 <span id="noteMin">12,500</span>원이라 단품만 담긴 주문은 존재하지 않음).<br>
-  · <b>배달 손익분기</b> = 그 메뉴 수준의 원가율로 주문이 채워질 때 배달비를 감당하는 최소 주문금액.
+  <p class="note">· <b>원가율 배달</b> = (재료원가 + 배달비 몫) ÷ 배달가.
+  배달비는 주문당 1회라 메뉴 하나에 통째로 물리지 않고, <b>최소주문금액을 채운 주문</b>에서
+  판매가 비례로 나눠 물립니다 (예: 12,500원 주문의 7,200원짜리 → 배달비의 58%).<br>
+  · <b>배달 손익분기</b> = 그 메뉴 수준의 <b>재료</b>원가율로 주문이 채워질 때 배달비를 감당하는 최소 주문금액
+  (최소주문 <span id="noteMin">12,500</span>원).
   최소주문금액보다 낮으면 정상 주문은 흑자입니다. 넘으면 <span class="over" style="padding:0 4px">빨강</span>.<br>
   · 광고비·즉시할인·인건비·임대료는 미포함. 🧮 버튼에서 주문 단위 손익을 확인하세요.
   · 값은 셀을 탭해서 바로 수정(자동 저장).</p>
@@ -232,6 +238,26 @@ function costRate(it, ch){
   const p = chPrice(it, ch);
   return (p && it.ingredient_cost != null) ? it.ingredient_cost / p : null;
 }
+
+// 최소주문금액을 딱 채운 주문에서 이 메뉴가 짊어지는 배달비 몫.
+// 배달비는 주문당 1회라 메뉴 하나에 통째로 물리면 안 되고, 판매가 비례로 나눈다
+// (12,500원 주문에 든 7,200원짜리 → 배달비의 7,200/12,500 만큼).
+function feeShareAtMin(it, ch){
+  const D = +fee(ch).delivery_fee || 0;
+  const p = chPrice(it, ch);
+  const min = +om().min_order || 12500;
+  if (!D || p == null || !min) return 0;
+  return D * p / min;
+}
+
+// 배달 원가율 — 재료원가에 위 배달비 몫까지 더해 본다(사장님 요청 2026-08-16).
+// 재료비만 보면 배달이 실제보다 좋아 보인다. 손익분기(breakeven)는 재료비만
+// 쓰는 costRate 를 그대로 써야 한다 — 배달비를 두 번 세면 식이 성립하지 않는다.
+function costRateDelivery(it, ch){
+  const p = chPrice(it, ch);
+  if (!p || it.ingredient_cost == null) return null;
+  return (it.ingredient_cost + feeShareAtMin(it, ch)) / p;
+}
 // 이 메뉴 수준의 원가율로 주문이 채워졌을 때, 배달비를 감당하는 최소 주문금액.
 // 최소주문금액보다 낮으면 → 정상 주문은 반드시 흑자.
 function breakeven(it, ch){
@@ -263,20 +289,19 @@ function render(){
     (!q || i.name.includes(q) || (i.sku||"").includes(q)) && (!onlyP || hasProblem(i)));
   const nocost = DATA.items.filter(i=>i.ingredient_cost==null).length;
   const over = DATA.items.filter(i=>{const r=costRate(i,"store");return r!=null&&r>target(i.category)}).length;
-  const negs = DATA.items.filter(i=>CH.some(([c])=>{const m=margin(i,c);return m!=null&&m<0})).length;
   const minOrd = +om().min_order || 12500;
   const nm = document.getElementById("noteMin"); if(nm) nm.textContent = won(minOrd);
   const beOver = DATA.items.filter(i=>{const b=breakeven(i,"coupang");return b!=null&&b>minOrd}).length;
   document.getElementById("stats").innerHTML =
     `총 ${DATA.items.length}개 · <b class="amber">원가 미입력 ${nocost}</b> · <b class="red">목표 초과 ${over}</b>`
-    + ` · <b class="red">기여마진 마이너스 ${negs}</b> · <b class="${beOver?"red":""}">손익분기>최소주문 ${beOver}</b>`
+    + ` · <b class="${beOver?"red":""}">손익분기>최소주문 ${beOver}</b>`
     + `<span style="margin-left:auto"></span>`;
 
   let html = "", lastCat = null;
   for(const it of items){
     if(it.category !== lastCat){ lastCat = it.category;
-      html += `<tr class="cat"><td colspan="12">${it.category} <small style="font-weight:400">목표 원가율 ${(target(it.category)*100).toFixed(0)}%</small></td></tr>`; }
-    const rs = costRate(it,"store"), rd = costRate(it,"baemin");
+      html += `<tr class="cat"><td colspan="8">${it.category} <small style="font-weight:400">목표 원가율 ${(target(it.category)*100).toFixed(0)}%</small></td></tr>`; }
+    const rs = costRate(it,"store"), rd = costRateDelivery(it,"baemin");
     const tg = target(it.category);
     const ovrCnt = DATA.channels.filter(c=>c.sku===it.sku&&(c.name_override||c.price_override!=null||c.active===false)).length;
     const inact = !it.store_active && !it.delivery_active;
@@ -290,7 +315,6 @@ function render(){
       <td class="ed ${it.ingredient_cost==null?"nocost":""}" onclick="editCell(this,'${it.sku}','ingredient_cost')" title="${it.cost_source||""}">${it.ingredient_cost==null?"입력":won(it.ingredient_cost)}</td>
       <td class="${rs!=null&&rs>tg?"over":""}">${pct(rs)}</td>
       <td class="${rd!=null&&rd>tg?"over":""}">${pct(rd)}</td>
-      ${CH.map(([c])=>{const m=margin(it,c);return `<td class="${m!=null&&m<0?"neg":""}">${won(m)}</td>`}).join("")}
       ${(()=>{const b=breakeven(it,"coupang"), lim=+om().min_order||12500;
         if(b==null) return `<td>–</td>`;
         if(b===Infinity) return `<td class="over">불가</td>`;
@@ -299,9 +323,9 @@ function render(){
         <span class="ed" onclick="toggleActive('${it.sku}','store_active',${it.store_active})">매장${it.store_active?"✓":"✕"}</span>
         <span class="ed" onclick="toggleActive('${it.sku}','delivery_active',${it.delivery_active})">배달${it.delivery_active?"✓":"✕"}</span></td>
     </tr>
-    <tr class="detail" id="d-${it.sku}" style="display:none"><td colspan="12"></td></tr>`;
+    <tr class="detail" id="d-${it.sku}" style="display:none"><td colspan="8"></td></tr>`;
   }
-  document.getElementById("tb").innerHTML = html || `<tr><td colspan="12" style="text-align:center;color:var(--sub);padding:30px">해당 없음</td></tr>`;
+  document.getElementById("tb").innerHTML = html || `<tr><td colspan="8" style="text-align:center;color:var(--sub);padding:30px">해당 없음</td></tr>`;
 }
 
 function editCell(td, sku, field){
@@ -357,7 +381,7 @@ function toggleDetail(sku){
         <button style="font-size:11px" onclick="saveCh('${sku}','${ch}')">저장</button>
         <div class="calc">적용가 <b>${won(p)}</b> · 수수료 ${f.commission}%+${f.payment}% (부가세 포함 ${(feeRate(ch)*100).toFixed(1)}%)<br>
         기여마진 (<b class="${m!=null&&m<0?"neg":""}">${won(m)}</b>)${(()=>{
-          const r=costRate(it,ch), tg=target(it.category);
+          const r=STORE_PRICED.has(ch)?costRate(it,ch):costRateDelivery(it,ch), tg=target(it.category);
           return r==null ? "" : ` · 원가율 (<b class="${r>tg?"neg":""}">${pct(r)}</b>)`;})()}
         ${(()=>{const b=breakeven(it,ch), lim=+om().min_order||12500;
           if(b==null) return "";
@@ -561,9 +585,19 @@ async function requestCollect(){
 
 document.getElementById("q").addEventListener("input", render);
 
+// 표 영역 높이 = 화면 − 위쪽 헤더. 헤더는 칩·검색줄·통계가 줄바꿈되며 높이가
+// 달라져서(특히 좁은 화면) 고정값을 쓰면 표가 잘리거나 남는다 — 실제로 잰다.
+function fitTable(){
+  const h = document.querySelector("header");
+  if (h) document.documentElement.style.setProperty("--hh", h.offsetHeight + "px");
+}
+addEventListener("resize", fitTable);
+new ResizeObserver(fitTable).observe(document.querySelector("header"));
+fitTable();
+
 fetch(BASE+"/data").then(r=>r.json()).then(d=>{
   if(d.error){ document.getElementById("tb").innerHTML =
-    `<tr><td colspan="12" style="text-align:left;padding:20px">⚠ ${d.error}<br><br>
+    `<tr><td colspan="8" style="text-align:left;padding:20px">⚠ ${d.error}<br><br>
     Supabase에 테이블이 없다면 <code>supabase/migrations/005_menu_master.sql</code> 실행 후
     <code>python scripts/seed_menu_master.py</code> 를 집 PC에서 실행하세요.</td></tr>`; return; }
   DATA = d; render();
