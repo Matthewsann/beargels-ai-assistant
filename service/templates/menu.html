@@ -92,19 +92,22 @@ padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:opacity 
       <thead><tr>
         <th class="name">메뉴 (탭하면 채널별 설정)</th>
         <th>매장가</th><th>배달가</th><th>재료원가</th>
+        <th title="재료원가 ÷ 목표원가율, 100원 올림. 현재가가 이보다 낮으면 빨강">추천가<br>매장</th>
+        <th title="재료원가 ÷ 목표원가율, 100원 올림. 현재가가 이보다 낮으면 빨강">추천가<br>배달</th>
         <th title="재료원가 ÷ 매장가">원가율<br>매장</th>
-        <th title="(재료원가 + 배달비 몫) ÷ 배달가. 최소주문금액을 채운 주문에서 배달비를 판매가 비례로 나눠 물린 값입니다.">원가율<br>배달</th>
-        <th title="이 메뉴 수준의 원가율로 주문이 채워졌을 때 배달비(3,300원)를 감당하는 최소 주문금액">배달<br>손익분기</th>
+        <th title="재료원가 ÷ 배달가. 배달비·수수료는 주문당 1회라 여기 넣지 않고 🧮 주문 손익에서 봅니다.">원가율<br>배달</th>
+        <th title="이 메뉴 수준의 원가율로 주문이 채워졌을 때 배달비를 감당하는 최소 주문금액">배달<br>손익분기</th>
         <th>노출</th>
       </tr></thead>
       <tbody id="tb"></tbody>
     </table>
   </div>
-  <p class="note">· <b>원가율 배달</b> = (재료원가 + 배달비 몫) ÷ 배달가.
-  배달비는 주문당 1회라 메뉴 하나에 통째로 물리지 않고, <b>최소주문금액을 채운 주문</b>에서
-  판매가 비례로 나눠 물립니다 (예: 12,500원 주문의 7,200원짜리 → 배달비의 58%).
-  배달 목표 원가율은 <b>매장 목표 + 배달비 몫 비율</b>로 자동 계산합니다
-  (배달비 3,500 ÷ 최소주문 12,500 = 28%p). 같은 잣대로 재면 전 메뉴가 초과로 뜹니다.<br>
+  <p class="note">· <b>원가율</b> = 재료원가 ÷ 판매가. 재료비·판매가 모두 <b>부가세 포함</b> 기준입니다.
+  <b>배달비·수수료는 여기 넣지 않습니다</b> — 배달비는 주문당 1회라 메뉴에 나누려면
+  '주문이 얼마짜리인가'를 가정해야 하고, 그러면 12,500원 주문이면 28% · 17,500원 주문이면 20%로
+  숫자가 춤춥니다. 배달비·수수료는 🧮 주문 손익에서 <b>주문 단위</b>로 봅니다.<br>
+  · 배달 목표 원가율 <b>35%</b> — 실측 객단가로 역산하면 이 선에서 주문 수익률 30%가 나옵니다
+  (쿠팡 기준, 배민은 더 여유).<br>
   · <b>배달 손익분기</b> = 그 메뉴 수준의 <b>재료</b>원가율로 주문이 채워질 때 배달비를 감당하는 최소 주문금액
   (최소주문 <span id="noteMin">12,500</span>원).
   최소주문금액보다 낮으면 정상 주문은 흑자입니다. 넘으면 <span class="over" style="padding:0 4px">빨강</span>.<br>
@@ -241,37 +244,27 @@ function costRate(it, ch){
   return (p && it.ingredient_cost != null) ? it.ingredient_cost / p : null;
 }
 
-// 최소주문금액을 딱 채운 주문에서 이 메뉴가 짊어지는 배달비 몫.
-// 배달비는 주문당 1회라 메뉴 하나에 통째로 물리면 안 되고, 판매가 비례로 나눈다
-// (12,500원 주문에 든 7,200원짜리 → 배달비의 7,200/12,500 만큼).
-function feeShareAtMin(it, ch){
-  const D = +fee(ch).delivery_fee || 0;
-  const p = chPrice(it, ch);
-  const min = +om().min_order || 12500;
-  if (!D || p == null || !min) return 0;
-  return D * p / min;
+// 배달 목표 원가율 — 배달은 수수료(배민 10.8% · 쿠팡 14.1%)와 배달비가 붙어
+// 매장보다 여유가 없다. 실측 객단가(배민 17,519 · 쿠팡 17,110)로 역산하면
+// 원가율 35% 에서 주문 수익률 30% 가 나온다(쿠팡 기준, 배민은 더 여유).
+// 카테고리별로 나누지 않는 이유: 배달은 여러 메뉴가 한 주문에 섞여 나가므로
+// 카테고리별 목표가 의미를 갖기 어렵다.
+const DELIVERY_TARGET = 0.35;
+
+// 원가 기준 추천 판매가 = 재료원가 ÷ 목표 원가율. 100원 단위로 올린다
+// (99원·50원 단위는 키오스크·배달앱에서 잔돈 인상만 준다).
+// 목표를 이미 지키고 있으면 굳이 올리라고 하지 않는다 — 지금 값을 그대로 둔다.
+function suggestPrice(it, ch){
+  if (it.ingredient_cost == null) return null;
+  const tg = STORE_PRICED.has(ch) ? target(it.category) : DELIVERY_TARGET;
+  if (!tg) return null;
+  return Math.ceil(it.ingredient_cost / tg / 100) * 100;
 }
 
-// 배달비 몫이 배달가에서 차지하는 비율. 판매가 비례로 나누므로 메뉴와 무관하게
-// 배달비÷최소주문 으로 일정하다(3,500÷12,500 = 28%). 배달 목표 원가율을
-// 매장 목표에서 이만큼 올려 잡는 근거가 된다.
-function feeShareRate(ch){
-  const D = +fee(ch).delivery_fee || 0;
-  const min = +om().min_order || 12500;
-  return (D && min) ? D / min : 0;
-}
-// 배달 목표 원가율 = 매장 목표 + 배달비 몫 비율. 배달 원가율에 배달비가 들어가
-// 있으므로 같은 잣대(매장 35%)로 재면 전 메뉴가 초과로 뜬다.
-function targetDelivery(cat, ch){ return target(cat) + feeShareRate(ch); }
-
-// 배달 원가율 — 재료원가에 위 배달비 몫까지 더해 본다(사장님 요청 2026-08-16).
-// 재료비만 보면 배달이 실제보다 좋아 보인다. 손익분기(breakeven)는 재료비만
-// 쓰는 costRate 를 그대로 써야 한다 — 배달비를 두 번 세면 식이 성립하지 않는다.
-function costRateDelivery(it, ch){
-  const p = chPrice(it, ch);
-  if (!p || it.ingredient_cost == null) return null;
-  return (it.ingredient_cost + feeShareAtMin(it, ch)) / p;
-}
+// 배달비는 여기에 넣지 않는다. 주문당 1회 나가는 돈이라 메뉴에 나누려면
+// '주문이 얼마짜리인가'를 가정해야 하는데, 12,500원 주문이면 28%,
+// 17,500원 주문이면 20% 로 숫자가 춤춘다(2026-08-16 사장님과 정리).
+// 배달비·수수료는 🧮 주문 손익에서 주문 단위로 본다.
 // 이 메뉴 수준의 원가율로 주문이 채워졌을 때, 배달비를 감당하는 최소 주문금액.
 // 최소주문금액보다 낮으면 → 정상 주문은 반드시 흑자.
 function breakeven(it, ch){
@@ -314,8 +307,8 @@ function render(){
   let html = "", lastCat = null;
   for(const it of items){
     if(it.category !== lastCat){ lastCat = it.category;
-      html += `<tr class="cat"><td colspan="8">${it.category} <small style="font-weight:400">목표 원가율 매장 ${(target(it.category)*100).toFixed(0)}% · 배달 ${(targetDelivery(it.category,"baemin")*100).toFixed(0)}%</small></td></tr>`; }
-    const rs = costRate(it,"store"), rd = costRateDelivery(it,"baemin");
+      html += `<tr class="cat"><td colspan="10">${it.category} <small style="font-weight:400">목표 원가율 매장 ${(target(it.category)*100).toFixed(0)}% · 배달 ${(DELIVERY_TARGET*100).toFixed(0)}%</small></td></tr>`; }
+    const rs = costRate(it,"store"), rd = costRate(it,"baemin");
     const tg = target(it.category);
     const ovrCnt = DATA.channels.filter(c=>c.sku===it.sku&&(c.name_override||c.price_override!=null||c.active===false)).length;
     const inact = !it.store_active && !it.delivery_active;
@@ -327,9 +320,14 @@ function render(){
       <td class="ed" onclick="editCell(this,'${it.sku}','store_price')">${won(it.store_price)}</td>
       <td class="ed" onclick="editCell(this,'${it.sku}','delivery_price')">${won(it.delivery_price)}</td>
       <td class="ed ${it.ingredient_cost==null?"nocost":""}" onclick="editCell(this,'${it.sku}','ingredient_cost')" title="${it.cost_source||""}">${it.ingredient_cost==null?"입력":won(it.ingredient_cost)}</td>
+      ${(()=>{const sp=suggestPrice(it,"store"), cur=it.store_price;
+        const low = sp!=null && cur!=null && cur < sp;
+        return `<td class="${low?"warn":""}" title="${sp==null?"원가 미입력":`목표 ${(target(it.category)*100).toFixed(0)}% 기준`}">${won(sp)}</td>`;})()}
+      ${(()=>{const sp=suggestPrice(it,"baemin"), cur=it.delivery_price??it.store_price;
+        const low = sp!=null && cur!=null && cur < sp;
+        return `<td class="${low?"warn":""}" title="${sp==null?"원가 미입력":`목표 ${(DELIVERY_TARGET*100).toFixed(0)}% 기준`}">${won(sp)}</td>`;})()}
       <td class="${rs!=null&&rs>tg?"over":""}">${pct(rs)}</td>
-      ${(()=>{const tgd=targetDelivery(it.category,"baemin");
-        return `<td class="${rd!=null&&rd>tgd?"over":""}" title="배달 목표 ${(tgd*100).toFixed(0)}% (매장 목표 ${(tg*100).toFixed(0)}% + 배달비 몫 ${(feeShareRate("baemin")*100).toFixed(0)}%)">${pct(rd)}</td>`;})()}
+      <td class="${rd!=null&&rd>DELIVERY_TARGET?"over":""}" title="배달 목표 ${(DELIVERY_TARGET*100).toFixed(0)}% · 재료비만(배달비·수수료는 🧮 주문 손익에서)">${pct(rd)}</td>
       ${(()=>{const b=breakeven(it,"coupang"), lim=+om().min_order||12500;
         if(b==null) return `<td>–</td>`;
         if(b===Infinity) return `<td class="over">불가</td>`;
@@ -338,9 +336,9 @@ function render(){
         <span class="ed" onclick="toggleActive('${it.sku}','store_active',${it.store_active})">매장${it.store_active?"✓":"✕"}</span>
         <span class="ed" onclick="toggleActive('${it.sku}','delivery_active',${it.delivery_active})">배달${it.delivery_active?"✓":"✕"}</span></td>
     </tr>
-    <tr class="detail" id="d-${it.sku}" style="display:none"><td colspan="8"></td></tr>`;
+    <tr class="detail" id="d-${it.sku}" style="display:none"><td colspan="10"></td></tr>`;
   }
-  document.getElementById("tb").innerHTML = html || `<tr><td colspan="8" style="text-align:center;color:var(--sub);padding:30px">해당 없음</td></tr>`;
+  document.getElementById("tb").innerHTML = html || `<tr><td colspan="10" style="text-align:center;color:var(--sub);padding:30px">해당 없음</td></tr>`;
 }
 
 function editCell(td, sku, field){
@@ -396,7 +394,7 @@ function toggleDetail(sku){
         <button style="font-size:11px" onclick="saveCh('${sku}','${ch}')">저장</button>
         <div class="calc">적용가 <b>${won(p)}</b> · 수수료 ${f.commission}%+${f.payment}% (부가세 포함 ${(feeRate(ch)*100).toFixed(1)}%)<br>
         기여마진 (<b class="${m!=null&&m<0?"neg":""}">${won(m)}</b>)${(()=>{
-          const r=STORE_PRICED.has(ch)?costRate(it,ch):costRateDelivery(it,ch), tg=target(it.category);
+          const r=costRate(it,ch), tg=STORE_PRICED.has(ch)?target(it.category):DELIVERY_TARGET;
           return r==null ? "" : ` · 원가율 (<b class="${r>tg?"neg":""}">${pct(r)}</b>)`;})()}
         ${(()=>{const b=breakeven(it,ch), lim=+om().min_order||12500;
           if(b==null) return "";
@@ -612,7 +610,7 @@ fitTable();
 
 fetch(BASE+"/data").then(r=>r.json()).then(d=>{
   if(d.error){ document.getElementById("tb").innerHTML =
-    `<tr><td colspan="8" style="text-align:left;padding:20px">⚠ ${d.error}<br><br>
+    `<tr><td colspan="10" style="text-align:left;padding:20px">⚠ ${d.error}<br><br>
     Supabase에 테이블이 없다면 <code>supabase/migrations/005_menu_master.sql</code> 실행 후
     <code>python scripts/seed_menu_master.py</code> 를 집 PC에서 실행하세요.</td></tr>`; return; }
   DATA = d; render();
