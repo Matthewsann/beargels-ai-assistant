@@ -642,6 +642,44 @@ def reviews_all(path_key):
     )
 
 
+@app.route("/<path_key>/errors")
+def errors_page(path_key):
+    """🩺 문제 기록 — 최근 오류를 그대로 보여준다(원인 추적용).
+
+    답글 등록이 안 될 때 화면엔 '등록이 안 됐어요'만 뜨고, 진짜 사유는
+    error_log 에만 있어 사장님이 집 PC 로그를 열어야 했다(2026-08-13).
+    여기서 바로 보고, 해결되면 '확인함'으로 닫는다.
+    """
+    check(path_key)
+    error, rows = None, []
+    try:
+        for r in db.get_errors(only_unfixed=True, limit=50):
+            msg = (r.get("message") or "").strip()
+            rows.append({
+                "id": r.get("id"),
+                "kind": r.get("kind") or "",
+                "at": (r.get("at") or "")[:16].replace("T", " "),
+                "source": r.get("source") or "",
+                "path": r.get("path") or "",
+                "message": msg,
+                "why": _why_post_failed(msg),
+            })
+    except Exception as e:  # noqa: BLE001
+        error = f"기록을 불러오지 못했어요: {str(e)[:150]}"
+    return render_template("errors.html", key=path_key, rows=rows, error=error)
+
+
+@app.route("/<path_key>/errors/<int:error_id>/fixed", methods=["POST"])
+def error_fixed(path_key, error_id):
+    """'확인함' — 처리한 기록을 닫는다(새벽 점검도 다시 보지 않는다)."""
+    check(path_key)
+    try:
+        db.mark_error_fixed(error_id, "웹에서 확인함")
+    except Exception:  # noqa: BLE001
+        pass
+    return redirect(url_for("errors_page", path_key=path_key))
+
+
 @app.route("/<path_key>/collect-all", methods=["POST"])
 def collect_all(path_key):
     """'전체 리뷰 수집' — 남아 있는 리뷰를 끝까지 긁어오라고 요청한다."""
