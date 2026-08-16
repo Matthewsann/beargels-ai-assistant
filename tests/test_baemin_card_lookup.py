@@ -183,3 +183,97 @@ def test_seen_numbers_helper_is_safe_on_error():
             raise RuntimeError("page gone")
 
     assert rr._baemin_seen_review_nos(Boom()) == []
+
+
+# ---------------------------------------------------------------------------
+# 작성기 열기 — 클릭이 가로채이거나 입력창이 카드 밖에 열려도 찾아야 한다
+# (사장님 제보 2026-08-16: '답글 입력창(textarea)이 나타나지 않았습니다')
+# ---------------------------------------------------------------------------
+
+class _Btn:
+    def __init__(self, fail_normal_click=False):
+        self.fail = fail_normal_click
+        self.clicked_via = None
+
+    def scroll_into_view_if_needed(self, timeout=None):
+        pass
+
+    def click(self, timeout=None):
+        if self.fail:
+            raise RuntimeError("element is covered by header")
+        self.clicked_via = "click"
+
+    def evaluate(self, js):
+        self.clicked_via = "dom"
+
+
+def test_click_falls_back_to_dom_when_intercepted():
+    b = _Btn(fail_normal_click=True)
+    rr._baemin_click(b, "'등록' 버튼")
+    assert b.clicked_via == "dom", "가려지면 DOM click 으로 눌러야 한다"
+
+
+def test_click_uses_normal_click_when_possible():
+    b = _Btn()
+    rr._baemin_click(b, "버튼")
+    assert b.clicked_via == "click"
+
+
+def test_click_failure_raises_readable_error():
+    class Dead(_Btn):
+        def evaluate(self, js):
+            raise RuntimeError("detached")
+
+    try:
+        rr._baemin_click(Dead(fail_normal_click=True), "'등록' 버튼")
+        raise AssertionError("에러가 나야 한다")
+    except rr.ReplyPostError as e:
+        assert "누르지 못했습니다" in str(e)
+
+
+class _Scope:
+    """textarea 를 0개 또는 1개 가진 가짜 범위."""
+
+    def __init__(self, n_self=0, n_textarea=0):
+        self._n, self._ta = n_self, n_textarea
+
+    def count(self):
+        return self._n
+
+    def locator(self, sel):
+        return _Scope(self._ta, 0) if sel == "textarea" else _Scope(0, 0)
+
+
+class _CardWithOutsideEditor:
+    """카드 안엔 입력창이 없고, 다음 형제(작성기)에 열리는 배민 실제 구조."""
+
+    def count(self):
+        return 1
+
+    def locator(self, sel):
+        if sel == "textarea":
+            return _Scope(0, 0)                 # 카드 안엔 없다
+        return _Scope(1, 1)                     # 형제 작성기엔 있다
+
+
+class _PageNoTa:
+    def locator(self, sel):
+        return _Scope(0, 0)
+
+
+def test_finds_textarea_outside_the_card():
+    scope = rr._baemin_editor_scope(_PageNoTa(), _CardWithOutsideEditor(),
+                                    timeout_ms=500)
+    assert scope is not None, "카드 밖 작성기의 입력창도 찾아야 한다"
+
+
+def test_returns_none_when_editor_never_opens():
+    class _EmptyCard:
+        def count(self):
+            return 1
+
+        def locator(self, sel):
+            return _Scope(0, 0)
+
+    assert rr._baemin_editor_scope(_PageNoTa(), _EmptyCard(),
+                                   timeout_ms=300) is None

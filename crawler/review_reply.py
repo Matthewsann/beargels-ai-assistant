@@ -121,12 +121,69 @@ def _baemin_seen_review_nos(page):
     """
     try:
         return page.evaluate(
-            """() => [...document.querySelectorAll(
+            r"""() => [...document.querySelectorAll(
                     '[class*="ReviewContent-module__"]')]
                 .map(c => ((c.innerText || '').match(/리뷰번호\s*(\d+)/) || [])[1])
                 .filter(Boolean)""") or []
     except Exception:  # noqa: BLE001 — 진단 실패가 본 오류를 가리지 않게
         return []
+
+
+def _baemin_click(locator, what="버튼"):
+    """배민 화면의 버튼을 누른다 — 일반 클릭이 막히면 DOM click 으로 재시도.
+
+    상단 고정 헤더가 클릭을 가로채 Playwright 클릭이 조용히 실패하는 경우가
+    있다(수집기 '더보기'에서도 같은 이유로 DOM click 을 쓴다). 그러면 작성기가
+    안 열려 뒤에서 'textarea 가 나타나지 않았습니다'로 끝난다
+    (사장님 제보 2026-08-16).
+    """
+    try:
+        locator.scroll_into_view_if_needed(timeout=3000)
+    except Exception:  # noqa: BLE001 — 스크롤 실패는 치명적이지 않다
+        pass
+    try:
+        locator.click(timeout=5000)
+        return
+    except Exception as e:  # noqa: BLE001 — 가려짐/인터셉트 → DOM click 으로
+        logger.info("배민 %s 일반 클릭 실패(%s) — DOM click 재시도",
+                    what, str(e)[:80])
+    try:
+        locator.evaluate("el => el.click()")
+    except Exception as e:  # noqa: BLE001
+        raise ReplyPostError(f"{what}을(를) 누르지 못했습니다: {str(e)[:120]}")
+
+
+def _baemin_editor_scope(page, card, timeout_ms=8000):
+    """답글 입력창(textarea)이 들어 있는 영역을 찾아 돌려준다(없으면 None).
+
+    ⚠️ 배민 작성기는 리뷰 카드(ReviewContent) **안이 아니라 형제 컨테이너**
+    (CEOCommentCreator)에 열리는 경우가 있다. 카드 안만 뒤지면 열려 있는데도
+    '입력창이 안 나타났다'가 된다. 카드 → 바로 다음 작성기 → 화면 전체(단
+    하나뿐일 때만) 순으로 넓혀 찾는다.
+    """
+    import time as _t
+    scopes = [
+        card,
+        card.locator(f'xpath=following::*[contains(@class,'
+                     f'"CEOCommentCreator-module__")][1]'),
+        card.locator('xpath=following::*[contains(@class,'
+                     '"ReviewCommentBox-module__")][1]'),
+    ]
+    deadline = _t.monotonic() + timeout_ms / 1000
+    while _t.monotonic() < deadline:
+        for sc in scopes:
+            try:
+                if sc.count() and sc.locator("textarea").count():
+                    return sc
+            except Exception:  # noqa: BLE001 — 렌더 중일 수 있다
+                pass
+        try:                      # 마지막 수단: 화면에 입력창이 딱 하나면 그것
+            if page.locator("textarea").count() == 1:
+                return page
+        except Exception:  # noqa: BLE001
+            pass
+        _t.sleep(0.4)
+    return None
 
 
 class ReplyPostError(RuntimeError):
@@ -364,8 +421,6 @@ class ReplyToReviewAction(WriteAction):
            등록하기' 버튼·textarea 가 있다. 제출 버튼은 '등록'(정확 매칭). 실계정
            게시로 검증됨(2026-07-24).
         """
-        from playwright.sync_api import TimeoutError as PWTimeout
-
         page.goto(BAEMIN_REVIEWS_URL, wait_until="domcontentloaded")
         human_pause(2.0, 3.0)
         if is_session_expired(page):
@@ -446,31 +501,36 @@ class ReplyToReviewAction(WriteAction):
             edit_btn = box.first.get_by_text("수정", exact=True)
             if edit_btn.count() == 0:
                 raise ReplyPostError("답글박스에 '수정' 버튼이 없습니다.")
-            edit_btn.first.click()
+            _baemin_click(edit_btn.first, "'수정' 버튼")
             editing = True
             card = box.first    # 이후 textarea·버튼은 답글박스 안에서 찾는다
         else:
-            open_btn.first.click()
+            _baemin_click(open_btn.first, f"'{BAEMIN_REPLY_BTN_TEXT}' 버튼")
         human_pause(0.8, 1.5)
 
-        # textarea 채우기 + 입력값 검증
-        ta = card.locator("textarea")
-        try:
-            ta.wait_for(timeout=5000)
-        except PWTimeout:
-            raise ReplyPostError("답글 입력창(textarea)이 나타나지 않았습니다.")
+        # 입력창은 카드 밖(작성기 컨테이너)에 열릴 수 있어 범위를 넓혀 찾는다.
+        scope = _baemin_editor_scope(page, card)
+        if scope is None:
+            raise ReplyPostError(
+                "답글 입력창(textarea)이 나타나지 않았습니다 — 작성기가 열리지 "
+                "않았거나 배민 화면 구조가 바뀌었을 수 있어요.")
+        card = scope        # 이후 입력·제출 모두 이 범위에서 찾는다
+        ta = scope.locator("textarea").first
         ta.fill(reply)
         human_pause(0.5, 1.0)
         if (ta.input_value() or "").strip() != reply.strip():
             raise ReplyPostError("입력값이 답글과 불일치 — 게시 중단.")
 
         # 제출 버튼: 신규='등록', 수정='저장' (실게시로 확인된 문구, 2026-07-24)
+        # 작성기가 카드 밖에 열릴 수 있으므로 범위 → 화면 전체 순으로 찾는다.
         submit_name = "저장" if editing else "등록"
         submit = card.get_by_role("button", name=submit_name, exact=True)
         if submit.count() == 0:
+            submit = page.get_by_role("button", name=submit_name, exact=True)
+        if submit.count() == 0:
             raise ReplyPostError(
                 f"'{submit_name}' 버튼을 찾지 못했습니다(텍스트 확인 필요).")
-        submit.first.click()
+        _baemin_click(submit.first, f"'{submit_name}' 버튼")
         human_pause(1.8, 2.8)
 
         logger.info("배민 답글 게시 완료 (리뷰 #%s)",
