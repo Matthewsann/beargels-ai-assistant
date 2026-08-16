@@ -279,15 +279,58 @@ def _order_info(r: dict) -> dict:
 
 @app.route("/<path_key>/")
 def home(path_key):
+    """리뷰 현황 대시보드 — 지금 상태를 한눈에(사장님 요청 2026-08-16).
+
+    실제 작업은 하위 화면에서: ①등록해야 할 답글(/todo) ②등록한 답글(/history).
+    """
+    check(path_key)
+    error, stat = None, {}
+    try:
+        pending = db.get_pending_reviews(limit=200)
+        todo = [r for r in pending if r.get("reply_draft")]
+        stat = {
+            "todo": len(todo),
+            "todo_baemin": sum(1 for r in todo if r.get("platform") == "baemin"),
+            "todo_coupang": sum(1 for r in todo if r.get("platform") == "coupang"),
+            # 사장님이 직접 대응해야 하는 민감 리뷰 — 가장 급한 항목이라 따로.
+            "escalate": sum(1 for r in todo
+                            if (r.get("reply_draft") or "").strip().startswith("⚠️")),
+            "waiting": len(pending) - len(todo),      # 초안 생성 대기
+            "posting": len(db.get_approved_reviews(limit=200)),
+            "posted": len(db.get_posted_reviews(limit=500)),
+        }
+        # 가장 오래 기다린 리뷰 — 답글 기한 감각을 준다.
+        oldest = next((r.get("written_date") for r in todo if r.get("written_date")),
+                      None)
+        stat["oldest"] = oldest
+        stat["oldest_days"] = (
+            (datetime.now().date() - datetime.fromisoformat(oldest).date()).days
+            if oldest else None)
+        job = _job_view(db.latest_job())
+    except Exception as e:  # noqa: BLE001
+        error = f"현황을 불러오지 못했어요: {str(e)[:150]}"
+        job = None
+    return render_template(
+        "dashboard.html", key=path_key, stat=stat, worker=_worker_view(),
+        job=job, error=error, alerts=_owner_alerts(),
+    )
+
+
+@app.route("/<path_key>/todo")
+def todo(path_key):
+    """등록해야 할 답글 — 초안을 확인·수정하고 등록하는 실제 작업 화면."""
     check(path_key)
     error = None
     reviews = []
     waiting = 0
     plat = (request.args.get("plat") or "").strip()   # baemin|coupang|빈값(전체)
+    sort = (request.args.get("sort") or "").strip()   # new=최신순 | 빈값=오래된순
     try:
-        raw_rows = db.get_pending_reviews(limit=100)
+        raw_rows = db.get_pending_reviews(limit=100)   # 오래된 순(기한 임박 먼저)
         if plat:                       # 쿠팡만/배민만 보기
             raw_rows = [r for r in raw_rows if r.get("platform") == plat]
+        if sort == "new":              # 최신 리뷰부터 보고 싶을 때
+            raw_rows = list(reversed(raw_rows))
         rows = [_review_view(r) for r in raw_rows]
         # 초안이 있는 것만 보여준다 — 초안 없는 카드가 화면을 덮으면
         # 직원이 무엇을 해야 하는지 알 수 없다. 나머지는 건수로만 알린다.
@@ -305,7 +348,7 @@ def home(path_key):
     return render_template(
         "staff.html", key=path_key, reviews=reviews, worker=_worker_view(),
         job=job, error=error, waiting=waiting, approved_count=approved_count,
-        plat=plat, alerts=_owner_alerts(),
+        plat=plat, sort=sort, alerts=_owner_alerts(),
     )
 
 
@@ -374,7 +417,7 @@ def collect(path_key):
     except Exception as e:  # noqa: BLE001 — 화면은 상태로 안내, 원인은 기록
         db.log_error("service", str(e), kind=type(e).__name__,
                      path=request.path, detail=traceback.format_exc())
-    return redirect(url_for("home", path_key=path_key))
+    return redirect(url_for("todo", path_key=path_key))
 
 
 @app.route("/<path_key>/wake", methods=["POST"])
@@ -390,7 +433,7 @@ def wake(path_key):
     except Exception as e:  # noqa: BLE001
         db.log_error("service", str(e), kind=type(e).__name__,
                      path=request.path, detail=traceback.format_exc())
-    return redirect(url_for("home", path_key=path_key))
+    return redirect(url_for("todo", path_key=path_key))
 
 
 @app.route("/<path_key>/status")
@@ -414,7 +457,7 @@ def save_draft(path_key, review_id):
         db.log_error("service", f"답글 저장 실패(review {review_id}): {e}",
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
-    return redirect(url_for("home", path_key=path_key) + f"#r{review_id}")
+    return redirect(url_for("todo", path_key=path_key) + f"#r{review_id}")
 
 
 @app.route("/<path_key>/review/<int:review_id>/regen", methods=["POST"])
@@ -462,7 +505,7 @@ def done(path_key, review_id):
         db.log_error("service", f"등록완료 표시 실패(review {review_id}): {e}",
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
-    return redirect(url_for("home", path_key=path_key))
+    return redirect(url_for("todo", path_key=path_key))
 
 
 @app.route("/<path_key>/review/<int:review_id>/post", methods=["POST"])
@@ -624,7 +667,7 @@ def skip(path_key, review_id):
         db.log_error("service", f"넘어가기 표시 실패(review {review_id}): {e}",
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
-    return redirect(url_for("home", path_key=path_key))
+    return redirect(url_for("todo", path_key=path_key))
 
 
 # ---------------------------------------------------------------------------

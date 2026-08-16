@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>리뷰 현황 — 베어글스</title>
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
+          --ok:#3b6d11; --ok-bg:#eaf3de; --bad:#a3271f; --bad-bg:#fbe9e7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px 14px 64px; }
+  .head { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .logo { width:36px; height:36px; border-radius:10px; background:var(--accent-bg);
+          color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:19px; }
+  .head b { font-size:16px; } .head small { display:block; color:var(--muted); font-size:12px; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px;
+           padding:14px; margin-bottom:14px; }
+  .status { font-size:13px; color:var(--muted); }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .dot.on { background:#3b6d11; } .dot.off { background:#a3271f; } .dot.busy { background:#c98a12; }
+  .btn { border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:9px;
+         padding:11px 14px; font-size:14px; font-family:inherit; cursor:pointer;
+         display:inline-flex; align-items:center; justify-content:center; gap:6px; text-decoration:none; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  .btn.wide { width:100%; }
+  .row { display:flex; gap:8px; }
+  /* 큰 숫자 두 장 — 지금 해야 할 일과 끝난 일 */
+  .cards { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+  .big { display:block; text-decoration:none; color:inherit; background:var(--card);
+         border:1px solid var(--line); border-radius:12px; padding:16px 14px; }
+  .big.go { border-color:var(--accent); background:var(--accent-bg); }
+  .big .n { font-size:32px; font-weight:800; line-height:1.15; }
+  .big .lbl { font-size:13px; font-weight:600; }
+  .big .sub { font-size:12px; color:var(--muted); margin-top:3px; }
+  .big.go .n, .big.go .lbl { color:var(--accent); }
+  .mini { display:flex; gap:8px; flex-wrap:wrap; margin-top:9px; }
+  .chip { font-size:12px; padding:4px 10px; border-radius:20px;
+          background:var(--bg); border:1px solid var(--line); color:var(--muted); }
+  .chip.bad { background:var(--bad-bg); color:var(--bad); border-color:var(--bad-bg); }
+  .chip.warn { background:var(--warn-bg); color:var(--warn); border-color:var(--warn-bg); }
+  .note { font-size:12px; padding:11px 12px; border-radius:9px; margin-bottom:14px;
+          background:var(--accent-bg); color:var(--accent); }
+  .note.bad { background:var(--bad-bg); color:var(--bad); }
+  .alertbox { display:flex; gap:10px; align-items:flex-start; background:var(--warn-bg);
+              color:var(--warn); border:1px solid var(--warn); border-radius:10px;
+              padding:11px 12px; margin-bottom:10px; font-size:13px; }
+  .alertbox .alertmsg { flex:1; white-space:pre-wrap; word-break:break-word; }
+  .alertbox .btn { padding:8px 14px; font-size:13px; flex-shrink:0; }
+  .links { display:flex; gap:8px; flex-wrap:wrap; }
+  .links a { font-size:13px; padding:10px 14px; border-radius:9px; text-decoration:none;
+             color:var(--ink); background:var(--card); border:1px solid var(--line); }
+</style>
+</head>
+<body>
+{% include "_sidebar.html" %}
+<div class="wrap">
+
+  <div class="head">
+    <div class="logo">📊</div>
+    <div><b>리뷰 현황</b><small>오늘 무엇을 해야 하는지 한눈에</small></div>
+  </div>
+
+  {% if error %}<div class="note bad">{{ error }}</div>{% endif %}
+
+  {# 알림함 — 민감 리뷰·로그인 만료 등 사장님이 봐야 할 일(확인하면 닫힘) #}
+  {% for a in alerts %}
+  <div class="alertbox">
+    <div class="alertmsg"><b>🔔 {{ a.at }}</b><br>{{ a.message }}</div>
+    <form method="post" action="{{ url_for('ack_alert', path_key=key, alert_id=a.id) }}">
+      <button class="btn" type="submit">확인</button>
+    </form>
+  </div>
+  {% endfor %}
+
+  <div class="cards">
+    <a class="big {{ 'go' if stat.todo }}" href="{{ url_for('todo', path_key=key) }}">
+      <div class="n">{{ stat.todo or 0 }}</div>
+      <div class="lbl">✍️ 등록해야 할 답글</div>
+      <div class="sub">
+        {%- if stat.todo -%}
+          탭해서 처리하기
+        {%- else -%}
+          다 처리했어요 🎉
+        {%- endif -%}
+      </div>
+    </a>
+    <a class="big" href="{{ url_for('history', path_key=key) }}">
+      <div class="n">{{ stat.posted or 0 }}</div>
+      <div class="lbl">📜 등록한 답글</div>
+      <div class="sub">확인·수정하기</div>
+    </a>
+  </div>
+
+  {% if stat.todo or stat.escalate or stat.waiting or stat.posting %}
+  <div class="panel">
+    <div class="status" style="margin-bottom:6px;">지금 상태</div>
+    <div class="mini">
+      {% if stat.escalate %}
+        <span class="chip bad">🚨 사장님 직접 대응 {{ stat.escalate }}건</span>
+      {% endif %}
+      {% if stat.oldest_days is not none %}
+        <span class="chip {{ 'warn' if stat.oldest_days >= 7 }}">⏳ 가장 오래된 리뷰 {{ stat.oldest_days }}일 전</span>
+      {% endif %}
+      {% if stat.todo %}
+        <span class="chip">🔵 배민 {{ stat.todo_baemin }}</span>
+        <span class="chip">🟠 쿠팡 {{ stat.todo_coupang }}</span>
+      {% endif %}
+      {% if stat.posting %}<span class="chip warn">📮 등록 진행 중 {{ stat.posting }}건</span>{% endif %}
+      {% if stat.waiting %}<span class="chip">🤖 초안 만드는 중 {{ stat.waiting }}건</span>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <div class="status" id="wstat">
+      <span class="dot {{ 'busy' if worker.state == 'working' else ('on' if worker.alive else 'off') }}"></span>
+      집 PC: {{ worker.text }}
+    </div>
+    {% if job %}<div class="status" style="margin-top:8px;">{{ job.text }}</div>{% endif %}
+    <div class="row" style="margin-top:10px;">
+      <form method="post" action="{{ url_for('collect', path_key=key) }}" style="flex:1;">
+        <button class="btn primary wide" type="submit"
+                {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>
+          🔄 리뷰수집
+        </button>
+      </form>
+      <button class="btn" type="button" onclick="location.reload()">↻ 새로고침</button>
+    </div>
+    <form method="post" action="{{ url_for('wake', path_key=key) }}" style="margin-top:8px;">
+      <button class="btn wide" type="submit">🔌 집 PC 깨우기 (꺼져 있으면 최대 5분)</button>
+    </form>
+    <div class="status" style="margin-top:8px;">
+      낮 시간엔 2시간마다 자동으로 수집돼요. 급할 때만 눌러주세요.
+    </div>
+  </div>
+
+  <div class="links">
+    <a href="{{ url_for('reviews_all', path_key=key) }}">🗂️ 전체 리뷰 찾아보기</a>
+    <a href="{{ url_for('guide', path_key=key) }}">❓ 사용법</a>
+  </div>
+
+</div>
+</body>
+</html>

@@ -71,6 +71,7 @@
   html.dk .sbar a.sm:hover, html.dk .sbar .ssub a:hover { background:#2c2c28; }
   html.dk .sbar a.sm.on { background:#1d2f42; color:#7fb3e8; }
   html.dk .sbar .bhead .blogo { background:#1d2f42; color:#7fb3e8; }
+  html.dk .themebtn { background:#232320; border-color:#3a3a35; }
   /* 메뉴/원가 계열 — 표 머리·묶음행·상세행·파란 배지 하드코딩 */
   html.dk th { background:#26261f; }
   html.dk tr.cat td { background:#2c2a24; }
@@ -90,7 +91,10 @@
       : window.matchMedia("(prefers-color-scheme: dark)").matches;
     document.documentElement.classList.toggle("dk", dark);
     var b = document.getElementById("themeToggle");
-    if (b) b.textContent = dark ? "☀️ 라이트모드" : "🌙 나이트모드";
+    if (b) {
+      b.textContent = dark ? "☀️" : "🌙";          // 우측 상단 작은 아이콘
+      b.title = dark ? "라이트모드로" : "나이트모드로";
+    }
     return dark;
   }
   function bgToggleTheme() {

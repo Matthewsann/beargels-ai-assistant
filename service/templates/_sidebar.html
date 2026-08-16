@@ -21,6 +21,12 @@
           text-decoration:none; border-radius:7px; }
   .sbar .ssub a:hover { background:#f4f2ec; }
   .sbar .ssub a.on { color:#185fa5; font-weight:600; }
+  /* 나이트모드 아이콘 — 화면 우측 상단 고정(작게) */
+  .themebtn { position:fixed; top:10px; right:12px; z-index:60;
+          width:34px; height:34px; border-radius:50%; border:1px solid #e7e5de;
+          background:#fff; font-size:15px; line-height:1; cursor:pointer;
+          display:flex; align-items:center; justify-content:center;
+          box-shadow:0 1px 4px rgba(0,0,0,.08); padding:0; }
   body { padding-left:198px; }
   @media (max-width:900px) {
     body { padding-left:0; }
@@ -42,6 +48,7 @@
   <a class="sm {{ 'on' if _sec == 'review' else '' }}" href="/{{ key }}/">💬 리뷰 답글</a>
   {% if _sec == 'review' %}
   <div class="ssub">
+    <a class="{{ 'on' if _p.endswith('/todo') else '' }}" href="/{{ key }}/todo">✍️ 등록해야 할 답글</a>
     <a class="{{ 'on' if _p.endswith('/history') else '' }}" href="/{{ key }}/history">📜 등록한 답글</a>
     <a class="{{ 'on' if _p.endswith('/reviews') else '' }}" href="/{{ key }}/reviews">🗂️ 전체 리뷰</a>
   </div>
@@ -60,7 +67,9 @@
   <a class="sm {{ 'on' if _sec == 'insta' else '' }}" href="/{{ key }}/instagram">🎬 인스타 파이프라인</a>
 
   <a class="sm {{ 'on' if _sec == 'place' else '' }}" href="/{{ key }}/place">📍 스마트플레이스</a>
-
-  <a class="sm" id="themeToggle" href="javascript:bgToggleTheme()">🌙 나이트모드</a>
 </nav>
-<script>bgApplyThemeMark();</script>{# 버튼이 생긴 뒤 라벨 갱신 #}
+{# 나이트모드는 화면 우측 상단 작은 아이콘으로(사장님 요청 2026-08-16) —
+   메뉴 목록에 섞여 있으면 매번 스크롤해야 했다. #}
+<button id="themeToggle" class="themebtn" type="button"
+        onclick="bgToggleTheme()" title="나이트모드 전환" aria-label="나이트모드 전환">🌙</button>
+<script>bgApplyThemeMark();</script>{# 버튼이 생긴 뒤 아이콘 갱신 #}
