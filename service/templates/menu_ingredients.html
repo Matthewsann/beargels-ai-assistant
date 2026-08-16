@@ -19,7 +19,8 @@ h1 a{font-size:12px;font-weight:400;margin-left:8px;color:var(--brown)}
 .tab{flex:1;text-align:center;border:1px solid var(--line);background:var(--card);border-radius:10px;
 padding:8px 4px;font-size:13px;cursor:pointer}
 .tab.on{background:var(--brown);border-color:var(--brown);color:#fff}
-.bar{display:flex;gap:8px;margin-top:8px}
+.bar{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.bar input{min-width:140px}
 .bar input{flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px}
 .bar button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap}
 main{padding:10px;max-width:860px;margin:0 auto}
@@ -259,7 +260,7 @@ function renderIng(){
     <select onchange="SORT=this.value;renderIng2()">
       ${SORTS.map(([v,l])=>`<option value="${v}" ${v===SORT?"selected":""}>${l}</option>`).join("")}
     </select>
-    <button class="bulkbtn ${BULK?"on":""}" onclick="toggleBulk()">${BULK?"✏️ 편집중":"✏️ 일괄편집"}</button>
+    <button class="bulkbtn ${BULK?"on":""}" onclick="toggleBulk()">${BULK?"✕ 일괄 수정 끝":"✏️ 일괄 수정"}</button>
   </div>
   <div class="fchips" id="catChips"></div>
   <div class="fchips" id="menuCatChips"></div>
