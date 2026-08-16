@@ -22,6 +22,7 @@
 import json
 import logging
 import os
+import re
 
 from assistant.beargels import (
     _clean_author, classify_review, generate_review_reply,
@@ -110,6 +111,22 @@ def _click_baemin_more(page):
     except Exception:  # noqa: BLE001 — 더보기 실패가 게시를 막지 않게
         logger.debug("배민 '더보기' 클릭 실패(무시)")
         return False
+
+
+def _baemin_seen_review_nos(page):
+    """지금 화면에 로드된 리뷰 카드들의 '리뷰번호'를 모은다(진단용).
+
+    카드가 몇 개 열렸는지만으로는 원인을 못 가른다 — 실제로 어떤 번호들이
+    보였는지 남겨야 '목록에 없음' 과 '매칭 실패' 를 구분할 수 있다.
+    """
+    try:
+        return page.evaluate(
+            """() => [...document.querySelectorAll(
+                    '[class*="ReviewContent-module__"]')]
+                .map(c => ((c.innerText || '').match(/리뷰번호\s*(\d+)/) || [])[1])
+                .filter(Boolean)""") or []
+    except Exception:  # noqa: BLE001 — 진단 실패가 본 오류를 가리지 않게
+        return []
 
 
 class ReplyPostError(RuntimeError):
@@ -382,12 +399,24 @@ class ReplyToReviewAction(WriteAction):
             prev = cur
             card = self._find_baemin_card(page)
         if card is None:
+            # 추측하지 않고 '무엇을 봤는지' 남긴다 — 카드가 아예 안 열린
+            # 것인지, 열렸는데 번호가 안 맞는 것인지 이 기록으로 갈린다
+            # (사장님 제보 2026-08-16: 같은 사유가 계속 반복).
+            seen = _baemin_seen_review_nos(page)
             n = page.locator('[class*="ReviewContent-module__"]').count()
+            want = str(self.review.get("review_no") or "")
+            if not n:
+                hint = "리뷰 목록이 아예 안 열렸어요(로그인·화면 구조 확인)."
+            elif want in seen:
+                hint = "목록엔 있는데 매칭에 실패했어요(코드 확인 필요)."
+            else:
+                hint = ("목록을 끝까지 넘겼는데 이 리뷰가 없어요 — "
+                        "이미 답글이 달렸거나 기간 필터에서 빠졌을 수 있어요.")
             raise ReplyPostError(
-                f"대상 배민 리뷰 카드를 찾지 못했습니다 "
-                f"(리뷰번호 {self.review.get('review_no')}, 훑어본 카드 {n}개). "
-                f"리뷰가 너무 오래돼 목록에서 밀렸거나 배민 화면 구조가 "
-                f"바뀌었을 수 있어요.")
+                f"대상 배민 리뷰 카드를 찾지 못했습니다. {hint} "
+                f"[찾는 번호 {want} / 훑어본 카드 {n}개 / "
+                f"화면에서 본 번호 {', '.join(seen[:6]) or '없음'}"
+                f"{' …' if len(seen) > 6 else ''}]")
 
         # 안전: 대상 리뷰가 정확히 1건인지 + 본문 일치 확인
         content = (self.review.get("content") or "").strip()
@@ -474,7 +503,11 @@ class ReplyToReviewAction(WriteAction):
         for i in range(cards.count()):
             c = cards.nth(i)
             txt = c.inner_text()
-            if rid and f"리뷰번호 {rid}" in txt.replace("\n", " "):
+            # 공백을 모두 지우고 번호만 본다 — '리뷰번호'와 숫자가 다른
+            # 요소로 쪼개져 줄바꿈·이중공백·비단절공백이 끼면 'f"리뷰번호 {rid}"'
+            # 형태의 매칭이 조용히 빗나간다(리뷰번호는 16자리라 단독으로도
+            # 충분히 유일하다).
+            if rid and str(rid) in re.sub(r"\s+", "", txt):
                 return c
             if author and content and author in txt and content in txt:
                 return c
