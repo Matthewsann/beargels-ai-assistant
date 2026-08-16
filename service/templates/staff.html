@@ -259,13 +259,34 @@
       <div class="rv">{{ r.content or '(사진만, 텍스트 없음)' }}</div>
 
       {% if r.escalate %}
-        <div class="note bad" style="margin:0;">
-          이물질·건강·환불·법적 언급이 있는 리뷰예요. 답글을 만들지 않았습니다 —
-          <b>사장님께 바로 알려주세요.</b>
+        {# 민감 리뷰: 1차 가이드 초안은 주되 **자동 등록은 막는다**(사실
+           확인이 필요한 건). 복사해서 사장님이 직접 확인·수정 후 등록. #}
+        <div class="note bad" style="margin:0 0 9px;">
+          이물질·건강·환불·법적 언급이 있는 리뷰예요.
+          <b>사실 확인이 필요해 자동 등록하지 않습니다.</b>
+          아래는 <b>1차 가이드 초안</b>이에요 — 확인·수정한 뒤
+          {{ r.platform }}에 직접 올려주세요.
         </div>
+        {% if r.has_draft %}
+        <label class="lbl">1차 가이드 초안 — 고치면 자동 저장돼요</label>
+        <textarea name="draft" id="d{{ r.id }}" rows="8"
+                  data-url-save="{{ url_for('save_draft', path_key=key, review_id=r.id) }}"
+                  onblur="saveDraft({{ r.id }})">{{ r.draft }}</textarea>
+        <div class="acts mini">
+          <button class="btn go" type="button"
+                  onclick="copyIt({{ r.id }})">📋 복사</button>
+          {% if r.platform_url %}
+          <a class="btn" href="{{ r.platform_url }}" target="_blank" rel="noopener">
+            🔗 {{ r.platform }}에서 등록</a>
+          {% endif %}
+          <button class="btn" type="button" id="g{{ r.id }}"
+                  onclick="regenIt({{ r.id }}, '{{ url_for('regen', path_key=key, review_id=r.id) }}', '{{ url_for('draft_state', path_key=key, review_id=r.id) }}')">🔄 AI</button>
+        </div>
+        <div class="copied" id="c{{ r.id }}">복사됐어요!</div>
+        {% endif %}
         <form method="post" action="{{ url_for('skip', path_key=key, review_id=r.id) }}" class="acts"
-              onsubmit="return confirm('사장님께 알리셨나요?\n카드가 목록에서 내려갑니다.')">
-          <button class="btn" type="submit">확인함 · 목록에서 내리기</button>
+              onsubmit="return confirm('직접 등록(또는 사장님께 전달)을 마치셨나요?\n카드가 목록에서 내려갑니다.')">
+          <button class="btn" type="submit" style="width:100%;">✅ 직접 처리함 · 목록에서 내리기</button>
         </form>
       {% elif r.has_draft %}
         <label class="lbl">답글 초안 — 고치면 자동 저장돼요</label>

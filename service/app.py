@@ -272,7 +272,11 @@ def _review_view(r: dict) -> dict:
         "menus": ", ".join(r.get("menus") or []) if isinstance(r.get("menus"), list) else "",
         "date": r.get("written_date") or "",
         "draft": draft,
-        "escalate": draft.strip().startswith("⚠️"),
+        # 민감 리뷰 판정은 **저장된 유형(kind)** 으로 한다. 예전엔 초안이
+        # '⚠️'로 시작하는지로 봤는데, 이제 민감 리뷰에도 1차 가이드 초안을
+        # 주므로(2026-08-16) 그 표시가 사라졌다. 옛 데이터 호환으로 ⚠️도 함께 본다.
+        "escalate": (r.get("kind") == "escalate"
+                     or draft.strip().startswith("⚠️")),
         "has_draft": bool(draft),
         "platform_url": PLATFORM_REVIEW_URL.get(r.get("platform"), ""),
         # 주문 정보 — 배민·쿠팡 리뷰 관리 화면과 같은 항목을 보여준다.
@@ -324,7 +328,8 @@ def home(path_key):
             "todo_coupang": sum(1 for r in todo if r.get("platform") == "coupang"),
             # 사장님이 직접 대응해야 하는 민감 리뷰 — 가장 급한 항목이라 따로.
             "escalate": sum(1 for r in todo
-                            if (r.get("reply_draft") or "").strip().startswith("⚠️")),
+                            if r.get("kind") == "escalate"
+                            or (r.get("reply_draft") or "").strip().startswith("⚠️")),
             "waiting": len(pending) - len(todo),      # 초안 생성 대기
             "posting": len(db.get_approved_reviews(limit=200)),
             "posted": len(db.get_posted_reviews(limit=500)),

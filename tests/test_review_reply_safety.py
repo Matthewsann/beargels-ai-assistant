@@ -61,6 +61,16 @@ def test_escalation_blocked_even_with_confirm():
         a.run(confirm=True, dry_run=False)
 
 
-def test_escalation_draft_is_manual_notice():
-    a = ReplyToReviewAction(ESCALATION_REVIEW)
-    assert a.draft().startswith("⚠️")
+def test_escalation_draft_is_a_guide_not_a_refusal():
+    """민감 리뷰도 1차 가이드 초안은 준다(사장님 요청 2026-08-16).
+
+    예전엔 '직접 대응 필요' 한 줄만 줘서 사장님이 맨손으로 써야 했다.
+    이제 초안을 주되 **자동 게시는 여전히 막는다**(위 테스트가 그걸 지킨다).
+    """
+    draft = ReplyToReviewAction(ESCALATION_REVIEW).draft()
+    assert not draft.startswith("⚠️")          # 거절 문구가 아니라
+    assert len(draft) > 30                     # 실제로 쓸 수 있는 초안이고
+    assert "사과" in draft or "죄송" in draft   # 사과로 시작하며
+    # 사실 확인 전이라 보상·환불을 약속하면 안 된다.
+    for banned in ("환불", "보상", "교환", "쿠폰", "고객센터"):
+        assert banned not in draft, f"민감 리뷰 초안에 '{banned}' 가 들어감"
