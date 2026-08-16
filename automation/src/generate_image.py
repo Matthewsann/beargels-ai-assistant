@@ -38,7 +38,8 @@ def write_shotlist(out_dir: pathlib.Path, title: str, shots: list[str]) -> None:
     for i, s in enumerate(shots, 1):
         lines.append(f"{i}. {s}")
     lines += ["", "## 🎬 짧은 영상(선택, 체류시간↑)",
-              "- 5~10초면 충분합니다. 예: 반죽 치대기 / 오븐에서 빵 꺼내는 순간 / 크림치즈 바르기 / 커피 라떼아트.",
+              "- 5~10초면 충분합니다. 예: 그릴에서 베이글 굽는 순간 / 크림치즈 바르기 / "
+              "샌드위치 조립 / 커피 라떼아트. (※ 반죽·오븐 장면은 우리 매장에 없음)",
               "- 폰 세로 영상으로 찍어 글 중간에 하나만 넣어도 가점에 유리합니다."]
     (out_dir / "shotlist.md").write_text("\n".join(lines), encoding="utf-8")
 
