@@ -45,7 +45,8 @@ td input{width:76px;font-size:13px;padding:2px 4px;border:1px solid var(--brown)
 td input.wide{width:180px;text-align:left}
 input.bcell{width:100%;font-size:13px;padding:3px 5px;border:1px solid var(--line);border-radius:4px;text-align:right;background:var(--card);color:var(--ink)}
 input.bcell.wide{text-align:left}
-tr.bulk td.name{max-width:none;width:42%}
+table.fixed{table-layout:fixed}
+table.fixed td.name,table.fixed th.name{max-width:none;width:42%}
 tr.bulk input.bcell.wide{min-width:200px}
 tr.bulk td.num{width:110px}
 tr.bulk td.name .sku{display:block;margin-top:2px}
@@ -386,6 +387,7 @@ function render(){
          <th>노출</th></tr>`;
   const span = BULK ? 5 : (COLS ? 10 : 7);
   document.getElementById("tbl").style.minWidth = BULK ? "620px" : (COLS ? "900px" : "720px");
+  document.getElementById("tbl").className = BULK ? "fixed" : "";
 
   // 일괄 모드는 메뉴 하나에 입력칸 4개를 만든다. 190개면 760개가 되어 폰에서
   // 화면이 얼어붙는다(실측). 한 번에 고치는 건 보통 한 분류이므로 잘라 놓고,
