@@ -102,9 +102,12 @@ def _click_baemin_more(page):
                         if (typeof e.className === 'string' && bad.test(e.className))
                             return false;
                     }
-                    return b.getBoundingClientRect().top > lastTop;
+                    return true;
                 });
                 if (!btn) return false;
+                // 목록이 가상 목록이라 '마지막 카드보다 아래' 위치 조건은
+                // 믿을 수 없다(화면 밖 카드가 DOM 에서 지워져 좌표가 흔들림).
+                // 도움말 쪽 '더보기'는 위 ancestor/class 검사로 이미 걸러진다.
                 btn.click();
                 return true;
             }""")
@@ -148,7 +151,13 @@ def _baemin_click(locator, what="버튼"):
         logger.info("배민 %s 일반 클릭 실패(%s) — DOM click 재시도",
                     what, str(e)[:80])
     try:
-        locator.evaluate("el => el.click()")
+        # ⚠️ 텍스트로 찾은 요소는 <button> 이 아니라 그 안의 span 인 경우가
+        #    많다. span 을 눌러도 리액트 핸들러가 안 걸려 '조용히 아무 일도
+        #    안 일어나고', 뒤에서 'textarea 가 안 나타났다'로 끝난다
+        #    (수집기 '더보기'와 같은 유형, 2026-08-16 실측). 실제 버튼으로
+        #    올라가서 누른다.
+        locator.evaluate(
+            "el => (el.closest('button, [role=button]') || el).click()")
     except Exception as e:  # noqa: BLE001
         raise ReplyPostError(f"{what}을(를) 누르지 못했습니다: {str(e)[:120]}")
 
@@ -190,6 +199,17 @@ def _baemin_find_editor(page, card, timeout_ms=8000):
                     return page.locator(sel).first, sel
             except Exception:  # noqa: BLE001
                 pass
+        # 화면 하단에는 '의견을 남겨주시면…' 피드백 입력칸이 **늘** 떠 있어서
+        # 위의 '딱 하나일 때만' 조건이 영영 성립하지 않는다 — 작성기가 멀쩡히
+        # 열렸는데도 '입력창이 나타나지 않았습니다'로 끝났다(2026-08-16 실측).
+        # 안내문구(placeholder)가 붙은 피드백 칸은 빼고 다시 본다.
+        try:
+            reply_ta = page.locator(
+                'textarea:not([placeholder]), textarea[placeholder=""]')
+            if reply_ta.count() == 1:
+                return reply_ta.first, "textarea"
+        except Exception:  # noqa: BLE001
+            pass
         _t.sleep(0.4)
     return None, None
 
@@ -464,6 +484,13 @@ class ReplyToReviewAction(WriteAction):
         human_pause(2.0, 3.0)
         if is_session_expired(page):
             raise SessionExpiredError("[배민] 세션 만료 — 재로그인 필요.")
+        # 공지 팝업이 떠 있으면 '더보기'·버튼 클릭을 가로챈다 — 수집기와
+        # 똑같이 먼저 닫는다. 이걸 안 해서 목록이 안 펼쳐졌다(2026-08-16).
+        try:
+            page.keyboard.press("Escape")
+            human_pause(0.8, 1.2)
+        except Exception:  # noqa: BLE001
+            pass
         # 지연 로딩 대비: 카드를 찾을 때까지 목록을 넓혀간다.
         # ⚠️ 배민 리뷰 목록은 **스크롤만으로는 다음 묶음이 안 나온다** — 목록
         #    아래 '더보기' 버튼을 눌러야 한다(수집기 _click_review_more 와 같은
@@ -481,11 +508,15 @@ class ReplyToReviewAction(WriteAction):
             clicked = _click_baemin_more(page)
             human_pause(1.5, 2.5)
             cur = page.locator('[class*="ReviewContent-module__"]').count()
-            if cur == prev:
+            # ⚠️ 카드 수로 '끝'을 판단하면 안 된다 — 배민 목록은 **가상 목록**
+            #    이라 화면 밖 카드는 DOM 에서 지워져, 더 불러와도 개수가 그대로
+            #    거나 오히려 줄어든다(수집기에서 이미 겪은 문제). 개수로
+            #    끊었더니 3번만 더 펼치면 나오는 리뷰를 '목록에 없다'고
+            #    포기했다(2026-08-16 실측). **'더보기' 버튼이 사라졌을 때만**
+            #    끝으로 본다.
+            if not clicked:
                 stale += 1
-                # 로딩 지연으로 한 번 안 늘 수 있다 — 2연속이거나 더보기가
-                # 아예 없으면 끝까지 본 것이다.
-                if stale >= 2 or not clicked:
+                if stale >= 2:      # 두 번 연속 더보기가 없으면 끝까지 본 것
                     card = self._find_baemin_card(page)
                     break
             else:
@@ -544,7 +575,11 @@ class ReplyToReviewAction(WriteAction):
             editing = True
             card = box.first    # 이후 textarea·버튼은 답글박스 안에서 찾는다
         else:
-            _baemin_click(open_btn.first, f"'{BAEMIN_REPLY_BTN_TEXT}' 버튼")
+            # 텍스트가 아니라 **버튼 역할**로 먼저 잡는다 — 텍스트로 잡으면
+            # 안쪽 span 이 걸려 클릭이 먹지 않는다(2026-08-16 실측).
+            btn = card.get_by_role("button", name=BAEMIN_REPLY_BTN_TEXT)
+            _baemin_click(btn.first if btn.count() else open_btn.first,
+                          f"'{BAEMIN_REPLY_BTN_TEXT}' 버튼")
         human_pause(0.8, 1.5)
 
         # 입력칸은 카드 밖에 열릴 수 있고 textarea 가 아닐 수도 있다.
@@ -585,6 +620,13 @@ class ReplyToReviewAction(WriteAction):
              내용 없는(별점/사진만) 리뷰는 본문 매칭이 불가능해 1차 일괄
              등록에서 10건이 전부 실패했다(2026-08-12). 같은 작성자의
              미답변 카드가 2개 이상이면 오게시 위험이라 포기한다.
+
+        ⚠️ **리뷰번호를 아는데 못 찾았으면 2·3번으로 내려가지 않는다.**
+           단골은 같은 닉네임으로 리뷰를 여러 번 남기므로, 아직 화면에
+           안 뜬 리뷰를 찾는 중에 '같은 사람의 다른 리뷰'를 잡아 **엉뚱한
+           리뷰에 답글이 달릴 뻔했다**(2026-08-16 실측: 찾는 번호
+           …0826 인데 …1084 카드가 잡힘). 못 찾으면 None 을 돌려 위에서
+           목록을 더 펼치게 한다.
         """
         rid = self.review.get("review_no")
         if rid:
@@ -605,6 +647,8 @@ class ReplyToReviewAction(WriteAction):
             # 충분히 유일하다).
             if rid and str(rid) in re.sub(r"\s+", "", txt):
                 return c
+            if rid:
+                continue        # 번호를 아는 건 번호로만 — 오게시 방지
             if author and content and author in txt and content in txt:
                 return c
             if (author and not content and author in txt
