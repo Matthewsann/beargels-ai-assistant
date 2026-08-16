@@ -24,6 +24,7 @@ import argparse
 import json
 import os
 import pathlib
+import re
 import sys
 import time
 import urllib.error
@@ -75,17 +76,35 @@ def pick_console() -> dict | None:
     return bash[0] if bash else None
 
 
-def run_pull(console: dict) -> str:
+ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
+DONE = "___DEPLOY_DONE___"
+
+
+def run_pull(console: dict) -> tuple[str, bool]:
+    """콘솔에서 pull 을 돌리고 (내 명령의 출력, 성공여부) 를 준다.
+
+    get_latest_output 은 콘솔에 남아 있던 **이전 출력까지 통째로** 준다.
+    그래서 거기서 'error' 를 찾으면 지난번 실패가 이번 실패로 둔갑한다
+    (실제로 그랬다). 끝에 표시를 찍고 그 앞뒤로만 잘라서 본다.
+    """
     cid = console["id"]
-    api("POST", f"/consoles/{cid}/send_input/", {"input": PULL_CMD + "\n"})
-    # 콘솔은 비동기라 결과가 바로 안 나온다. 몇 초 기다리며 출력을 읽는다.
+    api("POST", f"/consoles/{cid}/send_input/",
+        {"input": f"{PULL_CMD}; echo {DONE}$?\n"})
     out = ""
-    for _ in range(10):
+    for _ in range(12):
         time.sleep(3)
-        out = api("GET", f"/consoles/{cid}/get_latest_output/").get("output", "")
-        if "HEAD is now at" in out or "Already up to date" in out or "$" in out.rstrip()[-3:]:
+        raw = api("GET", f"/consoles/{cid}/get_latest_output/").get("output", "")
+        out = ANSI.sub("", raw)
+        # 표시가 '명령을 되울린 줄'이 아니라 '실행 결과'로 찍혔는지 본다.
+        if len(re.findall(rf"{DONE}(\d+)", out)) >= 1:
             break
-    return out
+    codes = re.findall(rf"{DONE}(\d+)", out)
+    if not codes:
+        return out[-800:], False
+    mine = out.rsplit(DONE, 1)[0]           # 마지막 표시 앞까지가 이번 실행분
+    start = mine.rfind("git fetch origin")   # 내가 보낸 명령이 되울린 자리
+    body = mine[start:] if start >= 0 else mine[-800:]
+    return body.strip(), codes[-1] == "0"
 
 
 def main() -> int:
@@ -109,11 +128,10 @@ def main() -> int:
                   f"다시 실행해 주세요:\n  {HOST}/user/{USER}/consoles/{made.get('id')}/")
             return 1
         print(f"콘솔 {console['id']} 에서 최신 코드 받는 중…")
-        out = run_pull(console)
-        tail = "\n".join(out.strip().splitlines()[-6:])
-        print(tail or "(출력 없음)")
-        if "error" in out.lower() or "fatal" in out.lower():
-            print("\n⚠ pull 에 문제가 있어 보입니다 — 위 출력을 확인해 주세요.")
+        out, ok = run_pull(console)
+        print("\n".join(out.splitlines()[-6:]) or "(출력 없음)")
+        if not ok:
+            print("\n⚠ pull 이 실패했습니다 — Reload 하지 않고 멈춥니다.")
             return 1
 
     print("웹앱 Reload 중…")
