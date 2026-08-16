@@ -505,8 +505,19 @@ def run_post_job(job) -> None:
     jid = job["id"]
     rid = int(job.get("message") or 0)
     row = db.get_review(rid)
-    if not row or row.get("reply_status") != "approved":
-        db.finish_job(jid, "error", f"리뷰 {rid} 가 등록 대기 상태가 아닙니다", 0)
+    status = (row or {}).get("reply_status")
+    if not row or status != "approved":
+        # 같은 리뷰에 등록 요청이 여러 번 쌓였을 때(연타·자동복구 겹침) 두 번째
+        # 이후 잡이 여기로 온다. 앞선 잡이 이미 처리했으므로 실패가 아니다 —
+        # '오류'로 보고하면 화면에 엉뚱한 사유가 뜬다(사장님 제보 2026-08-16:
+        # '리뷰 2783 가 등록 대기 상태가 아닙니다'). 조용히 건너뛴다.
+        note = {
+            "posted": f"리뷰 {rid} 는 이미 등록됨 — 중복 요청 건너뜀",
+            "skipped": f"리뷰 {rid} 는 넘어가기 처리됨 — 건너뜀",
+            "drafted": f"리뷰 {rid} 는 앞선 요청에서 처리됨 — 중복 요청 건너뜀",
+        }.get(status, f"리뷰 {rid} 는 등록 대상이 아님({status or '없음'}) — 건너뜀")
+        logger.info("답글 등록 #%s 건너뜀 — %s", jid, note)
+        db.finish_job(jid, "done", note, 0)
         return
     db.worker_ping("working", "답글 등록 중")
     try:
@@ -562,7 +573,10 @@ def run_post_job(job) -> None:
             db.mark_drafted(rid)    # 카드 복귀 → 직원 재시도 가능
         except Exception:  # noqa: BLE001
             pass
-        db.finish_job(jid, "error", str(e)[:400], 0)
+        # ⚠️ 문구는 '리뷰 {id} ' 로 시작해야 한다 — latest_review_job 이 이걸로
+        #    잡을 찾고, 자동복구도 '잡이 있는지'를 그걸로 판단한다. 접두가
+        #    없으면 실패한 잡이 안 보여 같은 요청이 계속 다시 쌓인다.
+        db.finish_job(jid, "error", f"리뷰 {rid} 답글 등록 실패: {str(e)[:360]}", 0)
     finally:
         db.worker_ping("idle", "대기 중")
 
