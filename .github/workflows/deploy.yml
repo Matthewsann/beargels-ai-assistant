@@ -68,6 +68,7 @@ jobs:
           upload service/templates/guide.html
           upload service/templates/history.html
           upload service/templates/reviews.html
+          upload service/templates/errors.html
           upload service/templates/_sidebar.html
           upload service/templates/_theme.html
           upload service/templates/dashboard.html

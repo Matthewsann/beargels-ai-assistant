@@ -117,3 +117,40 @@ def test_reason_translations(client, msg, expect):
 def test_no_message_no_reason(client):
     app_mod, _ = client
     assert app_mod._why_post_failed(None) == ""
+
+
+# ---------------------------------------------------------------------------
+# 🩺 문제 기록 화면 — 등록 실패의 '진짜 사유'를 사장님이 직접 볼 수 있어야 한다
+# ---------------------------------------------------------------------------
+
+def test_errors_page_shows_reason_and_raw(client, monkeypatch):
+    app_mod, c = client
+    monkeypatch.setattr(app_mod.db, "get_errors", lambda **k: [{
+        "id": 3, "kind": "ReplyPostError", "at": "2026-08-13T10:20:00",
+        "source": "worker", "path": "run_post_job",
+        "message": "답글 등록 실패(리뷰 9): 대상 배민 리뷰 카드를 찾지 못했습니다",
+    }])
+    html = c.get("/testkey/errors").get_data(as_text=True)
+    assert "리뷰수집" in html          # 무엇을 하면 되는지
+    assert "카드를 찾지 못했습니다" in html   # 원문도 그대로
+
+
+def test_errors_page_survives_db_failure(client, monkeypatch):
+    app_mod, c = client
+
+    def boom(**k):
+        raise RuntimeError("네트워크")
+
+    monkeypatch.setattr(app_mod.db, "get_errors", boom)
+    r = c.get("/testkey/errors")
+    assert r.status_code == 200
+    assert "불러오지 못했어요" in r.get_data(as_text=True)
+
+
+def test_mark_fixed_redirects(client, monkeypatch):
+    app_mod, c = client
+    seen = []
+    monkeypatch.setattr(app_mod.db, "mark_error_fixed",
+                        lambda eid, note=None: seen.append(eid))
+    r = c.post("/testkey/errors/5/fixed")
+    assert r.status_code == 302 and seen == [5]

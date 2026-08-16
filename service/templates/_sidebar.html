@@ -51,6 +51,7 @@
     <a class="{{ 'on' if _p.endswith('/todo') else '' }}" href="/{{ key }}/todo">✍️ 등록해야 할 답글</a>
     <a class="{{ 'on' if _p.endswith('/history') else '' }}" href="/{{ key }}/history">📜 등록한 답글</a>
     <a class="{{ 'on' if _p.endswith('/reviews') else '' }}" href="/{{ key }}/reviews">🗂️ 전체 리뷰</a>
+    <a class="{{ 'on' if _p.endswith('/errors') else '' }}" href="/{{ key }}/errors">🩺 문제 기록</a>
   </div>
   {% endif %}
 
