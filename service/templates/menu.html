@@ -44,10 +44,10 @@ tr.cat td{background:#f1ede4;text-align:left;font-weight:700;font-size:12px;colo
 td input{width:76px;font-size:13px;padding:2px 4px;border:1px solid var(--brown);border-radius:4px;text-align:right}
 td input.wide{width:180px;text-align:left}
 input.bcell{width:100%;font-size:13px;padding:3px 5px;border:1px solid var(--line);border-radius:4px;text-align:right;background:var(--card);color:var(--ink)}
-input.bcell.wide{text-align:left}
+input.bcell.bname{text-align:left}
 table.fixed{table-layout:fixed}
 table.fixed td.name,table.fixed th.name{max-width:none;width:42%}
-tr.bulk input.bcell.wide{min-width:200px}
+tr.bulk input.bcell.bname{min-width:0}
 tr.bulk td.num{width:110px}
 tr.bulk td.name .sku{display:block;margin-top:2px}
 input.bcell:focus{outline:2px solid var(--brown);outline-offset:-1px}
@@ -408,7 +408,7 @@ function render(){
       const v = f => (f in e) ? e[f] : it[f];
       const chg = f => (f in e) ? " chg" : "";
       html += `<tr class="bulk">
-        <td class="name"><input class="bcell wide${chg("name")}" data-r="${r}" data-c="0"
+        <td class="name"><input class="bcell bname${chg("name")}" data-r="${r}" data-c="0"
           value="${(v("name")||"").replace(/"/g,"&quot;")}"
           onchange="bEdit('${it.sku}','name',this.value,this)" onkeydown="bKey(event)">
           <span class="sku">${it.sku}</span></td>
