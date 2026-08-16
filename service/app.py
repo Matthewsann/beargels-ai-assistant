@@ -1221,7 +1221,8 @@ def menu_channel_save(path_key, sku, channel):
 @app.route("/<path_key>/menu/settings/<key>", methods=["POST"])
 def menu_settings_save(path_key, key):
     check(path_key)
-    if key not in ("channel_fees", "target_cost_rates", "order_model", "task_done"):
+    if key not in ("channel_fees", "target_cost_rates",
+                   "target_cost_rates_delivery", "order_model", "task_done"):
         abort(400)
     try:
         db.menu_set_setting(key, request.get_json(force=True))
