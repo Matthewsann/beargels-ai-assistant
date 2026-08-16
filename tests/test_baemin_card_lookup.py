@@ -31,14 +31,26 @@ class FakeLocator:
 class FakePage:
     """'더보기'를 눌러야만 카드가 늘어나는 배민 목록 흉내."""
 
-    def __init__(self, need_rounds):
+    def __init__(self, need_rounds, stray_at=None):
         self.need = need_rounds      # 몇 번 더보기를 눌러야 대상이 나오는가
         self.clicks = 0
         self.scrolls = 0
         self.cards = 10
+        self.gotos = 0
+        # 실제 화면처럼 주소를 갖는다 — 코드가 '목록을 벗어났는지' 본다.
+        self.url = rr.BAEMIN_REVIEWS_URL
+        # stray_at 번째 '더보기'에서 엉뚱한 페이지(도움말 Q&A)로 튕기는 상황.
+        self.stray_at = stray_at
 
-    def goto(self, *a, **k):
-        pass
+    class _Keyboard:
+        def press(self, *a, **k):
+            pass
+
+    keyboard = _Keyboard()
+
+    def goto(self, url, *a, **k):
+        self.gotos += 1
+        self.url = url
 
     def locator(self, sel):
         return FakeLocator(self.cards)
@@ -47,11 +59,15 @@ class FakePage:
         if "scrollTo" in js:
             self.scrolls += 1
             return None
+        if "리뷰번호" in js:          # 진단용 번호 수집 — 목록 형태로 답한다
+            return []
         # 더보기 클릭 — 누를 때마다 한 묶음(10건)이 붙는다.
         if self.clicks >= self.need + 3:
             return False              # 더 나올 게 없음
         self.clicks += 1
         self.cards += 10
+        if self.stray_at and self.clicks == self.stray_at:
+            self.url = "https://ceo.baemin.com/qna?inflowService=selfservice"
         return True
 
 
@@ -348,3 +364,40 @@ def test_fill_rejects_mismatch():
         raise AssertionError("불일치면 막아야 한다")
     except rr.ReplyPostError as e:
         assert "불일치" in str(e)
+
+
+# ---------------------------------------------------------------------------
+# 도움말 Q&A 로 튕기던 사고 (사장님 제보 2026-08-16)
+# ---------------------------------------------------------------------------
+
+def test_more_button_must_belong_to_review_list():
+    """아무 '더보기'나 누르면 페이지 아래 도움말 버튼이 눌려
+    ceo.baemin.com/qna 로 튕긴다(사장님 제보 2026-08-16).
+
+    구현은 후보 버튼마다 **가까운 조상에 리뷰 카드가 있는지** 확인해
+    목록에 속한 버튼만 눌러야 한다.
+    """
+    import inspect
+    code = inspect.getsource(rr._click_baemin_more)
+    assert "inList" in code, "목록 소속 여부를 확인해야 한다"
+    assert "ReviewContent-module__" in code, "리뷰 카드를 기준으로 판별해야 한다"
+    assert ".filter(ok).find(inList)" in code, (
+        "조건을 통과한 뒤에도 '목록 소속'인 버튼만 골라야 한다")
+
+
+def test_returns_to_list_when_click_navigates_away(monkeypatch):
+    """엉뚱한 '더보기'로 목록을 벗어나면 즉시 리뷰 목록으로 돌아온다."""
+    page = FakePage(need_rounds=5, stray_at=2)
+    act = rr.ReplyToReviewAction(
+        {"platform": "baemin", "review_no": "20260808029", "author": "여왕쥐",
+         "content": ""}, reply_text="답글")
+    monkeypatch.setattr(rr.ReplyToReviewAction, "_find_baemin_card",
+                        lambda self, p: None)
+    monkeypatch.setattr(rr, "is_session_expired", lambda p: False)
+    monkeypatch.setattr(rr, "human_pause", lambda *a, **k: None)
+    try:
+        act._apply_baemin(page, "답글")
+    except rr.ReplyPostError:
+        pass                      # 카드를 못 찾는 건 여기선 관심 밖
+    assert page.url == rr.BAEMIN_REVIEWS_URL, "목록으로 돌아와야 한다"
+    assert page.gotos >= 2, "벗어난 걸 알아채고 다시 열어야 한다"

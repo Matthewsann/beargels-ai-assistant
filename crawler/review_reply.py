@@ -82,10 +82,13 @@ BAEMIN_LOAD_ROUNDS = int(os.getenv("BAEMIN_LOAD_ROUNDS", "30"))
 def _click_baemin_more(page):
     """리뷰 목록의 '더보기'만 눌러 다음 묶음을 불러온다(눌렀으면 True).
 
-    ⚠️ 페이지에는 도움말 쪽 '더보기'도 있어 아무거나 누르면 다른 페이지로
-       튕긴다. **마지막 리뷰 카드보다 아래**에 있는 버튼만 고르고 링크·헤더·
-       푸터 안의 것은 제외한다(수집기 BaeminCrawler._click_review_more 와
-       동일한 규칙 — 그쪽에서 실사용으로 검증된 방식이다).
+    ⚠️ 페이지 아래쪽 **도움말(자주 묻는 질문)에도 '더보기'가 있다.** 문서
+       전체에서 찾으면 그게 눌려 ceo.baemin.com/qna 로 튕기고, 그 뒤로는
+       리뷰가 없는 화면만 계속 뒤진다(사장님 제보 2026-08-16 — 좌표로
+       거르던 조건을 없앴다가 재발시켰다).
+       그래서 **리뷰 카드를 담고 있는 컨테이너 안에서만** 찾는다: 마지막
+       카드에서 부모로 몇 단계만 올라가며 뒤지므로, 문서 끝의 도움말
+       버튼에는 애초에 닿지 않는다.
     """
     try:
         return page.evaluate(
@@ -93,9 +96,8 @@ def _click_baemin_more(page):
                 const cards = document.querySelectorAll(
                     '[class*="ReviewContent-module__"]');
                 if (!cards.length) return false;
-                const lastTop = cards[cards.length - 1].getBoundingClientRect().top;
                 const bad = /footer|nav|gnb|header|help|faq|qna/i;
-                const btn = [...document.querySelectorAll('button')].find(b => {
+                const ok = (b) => {
                     if ((b.textContent || '').trim() !== '더보기') return false;
                     if (b.closest('a, footer, nav, header')) return false;
                     for (let e = b; e; e = e.parentElement) {
@@ -103,11 +105,23 @@ def _click_baemin_more(page):
                             return false;
                     }
                     return true;
-                });
+                };
+                // 후보 중 '리뷰 목록에 속한' 버튼만 고른다 — 버튼에서 위로
+                // 몇 단계만 올라가 **리뷰 카드를 품은 조상**이 있으면 그게
+                // 목록의 더보기다. 도움말(FAQ) 쪽 버튼은 가까운 조상에
+                // 리뷰 카드가 없어 걸러진다(문서 끝까지 올라가지 않는다).
+                const inList = (b) => {
+                    let e = b.parentElement;
+                    for (let up = 0; up < 6 && e && e !== document.body; up++) {
+                        if (e.querySelector('[class*="ReviewContent-module__"]'))
+                            return true;
+                        e = e.parentElement;
+                    }
+                    return false;
+                };
+                const btn = [...document.querySelectorAll('button')]
+                              .filter(ok).find(inList);
                 if (!btn) return false;
-                // 목록이 가상 목록이라 '마지막 카드보다 아래' 위치 조건은
-                // 믿을 수 없다(화면 밖 카드가 DOM 에서 지워져 좌표가 흔들림).
-                // 도움말 쪽 '더보기'는 위 ancestor/class 검사로 이미 걸러진다.
                 btn.click();
                 return true;
             }""")
@@ -507,6 +521,19 @@ class ReplyToReviewAction(WriteAction):
             human_pause(1.0, 1.8)
             clicked = _click_baemin_more(page)
             human_pause(1.5, 2.5)
+            # 안전망: 엉뚱한 '더보기'로 목록을 벗어나면 되돌아온다. 벗어난 채
+            # 계속 뒤지면 영영 못 찾는다(Q&A 화면만 열리던 사고, 2026-08-16).
+            url = page.url or ""
+            if "self.baemin.com" not in url or "reviews" not in url:
+                logger.warning("리뷰 목록을 벗어남(%s) — 돌아갑니다", url[:60])
+                page.goto(BAEMIN_REVIEWS_URL, wait_until="domcontentloaded")
+                human_pause(2.0, 3.0)
+                try:
+                    page.keyboard.press("Escape")
+                except Exception:  # noqa: BLE001
+                    pass
+                card = self._find_baemin_card(page)
+                break
             cur = page.locator('[class*="ReviewContent-module__"]').count()
             # ⚠️ 카드 수로 '끝'을 판단하면 안 된다 — 배민 목록은 **가상 목록**
             #    이라 화면 밖 카드는 DOM 에서 지워져, 더 불러와도 개수가 그대로
