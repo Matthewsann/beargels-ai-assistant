@@ -60,13 +60,22 @@ def api(method: str, path: str, body: dict | None = None):
         url, data=data, method=method,
         headers={"Authorization": f"Token {TOKEN}",
                  "Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            raw = r.read().decode("utf-8", "replace")
-            return json.loads(raw) if raw.strip() else {}
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", "replace")[:300]
-        raise SystemExit(f"API 실패 {e.code} {method} {path}\n  {detail}") from None
+    # PA API 가 가끔 느리다(특히 Reload). 한 번 늦었다고 배포가 죽으면
+    # 실제로는 반영됐는데 실패로 보여 사람을 헷갈리게 한다 — 두어 번 더 기다린다.
+    last = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=90) as r:
+                raw = r.read().decode("utf-8", "replace")
+                return json.loads(raw) if raw.strip() else {}
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")[:300]
+            raise SystemExit(f"API 실패 {e.code} {method} {path}\n  {detail}") from None
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last = e
+            if attempt < 2:
+                time.sleep(5)
+    raise SystemExit(f"API 응답 없음 {method} {path} — {last}")
 
 
 def pick_console() -> dict | None:
