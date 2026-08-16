@@ -21,6 +21,7 @@
 
 import json
 import logging
+import os
 
 from assistant.beargels import (
     _clean_author, classify_review, generate_review_reply,
@@ -70,6 +71,45 @@ BAEMIN_REPLY_BTN_TEXT = "사장님 댓글 등록하기"
 BAEMIN_SUBMIT_TEXTS = ("등록", "댓글 등록", "답글 등록")
 
 _PLAT_LABEL = {"baemin": "배민", "coupang": "쿠팡"}
+
+
+# 배민 리뷰 목록을 넓혀보는 최대 횟수 — 한 묶음이 10건쯤이라 30회면 300건
+# 안팎까지 닿는다(오래된 리뷰 수정까지 커버).
+BAEMIN_LOAD_ROUNDS = int(os.getenv("BAEMIN_LOAD_ROUNDS", "30"))
+
+
+def _click_baemin_more(page):
+    """리뷰 목록의 '더보기'만 눌러 다음 묶음을 불러온다(눌렀으면 True).
+
+    ⚠️ 페이지에는 도움말 쪽 '더보기'도 있어 아무거나 누르면 다른 페이지로
+       튕긴다. **마지막 리뷰 카드보다 아래**에 있는 버튼만 고르고 링크·헤더·
+       푸터 안의 것은 제외한다(수집기 BaeminCrawler._click_review_more 와
+       동일한 규칙 — 그쪽에서 실사용으로 검증된 방식이다).
+    """
+    try:
+        return page.evaluate(
+            """() => {
+                const cards = document.querySelectorAll(
+                    '[class*="ReviewContent-module__"]');
+                if (!cards.length) return false;
+                const lastTop = cards[cards.length - 1].getBoundingClientRect().top;
+                const bad = /footer|nav|gnb|header|help|faq|qna/i;
+                const btn = [...document.querySelectorAll('button')].find(b => {
+                    if ((b.textContent || '').trim() !== '더보기') return false;
+                    if (b.closest('a, footer, nav, header')) return false;
+                    for (let e = b; e; e = e.parentElement) {
+                        if (typeof e.className === 'string' && bad.test(e.className))
+                            return false;
+                    }
+                    return b.getBoundingClientRect().top > lastTop;
+                });
+                if (!btn) return false;
+                btn.click();
+                return true;
+            }""")
+    except Exception:  # noqa: BLE001 — 더보기 실패가 게시를 막지 않게
+        logger.debug("배민 '더보기' 클릭 실패(무시)")
+        return False
 
 
 class ReplyPostError(RuntimeError):
@@ -313,23 +353,41 @@ class ReplyToReviewAction(WriteAction):
         human_pause(2.0, 3.0)
         if is_session_expired(page):
             raise SessionExpiredError("[배민] 세션 만료 — 재로그인 필요.")
-        # 지연 로딩 대비: 카드를 찾을 때까지 스크롤(최대 10회, 카드 수가 더
-        # 늘지 않으면 끝까지 본 것이므로 중단). 고정 4회로는 오래된 리뷰를
-        # 못 만나는 경우가 있었다(2026-08-12).
+        # 지연 로딩 대비: 카드를 찾을 때까지 목록을 넓혀간다.
+        # ⚠️ 배민 리뷰 목록은 **스크롤만으로는 다음 묶음이 안 나온다** — 목록
+        #    아래 '더보기' 버튼을 눌러야 한다(수집기 _click_review_more 와 같은
+        #    이유). 스크롤만 하던 탓에 며칠 지난 리뷰는 카드가 아예 로드되지
+        #    않아 '카드를 찾지 못했습니다'로 끝났다(사장님 제보 2026-08-16:
+        #    8/8 자 배민 리뷰 등록 반복 실패).
         card = self._find_baemin_card(page)
-        prev = -1
-        for _ in range(10):
+        stale = 0
+        prev = page.locator('[class*="ReviewContent-module__"]').count()
+        for _ in range(BAEMIN_LOAD_ROUNDS):
             if card is not None:
                 break
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            human_pause(1.0, 1.8)
+            clicked = _click_baemin_more(page)
+            human_pause(1.5, 2.5)
             cur = page.locator('[class*="ReviewContent-module__"]').count()
             if cur == prev:
-                break
+                stale += 1
+                # 로딩 지연으로 한 번 안 늘 수 있다 — 2연속이거나 더보기가
+                # 아예 없으면 끝까지 본 것이다.
+                if stale >= 2 or not clicked:
+                    card = self._find_baemin_card(page)
+                    break
+            else:
+                stale = 0
             prev = cur
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            human_pause(1.2, 2.0)
             card = self._find_baemin_card(page)
         if card is None:
-            raise ReplyPostError("대상 배민 리뷰 카드를 찾지 못했습니다.")
+            n = page.locator('[class*="ReviewContent-module__"]').count()
+            raise ReplyPostError(
+                f"대상 배민 리뷰 카드를 찾지 못했습니다 "
+                f"(리뷰번호 {self.review.get('review_no')}, 훑어본 카드 {n}개). "
+                f"리뷰가 너무 오래돼 목록에서 밀렸거나 배민 화면 구조가 "
+                f"바뀌었을 수 있어요.")
 
         # 안전: 대상 리뷰가 정확히 1건인지 + 본문 일치 확인
         content = (self.review.get("content") or "").strip()
