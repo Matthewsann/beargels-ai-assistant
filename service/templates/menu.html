@@ -45,6 +45,9 @@ td input{width:76px;font-size:13px;padding:2px 4px;border:1px solid var(--brown)
 td input.wide{width:180px;text-align:left}
 input.bcell{width:100%;font-size:13px;padding:3px 5px;border:1px solid var(--line);border-radius:4px;text-align:right;background:var(--card);color:var(--ink)}
 input.bcell.wide{text-align:left}
+tr.bulk td.name{max-width:none;width:auto}
+tr.bulk td.num{width:110px}
+tr.bulk td.name .sku{display:block;margin-top:2px}
 input.bcell:focus{outline:2px solid var(--brown);outline-offset:-1px}
 input.bcell.chg{background:#fdf6e3;border-color:var(--amber);font-weight:600}
 .over{background:var(--redbg);color:var(--red);font-weight:700}
@@ -401,16 +404,16 @@ function render(){
       const e = EDITS[it.sku] || {};
       const v = f => (f in e) ? e[f] : it[f];
       const chg = f => (f in e) ? " chg" : "";
-      html += `<tr>
+      html += `<tr class="bulk">
         <td class="name"><input class="bcell wide${chg("name")}" data-r="${r}" data-c="0"
           value="${(v("name")||"").replace(/"/g,"&quot;")}"
           onchange="bEdit('${it.sku}','name',this.value,this)" onkeydown="bKey(event)">
           <span class="sku">${it.sku}</span></td>
-        <td><input class="bcell${chg("store_price")}" type="number" step="100" data-r="${r}" data-c="1"
+        <td class="num"><input class="bcell${chg("store_price")}" type="number" step="100" data-r="${r}" data-c="1"
           value="${v("store_price")??""}" onchange="bEdit('${it.sku}','store_price',this.value,this)" onkeydown="bKey(event)"></td>
-        <td><input class="bcell${chg("delivery_price")}" type="number" step="100" data-r="${r}" data-c="2"
+        <td class="num"><input class="bcell${chg("delivery_price")}" type="number" step="100" data-r="${r}" data-c="2"
           value="${v("delivery_price")??""}" onchange="bEdit('${it.sku}','delivery_price',this.value,this)" onkeydown="bKey(event)"></td>
-        <td><input class="bcell${chg("ingredient_cost")}" type="number" step="10" data-r="${r}" data-c="3"
+        <td class="num"><input class="bcell${chg("ingredient_cost")}" type="number" step="10" data-r="${r}" data-c="3"
           value="${v("ingredient_cost")??""}" onchange="bEdit('${it.sku}','ingredient_cost',this.value,this)" onkeydown="bKey(event)"></td>
         <td class="${rs!=null&&rs>tg?"over":""}">${pct(rs)}</td></tr>`;
       r++;
