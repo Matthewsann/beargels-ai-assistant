@@ -90,3 +90,42 @@ def test_rescue_is_throttled(agent, monkeypatch):
 
     assert first == 1
     assert len(fake.requested) == 1
+
+
+# ---------------------------------------------------------------------------
+# 중복 등록 요청 — 두 번째 잡은 '실패'가 아니라 '건너뜀'이어야 한다
+# (사장님 제보 2026-08-16: '리뷰 2783 가 등록 대기 상태가 아닙니다')
+# ---------------------------------------------------------------------------
+
+import pytest
+
+
+@pytest.mark.parametrize("status,expect", [
+    ("posted", "이미 등록됨"),
+    ("drafted", "앞선 요청에서 처리됨"),
+    ("skipped", "넘어가기"),
+])
+def test_duplicate_post_job_is_skipped_not_error(agent, status, expect):
+    ag, fake = agent
+    finished = []
+    fake.get_review = lambda rid: {"id": rid, "reply_status": status}
+    fake.finish_job = lambda jid, st, msg, n: finished.append((st, msg))
+    fake.worker_ping = lambda *a, **k: None
+
+    ag.run_post_job({"id": 1, "message": "2783"})
+
+    assert finished, "잡을 닫아야 한다"
+    st, msg = finished[0]
+    assert st == "done", "중복 요청은 오류가 아니다"
+    assert expect in msg and "2783" in msg
+
+
+def test_missing_review_is_skipped_cleanly(agent):
+    ag, fake = agent
+    finished = []
+    fake.get_review = lambda rid: None
+    fake.finish_job = lambda jid, st, msg, n: finished.append((st, msg))
+    fake.worker_ping = lambda *a, **k: None
+
+    ag.run_post_job({"id": 2, "message": "999"})
+    assert finished[0][0] == "done"
