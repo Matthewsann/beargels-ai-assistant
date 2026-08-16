@@ -338,10 +338,12 @@ function postIt(id, saveUrl, postUrl, stateUrl) {
     .then(r => r.json())
     .then(res => {
       if (!res.ok) { restore(); alert('요청 실패: ' + (res.error || '')); return; }
+      // 이 요청이 만든 '그 작업'을 id 로 따라가야 실패 사유를 읽을 수 있다.
+      const url = stateUrl + (res.job ? (stateUrl.includes('?') ? '&' : '?') + 'job=' + res.job : '');
       let tries = 0;
       const poll = setInterval(() => {
         tries += 1;
-        fetch(stateUrl).then(r => r.json()).then(st => {
+        fetch(url).then(r => r.json()).then(st => {
           if (st.reply_status === 'posted') {
             clearInterval(poll);
             btn.textContent = '✅ 등록 완료!';
@@ -350,7 +352,10 @@ function postIt(id, saveUrl, postUrl, stateUrl) {
           } else if (st.reply_status === 'drafted') {   // 실패/리허설 복귀
             clearInterval(poll);
             restore();
-            alert('등록이 안 됐어요. 잠시 후 다시 시도해주세요.\n(반복되면 사장님께 알려주세요)');
+            // 사유를 감추면 사장님도 원인을 못 찾는다 — 있으면 그대로 보여준다.
+            alert('등록이 안 됐어요.\n\n' +
+                  (st.why ? '이유: ' + st.why : '잠시 후 다시 시도해주세요.') +
+                  '\n\n답글 내용은 그대로 남아 있어요.');
           } else if (tries >= 60) {   // 60회 × 3초 = 3분
             // ⚠️ 여기서 끝나도 '실패'가 아니다 — 등록 요청은 줄에 남아 있고,
             // 집 PC가 앞선 작업(리뷰수집 등)을 마치면 이어서 등록한다.
