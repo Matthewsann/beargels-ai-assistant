@@ -642,42 +642,41 @@ def reviews_all(path_key):
     )
 
 
-@app.route("/<path_key>/errors")
-def errors_page(path_key):
-    """🩺 문제 기록 — 최근 오류를 그대로 보여준다(원인 추적용).
+@app.route("/<path_key>/care")
+def care_reviews(path_key):
+    """⚠️ 관리 필요 — 별점 5점 미만 + CS(불만·민감) 리뷰만 모아 본다.
 
-    답글 등록이 안 될 때 화면엔 '등록이 안 됐어요'만 뜨고, 진짜 사유는
-    error_log 에만 있어 사장님이 집 PC 로그를 열어야 했다(2026-08-13).
-    여기서 바로 보고, 해결되면 '확인함'으로 닫는다.
+    만점 리뷰에 묻혀 정작 손봐야 할 리뷰를 놓치지 않게 따로 뺀다
+    (사장님 요청 2026-08-16).
     """
     check(path_key)
-    error, rows = None, []
+    mode = request.args.get("mode") or "all"      # all | low | cs
+    plat = request.args.get("plat") or None
+    sort = request.args.get("sort") or "new"
+    page = max(1, request.args.get("page", default=1, type=int))
+
+    error, rows, total = None, [], 0
     try:
-        for r in db.get_errors(only_unfixed=True, limit=50):
-            msg = (r.get("message") or "").strip()
-            rows.append({
-                "id": r.get("id"),
-                "kind": r.get("kind") or "",
-                "at": (r.get("at") or "")[:16].replace("T", " "),
-                "source": r.get("source") or "",
-                "path": r.get("path") or "",
-                "message": msg,
-                "why": _why_post_failed(msg),
-            })
+        found, total = db.get_attention_reviews(
+            platform=plat, mode=mode, sort=sort,
+            limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE)
+        for r in found:
+            v = _review_view(r)
+            v["kind"] = r.get("kind") or ""
+            v["cs"] = v["kind"] in db.CS_KINDS
+            v["replied"] = (r.get("reply_status") == "posted"
+                            or bool(r.get("platform_replied")))
+            v["reply_text"] = (r.get("reply_draft")
+                               or r.get("platform_reply") or "")
+            rows.append(v)
     except Exception as e:  # noqa: BLE001
-        error = f"기록을 불러오지 못했어요: {str(e)[:150]}"
-    return render_template("errors.html", key=path_key, rows=rows, error=error)
+        error = f"리뷰를 불러오지 못했어요: {str(e)[:150]}"
 
-
-@app.route("/<path_key>/errors/<int:error_id>/fixed", methods=["POST"])
-def error_fixed(path_key, error_id):
-    """'확인함' — 처리한 기록을 닫는다(새벽 점검도 다시 보지 않는다)."""
-    check(path_key)
-    try:
-        db.mark_error_fixed(error_id, "웹에서 확인함")
-    except Exception:  # noqa: BLE001
-        pass
-    return redirect(url_for("errors_page", path_key=path_key))
+    return render_template(
+        "care.html", key=path_key, rows=rows, error=error, total=total,
+        mode=mode, plat=plat, sort=sort, page=page,
+        pages=max(1, -(-total // PAGE_SIZE)), alerts=_owner_alerts(),
+    )
 
 
 @app.route("/<path_key>/collect-all", methods=["POST"])

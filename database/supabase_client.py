@@ -608,6 +608,41 @@ def search_reviews(platform=None, rating=None, replied=None, q=None,
                              else len(resp.data or []))
 
 
+# '관리 필요' 리뷰 판정 — 별점이 만점이 아니거나, 답글 유형이 불만/민감인 것.
+# kind 는 초안 생성 때 붙는다(없는 옛 리뷰는 별점으로만 걸린다).
+CS_KINDS = ("complaint", "escalate")
+
+
+def get_attention_reviews(platform=None, mode="all", limit=30, offset=0,
+                          sort="new"):
+    """별점 5점 미만 + CS(불만·민감) 리뷰만 모아 본다 — 관리 필요 화면용.
+
+    Args:
+        mode: 'all'(둘 다) | 'low'(별점 5점 미만만) | 'cs'(CS 유형만)
+    Returns: (행 목록, 조건에 맞는 전체 건수)
+    """
+    try:
+        q = get_client().table("reviews").select("*", count="exact")
+        if platform:
+            q = q.eq("platform", platform)
+        kinds = ",".join(CS_KINDS)
+        if mode == "low":
+            q = q.lte("rating", 4)
+        elif mode == "cs":
+            q = q.in_("kind", list(CS_KINDS))
+        else:
+            q = q.or_(f"rating.lte.4,kind.in.({kinds})")
+        order = {"old": ("written_date", False),
+                 "low": ("rating", False)}.get(sort, ("written_date", True))
+        resp = (q.order(order[0], desc=order[1])
+                .range(offset, offset + limit - 1).execute())
+    except Exception:  # noqa: BLE001 — 조회 실패가 화면을 막지 않게
+        logger.exception("관리 필요 리뷰 조회 실패")
+        return [], 0
+    return resp.data or [], (resp.count if resp.count is not None
+                             else len(resp.data or []))
+
+
 def get_approved_reviews(limit=50):
     """자동 등록을 기다리는(수정 완료된) 리뷰 목록 — 오래된 순."""
     return (get_client().table("reviews").select("*")
