@@ -109,3 +109,77 @@ def test_more_click_failure_is_not_fatal(monkeypatch):
             raise RuntimeError("페이지 접근 실패")
 
     assert rr._click_baemin_more(Boom()) is False
+
+
+# ---------------------------------------------------------------------------
+# 리뷰번호 매칭은 공백에 흔들리면 안 된다 (2026-08-16 반복 실패 원인 후보)
+# ---------------------------------------------------------------------------
+
+class _Card:
+    def __init__(self, text):
+        self._t = text
+
+    def inner_text(self):
+        return self._t
+
+
+class _Cards:
+    def __init__(self, cards):
+        self._c = cards
+
+    def count(self):
+        return len(self._c)
+
+    def nth(self, i):
+        return self._c[i]
+
+    def filter(self, has_text=None):
+        hit = [c for c in self._c if has_text and has_text in c.inner_text()]
+        return _Cards(hit)
+
+    @property
+    def first(self):
+        return self._c[0]
+
+
+class _Page:
+    def __init__(self, cards):
+        self._cards = _Cards(cards)
+
+    def locator(self, sel):
+        return self._cards
+
+
+def _find(cards, review):
+    act = rr.ReplyToReviewAction(review, reply_text="x")
+    return act._find_baemin_card(_Page(cards))
+
+
+RID = "2026080802903778"
+
+
+def test_matches_number_split_across_lines():
+    """'리뷰번호'와 숫자가 줄바꿈으로 갈려도 찾아야 한다."""
+    card = _Card(f"여왕쥐\n★★★★★\n리뷰번호\n{RID}\n사장님 댓글 등록하기")
+    assert _find([card], {"platform": "baemin", "review_no": RID,
+                          "author": "여왕쥐", "content": ""}) is card
+
+
+def test_matches_number_with_nbsp_and_double_space():
+    card = _Card(f"리뷰번호  {RID}")
+    assert _find([card], {"platform": "baemin", "review_no": RID,
+                          "author": "여왕쥐", "content": ""}) is card
+
+
+def test_does_not_match_other_review():
+    other = _Card("리뷰번호 2026070100000001")
+    assert _find([other], {"platform": "baemin", "review_no": RID,
+                           "author": "여왕쥐", "content": ""}) is None
+
+
+def test_seen_numbers_helper_is_safe_on_error():
+    class Boom:
+        def evaluate(self, *a, **k):
+            raise RuntimeError("page gone")
+
+    assert rr._baemin_seen_review_nos(Boom()) == []
