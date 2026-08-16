@@ -383,6 +383,13 @@ function render(){
   const span = BULK ? 5 : (COLS ? 10 : 7);
   document.getElementById("tbl").style.minWidth = BULK ? "620px" : (COLS ? "900px" : "720px");
 
+  // 일괄 모드는 메뉴 하나에 입력칸 4개를 만든다. 190개면 760개가 되어 폰에서
+  // 화면이 얼어붙는다(실측). 한 번에 고치는 건 보통 한 분류이므로 잘라 놓고,
+  // 몇 개가 잘렸는지 알려 준다.
+  const BULK_MAX = 60;
+  const cut = BULK && items.length > BULK_MAX;
+  if (cut) items = items.slice(0, BULK_MAX);
+
   let html = "", lastCat = null, r = 0;
   for(const it of items){
     if(it.category !== lastCat){ lastCat = it.category;
@@ -438,6 +445,9 @@ function render(){
     </tr>
     <tr class="detail" id="d-${it.sku}" style="display:none"><td colspan="${span}"></td></tr>`;
   }
+  if (cut) html += `<tr><td colspan="${span}" style="text-align:center;padding:14px" class="warn">
+    앞 ${BULK_MAX}개만 보입니다 — 위 분류 칩이나 검색으로 좁혀 주세요
+    (칸이 너무 많으면 화면이 느려집니다)</td></tr>`;
   document.getElementById("tb").innerHTML = html || `<tr><td colspan="${span}" style="text-align:center;color:var(--sub);padding:30px">해당 없음</td></tr>`;
   document.getElementById("colBtn").textContent = COLS ? "📊 분석 열 끄기" : "📊 분석 열";
   bBar();
