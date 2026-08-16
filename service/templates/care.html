@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>관리 필요 리뷰 — 베어글스</title>
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
+          --ok:#3b6d11; --ok-bg:#eaf3de; --bad:#a3271f; --bad-bg:#fbe9e7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px 14px 64px; }
+  .head { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .logo { width:36px; height:36px; border-radius:10px; background:var(--bad-bg);
+          color:var(--bad); display:flex; align-items:center; justify-content:center; font-size:19px; }
+  .head b { font-size:16px; } .head small { display:block; color:var(--muted); font-size:12px; }
+  .filters { display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+  .filters a { font-size:13px; padding:6px 13px; border-radius:20px; text-decoration:none;
+               color:var(--muted); background:var(--card); border:1px solid var(--line); }
+  .filters a.on { background:var(--accent-bg); color:var(--accent);
+                  border-color:var(--accent-bg); font-weight:600; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:13px; margin-bottom:10px; }
+  .card.cs { border-color:#e8bdb7; background:#fffaf9; }
+  .meta { display:flex; align-items:center; gap:7px; flex-wrap:wrap; font-size:12px;
+          color:var(--muted); margin-bottom:7px; }
+  .tag { font-size:11px; padding:2px 9px; border-radius:20px; }
+  .tag.b { background:var(--accent-bg); color:var(--accent); }
+  .tag.c { background:var(--warn-bg); color:var(--warn); }
+  .tag.ok { background:var(--ok-bg); color:var(--ok); }
+  .tag.no { background:var(--bad-bg); color:var(--bad); }
+  .stars { color:#c98a12; letter-spacing:1px; }
+  .stars .dim { color:#dcd8cc; }
+  .whoname { font-weight:700; font-size:14px; word-break:break-all; }
+  .rv { font-size:14px; background:#f6f5f1; border-radius:9px; padding:9px 11px;
+        margin:8px 0; white-space:pre-wrap; word-break:break-word; }
+  .reply { font-size:13px; border-left:3px solid var(--ok); padding:2px 0 2px 10px;
+           color:#444; white-space:pre-wrap; word-break:break-word; }
+  .lbl { font-size:12px; color:var(--muted); }
+  .empty { text-align:center; color:var(--muted); padding:44px 16px; font-size:14px; }
+  .note { font-size:12px; padding:11px 12px; border-radius:9px; margin-bottom:14px;
+          background:var(--warn-bg); color:var(--warn); }
+  .note.bad { background:var(--bad-bg); color:var(--bad); }
+  .go { display:inline-block; margin-top:8px; font-size:13px; text-decoration:none;
+        color:var(--accent); background:var(--accent-bg); border-radius:9px;
+        padding:8px 13px; }
+  .pager { display:flex; gap:8px; align-items:center; justify-content:center; margin-top:16px; }
+  .pager a, .pager span { font-size:13px; padding:8px 14px; border-radius:9px;
+                          text-decoration:none; border:1px solid var(--line);
+                          background:var(--card); color:var(--ink); }
+  .pager span.cur { color:var(--muted); border:0; background:none; }
+</style>
+</head>
+<body>
+{% include "_sidebar.html" %}
+<div class="wrap">
+
+  <div class="head">
+    <div class="logo">⚠️</div>
+    <div><b>관리 필요 리뷰</b>
+      <small>별점 5점 미만 + CS(불만·민감) 리뷰만 모아 봅니다</small></div>
+  </div>
+
+  {% if error %}<div class="note bad">{{ error }}</div>{% endif %}
+
+  <div class="note">
+    만점 리뷰에 묻혀 놓치기 쉬운 리뷰만 따로 뺐어요. 답글을 달려면
+    <b>💬 리뷰 답글</b> 화면에서 처리하세요.
+  </div>
+
+  {# 무엇을 볼지 #}
+  <div class="filters">
+    <a href="{{ url_for('care_reviews', path_key=key, plat=plat, sort=sort) }}"
+       class="{{ 'on' if mode == 'all' }}">전체(저평점+CS)</a>
+    <a href="{{ url_for('care_reviews', path_key=key, mode='low', plat=plat, sort=sort) }}"
+       class="{{ 'on' if mode == 'low' }}">⭐ 별점 5점 미만</a>
+    <a href="{{ url_for('care_reviews', path_key=key, mode='cs', plat=plat, sort=sort) }}"
+       class="{{ 'on' if mode == 'cs' }}">🚨 CS 리뷰</a>
+  </div>
+  {# 플랫폼 #}
+  <div class="filters">
+    <a href="{{ url_for('care_reviews', path_key=key, mode=mode, sort=sort) }}"
+       class="{{ 'on' if not plat }}">전체</a>
+    <a href="{{ url_for('care_reviews', path_key=key, mode=mode, plat='baemin', sort=sort) }}"
+       class="{{ 'on' if plat == 'baemin' }}">🔵 배민</a>
+    <a href="{{ url_for('care_reviews', path_key=key, mode=mode, plat='coupang', sort=sort) }}"
+       class="{{ 'on' if plat == 'coupang' }}">🟠 쿠팡</a>
+  </div>
+  {# 정렬 #}
+  <div class="filters">
+    <a href="{{ url_for('care_reviews', path_key=key, mode=mode, plat=plat) }}"
+       class="{{ 'on' if sort == 'new' }}">🕒 최신순</a>
+    <a href="{{ url_for('care_reviews', path_key=key, mode=mode, plat=plat, sort='low') }}"
+       class="{{ 'on' if sort == 'low' }}">⭐ 낮은 별점순</a>
+    <a href="{{ url_for('care_reviews', path_key=key, mode=mode, plat=plat, sort='old') }}"
+       class="{{ 'on' if sort == 'old' }}">⏳ 오래된순</a>
+  </div>
+
+  <div class="lbl" style="margin-bottom:9px;">
+    조건에 맞는 리뷰 <b style="color:var(--ink);">{{ total }}건</b>
+    {% if pages > 1 %}· {{ page }}/{{ pages }} 쪽{% endif %}
+  </div>
+
+  {% for r in rows %}
+  <div class="card {{ 'cs' if r.cs }}">
+    <div class="meta">
+      <span class="tag {{ 'b' if r.platform == '배민' else 'c' }}">{{ r.platform }}</span>
+      <span class="stars">{{ '★' * (r.rating or 0) }}<span class="dim">{{ '☆' * (5 - (r.rating or 0)) }}</span></span>
+      <span>{{ r.date }}</span>
+      {% if r.cs %}<span class="tag no">🚨 CS</span>{% endif %}
+      {% if r.replied %}<span class="tag ok">답글 있음</span>
+      {% else %}<span class="tag no">답글 없음</span>{% endif %}
+    </div>
+    <div class="whoname">{{ r.author }}
+      {% if r.order_count %}<span class="lbl">· {{ r.order_count }}회 주문</span>{% endif %}
+    </div>
+    {% if r.menus %}<div class="lbl">{{ r.menus }}</div>{% endif %}
+    <div class="rv">{{ r.content or '(사진/별점만, 텍스트 없음)' }}</div>
+    {% if r.replied and r.reply_text %}
+      <div class="lbl">우리 답글</div>
+      <div class="reply">{{ r.reply_text }}</div>
+    {% elif not r.replied %}
+      <a class="go" href="{{ url_for('home', path_key=key) }}#r{{ r.id }}">
+        💬 답글 화면에서 처리하기
+      </a>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="empty">조건에 맞는 리뷰가 없어요. 👍</div>
+  {% endfor %}
+
+  {% if pages > 1 %}
+  <div class="pager">
+    {% if page > 1 %}
+    <a href="{{ url_for('care_reviews', path_key=key, mode=mode, plat=plat, sort=sort, page=page-1) }}">← 이전</a>
+    {% endif %}
+    <span class="cur">{{ page }} / {{ pages }}</span>
+    {% if page < pages %}
+    <a href="{{ url_for('care_reviews', path_key=key, mode=mode, plat=plat, sort=sort, page=page+1) }}">다음 →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+</body>
+</html>
