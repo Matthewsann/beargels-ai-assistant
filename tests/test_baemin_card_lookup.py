@@ -231,40 +231,64 @@ def test_click_failure_raises_readable_error():
         assert "누르지 못했습니다" in str(e)
 
 
-class _Scope:
-    """textarea 를 0개 또는 1개 가진 가짜 범위."""
+class _Sel:
+    """셀렉터별 개수를 흉내내는 가짜 Locator."""
 
-    def __init__(self, n_self=0, n_textarea=0):
-        self._n, self._ta = n_self, n_textarea
+    def __init__(self, n=0):
+        self._n = n
 
     def count(self):
         return self._n
 
+    @property
+    def first(self):
+        return self
+
+
+class _ScopeWith:
+    """지정한 셀렉터에만 입력칸이 있는 가짜 범위."""
+
+    def __init__(self, exists=True, sel_with=None):
+        self._exists, self._sel = exists, sel_with
+
+    def count(self):
+        return 1 if self._exists else 0
+
     def locator(self, sel):
-        return _Scope(self._ta, 0) if sel == "textarea" else _Scope(0, 0)
+        return _Sel(1 if sel == self._sel else 0)
 
 
-class _CardWithOutsideEditor:
-    """카드 안엔 입력창이 없고, 다음 형제(작성기)에 열리는 배민 실제 구조."""
+class _CardOutsideEditor:
+    """카드 안엔 입력칸이 없고, 다음 형제(작성기)에 열리는 배민 실제 구조."""
+
+    def __init__(self, sel_with="textarea"):
+        self._sel = sel_with
 
     def count(self):
         return 1
 
     def locator(self, sel):
-        if sel == "textarea":
-            return _Scope(0, 0)                 # 카드 안엔 없다
-        return _Scope(1, 1)                     # 형제 작성기엔 있다
+        if sel.startswith("xpath="):
+            return _ScopeWith(True, self._sel)
+        return _Sel(0)                       # 카드 안엔 없다
 
 
-class _PageNoTa:
+class _PageEmpty:
     def locator(self, sel):
-        return _Scope(0, 0)
+        return _Sel(0)
 
 
 def test_finds_textarea_outside_the_card():
-    scope = rr._baemin_editor_scope(_PageNoTa(), _CardWithOutsideEditor(),
-                                    timeout_ms=500)
-    assert scope is not None, "카드 밖 작성기의 입력창도 찾아야 한다"
+    ed, kind = rr._baemin_find_editor(_PageEmpty(), _CardOutsideEditor(),
+                                      timeout_ms=500)
+    assert ed is not None and kind == "textarea"
+
+
+def test_finds_contenteditable_editor():
+    """입력칸이 textarea 가 아니어도 찾아야 한다(2026-08-16 반복 실패)."""
+    card = _CardOutsideEditor(sel_with='[contenteditable="true"]')
+    ed, kind = rr._baemin_find_editor(_PageEmpty(), card, timeout_ms=500)
+    assert ed is not None and kind == '[contenteditable="true"]'
 
 
 def test_returns_none_when_editor_never_opens():
@@ -273,7 +297,54 @@ def test_returns_none_when_editor_never_opens():
             return 1
 
         def locator(self, sel):
-            return _Scope(0, 0)
+            return _Sel(0) if not sel.startswith("xpath=") else _ScopeWith(False)
 
-    assert rr._baemin_editor_scope(_PageNoTa(), _EmptyCard(),
-                                   timeout_ms=300) is None
+    ed, kind = rr._baemin_find_editor(_PageEmpty(), _EmptyCard(),
+                                      timeout_ms=300)
+    assert ed is None and kind is None
+
+
+def test_editor_report_lists_all_candidates():
+    class _P:
+        def locator(self, sel):
+            return _Sel(2 if sel == "textarea" else 0)
+
+    rep = rr._baemin_editor_report(_P())
+    assert "textarea=2개" in rep and "contenteditable" in rep
+
+
+
+
+def test_fill_contenteditable_sets_text_and_fires_input():
+    """contenteditable 은 fill 이 안 먹어 값 주입 + input 이벤트가 필요하다."""
+    seen = {}
+
+    class _Ed:
+        def click(self):
+            seen["clicked"] = True
+
+        def evaluate(self, js, text=None):
+            seen["js"] = js
+            seen["text"] = text
+
+        def inner_text(self):
+            return seen.get("text", "")
+
+    rr._baemin_fill_editor(_Ed(), '[contenteditable="true"]', "답글입니다")
+    assert seen["clicked"] and seen["text"] == "답글입니다"
+    assert "InputEvent" in seen["js"]      # 리액트 상태까지 갱신되게
+
+
+def test_fill_rejects_mismatch():
+    class _Ed:
+        def fill(self, t):
+            pass
+
+        def input_value(self):
+            return "다른 내용"
+
+    try:
+        rr._baemin_fill_editor(_Ed(), "textarea", "답글입니다")
+        raise AssertionError("불일치면 막아야 한다")
+    except rr.ReplyPostError as e:
+        assert "불일치" in str(e)

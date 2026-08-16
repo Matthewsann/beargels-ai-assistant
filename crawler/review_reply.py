@@ -153,37 +153,76 @@ def _baemin_click(locator, what="버튼"):
         raise ReplyPostError(f"{what}을(를) 누르지 못했습니다: {str(e)[:120]}")
 
 
-def _baemin_editor_scope(page, card, timeout_ms=8000):
-    """답글 입력창(textarea)이 들어 있는 영역을 찾아 돌려준다(없으면 None).
+# 배민 답글 입력칸의 후보 — textarea 만 보다가 '입력창이 없다'로 끝났다
+# (사장님 제보 2026-08-16). 요즘 화면은 contenteditable/role=textbox 로 만드는
+# 경우가 흔해 셋 다 인정한다.
+BAEMIN_EDITOR_SELECTORS = ("textarea", '[contenteditable="true"]',
+                           '[role="textbox"]')
 
-    ⚠️ 배민 작성기는 리뷰 카드(ReviewContent) **안이 아니라 형제 컨테이너**
-    (CEOCommentCreator)에 열리는 경우가 있다. 카드 안만 뒤지면 열려 있는데도
-    '입력창이 안 나타났다'가 된다. 카드 → 바로 다음 작성기 → 화면 전체(단
-    하나뿐일 때만) 순으로 넓혀 찾는다.
+
+def _baemin_find_editor(page, card, timeout_ms=8000):
+    """열린 답글 입력칸을 찾는다. (입력칸 Locator, 종류) — 없으면 (None, None).
+
+    ⚠️ 배민 작성기는 리뷰 카드(ReviewContent) **밖**(형제 CEOCommentCreator)에
+    열리기도 하고, 입력칸이 textarea 가 아닐 수도 있다. 카드 → 다음 작성기 →
+    답글박스 → 화면 전체(딱 하나일 때만) 순으로, 셀렉터 후보를 모두 훑는다.
     """
     import time as _t
     scopes = [
         card,
-        card.locator(f'xpath=following::*[contains(@class,'
-                     f'"CEOCommentCreator-module__")][1]'),
+        card.locator('xpath=following::*[contains(@class,'
+                     '"CEOCommentCreator-module__")][1]'),
         card.locator('xpath=following::*[contains(@class,'
                      '"ReviewCommentBox-module__")][1]'),
     ]
     deadline = _t.monotonic() + timeout_ms / 1000
     while _t.monotonic() < deadline:
         for sc in scopes:
+            for sel in BAEMIN_EDITOR_SELECTORS:
+                try:
+                    if sc.count() and sc.locator(sel).count():
+                        return sc.locator(sel).first, sel
+                except Exception:  # noqa: BLE001 — 렌더 중일 수 있다
+                    pass
+        for sel in BAEMIN_EDITOR_SELECTORS:   # 화면에 딱 하나면 그게 작성기다
             try:
-                if sc.count() and sc.locator("textarea").count():
-                    return sc
-            except Exception:  # noqa: BLE001 — 렌더 중일 수 있다
+                if page.locator(sel).count() == 1:
+                    return page.locator(sel).first, sel
+            except Exception:  # noqa: BLE001
                 pass
-        try:                      # 마지막 수단: 화면에 입력창이 딱 하나면 그것
-            if page.locator("textarea").count() == 1:
-                return page
-        except Exception:  # noqa: BLE001
-            pass
         _t.sleep(0.4)
-    return None
+    return None, None
+
+
+def _baemin_editor_report(page):
+    """입력칸을 못 찾았을 때 화면에 뭐가 있었는지 남긴다(진단용)."""
+    bits = []
+    for sel in BAEMIN_EDITOR_SELECTORS:
+        try:
+            bits.append(f"{sel}={page.locator(sel).count()}개")
+        except Exception:  # noqa: BLE001
+            bits.append(f"{sel}=?")
+    return " / ".join(bits)
+
+
+def _baemin_fill_editor(editor, kind, text):
+    """입력칸 종류에 맞게 답글을 채우고, 실제로 들어갔는지 확인한다."""
+    if kind == "textarea":
+        editor.fill(text)
+        got = editor.input_value() or ""
+    else:
+        # contenteditable 은 fill 이 안 먹는 경우가 있어 값을 직접 넣고
+        # input 이벤트를 쏴 리액트 상태까지 갱신되게 한다.
+        editor.click()
+        editor.evaluate(
+            """(el, t) => {
+                el.focus();
+                el.innerText = t;
+                el.dispatchEvent(new InputEvent('input', {bubbles: true}));
+            }""", text)
+        got = editor.inner_text() or ""
+    if " ".join(got.split()) != " ".join(text.split()):
+        raise ReplyPostError("입력값이 답글과 불일치 — 게시 중단.")
 
 
 class ReplyPostError(RuntimeError):
@@ -508,18 +547,15 @@ class ReplyToReviewAction(WriteAction):
             _baemin_click(open_btn.first, f"'{BAEMIN_REPLY_BTN_TEXT}' 버튼")
         human_pause(0.8, 1.5)
 
-        # 입력창은 카드 밖(작성기 컨테이너)에 열릴 수 있어 범위를 넓혀 찾는다.
-        scope = _baemin_editor_scope(page, card)
-        if scope is None:
+        # 입력칸은 카드 밖에 열릴 수 있고 textarea 가 아닐 수도 있다.
+        editor, kind = _baemin_find_editor(page, card)
+        if editor is None:
             raise ReplyPostError(
-                "답글 입력창(textarea)이 나타나지 않았습니다 — 작성기가 열리지 "
-                "않았거나 배민 화면 구조가 바뀌었을 수 있어요.")
-        card = scope        # 이후 입력·제출 모두 이 범위에서 찾는다
-        ta = scope.locator("textarea").first
-        ta.fill(reply)
+                "답글 입력칸이 나타나지 않았습니다 — 작성기가 열리지 않았거나 "
+                f"배민 화면 구조가 바뀌었을 수 있어요. [화면 상태: "
+                f"{_baemin_editor_report(page)}]")
+        _baemin_fill_editor(editor, kind, reply)
         human_pause(0.5, 1.0)
-        if (ta.input_value() or "").strip() != reply.strip():
-            raise ReplyPostError("입력값이 답글과 불일치 — 게시 중단.")
 
         # 제출 버튼: 신규='등록', 수정='저장' (실게시로 확인된 문구, 2026-07-24)
         # 작성기가 카드 밖에 열릴 수 있으므로 범위 → 화면 전체 순으로 찾는다.
