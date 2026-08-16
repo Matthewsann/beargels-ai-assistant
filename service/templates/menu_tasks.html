@@ -54,6 +54,11 @@ color:var(--sub);background:var(--bg);white-space:nowrap;font-variant-numeric:ta
 padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:opacity .3s;pointer-events:none}
 #toast.show{opacity:1}
 .hidebox{margin:10px 4px;font-size:12px;color:var(--sub)}
+.cpbtn{border:1px solid var(--line);background:var(--card);color:var(--ink);
+  border-radius:6px;padding:2px 7px;font-size:11px;cursor:pointer;margin-left:4px}
+.cpbtn:hover{background:#fdf9ef}
+a.portal{float:right;font-size:11px;text-decoration:none;border:1px solid var(--line);
+  border-radius:14px;padding:3px 10px;color:var(--brown);background:var(--card)}
 </style>
 </head>
 <body>
@@ -184,6 +189,28 @@ function ctx(t){
   return `<div class="ctx">${chips.join("")}</div>`;
 }
 
+// 채널별 메뉴 관리 화면. 메뉴 하나로 바로 가는 주소는 세 플랫폼 다 제공하지
+// 않아 목록 화면까지만 열어 준다(거기서 검색해 고치는 게 가장 빠르다).
+const PORTAL={
+  baemin:["배민 셀프서비스","https://self.baemin.com/"],
+  coupang:["쿠팡이츠 스토어","https://store.coupangeats.com/merchant/management/menu"],
+  naver:["스마트플레이스","https://new.smartplace.naver.com/"],
+  store:["","" ],
+};
+
+// 붙여넣을 값을 클립보드로. 체크박스를 감싼 label 안이라 기본 동작을 막아야
+// 복사만 하고 '완료 체크'가 딸려 켜지지 않는다.
+async function copyVal(e, text){
+  e.preventDefault(); e.stopPropagation();
+  try{
+    await navigator.clipboard.writeText(String(text));
+    toast(`복사됨: ${text}`);
+  }catch(_){
+    // 클립보드 권한이 없을 때 — 눈으로 보고 옮기게 값을 띄운다
+    prompt("복사해서 포털에 붙여넣으세요", String(text));
+  }
+}
+
 function key(ch,t){return ch+"|"+t.type+"|"+t.name;}
 
 let saveTimer=null;
@@ -239,15 +266,19 @@ function render(){
       const list=tasks.filter(t=>t.type===type&&!(hideDone&&DONE[key(CH,t)]));
       const totalOfType=tasks.filter(t=>t.type===type).length;
       if(!totalOfType) continue;
-      html+=`<div class="sec"><h2>${title} <small>${totalOfType}건 · ${tip}</small></h2><div class="card">`;
+      const po=PORTAL[CH]||["",""];
+      html+=`<div class="sec"><h2>${title} <small>${totalOfType}건 · ${tip}</small>
+        ${po[1]?`<a class="portal" href="${po[1]}" target="_blank" rel="noopener">${po[0]} 열기 ↗</a>`:""}
+        </h2><div class="card">`;
       if(!list.length) html+=`<div class="row"><div class="body d">전부 완료 ✓</div></div>`;
       for(const t of list){
         const done=!!DONE[key(CH,t)];
         let desc="";
-        if(t.type==="price") desc=`<span class="price">${won(t.cur)}</span> → <span class="to">${won(t.to)}</span>`;
-        if(t.type==="name") desc=`→ <span class="to">${t.to}</span>`;
+        const cp = v => `<button class="cpbtn" onclick="copyVal(event,'${String(v).replace(/'/g,"\\'")}')">📋 복사</button>`;
+        if(t.type==="price") desc=`<span class="price">${won(t.cur)}</span> → <span class="to">${won(t.to)}</span> ${cp(t.to)}`;
+        if(t.type==="name") desc=`→ <span class="to">${t.to}</span> ${cp(t.to)}`;
         if(t.type==="extra") desc=`채널가 ${won(t.cur)}`;
-        if(t.type==="add") desc=`등록 가격 <b>${won(t.to)}</b>`;
+        if(t.type==="add") desc=`등록 가격 <b>${won(t.to)}</b> ${cp(t.to)} · 이름 ${cp(t.name)}`;
         html+=`<label class="row ${done?"done":""}">
           <input type="checkbox" ${done?"checked":""}
             onchange="markDone('${CH}',${JSON.stringify(t).replace(/"/g,"&quot;")},this.checked,this.closest('.row'))">
