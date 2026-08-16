@@ -518,12 +518,22 @@ def draft_state(path_key, review_id):
         w = _worker_view()
         job_id = request.args.get("job", type=int)
         job = db.get_job(job_id) if job_id else None
+        if job is None:
+            # 잡 번호를 안 넘겨도 실패 사유를 보여준다 — 화면은 리뷰 단위로
+            # 폴링하므로 이 리뷰의 최근 등록 잡을 대신 본다(2026-08-16).
+            try:
+                job = db.latest_review_job("post", review_id)
+            except Exception:  # noqa: BLE001
+                job = None
         return jsonify({"draft": r.get("reply_draft") or "",
                         "at": r.get("draft_updated_at") or "",
                         "reply_status": r.get("reply_status") or "",
                         "worker_alive": bool(w.get("alive")),
                         "worker_text": w.get("text") or "",
                         "job_status": (job or {}).get("status") or "",
+                        # 등록 완료 뒤 '진짜 달렸는지' 확인하러 갈 곳
+                        "platform_url": PLATFORM_REVIEW_URL.get(
+                            r.get("platform"), ""),
                         "why": _why_post_failed((job or {}).get("message"))})
     except Exception as e:  # noqa: BLE001
         return jsonify({"error": str(e)[:150]}), 200
