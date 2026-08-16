@@ -165,6 +165,26 @@ const usedCount=id=>DATA.recipes.filter(r=>r.ingredient_id===id).length;
 const cats=()=>[...new Set(DATA.ingredients.map(i=>i.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ko"));
 // 백엔드 _norm_ing_name 과 같은 규칙 — 공백·구두점·대소문자 무시
 const nname=s=>(s||"").replace(/[\s·\-_\/,.()\[\]]+/g,"").toLowerCase();
+
+// ── 발주처별 시세 — 같은 자재를 발주처마다 다른 값에 판다. 본체 값은
+//    "실제로 사는 조건"이고, 다른 발주처 시세와 견줘 최저가를 알려준다.
+const offersOf=id=>(DATA.offers||[]).filter(o=>o.ingredient_id===id&&+o.pack_qty>0&&+o.pack_cost>0);
+function offerLine(i){
+  const cur=unitCost(i);
+  const os=offersOf(i.id).filter(o=>(o.supplier||"")!==(i.supplier||""));
+  if(!os.length) return "";
+  const all=[{s:(i.supplier||"현재")+"(사입)",u:cur||Infinity,main:true}]
+    .concat(os.map(o=>({s:o.supplier,u:o.pack_cost/o.pack_qty})));
+  const min=Math.min(...all.map(x=>x.u));
+  const line=all.filter(x=>isFinite(x.u)).map(x=>
+    `${x.s} ${w1(x.u)}/${i.unit}${x.u===min?" ★최저":""}`).join(" · ");
+  const best=all.find(x=>x.u===min);
+  const save=(cur&&!best.main&&min<cur*0.995)
+    ? ` <span class="pill" style="background:#fff3e0;color:#b45f06">`+
+      `${best.s}에서 사면 ${Math.round((1-min/cur)*100)}% 절약</span>`
+    : "";
+  return `<div class="sub" style="font-size:11px;font-weight:400">${line}${save}</div>`;
+}
 // 검색 매칭 — 띄어쓰기·대소문자·기호를 무시한다(사장님 보고 2026-08-13).
 // 메뉴명에 &·[]·+ 가 섞여 있어("파리지엔 잠봉&뵈르 샌드위치") 보이는 대로
 // "잠봉 뵈르"를 쳐도 안 잡혔다.
@@ -395,7 +415,7 @@ function renderIng2(){
     }
     html+=`<tr>
       <td class="l ed" onclick="editCell(this,${i.id},'name',true)">${i.name}${
-        dupSet.has(nname(i.name))?'<span class="pill" style="background:var(--redbg);color:var(--red)">중복</span>':""}</td>
+        dupSet.has(nname(i.name))?'<span class="pill" style="background:var(--redbg);color:var(--red)">중복</span>':""}${offerLine(i)}</td>
       <td class="l ed" onclick="editCell(this,${i.id},'category',true)">${i.category||"미분류"}</td>
       <td class="l ed" onclick="editSupplier(this,${i.id})">${i.supplier||'<span class="sub">미지정</span>'}</td>
       <td class="ed" onclick="editCell(this,${i.id},'unit',true)">${i.unit}</td>
@@ -491,10 +511,10 @@ function renderMatch(){
       <button class="pri" onclick="mKeep(${n.id})">✨ 다른 자재임 (그냥 두기)</button>
       <button onclick="mSkip()">나중에 →</button>
     </div>
-    <p class="note">· 누르면 <b>쓰던 자재의 구매량·가격·발주처가 새 값으로 바뀌고</b>, 새로 받은 쪽은 사라집니다.
-      레시피와 원가는 그대로 이어집니다.<br>
-    · <b>같은 제품인데 실제로는 쿠팡 등에서 더 싸게 사입 중이면 "다른 자재임"</b>을
-      누르세요 — 원가는 실제로 산 가격으로 잡아야 하므로, 쓰던(더 싼) 가격이 유지됩니다.<br>
+    <p class="note">· 누르면 새로 받은 쪽은 사라지고 레시피·원가는 기존 자재로 그대로 이어집니다.<br>
+    · <b>쿠팡 등 다른 데서 사입 중인 자재라도 같은 제품이면 이어붙이세요</b> —
+      실제 사입가는 그대로 유지되고, 엠즈푸드 값은 <b>발주처 시세</b>로 곁에 기록돼
+      자재 목록에서 최저가 비교(★최저)에 쓰입니다. 발주처가 같을 때만 값이 새 것으로 바뀝니다.<br>
     · 단위가 다르면(g ↔ ea) 사용량 뜻이 달라져 막습니다 — 자재 목록에서 단위를 먼저 맞춰주세요.<br>
     · <b>다른 자재임</b>을 누르면 둘 다 남고 다시 묻지 않습니다. 키보드 <b>1~5</b>, <b>N</b>, <b>S</b> 로도 됩니다.</p>`;
 }

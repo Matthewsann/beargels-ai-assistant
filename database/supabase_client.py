@@ -946,6 +946,63 @@ def recipes_all():
     return get_client().table("menu_recipes").select("*").execute().data
 
 
+# ── 발주처별 시세 ────────────────────────────────────────────
+# 같은 자재라도 발주처마다 값이 다르다(엠즈푸드 vs 쿠팡 사입). 자재 본체의
+# pack_qty/pack_cost 는 "실제로 사는 조건" 하나만 갖고, 다른 발주처 시세는
+# 이 표에 곁들여 둔다. 화면이 최저가를 견줘 어디서 사는 게 싼지 알려준다.
+# 009 마이그레이션 전이면 표가 없다 — 조용히 건너뛴다(기능만 빠지고 동작한다).
+
+_OFFERS_MISSING = ("42P01", "PGRST205", "PGRST200")   # 표 없음
+
+
+def offers_all():
+    try:
+        return (get_client().table("ingredient_offers").select("*")
+                .execute().data)
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) in _OFFERS_MISSING:
+            return []
+        raise
+
+
+def offer_upsert(ingredient_id, supplier, pack_qty, pack_cost, note=None):
+    supplier = (supplier or "").strip()
+    if not supplier or not ingredient_id:
+        return
+    try:
+        get_client().table("ingredient_offers").upsert({
+            "ingredient_id": int(ingredient_id),
+            "supplier": supplier,
+            "pack_qty": pack_qty,
+            "pack_cost": pack_cost,
+            "note": note,
+            "updated_at": datetime.utcnow().isoformat() + "Z",
+        }, on_conflict="ingredient_id,supplier").execute()
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) in _OFFERS_MISSING:
+            logger.warning("009 미적용 — 발주처 시세 기록 생략 "
+                           "(supabase/migrations/009_ingredient_offers.sql 실행)")
+            return
+        raise
+
+
+def offer_delete(offer_id):
+    get_client().table("ingredient_offers").delete().eq("id", int(offer_id)).execute()
+
+
+def _offers_move(from_id, to_id):
+    """자재를 합칠 때 시세 기록도 따라가게 한다(없으면 아무 일 없음)."""
+    try:
+        rows = (get_client().table("ingredient_offers").select("*")
+                .eq("ingredient_id", int(from_id)).execute().data)
+        for r in rows:
+            offer_upsert(to_id, r["supplier"], r.get("pack_qty"),
+                         r.get("pack_cost"), r.get("note"))
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) not in _OFFERS_MISSING:
+            raise
+
+
 class DuplicateIngredient(ValueError):
     """같은 이름의 자재가 이미 있을 때."""
 
@@ -957,6 +1014,9 @@ def _norm_ing_name(s):
     실제로 겹쳐 등록된 것들이 대개 띄어쓰기나 괄호 차이였다.
     """
     return re.sub(r"[\s·\-_/,.()\[\]]+", "", (s or "")).lower()
+
+
+SUPPLIER_MSFS = "엠즈푸드"
 
 
 def import_msfs(spec):
@@ -975,6 +1035,14 @@ def import_msfs(spec):
         payload = {k: it.get(k) for k in _ING_COLS if k in it}
         payload["updated_at"] = datetime.utcnow().isoformat() + "Z"
         if cur:
+            # 엠즈푸드 시세는 언제나 곁에 적어 둔다 — 최저가 비교의 재료.
+            offer_upsert(cur["id"], SUPPLIER_MSFS, it.get("pack_qty"),
+                         it.get("pack_cost"), it.get("note"))
+            # 다른 데서 사는 자재(발주처가 엠즈푸드가 아님)는 본체 값을 덮지
+            # 않는다 — 원가는 실제로 산 가격으로 잡아야 한다(사장님 확인 2026-08-16).
+            if (cur.get("supplier") or "").strip() not in ("", SUPPLIER_MSFS):
+                updated += 1
+                continue
             # 이미 손으로 분류해 둔 것은 덮어쓰지 않는다
             if (cur.get("category") or "미분류") != "미분류":
                 payload.pop("category", None)
@@ -1029,9 +1097,23 @@ def ingredient_merge(keep_id, drop_id, price_from="keep"):
             f"단위가 다릅니다({keep['unit']} vs {drop['unit']}). "
             f"사용량 뜻이 달라 자동으로 합칠 수 없습니다 — 단위를 먼저 맞춰주세요.")
 
+    # 없어질 쪽의 값은 발주처 시세로 곁에 남긴다 — 같은 자재를 발주처마다
+    # 다른 값에 파는 게 실제 상황이라, 지워버리면 최저가 비교를 못 한다.
+    _offers_move(drop_id, keep_id)
+    if drop.get("supplier") and drop.get("pack_cost"):
+        offer_upsert(keep_id, drop["supplier"], drop.get("pack_qty"),
+                     drop.get("pack_cost"), drop.get("note"))
+
     # 발주 사이트에서 새로 받은 쪽이 구매 단위·가격은 정확하다. 레시피는
     # 기존 자재에 붙어 있으므로, 껍데기는 기존을 두고 값만 새 것으로 가져온다.
-    if price_from == "drop":
+    # 단, 기존 자재를 **다른 발주처에서 더 싸게 사입 중**이면 본체 값은 지킨다
+    # — 원가는 실제로 산 가격이어야 한다(사장님 확인 2026-08-16). 그 경우
+    # 새 값은 위에서 시세로만 남는다.
+    keep_sup = (keep.get("supplier") or "").strip()
+    drop_sup = (drop.get("supplier") or "").strip()
+    other_supplier = (keep_sup and drop_sup and keep_sup != drop_sup
+                      and keep.get("pack_cost"))
+    if price_from == "drop" and not other_supplier:
         sb.table("ingredients").update({
             "pack_qty": drop.get("pack_qty"),
             "pack_cost": drop.get("pack_cost"),

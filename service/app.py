@@ -1048,6 +1048,7 @@ def menu_data(path_key):
             "snapshots": snapshots,
             "ingredients": _safe(db.ingredients_all),
             "recipes": _safe(db.recipes_all),
+            "offers": _safe(db.offers_all),
         })
     except Exception as e:  # noqa: BLE001
         return jsonify({"error": str(e)[:200]}), 500
