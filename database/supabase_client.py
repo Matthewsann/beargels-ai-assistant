@@ -1300,7 +1300,22 @@ def component_delete(row_id):
     sb = get_client()
     row = sb.table("menu_components").select("sku").eq("id", int(row_id)).execute().data
     sb.table("menu_components").delete().eq("id", int(row_id)).execute()
-    return recompute_costs([row[0]["sku"]], force=True) if row else {}
+    if not row:
+        return {}
+    sku = row[0]["sku"]
+    # 마지막 구성을 지우면 합산할 게 없어 recompute 가 그냥 지나간다. 그러면
+    # 직전 계산값이 원가로 남아 '구성은 비었는데 원가는 있는' 상태가 된다.
+    left = (sb.table("menu_components").select("id").eq("sku", sku)
+            .limit(1).execute().data)
+    if not left:
+        cur = (sb.table("menu_items").select("cost_source")
+               .eq("sku", sku).execute().data)
+        src = (cur[0].get("cost_source") or "") if cur else ""
+        if src.startswith("세트 구성"):
+            sb.table("menu_items").update(
+                {"ingredient_cost": None, "cost_source": None}).eq("sku", sku).execute()
+        return {sku: None}
+    return recompute_costs([sku], force=True)
 
 
 def _set_cost(sku, comps, cost_of):
