@@ -72,3 +72,48 @@ def test_other_errors_still_raise(monkeypatch):
                         lambda: _FakeQuery(saved, ["42501"]))
     with pytest.raises(Exception):
         db.mark_replied(1)
+
+
+# --- 자동저장이 '이미 끝난' 상태를 되돌리지 않는지 ---------------------------
+
+class _StatusFake:
+    """update(...).eq(...).execute() 체인 + 현재 상태 조회를 흉내낸다."""
+
+    def __init__(self, cur_status, saved):
+        self._cur = cur_status
+        self._saved = saved
+        self._payload = None
+
+    def table(self, _n):
+        return self
+
+    def update(self, payload):
+        self._payload = payload
+        return self
+
+    def eq(self, _c, _v):
+        return self
+
+    def execute(self):
+        self._saved.append(dict(self._payload))
+        return self
+
+
+@pytest.mark.parametrize("settled", ["posted", "approved", "skipped"])
+def test_autosave_does_not_revive_settled_review(monkeypatch, settled):
+    """등록 직후 초안칸 자동저장이 상태를 'drafted' 로 되돌리면 리뷰가 '할 일'
+    로 되살아나 고객에게 중복 답글이 나간다(2026-08-16 실제 발생)."""
+    saved = []
+    monkeypatch.setattr(db, "get_client", lambda: _StatusFake(settled, saved))
+    monkeypatch.setattr(db, "get_review", lambda _i: {"reply_status": settled})
+    db.save_reply_draft(7, "고친 답글")
+    assert saved[0]["reply_draft"] == "고친 답글"      # 본문은 저장되고
+    assert "reply_status" not in saved[0]              # 상태는 건드리지 않는다
+
+
+def test_autosave_still_marks_drafted_when_open(monkeypatch):
+    saved = []
+    monkeypatch.setattr(db, "get_client", lambda: _StatusFake("none", saved))
+    monkeypatch.setattr(db, "get_review", lambda _i: {"reply_status": "none"})
+    db.save_reply_draft(7, "새 초안")
+    assert saved[0]["reply_status"] == "drafted"

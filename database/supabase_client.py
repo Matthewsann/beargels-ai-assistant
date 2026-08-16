@@ -390,16 +390,31 @@ def worker_status():
     return rows[0] if rows else None
 
 
+# 이미 결론이 난 상태 — 초안 자동저장이 여기로 되돌리면 안 된다.
+_SETTLED_STATUSES = ("posted", "approved", "skipped")
+
+
 def save_reply_draft(review_id, text, status="drafted"):
     """리뷰 1건의 답글 초안을 저장한다(직원이 고친 것도 여기로).
 
     ⚠️ ai_draft(AI 원본)는 건드리지 않는다 — 수정률 측정의 기준값이다.
+    ⚠️ **이미 등록(posted)·등록대기(approved)·넘어감(skipped)인 리뷰의 상태는
+       내리지 않는다.** 초안칸은 칸에서 나갈 때 자동저장되는데, 등록 직후
+       화면을 건드리면 그 저장이 상태를 'drafted' 로 되돌려 리뷰가 '할 일'
+       목록에 되살아났다 → 직원이 한 번 더 등록해 **고객에게 중복 답글**이
+       나갈 수 있다(2026-08-16 실제 발생, 리뷰 2783).
     """
-    (get_client().table("reviews").update({
+    payload = {
         "reply_draft": text,
         "draft_updated_at": datetime.now().astimezone().isoformat(),
-        "reply_status": status,
-    }).eq("id", review_id).execute())
+    }
+    cur = (get_review(review_id) or {}).get("reply_status")
+    if cur not in _SETTLED_STATUSES:
+        payload["reply_status"] = status
+    else:
+        logger.info("리뷰 %s 는 이미 '%s' — 본문만 저장하고 상태는 유지",
+                    review_id, cur)
+    get_client().table("reviews").update(payload).eq("id", review_id).execute()
 
 
 # schema_v5.sql 이 추가하는 컬럼들. 아직 Supabase 에 적용 전이면 이 컬럼들만
