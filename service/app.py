@@ -144,6 +144,36 @@ def _friendly_fail(msg: str) -> str:
     return "수집에 실패했어요. 잠시 뒤 다시 눌러주세요."
 
 
+def _why_post_failed(msg) -> str:
+    """답글 등록 실패 사유를 '무엇을 하면 되는지'로 바꾼다.
+
+    원문('CDP attach 실패(127.0.0.1:9222)')을 그대로 보여주면 직원은 할 수
+    있는 게 없다. 반대로 사유를 아예 감추면(기존: '등록이 안 됐어요') 사장님도
+    원인을 못 찾는다 — 원인별 한 줄 + 할 일로 옮긴다(2026-08-13).
+    """
+    m = msg or ""
+    if not m:
+        return ""
+    if "알 수 없는 잡 종류" in m:
+        return ("집 PC 프로그램이 옛 버전이에요. 집 PC에서 0_업데이트.bat 을 "
+                "한 번 실행해 주세요.")
+    if "WRITE_DRY_RUN" in m or "리허설" in m or "연습" in m:
+        return ("집 PC가 '연습 모드'라 실제로 등록되지 않았어요. "
+                "5_자동등록_고치기.bat 을 실행해 주세요.")
+    if "CDP" in m or "attach" in m or "Chrome" in m or "크롬" in m:
+        return "집 PC 크롬이 안 켜져 있어요. 잠시 뒤 다시 눌러주세요."
+    if "세션" in m or "SessionExpired" in m or "로그인" in m:
+        return "배민·쿠팡 로그인이 풀렸어요. 사장님께 알려주세요."
+    if "에스컬레이션" in m or "민감" in m:
+        return "민감한 리뷰라 자동 등록이 막혀 있어요. 사장님이 직접 답해야 해요."
+    if "카드" in m or "찾지 못" in m or "일치하지" in m:
+        return ("배민·쿠팡 화면에서 이 리뷰를 못 찾았어요. 리뷰수집을 한 번 "
+                "누른 뒤 다시 시도해주세요.")
+    if "credit" in m.lower() or "크레딧" in m:
+        return "AI 사용량이 소진됐어요. 사장님께 알려주세요."
+    return m[:160]
+
+
 def _job_view(job) -> dict | None:
     if not job:
         return None
@@ -486,11 +516,15 @@ def draft_state(path_key, review_id):
         r = db.get_review(review_id) or {}
         # 오래 걸릴 때 화면이 '왜 안 되는지' 말해줄 수 있게 일꾼 상태도 함께.
         w = _worker_view()
+        job_id = request.args.get("job", type=int)
+        job = db.get_job(job_id) if job_id else None
         return jsonify({"draft": r.get("reply_draft") or "",
                         "at": r.get("draft_updated_at") or "",
                         "reply_status": r.get("reply_status") or "",
                         "worker_alive": bool(w.get("alive")),
-                        "worker_text": w.get("text") or ""})
+                        "worker_text": w.get("text") or "",
+                        "job_status": (job or {}).get("status") or "",
+                        "why": _why_post_failed((job or {}).get("message"))})
     except Exception as e:  # noqa: BLE001
         return jsonify({"error": str(e)[:150]}), 200
 
@@ -519,8 +553,10 @@ def post_reply(path_key, review_id):
     check(path_key)
     try:
         db.mark_approved(review_id)
-        db.request_post(review_id)
-        return jsonify({"ok": True})
+        job = db.request_post(review_id)
+        # 잡 id 를 넘겨 화면이 '그 잡'의 실패 사유까지 읽게 한다 — 사유 없이
+        # '등록이 안 됐어요'만 뜨면 무엇을 고쳐야 할지 알 수 없다(2026-08-13).
+        return jsonify({"ok": True, "job": (job or {}).get("id")})
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"답글 등록 요청 실패(review {review_id}): {e}",
                      kind=type(e).__name__, path=request.path,

@@ -76,3 +76,44 @@ def test_state_reports_worker_alive(client, monkeypatch):
                                                             "message": ""})
     st = c.get("/testkey/review/7/edit_state?job=1").get_json()
     assert st["worker_alive"] is True
+
+
+# ---------------------------------------------------------------------------
+# 답글 '등록' 실패 사유 노출 (2026-08-13 사장님 제보: '등록이 안 됐어요'만 뜸)
+# ---------------------------------------------------------------------------
+
+def test_post_reply_returns_job_id(client, monkeypatch):
+    app_mod, c = client
+    monkeypatch.setattr(app_mod.db, "mark_approved", lambda *a: None)
+    monkeypatch.setattr(app_mod.db, "request_post",
+                        lambda rid, by=None: {"id": 77})
+    assert c.post("/testkey/review/5/post").get_json() == {"ok": True, "job": 77}
+
+
+def test_draft_state_reports_failure_reason(client, monkeypatch):
+    app_mod, c = client
+    monkeypatch.setattr(app_mod.db, "get_review",
+                        lambda rid: {"reply_status": "drafted"})
+    monkeypatch.setattr(app_mod.db, "get_job", lambda jid: {
+        "status": "error",
+        "message": "CDP attach 실패(127.0.0.1:9222). launch_chrome.bat 확인"})
+    st = c.get("/testkey/review/5/draft?job=77").get_json()
+    assert st["reply_status"] == "drafted"
+    assert "크롬" in st["why"]
+
+
+@pytest.mark.parametrize("msg,expect", [
+    ("알 수 없는 잡 종류: post — 일꾼 업데이트 필요", "0_업데이트.bat"),
+    ("[리허설] WRITE_DRY_RUN=true", "연습 모드"),
+    ("[쿠팡] 세션 만료 — 재로그인 필요.", "로그인이 풀렸"),
+    ("에스컬레이션(민감) 리뷰는 자동 게시 불가", "사장님이 직접"),
+    ("대상 배민 리뷰 카드를 찾지 못했습니다", "리뷰수집"),
+])
+def test_reason_translations(client, msg, expect):
+    app_mod, _ = client
+    assert expect in app_mod._why_post_failed(msg)
+
+
+def test_no_message_no_reason(client):
+    app_mod, _ = client
+    assert app_mod._why_post_failed(None) == ""
