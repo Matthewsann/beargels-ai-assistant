@@ -1267,6 +1267,71 @@ def recipe_delete(rid):
     return rows[0]["sku"] if rows else None
 
 
+# ── 세트 구성 ────────────────────────────────────────────────
+# 세트는 재료가 아니라 '메뉴의 묶음'이다. 010 마이그레이션 전이면 표가 없다 —
+# 조용히 건너뛴다(세트 원가만 안 잡히고 나머지는 그대로 동작한다).
+
+_COMPONENTS_MISSING = ("42P01", "PGRST205", "PGRST200")
+
+
+def components_all():
+    try:
+        return get_client().table("menu_components").select("*").execute().data
+    except Exception as e:  # noqa: BLE001
+        if getattr(e, "code", None) in _COMPONENTS_MISSING:
+            return []
+        raise
+
+
+def component_upsert(sku, component_sku, qty=1, choice_group=None):
+    if not sku or not component_sku:
+        raise ValueError("세트와 구성 메뉴를 모두 골라주세요")
+    if sku == component_sku:
+        raise ValueError("자기 자신은 구성으로 넣을 수 없습니다")
+    get_client().table("menu_components").upsert({
+        "sku": sku, "component_sku": component_sku,
+        "qty": float(qty or 1), "choice_group": choice_group or None,
+        "updated_at": datetime.utcnow().isoformat() + "Z",
+    }, on_conflict="sku,component_sku,choice_group").execute()
+    return recompute_costs([sku], force=True)
+
+
+def component_delete(row_id):
+    sb = get_client()
+    row = sb.table("menu_components").select("sku").eq("id", int(row_id)).execute().data
+    sb.table("menu_components").delete().eq("id", int(row_id)).execute()
+    return recompute_costs([row[0]["sku"]], force=True) if row else {}
+
+
+def _set_cost(sku, comps, cost_of):
+    """세트 원가 = 고정 구성 합 + 택1 자리마다 가장 비싼 것.
+
+    cost_of(sku) 가 None(원가 미상)인 구성이 하나라도 끼면 세트 원가도 못 낸다 —
+    빠뜨린 채 합치면 실제보다 싸 보여서 위험하다.
+    """
+    total, fixed = 0.0, [c for c in comps if not c.get("choice_group")]
+    for c in fixed:
+        v = cost_of(c["component_sku"])
+        if v is None:
+            return None
+        total += float(c.get("qty") or 1) * v
+    groups = {}
+    for c in comps:
+        if c.get("choice_group"):
+            groups.setdefault(c["choice_group"], []).append(c)
+    for _, rows in groups.items():
+        vals = []
+        for c in rows:
+            v = cost_of(c["component_sku"])
+            if v is None:
+                return None
+            vals.append(float(c.get("qty") or 1) * v)
+        if not vals:
+            return None
+        total += max(vals)                 # 최악(가장 비싼 선택) 기준
+    return round(total, 1)
+
+
 def recompute_costs(skus=None, force=False):
     """레시피 기반으로 menu_items.ingredient_cost 재계산.
 
@@ -1285,10 +1350,19 @@ def recompute_costs(skus=None, force=False):
     by_sku = {}
     for ln in lines:
         by_sku.setdefault(ln["sku"], []).append(ln)
-    if not by_sku:
+
+    # 세트는 구성 메뉴의 원가를 더해 낸다 — 구성품이 먼저 계산돼 있어야 하므로
+    # 레시피 기반을 다 끝낸 뒤 2단계로 돈다.
+    comps_by = {}
+    for c in components_all():
+        if not skus or c["sku"] in skus:
+            comps_by.setdefault(c["sku"], []).append(c)
+
+    if not by_sku and not comps_by:
         return {}
+    targets = set(by_sku) | set(comps_by)
     items = (sb.table("menu_items").select("sku,ingredient_cost,cost_source")
-             .in_("sku", list(by_sku)).execute().data)
+             .in_("sku", list(targets)).execute().data)
     src_by = {i["sku"]: (i.get("cost_source") or "") for i in items}
     updated = {}
     stamp = f"레시피 자동계산({date.today().isoformat()})"
@@ -1305,6 +1379,31 @@ def recompute_costs(skus=None, force=False):
         sb.table("menu_items").update(
             {"ingredient_cost": cost, "cost_source": stamp}).eq("sku", sku).execute()
         updated[sku] = cost
+
+    if comps_by:
+        # 구성품 원가는 방금 갱신한 값을 먼저 보고, 없으면 DB 의 현재 값을 쓴다.
+        need = {c["component_sku"] for rows in comps_by.values() for c in rows}
+        cur = {}
+        if need:
+            for r in (sb.table("menu_items").select("sku,ingredient_cost")
+                      .in_("sku", list(need)).execute().data):
+                cur[r["sku"]] = r.get("ingredient_cost")
+
+        def cost_of(s):
+            v = updated.get(s, cur.get(s))
+            return float(v) if v is not None else None
+
+        set_stamp = f"세트 구성 자동합산({date.today().isoformat()})"
+        for sku, rows in comps_by.items():
+            if not force and src_by.get(sku, "").startswith("웹에서 직접 입력"):
+                continue
+            cost = _set_cost(sku, rows, cost_of)
+            if cost is None:
+                continue          # 구성품 중 원가 미상이 있으면 건드리지 않는다
+            sb.table("menu_items").update(
+                {"ingredient_cost": cost, "cost_source": set_stamp}
+            ).eq("sku", sku).execute()
+            updated[sku] = cost
     return updated
 
 

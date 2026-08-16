@@ -992,6 +992,32 @@ def menu_ingredients_import_msfs(path_key):
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
+@app.route("/<path_key>/menu/component", methods=["POST"])
+def menu_component_upsert(path_key):
+    """세트 구성 추가/수정 — 세트에 '어떤 메뉴가 몇 개' 들어가는지."""
+    check(path_key)
+    body = request.get_json(force=True) or {}
+    try:
+        out = db.component_upsert(body.get("sku"), body.get("component_sku"),
+                                  body.get("qty"), body.get("choice_group"))
+        return jsonify({"ok": True, "recomputed": out})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"세트 구성 저장 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/menu/component/<int:row_id>/delete", methods=["POST"])
+def menu_component_delete(path_key, row_id):
+    check(path_key)
+    try:
+        return jsonify({"ok": True, "recomputed": db.component_delete(row_id)})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
 @app.route("/<path_key>/menu/prep", methods=["POST"])
 def menu_prep_create(path_key):
     """반제품 만들기 — 자재 1줄 + 제조 레시피용 항목 1줄을 한 번에."""
@@ -1132,6 +1158,7 @@ def menu_data(path_key):
             "ingredients": _safe(db.ingredients_all),
             "recipes": _safe(db.recipes_all),
             "offers": _safe(db.offers_all),
+            "components": _safe(db.components_all),
         })
     except Exception as e:  # noqa: BLE001
         return jsonify({"error": str(e)[:200]}), 500

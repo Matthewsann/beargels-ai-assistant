@@ -362,6 +362,71 @@ function editCell(td, sku, field){
   inp.onblur = () => done(true);
 }
 
+// ── 세트 구성 ───────────────────────────────────────────────
+// 세트마다 재료를 처음부터 나열하면 아무도 안 한다(세트 22개 중 레시피가
+// 달린 게 0개였다). 구성 메뉴만 골라 담으면 원가가 합쳐진다.
+const compsOf = sku => (DATA.components||[]).filter(c=>c.sku===sku);
+const costOf = s => { const m=DATA.items.find(i=>i.sku===s); return m&&m.ingredient_cost!=null?+m.ingredient_cost:null; };
+
+function setEditor(sku){
+  const rows = compsOf(sku);
+  const it = DATA.items.find(i=>i.sku===sku);
+  // 세트가 아니고 구성도 없으면 굳이 보여주지 않는다 — 화면이 시끄러워진다.
+  if (it.category !== "세트" && !rows.length) return "";
+
+  const line = c => {
+    const cost = costOf(c.component_sku);
+    const nm = (DATA.items.find(i=>i.sku===c.component_sku)||{}).name || c.component_sku;
+    return `<tr><td style="text-align:left">${nm}
+        ${c.choice_group?`<span class="badge ovr">택1 · ${c.choice_group}</span>`:""}</td>
+      <td>${c.qty>1?c.qty+"개":""}</td>
+      <td>${cost==null?'<span class="warn">원가 미상</span>':won(cost*(c.qty||1))}</td>
+      <td><span class="ed" onclick="delComp(${c.id})">삭제</span></td></tr>`;
+  };
+
+  // 고를 수 있는 메뉴 — 자기 자신과 이미 담은 것은 뺀다.
+  const taken = new Set(rows.map(r=>r.component_sku));
+  const opts = DATA.items.filter(i=>i.sku!==sku && !taken.has(i.sku))
+    .map(i=>`<option value="${i.sku}">${i.name}${i.ingredient_cost==null?" (원가 미상)":""}</option>`).join("");
+
+  const miss = rows.filter(c=>costOf(c.component_sku)==null).length;
+  return `<div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:8px">
+    <b style="font-size:12px">🎁 세트 구성</b>
+    <span class="note">구성 메뉴 원가를 합칩니다. '택1'은 같은 이름끼리 묶이고 <b>가장 비싼 것</b>으로 계산합니다.</span>
+    ${rows.length?`<table style="width:100%;min-width:0;margin-top:4px"><tbody>${rows.map(line).join("")}</tbody></table>`:'<div class="note">아직 구성이 없습니다.</div>'}
+    ${miss?`<div class="note warn" style="padding:4px 6px">구성 중 ${miss}개가 원가 미상이라 세트 원가를 못 냅니다 — 그 메뉴 레시피를 먼저 채워주세요.</div>`:""}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">
+      <select id="cp-sku-${sku}" style="max-width:230px;font-size:12px;padding:3px 5px;border:1px solid var(--line);border-radius:4px">${opts}</select>
+      <input type="number" id="cp-qty-${sku}" value="1" min="1" step="1" style="width:52px" title="수량">
+      <input type="text" id="cp-grp-${sku}" placeholder="택1 묶음(선택)" style="width:120px;font-size:12px;padding:3px 5px;border:1px solid var(--line);border-radius:4px" title="예: 음료 — 같은 값끼리 택1로 묶입니다">
+      <button style="font-size:11px" onclick="addComp('${sku}')">구성 추가</button>
+    </div></div>`;
+}
+
+async function addComp(sku){
+  const pick = document.getElementById(`cp-sku-${sku}`).value;
+  const qty = +document.getElementById(`cp-qty-${sku}`).value || 1;
+  const grp = document.getElementById(`cp-grp-${sku}`).value.trim();
+  if(!pick){ toast("구성 메뉴를 골라주세요"); return; }
+  const j = await api("/component", {sku, component_sku:pick, qty, choice_group:grp||null});
+  if(!j) return;
+  await reloadData();
+  toast("구성 추가 ✓");
+  render(); toggleDetail(sku);
+}
+async function delComp(id){
+  const j = await api(`/component/${id}/delete`);
+  if(!j) return;
+  const sku = (DATA.components.find(c=>c.id===id)||{}).sku;
+  await reloadData();
+  toast("삭제 ✓");
+  render(); if(sku) toggleDetail(sku);
+}
+async function reloadData(){
+  const d = await fetch(BASE+"/data").then(r=>r.json());
+  if(!d.error) DATA = d;
+}
+
 async function toggleActive(sku, field, cur){
   event.stopPropagation();
   const it = DATA.items.find(i=>i.sku===sku);
@@ -382,6 +447,7 @@ function toggleDetail(sku){
       <button onclick="saveName('${sku}')" style="font-size:11px">이름 저장</button>
       ${it.cost_source?`<div class="note">원가 출처: ${it.cost_source}</div>`:""}
       <div class="note"><a href="/{{ key }}/menu/ingredients?sku=${sku}">📖 이 메뉴 레시피 편집(원가 자동계산)</a></div>
+      ${setEditor(sku)}
       ${it.composition?`<div class="note">구성: ${it.composition}</div>`:""}</div>
     <div class="chgrid">${CH.map(([ch,label])=>{
       const o = chOverride(sku, ch) || {};
