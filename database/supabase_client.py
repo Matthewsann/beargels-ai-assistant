@@ -1176,16 +1176,34 @@ def ingredient_merge(keep_id, drop_id, price_from="keep"):
     keep_by_sku = {r["sku"]: r for r in rows if r["ingredient_id"] == keep_id}
     moving = [r for r in rows if r["ingredient_id"] == drop_id]
 
+    # 되돌리기용 기록 — 합치기는 자재 한 줄을 지우는 되돌릴 수 없는 작업이라,
+    # 잘못 누르면 손으로 복구해야 했다(사장님 요청 2026-08-16).
+    undo = {
+        "dropped": {k: drop.get(k) for k in
+                    ("name", "unit", "pack_qty", "pack_cost", "category",
+                     "supplier", "note")},
+        "keep_id": keep_id,
+        "keep_before": {k: keep.get(k) for k in
+                        ("pack_qty", "pack_cost", "supplier", "note")},
+        "moved": [], "merged": [],
+        "kept_name": keep["name"], "dropped_name": drop["name"],
+        "at": datetime.utcnow().isoformat() + "Z",
+    }
+
     moved = merged = 0
     for r in moving:
         other = keep_by_sku.get(r["sku"])
         if other:                              # 한 메뉴에 둘 다 있으면 사용량을 더한다
+            undo["merged"].append({"keep_row": other["id"], "sku": r["sku"],
+                                   "keep_qty": float(other["qty"]),
+                                   "drop_qty": float(r["qty"])})
             sb.table("menu_recipes").update(
                 {"qty": float(other["qty"]) + float(r["qty"])}
             ).eq("id", other["id"]).execute()
             sb.table("menu_recipes").delete().eq("id", r["id"]).execute()
             merged += 1
         else:
+            undo["moved"].append({"row": r["id"], "sku": r["sku"]})
             sb.table("menu_recipes").update(
                 {"ingredient_id": keep_id}).eq("id", r["id"]).execute()
             moved += 1
@@ -1193,8 +1211,75 @@ def ingredient_merge(keep_id, drop_id, price_from="keep"):
     affected = sorted({r["sku"] for r in moving} | set(keep_by_sku))
     sb.table("ingredients").delete().eq("id", drop_id).execute()
     updated = recompute_costs(affected, force=True) if affected else {}
+    menu_set_setting("last_merge", undo)
     return {"moved": moved, "merged": merged, "recomputed": updated,
             "kept": keep["name"], "dropped": drop["name"]}
+
+
+def merge_undo_info():
+    """되돌릴 수 있는 합치기가 있으면 그 요약. 없으면 None."""
+    rec = menu_settings_all().get("last_merge")
+    if not rec:
+        return None
+    return {"kept": rec.get("kept_name"), "dropped": rec.get("dropped_name"),
+            "at": rec.get("at"),
+            "lines": len(rec.get("moved") or []) + len(rec.get("merged") or [])}
+
+
+def ingredient_merge_undo():
+    """직전 합치기를 되돌린다 — 지운 자재를 되살리고 레시피를 제자리로.
+
+    자재는 새 id 로 되살아난다(원래 id 는 이미 사라졌다). 레시피가 그 새 id 를
+    가리키게 하므로 원가는 합치기 전과 같아진다.
+    """
+    rec = menu_settings_all().get("last_merge")
+    if not rec:
+        raise ValueError("되돌릴 합치기가 없습니다.")
+    sb = get_client()
+
+    d = rec["dropped"]
+    payload = {k: v for k, v in d.items() if k in _ING_COLS}
+    payload["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    try:
+        rows = sb.table("ingredients").insert(payload).execute().data
+    except Exception as e:  # noqa: BLE001 — 008 이전이면 supplier 컬럼이 없다
+        if getattr(e, "code", None) not in _MISSING_COLUMN_CODES:
+            raise
+        payload.pop("supplier", None)
+        rows = sb.table("ingredients").insert(payload).execute().data
+    new_id = rows[0]["id"]
+
+    # 옮겨갔던 줄을 되살린 자재로 돌린다
+    for m in rec.get("moved") or []:
+        sb.table("menu_recipes").update({"ingredient_id": new_id}).eq(
+            "id", m["row"]).execute()
+    # 합쳐졌던 줄은 사용량을 되돌리고, 없어진 줄을 다시 만든다
+    for m in rec.get("merged") or []:
+        sb.table("menu_recipes").update({"qty": m["keep_qty"]}).eq(
+            "id", m["keep_row"]).execute()
+        sb.table("menu_recipes").insert(
+            {"sku": m["sku"], "ingredient_id": new_id, "qty": m["drop_qty"],
+             "updated_at": datetime.utcnow().isoformat() + "Z"}).execute()
+
+    # 남긴 쪽 값이 덮였으면 되돌린다
+    before = {k: v for k, v in (rec.get("keep_before") or {}).items()
+              if k in _ING_COLS}
+    if before:
+        before["updated_at"] = datetime.utcnow().isoformat() + "Z"
+        try:
+            sb.table("ingredients").update(before).eq("id", rec["keep_id"]).execute()
+        except Exception as e:  # noqa: BLE001
+            if getattr(e, "code", None) not in _MISSING_COLUMN_CODES:
+                raise
+            before.pop("supplier", None)
+            sb.table("ingredients").update(before).eq("id", rec["keep_id"]).execute()
+
+    skus = sorted({m["sku"] for m in (rec.get("moved") or [])} |
+                  {m["sku"] for m in (rec.get("merged") or [])})
+    updated = recompute_costs(skus, force=True) if skus else {}
+    menu_set_setting("last_merge", {})
+    return {"restored": d.get("name"), "recomputed": updated,
+            "lines": len(skus)}
 
 
 def ingredient_upsert(fields, ing_id=None):
@@ -1248,9 +1333,36 @@ def ingredient_upsert(fields, ing_id=None):
     return row
 
 
-def ingredient_delete(ing_id):
-    """자재 삭제 — 레시피에서 쓰는 중이면 DB 제약(restrict)으로 실패한다."""
-    get_client().table("ingredients").delete().eq("id", ing_id).execute()
+class IngredientInUse(ValueError):
+    """레시피에서 쓰는 중인 자재를 지우려 할 때. skus 에 쓰는 메뉴가 담긴다."""
+
+    def __init__(self, message, skus):
+        super().__init__(message)
+        self.skus = skus
+
+
+def ingredient_delete(ing_id, force=False):
+    """자재 삭제.
+
+    레시피에서 쓰는 중이면 그냥 지우지 않는다 — 지우면 그 메뉴 원가가 조용히
+    틀려진다. 어떤 메뉴가 쓰는지 알려주고, force 를 받으면 그 레시피 줄까지
+    지운 뒤 해당 메뉴 원가를 다시 계산한다(사장님 요청 2026-08-17).
+    """
+    ing_id = int(ing_id)
+    sb = get_client()
+    lines = [r for r in recipes_all() if r["ingredient_id"] == ing_id]
+    skus = sorted({r["sku"] for r in lines})
+    if lines and not force:
+        names = {m["sku"]: m["name"] for m in menu_all()}
+        shown = ", ".join(names.get(s, s) for s in skus[:5])
+        raise IngredientInUse(
+            f"{len(skus)}개 메뉴가 쓰는 중입니다 ({shown}"
+            f"{' 외' if len(skus) > 5 else ''}).", skus)
+    for r in lines:
+        sb.table("menu_recipes").delete().eq("id", r["id"]).execute()
+    sb.table("ingredients").delete().eq("id", ing_id).execute()
+    updated = recompute_costs(skus, force=True) if skus else {}
+    return {"removed_lines": len(lines), "recomputed": updated, "skus": skus}
 
 
 def recipe_upsert(sku, ingredient_id, qty):

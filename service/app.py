@@ -998,14 +998,18 @@ def menu_ingredient_merge(path_key):
 
 @app.route("/<path_key>/menu/ingredient/<int:ing_id>/delete", methods=["POST"])
 def menu_ingredient_delete(path_key, ing_id):
+    """자재 삭제. 쓰는 중이면 어떤 메뉴가 쓰는지 알려주고, force 면 같이 지운다."""
     check(path_key)
+    force = bool((request.get_json(silent=True) or {}).get("force"))
     try:
-        db.ingredient_delete(ing_id)
-        return jsonify({"ok": True})
-    except Exception as e:  # noqa: BLE001 — 레시피에서 사용 중이면 여기로 온다
-        return jsonify({"ok": False,
-                        "error": "레시피에서 사용 중이라 삭제할 수 없습니다. "
-                                 "먼저 해당 메뉴 레시피에서 빼주세요."}), 400
+        return jsonify({"ok": True, **db.ingredient_delete(ing_id, force=force)})
+    except db.IngredientInUse as e:
+        return jsonify({"ok": False, "in_use": True, "skus": e.skus,
+                        "error": str(e)}), 409
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"자재 삭제 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
 @app.route("/<path_key>/menu/ingredients/import_msfs", methods=["POST"])
@@ -1019,6 +1023,20 @@ def menu_ingredients_import_msfs(path_key):
         return jsonify({"ok": True, **db.import_msfs(spec)})
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"엠즈푸드 자재 등록 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/menu/ingredient/merge/undo", methods=["POST"])
+def menu_ingredient_merge_undo(path_key):
+    """직전 합치기 되돌리기 — 지운 자재를 되살리고 레시피를 제자리로."""
+    check(path_key)
+    try:
+        return jsonify({"ok": True, **db.ingredient_merge_undo()})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"합치기 되돌리기 실패: {e}", kind=type(e).__name__,
                      path=request.path, detail=traceback.format_exc())
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
@@ -1190,6 +1208,7 @@ def menu_data(path_key):
             "recipes": _safe(db.recipes_all),
             "offers": _safe(db.offers_all),
             "components": _safe(db.components_all),
+            "merge_undo": _safe(db.merge_undo_info),
         })
     except Exception as e:  # noqa: BLE001
         return jsonify({"error": str(e)[:200]}), 500

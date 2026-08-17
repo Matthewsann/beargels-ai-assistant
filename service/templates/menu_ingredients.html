@@ -261,6 +261,7 @@ function renderIng(){
       ${SORTS.map(([v,l])=>`<option value="${v}" ${v===SORT?"selected":""}>${l}</option>`).join("")}
     </select>
     <button class="bulkbtn ${BULK?"on":""}" onclick="toggleBulk()">${BULK?"✕ 일괄 수정 끝":"✏️ 일괄 수정"}</button>
+    ${DATA.merge_undo?`<button class="bulkbtn" onclick="undoMerge()" title="직전 합치기를 되돌립니다">↩︎ 합치기 취소</button>`:""}
   </div>
   <div class="fchips" id="catChips"></div>
   <div class="fchips" id="menuCatChips"></div>
@@ -299,7 +300,9 @@ function renderIng(){
     <b>산출량</b>은 한 번 만들면 총 몇 g/ml/개가 나오는지 — 예) 플레인 크림치즈 750g.
     만든 뒤 들어가는 재료(크림치즈·생크림·설탕…)를 레시피로 넣으면
     <b>배치 원가 ÷ 산출량</b>이 그 자재의 단가가 되고, 그걸 쓰는 메뉴 원가까지 자동으로 따라옵니다.<br>
-  · <b>✏️ 일괄편집</b>을 켜면 엑셀처럼 여러 칸을 연달아 고치고 <b>맨 아래 저장</b>으로 한 번에 반영합니다
+  · <b>✏️ 일괄 수정</b>을 켜면 엑셀처럼 여러 칸을 연달아 고치고 <b>맨 아래 저장</b>으로 한 번에 반영합니다
+  <br>· 체크박스는 <b>Shift+클릭으로 구간 선택</b>, <b>누른 채 훑으면 드래그 선택</b>입니다 —
+  고른 줄에 분류·발주처·단위를 아래 바에서 한꺼번에 적용하거나 <b>🗑 선택 삭제</b>로 통째로 지울 수 있어요
     (Tab=오른쪽, Enter=아래 줄, 체크한 줄에 분류·발주처를 한꺼번에 적용).</p>`;
   document.getElementById("main").innerHTML=html;
   renderIng2();
@@ -393,7 +396,7 @@ function renderIng2(){
       const cur={...i,...(EDITS[i.id]||{})};
       html+=`<tr>
         <td class="ck"><input type="checkbox" ${SEL.has(i.id)?"checked":""}
-          onclick="bSel(${i.id},this.checked)"></td>
+          data-row="${r}" onclick="bSel(${i.id},this.checked,event)"></td>
         <td class="l"><input class="bcell l${chg("name")}" data-r="${r}" data-c="0" value="${(v("name")||"").replace(/"/g,"&quot;")}"
           onchange="bEdit(${i.id},'name',this.value,this)" onkeydown="bKey(event)"></td>
         <td class="l"><input class="bcell l${chg("category")}" list="catList" data-r="${r}" data-c="1"
@@ -534,6 +537,21 @@ async function mKeep(id){
   if(j){ i.note=j.ingredient?j.ingredient.note:(i.note||"")+" · 확인함"; MDONE++;
     toast("그대로 두었습니다"); render(); }
 }
+// 합치기는 자재 한 줄을 지우는 되돌릴 수 없는 작업이었다. 잘못 누르면 손으로
+// 복구해야 해서, 직전 한 번은 되돌릴 수 있게 한다(사장님 요청 2026-08-16).
+async function undoMerge(){
+  const u = DATA.merge_undo;
+  if(!u){ toast("되돌릴 합치기가 없습니다"); return; }
+  if(!confirm(`'${u.dropped}' 를 되살리고 '${u.kept}' 와 합친 것을 되돌릴까요?`)) return;
+  const j = await api("/ingredient/merge/undo");
+  if(!j) return;
+  const d = await fetch(BASE+"/data").then(r=>r.json());
+  DATA=d; DATA.ingredients=d.ingredients||[]; DATA.recipes=d.recipes||[]; _mcMap=null;
+  const cnt = Object.keys(j.recomputed||{}).length;
+  toast(`'${j.restored}' 되살림 ✓${cnt?` · 메뉴 ${cnt}개 원가 재계산`:""}`);
+  render();
+}
+
 async function mLink(newId, oldId){
   const n=DATA.ingredients.find(x=>x.id===newId);
   const o=DATA.ingredients.find(x=>x.id===oldId);
@@ -547,7 +565,7 @@ async function mLink(newId, oldId){
   DATA=d; DATA.ingredients=d.ingredients||[]; DATA.recipes=d.recipes||[]; _mcMap=null;
   MDONE++;
   const cnt=Object.keys(j.recomputed||{}).length;
-  toast(`'${o.name}' 값 갱신 ✓${cnt?` · 메뉴 ${cnt}개 원가 재계산`:""}`);
+  toast(`'${o.name}' 값 갱신 ✓${cnt?` · 메뉴 ${cnt}개 재계산`:""} · 위 ↩︎ 로 취소 가능`);
   render();
 }
 document.addEventListener("keydown",e=>{
@@ -654,7 +672,40 @@ function bKey(e){
     if(nx){nx.focus(); if(nx.select) nx.select();}
   }
 }
-function bSel(id,on){ on?SEL.add(id):SEL.delete(id); bBar(); }
+// 줄이 100개를 넘으니 하나씩 누르는 건 못 쓴다. 엑셀처럼 **Shift+클릭으로
+// 구간**, **드래그로 훑어서** 고를 수 있게 한다(사장님 요청 2026-08-17).
+let LAST_ROW=null;
+function bSel(id,on,ev){
+  const row=ev&&ev.target?+ev.target.dataset.row:null;
+  if(ev&&ev.shiftKey&&LAST_ROW!=null&&row!=null){
+    const [a,b]=[Math.min(LAST_ROW,row),Math.max(LAST_ROW,row)];
+    for(let k=a;k<=b;k++){
+      const it=ING_VIEW[k]; if(!it) continue;
+      on?SEL.add(it.id):SEL.delete(it.id);
+    }
+    renderIng2();      // 체크 표시를 화면에 반영
+  } else {
+    on?SEL.add(id):SEL.delete(id);
+  }
+  if(row!=null) LAST_ROW=row;
+  bBar();
+}
+// 드래그로 훑기 — 체크박스에서 누른 채 지나가면 같은 상태로 칠한다.
+let DRAG=null;
+document.addEventListener("mousedown",e=>{
+  const cb=e.target.closest?.('input[type=checkbox][data-row]');
+  if(!cb) return;
+  DRAG={on:!cb.checked};
+});
+document.addEventListener("mouseover",e=>{
+  if(!DRAG) return;
+  const cb=e.target.closest?.('input[type=checkbox][data-row]');
+  if(!cb||cb.checked===DRAG.on) return;
+  cb.checked=DRAG.on;
+  const it=ING_VIEW[+cb.dataset.row];
+  if(it){ DRAG.on?SEL.add(it.id):SEL.delete(it.id); bBar(); }
+});
+document.addEventListener("mouseup",()=>{ DRAG=null; });
 function bSelAll(on){
   SEL.clear(); if(on) for(const i of ING_VIEW) SEL.add(i.id);
   renderIng2();
@@ -686,6 +737,10 @@ function bBar(){
     <select onchange="bApply('supplier',this.value);this.value=''">
       <option value="">선택줄 발주처…</option>${SUPPLIERS.map(x=>`<option>${x}</option>`).join("")}
       <option value="__none__">미지정</option></select>
+    <select onchange="bApply('unit',this.value);this.value=''">
+      <option value="">선택줄 단위…</option>${["g","ml","ea"].map(u=>`<option>${u}</option>`).join("")}</select>
+    <button class="cancel" ${SEL.size?"":"disabled"} onclick="delSelected()"
+      title="고른 줄을 지웁니다(레시피에서 쓰는 중인 것은 건너뜁니다)">🗑 선택 삭제</button>
     <button class="cancel" onclick="toggleBulk()">닫기</button>
     <button class="save" ${n?"":"disabled"} onclick="bSave()">저장 ${n?`(${n}줄)`:""}</button>`;
 }
@@ -834,9 +889,44 @@ async function importMsfs(){
   if(q) setTimeout(()=>toast(`이름이 비슷한 ${q}건 — 하나씩 확인해 주세요`),1800);
 }
 async function delIng(id){
-  if(!confirm("이 자재를 삭제할까요?"))return;
-  const j=await api(`/ingredient/${id}/delete`);
-  if(j){DATA.ingredients=DATA.ingredients.filter(i=>i.id!==id);toast("삭제 ✓");render();}
+  const it=DATA.ingredients.find(x=>x.id===id);
+  if(!confirm(`'${it?it.name:id}' 자재를 삭제할까요?`))return;
+  let r=await fetch(`${BASE}/ingredient/${id}/delete`,{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify({})});
+  let j=await r.json().catch(()=>({ok:false}));
+  // 레시피에서 쓰는 중이면 어떤 메뉴가 쓰는지 보여주고 한 번 더 묻는다 —
+  // 그냥 지우면 그 메뉴 원가가 조용히 틀려진다.
+  if(!j.ok&&j.in_use){
+    if(!confirm(`${j.error}\n\n그 메뉴들의 레시피에서도 빼고 지울까요?\n(해당 메뉴 원가가 다시 계산됩니다)`)) return;
+    r=await fetch(`${BASE}/ingredient/${id}/delete`,{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({force:true})});
+    j=await r.json().catch(()=>({ok:false}));
+  }
+  if(!j.ok){ toast(`⚠ ${j.error||"삭제 실패"}`); return; }
+  const d=await fetch(BASE+"/data").then(x=>x.json());
+  DATA=d; DATA.ingredients=d.ingredients||[]; DATA.recipes=d.recipes||[]; _mcMap=null;
+  const n=Object.keys(j.recomputed||{}).length;
+  toast(`삭제 ✓${n?` · 메뉴 ${n}개 원가 재계산`:""}`);
+  render();
+}
+
+// 고른 줄을 한꺼번에 지운다 — 엠즈푸드 품목처럼 무더기로 들어온 걸 정리할 때.
+async function delSelected(){
+  if(!SEL.size){toast("먼저 줄을 고르세요");return;}
+  const ids=[...SEL];
+  if(!confirm(`고른 ${ids.length}개 자재를 삭제할까요?\n레시피에서 쓰는 중인 것은 건너뜁니다.`)) return;
+  let ok=0,skip=0;
+  for(const id of ids){
+    const r=await fetch(`${BASE}/ingredient/${id}/delete`,{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({})});
+    const j=await r.json().catch(()=>({ok:false}));
+    j.ok?ok++:skip++;
+  }
+  SEL.clear();
+  const d=await fetch(BASE+"/data").then(x=>x.json());
+  DATA=d; DATA.ingredients=d.ingredients||[]; DATA.recipes=d.recipes||[]; _mcMap=null;
+  toast(`삭제 ${ok}개${skip?` · 사용 중이라 건너뜀 ${skip}개`:""}`);
+  render();
 }
 
 // ── 레시피 탭 ──────────────────────────────────────────────
