@@ -31,7 +31,30 @@ def main() -> int:
     print(f"{OK} META_ACCESS_TOKEN 있음")
     api = from_env()
 
-    # 2) 인스타 계정
+    # 2) 권한 — 여기서 막히는 경우가 제일 많다.
+    #    instagram_basic 이 없으면 연결이 멀쩡해도 인스타가 '안 보인다'.
+    try:
+        missing = api.missing_scopes()
+        if missing:
+            print(f"{NO} 토큰 권한 부족 — 빠진 권한: {', '.join(missing)}")
+            print("    그래프 API 탐색기에서 이 권한을 체크하고 토큰을 다시 만드세요.")
+            print("    (권한이 없으면 인스타가 연결돼 있어도 API가 안 보여줍니다)")
+            return 1
+        print(f"{OK} 권한 전부 있음 ({', '.join(api.NEEDED_SCOPES)})")
+    except MetaGraphError as e:
+        print(f"{NO} 권한 확인 실패\n    {e}")
+        return 1
+
+    info = api.token_info()
+    if info.get("expires_at") == 0:
+        print(f"{OK} 토큰 만료 없음(영구)")
+    elif info.get("expires_at"):
+        from datetime import datetime
+        when = datetime.fromtimestamp(info["expires_at"])
+        print(f"    토큰 만료: {when:%Y-%m-%d %H:%M} "
+              f"({(when - datetime.now()).days}일 남음)")
+
+    # 3) 인스타 계정
     try:
         uid = api.resolve_ig_user_id()
         print(f"{OK} 인스타 비즈니스 계정 찾음 (IG_USER_ID={uid})")

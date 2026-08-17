@@ -80,19 +80,59 @@ class MetaGraph:
                 "토큰 발급 시 페이지 권한(pages_show_list)을 체크했는지 확인하세요."
             )
         for p in pages:
-            info = self._get(p["id"], fields="instagram_business_account{id,username}")
-            iba = info.get("instagram_business_account")
-            if iba:
-                self.ig_user_id = iba["id"]
-                logger.info("인스타 계정 발견: @%s (%s), 페이지 '%s'",
-                            iba.get("username"), self.ig_user_id, p.get("name"))
-                return self.ig_user_id
-        names = ", ".join(p.get("name", "?") for p in pages)
-        raise MetaGraphError(
+            # 페이지 유형에 따라 필드 이름이 다르다. 둘 다 본다.
+            for fld in ("instagram_business_account", "connected_instagram_account"):
+                info = self._get(p["id"], fields=f"{fld}{{id,username}}")
+                iba = info.get(fld)
+                if iba and iba.get("id"):
+                    self.ig_user_id = iba["id"]
+                    logger.info("인스타 계정 발견: @%s (%s), 페이지 '%s'",
+                                iba.get("username"), self.ig_user_id, p.get("name"))
+                    return self.ig_user_id
+        raise self._account_error(", ".join(p.get("name", "?") for p in pages))
+
+    def _account_error(self, names: str) -> MetaGraphError:
+        """계정을 못 찾았을 때, 진짜 원인을 짚어 준다.
+
+        가장 흔한 원인은 계정 연결이 아니라 **권한 누락**이다. `instagram_basic`
+        이 없으면 연결이 멀쩡해도 instagram_business_account 필드가 조용히
+        빈 값으로 온다(에러도 안 난다).
+        """
+        missing = self.missing_scopes()
+        if missing:
+            return MetaGraphError(
+                f"토큰에 권한이 빠져 있습니다: {', '.join(missing)}\n"
+                f"    페이지({names})는 찾았지만 인스타 정보를 읽을 권한이 없습니다.\n"
+                "    그래프 API 탐색기에서 위 권한을 체크하고 토큰을 다시 만드세요."
+            )
+        return MetaGraphError(
             f"페이지({names})에 연결된 인스타 비즈니스 계정을 찾지 못했습니다. "
             "인스타 앱 → 설정 → 계정 유형에서 '프로페셔널 계정'인지, "
             "페이스북 페이지와 연결돼 있는지 확인하세요."
         )
+
+    #: 이 연동에 반드시 필요한 권한. 하나라도 빠지면 조용히 빈 값이 돌아온다.
+    NEEDED_SCOPES = (
+        "pages_show_list",
+        "pages_read_engagement",
+        "instagram_basic",
+        "instagram_manage_insights",
+    )
+
+    def granted_scopes(self) -> list[str]:
+        data = self._get("me/permissions").get("data", [])
+        return [p["permission"] for p in data if p.get("status") == "granted"]
+
+    def missing_scopes(self) -> list[str]:
+        granted = set(self.granted_scopes())
+        return [s for s in self.NEEDED_SCOPES if s not in granted]
+
+    def token_info(self) -> dict:
+        """토큰 유효기간 등. 실패해도 치명적이지 않다."""
+        try:
+            return self._get("debug_token", input_token=self.access_token).get("data", {})
+        except MetaGraphError:
+            return {}
 
     def me(self) -> dict:
         """내 인스타 계정 기본 정보."""
