@@ -269,6 +269,20 @@ def _knowledge() -> str:
     return _load_knowledge() or "(지침 없음)"
 
 
+def _market() -> str:
+    """메타 그래프로 수집한 '지금 잘 되는 게시물' 요약. 없으면 빈 문자열.
+
+    `python -m sns_automation.market_scan` 을 돌려야 채워진다
+    (설정: docs/meta_graph_setup.md).
+    """
+    try:
+        from .market_scan import as_prompt_context
+        return as_prompt_context()
+    except Exception as e:  # 데이터가 없거나 모듈 문제여도 기획은 계속돼야 한다
+        logger.debug("시장 스캔 컨텍스트 없음: %s", e)
+        return ""
+
+
 def _client():
     key = os.getenv("ANTHROPIC_API_KEY")
     if not key:
@@ -305,7 +319,8 @@ async def generate_weekly_plan(count: int = 3) -> dict:
             "콘텐츠 기둥을 골고루 섞는다.\n\n"
             f"[브랜드·전략 지침]\n{_knowledge()}\n\n"
             f"[지금까지 발행한 훅과 성과]\n{_hook_summary()}\n\n"
-            f"[최근 인사이트 분석]\n{_insights_summary()}"
+            f"[최근 인사이트 분석]\n{_insights_summary()}\n\n"
+            f"{_market()}"
         )
         data = await _ask(system, f"이번 주 촬영 체크리스트 {count}개를 만들어줘.", _PLAN_SCHEMA)
         items = data["items"][:count]
@@ -335,7 +350,8 @@ async def suggest_hooks(title: str, menu: str, base_hook: str = "") -> dict:
             "짧은 화면 자막을 쓴다. 과장 금지('미쳤다','인생' 금지), 12자 내외, "
             "각각 다른 각도로: ①호기심 ②숫자·구체성 ③지역(송도)·한정.\n\n"
             f"[브랜드 지침 요약]\n{_knowledge()[:3000]}\n\n"
-            f"[성과가 좋았던 훅 참고]\n{_hook_summary()}"
+            f"[성과가 좋았던 훅 참고]\n{_hook_summary()}\n\n"
+            f"{_market()}"
         )
         user = f"주제: {title}\n메뉴: {menu}\n"
         if base_hook:
