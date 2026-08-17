@@ -147,3 +147,44 @@ def test_ai_rewrite_rejected_if_still_banned(monkeypatch):
     monkeypatch.setattr(bg, "_ask_claude", lambda *a, **k: "여전히 바라요")
     out = bg._strip_banned("맛있게 드셨길 바라요", 500)
     assert "바라요" not in out
+
+
+# --- 예시 기반 생성: 무료 모델로도 사장님 문체가 나오게 (2026-08-18) --------
+
+def test_examples_block_is_built_from_owner_replies():
+    """유형이 맞는 예시가 프롬프트에 실려야 한다(없으면 빈 문자열)."""
+    import assistant.beargels as bg
+    bg._EXAMPLES_CACHE = {"rating_only": [
+        {"rating": 5, "content": "", "menus": ["베이글"], "order_count": 3,
+         "reply": "김손님님, 세 번째 주문 감사해요! 맛있게 드셨길요."}]}
+    r = {"platform": "coupang", "review_no": "1", "author": "김손님",
+         "rating": 5, "content": "", "menus": ["베이글"]}
+    block = bg._examples_block(r, "rating_only")
+    assert "사장님이 실제로 쓴 답글" in block
+    assert "세 번째 주문 감사해요" in block
+    assert "베끼지 말고" in block          # 복붙 방지 지시가 있어야 한다
+    bg._EXAMPLES_CACHE = None
+
+
+def test_examples_prefer_same_menu_and_order_bucket():
+    """같은 메뉴·같은 단골 구간 예시가 먼저 뽑혀야 한다."""
+    import assistant.beargels as bg
+    bg._EXAMPLES_CACHE = {"rating_only": [
+        {"rating": 5, "content": "", "menus": ["딴거"], "order_count": 1,
+         "reply": "무관한 예시"},
+        {"rating": 5, "content": "", "menus": ["베이글"], "order_count": 30,
+         "reply": "딱 맞는 예시"},
+    ]}
+    r = {"platform": "coupang", "review_no": "2", "author": "손님",
+         "rating": 5, "content": "", "menus": ["베이글"],
+         "raw": '{"orderCount": 25}'}
+    picked = bg.pick_examples(r, "rating_only", k=1)
+    assert picked and picked[0]["reply"] == "딱 맞는 예시"
+    bg._EXAMPLES_CACHE = None
+
+
+def test_no_examples_is_not_fatal():
+    import assistant.beargels as bg
+    bg._EXAMPLES_CACHE = {}
+    assert bg._examples_block({"menus": []}, "rating_only") == ""
+    bg._EXAMPLES_CACHE = None

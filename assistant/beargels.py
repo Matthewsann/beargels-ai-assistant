@@ -480,6 +480,85 @@ def format_complaint_report(reviews, label=""):
     return "\n".join(lines)
 
 
+# ── 사장님 답글 예시 창고 (무료 모델로도 사장님 문체가 나오게) ──────────────
+# 약한 모델은 규칙("문어체 쓰지 마라")보다 **실제 예시**를 훨씬 잘 따라한다.
+# scripts/build_examples.py 가 구워 둔 유형별 실제 답글에서, 지금 리뷰와
+# 가장 비슷한 몇 개를 골라 프롬프트에 함께 넣는다(사장님 제안 2026-08-18).
+_EXAMPLES_PATH = Path(__file__).resolve().parent.parent / "reference" / \
+    "reply_examples_by_kind.json"
+_EXAMPLES_CACHE = None
+
+
+def _example_bank():
+    global _EXAMPLES_CACHE
+    if _EXAMPLES_CACHE is None:
+        try:
+            _EXAMPLES_CACHE = json.loads(
+                _EXAMPLES_PATH.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 — 예시가 없어도 생성은 돼야 한다
+            _EXAMPLES_CACHE = {}
+    return _EXAMPLES_CACHE
+
+
+def _oc_bucket(n):
+    """주문 횟수를 대우가 같은 구간으로 묶는다(첫/재주문/단골/VIP)."""
+    if not isinstance(n, int) or n <= 0:
+        return None
+    return 1 if n == 1 else 2 if n < 5 else 3 if n < 20 else 4
+
+
+def pick_examples(review, kind, k=4):
+    """이 리뷰와 가장 비슷한 사장님 답글 예시 k개(없으면 빈 목록).
+
+    비슷함의 기준(가중치 순): 같은 메뉴 > 같은 주문횟수 구간 > 같은 별점 >
+    비슷한 리뷰 길이. 같은 예시만 반복해 쓰지 않도록 리뷰번호로 섞는다.
+    """
+    bank = _example_bank().get(kind) or []
+    if not bank:
+        return []
+    menus = {m.strip() for m in (review.get("menus") or []) if m}
+    oc_b = _oc_bucket(order_count_of(review))
+    rating = review.get("rating")
+    clen = len((review.get("content") or "").strip())
+
+    def score(ex):
+        s = 0
+        ex_menus = {m.strip() for m in (ex.get("menus") or []) if m}
+        if menus and ex_menus & menus:
+            s += 6                       # 같은 메뉴 이야기가 제일 도움이 된다
+        if oc_b and _oc_bucket(ex.get("order_count")) == oc_b:
+            s += 4                       # 단골 대우가 같은 예시
+        if rating and ex.get("rating") == rating:
+            s += 2
+        if abs(len(ex.get("content") or "") - clen) <= 20:
+            s += 1                       # 길이가 비슷하면 분량 감각이 맞는다
+        return s
+
+    rnd = random.Random(str(review.get("review_no") or ""))
+    shuffled = bank[:]
+    rnd.shuffle(shuffled)                # 동점일 때 매번 같은 것만 뽑지 않게
+    shuffled.sort(key=score, reverse=True)
+    return shuffled[:k]
+
+
+def _examples_block(review, kind, k=4):
+    """프롬프트에 넣을 예시 블록 문자열(없으면 빈 문자열)."""
+    picked = pick_examples(review, kind, k)
+    if not picked:
+        return ""
+    lines = ["[사장님이 실제로 쓴 답글 — 이 말투·길이·구성을 그대로 따라 쓴다]"]
+    for i, ex in enumerate(picked, 1):
+        rv = ex.get("content") or "(사진/무텍스트)"
+        oc = ex.get("order_count")
+        meta = f"★{ex.get('rating')}"
+        if oc:
+            meta += f" · {oc}회 주문"
+        lines.append(f"\n예시{i} ({meta}) 리뷰: \"{rv[:60]}\"\n답글: {ex['reply']}")
+    lines.append("\n⚠️ 위 답글을 베끼지 말고, **말투와 구성만** 따라 이번 리뷰에 "
+                 "맞는 내용으로 새로 쓴다.")
+    return "\n".join(lines) + "\n\n"
+
+
 def order_count_of(review):
     """이 리뷰를 남긴 고객의 누적 주문 횟수(모르면 None).
 
@@ -629,6 +708,9 @@ def generate_review_reply(review):
         lessons = _reply_lessons()
         if lessons:
             ctx_block += f"[답글 교훈 노트 — 반드시 지킬 것]\n{lessons}\n\n"
+        # 사장님이 실제로 쓴 비슷한 답글을 함께 보여준다 — 무료·저가 모델은
+        # 규칙보다 예시를 훨씬 잘 따라한다(사장님 제안 2026-08-18).
+        ctx_block += _examples_block(review, typ)
         user = (
             f"{ctx_block}"
             f"[{cfg['label']}] {visit} '{author}'가 {menus} 주문 후 "
