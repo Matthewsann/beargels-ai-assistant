@@ -574,6 +574,10 @@ function toggleDetail(sku){
     <div style="font-size:12px;margin-bottom:6px"><b>정본 메뉴명</b>
       <input class="wide" type="text" id="nm-${sku}" value="${(it.name||"").replace(/"/g,"&quot;")}" style="width:min(320px,80%);padding:4px 6px;border:1px solid var(--line);border-radius:4px">
       <button onclick="saveName('${sku}')" style="font-size:11px">이름 저장</button>
+      <span style="margin-left:10px"><b>분류</b>
+      <input type="text" id="cat-${sku}" list="catList" value="${(it.category||"").replace(/"/g,"&quot;")}"
+        style="width:140px;text-align:left;padding:4px 6px;border:1px solid var(--line);border-radius:4px">
+      <button onclick="saveCat('${sku}')" style="font-size:11px">분류 저장</button></span>
       ${it.cost_source?`<div class="note">원가 출처: ${it.cost_source}</div>`:""}
       <div class="note"><a href="/{{ key }}/menu/ingredients?sku=${sku}">📖 이 메뉴 레시피 편집(원가 자동계산)</a></div>
       ${setEditor(sku)}
@@ -605,6 +609,20 @@ async function saveName(sku){
   const it = DATA.items.find(i=>i.sku===sku);
   it.name = v;
   await api(`/item/${sku}`, {name:v});
+  render();
+}
+
+// 분류는 목표 원가율을 가르는 값이라 바꾸면 원가율 판정도 같이 달라진다.
+async function saveCat(sku){
+  const v = document.getElementById("cat-"+sku).value.trim();
+  if(!v){ toast("분류를 입력하세요"); return; }
+  const it = DATA.items.find(i=>i.sku===sku);
+  if(v === it.category){ toast("그대로입니다"); return; }
+  const before = it.category;
+  it.category = v;
+  const j = await api(`/item/${sku}`, {category:v});
+  if(!j){ it.category = before; toast("⚠ 저장 실패"); return; }
+  toast(`분류 '${before}' → '${v}' ✓`);
   render();
 }
 
