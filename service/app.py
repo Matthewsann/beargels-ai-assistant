@@ -495,6 +495,32 @@ def save_draft(path_key, review_id):
     return redirect(url_for("todo", path_key=path_key) + f"#r{review_id}")
 
 
+@app.route("/<path_key>/regen-all", methods=["POST"])
+def regen_all(path_key):
+    """'전체 AI 재생성' — 화면에 보이는 대기 답글 초안을 한 번에 다시 만든다.
+
+    말투 규칙이나 생성 로직을 고친 뒤 옛 초안이 남아 있으면 하나씩 눌러야
+    했다(사장님 요청 2026-08-16). 민감 리뷰도 초안이 있으므로 함께 돌린다.
+    """
+    check(path_key)
+    plat = (request.args.get("plat") or "").strip()
+    try:
+        n = 0
+        for r in db.get_pending_reviews(limit=100):
+            if not r.get("reply_draft"):
+                continue                      # 아직 초안이 없으면 수집이 만든다
+            if plat and r.get("platform") != plat:
+                continue
+            db.request_regen(r["id"], by="전체 재생성")
+            n += 1
+        return jsonify({"ok": True, "count": n})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"전체 재생성 요청 실패: {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:150]}), 200
+
+
 @app.route("/<path_key>/review/<int:review_id>/regen", methods=["POST"])
 def regen(path_key, review_id):
     """'AI 재생성' — 집 PC 일꾼에게 초안 재생성을 요청한다(잡 큐).

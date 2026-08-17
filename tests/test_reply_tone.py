@@ -113,3 +113,37 @@ def test_generate_review_reply_never_exceeds_platform_limit(monkeypatch):
     draft = beargels.generate_review_reply(review)
     assert len(draft) <= 300
     assert draft.endswith((".", "!", "?", "~"))
+
+
+# --- 금지 말투는 AI 가 없어도 반드시 사라진다 (사장님 지적 2026-08-16) -------
+
+def test_banned_words_removed_without_ai(monkeypatch):
+    """검문이 AI 재작성에만 기대면, AI 가 죽었을 때 '바라요'가 그대로 나간다.
+    실제로 그렇게 새어 실고객 답글까지 갔다 — 표 치환으로 항상 없앤다."""
+    import assistant.beargels as bg
+
+    def dead(*a, **k):                       # AI 완전 불가 상황
+        raise bg.LLMUnavailable("no key")
+
+    monkeypatch.setattr(bg, "_ask_claude", dead)
+    text = ("고객님, 맛있게 드셨길 바라요. 다음에도 큰 힘이 됩니다. "
+            "가까이 오시면 들러주세요.")
+    out = bg._strip_banned(text, 500)
+    for bad in ("바라요", "큰 힘이 됩니다", "오시면", "들러주세요"):
+        assert bad not in out, f"'{bad}' 가 남았다: {out}"
+
+
+def test_local_fix_keeps_meaning():
+    """치환 결과가 문장으로 읽혀야 한다(토막나면 안 됨)."""
+    import assistant.beargels as bg
+    out = bg._fix_banned_locally("맛있게 드셨길 바랍니다. 또 오세요.")
+    assert "드셨길요" in out and "또 주문 주세요" in out
+    assert "맛있게 맛있게" not in out   # 이중 치환 방지
+
+
+def test_ai_rewrite_rejected_if_still_banned(monkeypatch):
+    """AI 가 고쳐 준 결과에도 금지어가 남으면 그 결과를 버린다."""
+    import assistant.beargels as bg
+    monkeypatch.setattr(bg, "_ask_claude", lambda *a, **k: "여전히 바라요")
+    out = bg._strip_banned("맛있게 드셨길 바라요", 500)
+    assert "바라요" not in out

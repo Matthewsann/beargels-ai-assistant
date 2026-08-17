@@ -34,7 +34,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from assistant.beargels import classify_review, generate_review_reply  # noqa: E402
+from assistant.beargels import (  # noqa: E402
+    classify_review, generate_review_reply, order_count_of,
+)
 from alerts import notify_owner  # noqa: E402
 from database import supabase_client as db  # noqa: E402
 
@@ -204,7 +206,9 @@ def make_drafts() -> int:
             "content": row.get("content"),
             "menus": row.get("menus") or [],
             "raw": row.get("raw"),  # 사진 유무 판별용(classify_review)
-            "order_count": None,
+            # 주문 횟수는 단골·VIP 판단의 핵심 지표 — raw 에서 뽑아 넘긴다
+            # (예전엔 None 으로 고정돼 38번 주문한 단골도 몰랐다).
+            "order_count": order_count_of(row),
         }
         try:
             draft = generate_review_reply(review)
@@ -308,7 +312,9 @@ def run_regen_job(job) -> None:
             "content": row.get("content"),
             "menus": row.get("menus") or [],
             "raw": row.get("raw"),  # 사진 유무 판별용(classify_review)
-            "order_count": None,
+            # 주문 횟수는 단골·VIP 판단의 핵심 지표 — raw 에서 뽑아 넘긴다
+            # (예전엔 None 으로 고정돼 38번 주문한 단골도 몰랐다).
+            "order_count": order_count_of(row),
         }
         draft = generate_review_reply(review)
         db.save_ai_draft(rid, draft, kind=classify_review(review))

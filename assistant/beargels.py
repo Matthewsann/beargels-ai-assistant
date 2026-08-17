@@ -480,6 +480,31 @@ def format_complaint_report(reviews, label=""):
     return "\n".join(lines)
 
 
+def order_count_of(review):
+    """이 리뷰를 남긴 고객의 누적 주문 횟수(모르면 None).
+
+    단골·VIP 판단의 핵심 지표다(사장님 강조 2026-08-16) — 38번째 주문한
+    분에게 처음 오신 것처럼 답하면 안 된다. 저장 컬럼이 없어도 플랫폼
+    원본(raw)에서 뽑는다: 쿠팡=orderCount, 배민=카드의 'N회 주문 고객'.
+    """
+    n = review.get("order_count")
+    if isinstance(n, int) and n > 0:
+        return n
+    raw = review.get("raw")
+    if not raw:
+        return None
+    if isinstance(raw, str):
+        try:
+            data = json.loads(raw)
+        except Exception:  # noqa: BLE001 — 배민 raw 는 JSON 이 아니라 HTML/텍스트
+            m = re.search(r"(\d+)\s*회\s*주문", raw)
+            return int(m.group(1)) if m else None
+    else:
+        data = raw
+    n = data.get("orderCount") if isinstance(data, dict) else None
+    return n if isinstance(n, int) and n > 0 else None
+
+
 def _has_photo(review):
     """리뷰에 사진이 실제로 있는지. 모르면 None.
 
@@ -578,17 +603,25 @@ def generate_review_reply(review):
     content = (review.get("content") or "").strip()
     author = _clean_author(review.get("author"))
     menus = ", ".join(review.get("menus") or []) or "주문 메뉴"
-    oc = review.get("order_count")
+    # 주문 횟수는 단골·VIP 판단의 핵심 지표 — 넘겨받지 못했으면 원본에서 캔다.
+    oc = order_count_of(review)
     cfg = PLATFORM_REPLY.get(review.get("platform"),
                              {"label": "", "max_len": 300, "target_len": 290})
     max_len = cfg["max_len"]
     target = cfg.get("target_len", max_len)
+    # 단계별로 대우를 달리한다(사장님 강조 2026-08-16): 처음 → 단골 → VIP.
     if oc == 1:
-        visit = "첫 주문 고객"
+        visit = "첫 주문 고객 — 첫 방문을 반갑게 맞이하고 다음을 청한다"
+    elif isinstance(oc, int) and oc >= 20:
+        visit = (f"{oc}번째 주문한 **VIP 단골** — 오래 함께해 주신 것을 "
+                 f"콕 집어 감사 인사에 넣는다(숫자를 그대로 언급)")
+    elif isinstance(oc, int) and oc >= 5:
+        visit = (f"{oc}번째 주문한 **단골** — 자주 찾아주시는 점을 "
+                 f"구체적으로 알아봐 준다(숫자 언급)")
     elif isinstance(oc, int) and oc > 1:
-        visit = f"{oc}번째 재주문(단골) 고객"
+        visit = f"{oc}번째 재주문 고객 — 다시 찾아주신 것을 반긴다"
     else:
-        visit = "고객"
+        visit = "고객(주문 횟수 모름 — 첫 주문인지 단골인지 단정하지 말 것)"
 
     try:
         ctx = _reply_context()
@@ -612,7 +645,9 @@ def generate_review_reply(review):
             _ask_claude(REPLY_PERSONA, user, max_tokens=600), max_len)
         return _strip_banned(draft, max_len)
     except LLMUnavailable:
-        return _template_reply(typ, review, author, oc, rating, max_len)
+        # 템플릿도 검문을 태운다 — 사람이 쓴 문구라도 규칙이 바뀌면 어긋날 수 있다.
+        return _strip_banned(
+            _template_reply(typ, review, author, oc, rating, max_len), max_len)
 
 
 # 생성 후 최종 검문 — 모델이 프롬프트의 금지 규칙을 흘리는 일이 실제로 있다
@@ -626,26 +661,78 @@ _REPLY_BANNED = (
 )
 
 
-def _strip_banned(text, max_len):
-    """금지 표현이 섞였으면 그 부분만 자연스럽게 고쳐 받는다(1회).
+# 금지 표현 → 사장님 말투로 바꾸는 **확정 치환표**.
+# ⚠️ 왜 표가 필요한가: 예전엔 검문이 'AI 에게 다시 고쳐달라'고만 했는데,
+#    AI 가 불안정하면(키 만료·한도 초과) 조용히 원문을 그대로 내보냈다.
+#    그래서 '바라요' 같은 말투가 실제 답글까지 나갔다(사장님 지적 2026-08-16).
+#    이제 표로 먼저 고치고, AI 는 있으면 다듬는 용도로만 쓴다.
+# ⚠️ 긴 표현을 먼저 둔다 — 짧은 것이 먼저 걸리면 이중 치환돼 문장이 깨진다
+#    ('드셨길 바랍니다' → '맛있게 맛있게 드셨길요' 사고, 2026-08-16).
+_BANNED_FIX = (
+    ("되셨으면 좋겠습니다", "되셨길요"),
+    ("드셨길 바랍니다", "드셨길요"),
+    ("드셨길 바라요", "드셨길요"),
+    ("바라겠습니다", "좋겠어요"),
+    ("바랍니다", "좋겠어요"),
+    ("바라요", "좋겠어요"),
+    ("되셨으면", "되었으면"),
+    ("되었길 바랍니다", "되었길요"),
+    ("되었길", "되었길요"),
+    ("즐거운 한 끼", "맛있는 한 끼"),
+    ("정성껏 준비하겠습니다", "정성껏 준비할게요"),
+    ("정성을 다하겠습니다", "정성껏 만들게요"),
+    ("큰 힘이 됩니다", "정말 힘이 나요"),
+    ("큰 힘이 되었습니다", "정말 힘이 났어요"),
+    ("보답하겠습니다", "더 맛있게 만들어 드릴게요"),
+    ("보답할게요", "더 맛있게 만들어 드릴게요"),
+    ("들러주세요", "주문 주세요"),
+    ("놀러오세요", "주문 주세요"),
+    ("또 오세요", "또 주문 주세요"),
+    ("오시면", "주문 주시면"),
+    ("와주셔서", "찾아주셔서"),
+    ("와주셔", "찾아주셔"),
+    ("역대급", "정말"),
+    ("인생맛집", "맛있는 곳"),
+    ("미쳤다", "정말 좋았다"),
+    ("혜자", "알찬"),
+    ("대박", "정말"),
+)
 
-    재작성도 실패하면 원문을 그대로 돌려준다 — 초안은 직원이 한 번 더
-    보므로, 완벽하지 않은 초안이 안 나오는 것보다 낫다.
+
+def _fix_banned_locally(text):
+    """금지 표현을 표대로 바꾼다(AI 없이도 항상 동작). 바뀐 텍스트 반환."""
+    for bad, good in _BANNED_FIX:
+        if bad in text:
+            text = text.replace(bad, good)
+    return text
+
+
+def _strip_banned(text, max_len):
+    """금지 표현을 없앤다 — **AI 가 없어도 반드시 없어진다.**
+
+    1) 확정 치환표로 먼저 고친다(실패할 수 없는 경로).
+    2) AI 가 살아 있으면 문장을 한 번 다듬는다(선택). 다듬은 결과에 금지어가
+       남아 있으면 버리고 1)의 결과를 쓴다.
     """
-    hits = [b for b in _REPLY_BANNED if b in text]
-    if not hits:
+    if not any(b in text for b in _REPLY_BANNED):
         return text
-    try:
-        fixed = _ask_claude(
-            REPLY_PERSONA,
-            "다음 답글에서 금지 표현(" + ", ".join(hits) + ")이 들어간 부분만 "
-            "자연스러운 다른 말로 바꿔줘. 나머지 내용·말투·길이는 그대로 두고, "
-            "답글 본문만 출력해:\n\n" + text,
-            max_tokens=600)
-        fixed = _truncate_at_sentence(fixed, max_len).strip()
-        return fixed or text
-    except LLMUnavailable:
-        return text
+
+    safe = _fix_banned_locally(text)
+    still = [b for b in _REPLY_BANNED if b in safe]
+    if still:                       # 표에 없는 금지어가 남은 경우만 AI 에 맡긴다
+        try:
+            fixed = _ask_claude(
+                REPLY_PERSONA,
+                "다음 답글에서 금지 표현(" + ", ".join(still) + ")이 들어간 부분만 "
+                "자연스러운 다른 말로 바꿔줘. 나머지 내용·말투·길이는 그대로 두고, "
+                "답글 본문만 출력해:\n\n" + safe,
+                max_tokens=600)
+            fixed = _truncate_at_sentence(fixed, max_len).strip()
+            if fixed and not any(b in fixed for b in _REPLY_BANNED):
+                return fixed
+        except LLMUnavailable:
+            pass
+    return _truncate_at_sentence(safe, max_len).strip() or safe[:max_len]
 
 
 def _template_reply(typ, review, author, oc, rating, max_len):
