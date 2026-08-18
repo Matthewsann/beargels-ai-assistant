@@ -135,8 +135,11 @@ class BrowserSession:
         if self.mode == "attach":
             port = get_cdp_port()
             try:
+                # 기본 3분은 너무 길다 — Chrome 이 먹통이면 수집 한 번이
+                # 6분씩 헛돌았다(2026-08-18). 빨리 실패하고 복구에 넘긴다.
                 self._browser = self._pw.chromium.connect_over_cdp(
-                    f"http://127.0.0.1:{port}")
+                    f"http://127.0.0.1:{port}",
+                    timeout=float(os.getenv("CDP_CONNECT_TIMEOUT_MS", "45000")))
             except Exception as e:  # noqa: BLE001
                 self._pw.stop()
                 raise RuntimeError(

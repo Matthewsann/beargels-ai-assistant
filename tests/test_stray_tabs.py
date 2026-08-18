@@ -71,3 +71,32 @@ def test_our_own_tab_is_kept():
     popup = _Page("https://self.baemin.com/shops/reviews")
     br.BrowserSession._close_popup(popup)
     assert not popup.closed
+
+
+# --- 먹통 크롬 자가복구 -------------------------------------------------------
+# CDP 포트는 HTTP 응답을 계속 주면서 정작 붙지는 못하는 '반쯤 죽은' 상태가
+# 된다. cdp_alive() 가 HTTP 만 보다가 수집이 몇 시간째 조용히 실패했다
+# (2026-08-18, 작업 372·373·374 연속 error).
+
+def test_attach_failure_is_recognized():
+    from worker import agent
+    err = RuntimeError("CDP attach 실패(127.0.0.1:9222). ... connect_over_cdp: "
+                       "Timeout 180000ms exceeded.")
+    assert agent._is_attach_failure(err)
+    assert not agent._is_attach_failure(RuntimeError("로그인 세션이 만료되었습니다"))
+
+
+def test_chrome_autorestart_can_be_turned_off(monkeypatch):
+    from worker import agent
+    monkeypatch.setenv("WORKER_CHROME_AUTORESTART", "false")
+    monkeypatch.setattr(agent, "_profile_chrome_pids",
+                        lambda: (_ for _ in ()).throw(AssertionError("꺼야 한다")))
+    assert agent.restart_chrome("test") is False
+
+
+def test_restart_chrome_only_kills_our_profile(monkeypatch):
+    """사장님이 평소 쓰는 Chrome 은 절대 건드리면 안 된다."""
+    from worker import agent
+    import inspect
+    src = inspect.getsource(agent._profile_chrome_pids)
+    assert ".browser_profile" in src        # 프로필 경로로 걸러서 고른다

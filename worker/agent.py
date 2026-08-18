@@ -107,6 +107,58 @@ def ensure_chrome(wait_seconds=60) -> bool:
     return False
 
 
+def _profile_chrome_pids():
+    """전용 프로필(.browser_profile)로 띄운 chrome.exe 의 PID 목록.
+
+    사장님이 평소 쓰는 다른 Chrome 은 건드리면 안 되므로, 명령줄에 우리
+    프로필 경로가 들어 있는 프로세스만 고른다.
+    """
+    ps = ("Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | "
+          "Where-Object { $_.CommandLine -like '*.browser_profile*' } | "
+          "Select-Object -ExpandProperty ProcessId")
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                             capture_output=True, text=True, timeout=30).stdout
+    except Exception:  # noqa: BLE001
+        return []
+    return [int(x) for x in out.split() if x.strip().isdigit()]
+
+
+def restart_chrome(reason="") -> bool:
+    """먹통이 된 크롤링용 Chrome 을 껐다 켠다.
+
+    ⚠️ 왜 필요한가: CDP 포트(9222)는 HTTP 응답을 계속 주는데 정작 붙지는
+       못하는 '반쯤 죽은' 상태가 된다. cdp_alive() 는 HTTP 만 보므로 살아
+       있다고 판단했고, 수집이 몇 시간째 조용히 실패했다(2026-08-18, 탭이
+       76개까지 쌓여 Chrome 이 마비된 뒤). 그래서 붙기에 실패하면 여기서
+       프로세스를 정리하고 다시 띄운다. 로그인 세션은 프로필에 남는다.
+    """
+    if os.getenv("WORKER_CHROME_AUTORESTART", "true").lower() == "false":
+        return False
+    pids = _profile_chrome_pids()
+    logger.warning("크롬이 응답하지 않아 재시작합니다(%s, 프로세스 %d개)",
+                   reason or "attach 실패", len(pids))
+    for pid in pids:
+        try:
+            subprocess.run(["taskkill", "/F", "/PID", str(pid)],
+                           capture_output=True, timeout=20)
+        except Exception:  # noqa: BLE001
+            continue
+    time.sleep(3)
+    ok = ensure_chrome()
+    notify_owner(
+        "크롬이 응답하지 않아 자동으로 껐다 켰어요. "
+        + ("수집을 이어서 진행합니다." if ok
+           else "다시 켜지지 않았어요 — 집 PC 에서 launch_chrome.bat 을 실행해 주세요."),
+        kind="Notice", source="worker")
+    return ok
+
+
+def _is_attach_failure(e) -> bool:
+    """크롬에 붙지 못해서 난 오류인지 — 재시작으로 고칠 수 있는 종류."""
+    return "CDP attach 실패" in str(e) or "connect_over_cdp" in str(e)
+
+
 # '전체 수집' 범위 — 평소 수집(최근분)과 달리 남아 있는 리뷰를 끝까지 긁는다.
 # 크롤러가 리뷰 소진 시 스스로 멈추므로 상한만 넉넉히 준다.
 FULL_COUPANG_DAYS = int(os.getenv("WORKER_FULL_COUPANG_DAYS", "1095"))
@@ -130,11 +182,20 @@ def collect_reviews(full=False) -> tuple[int, list[str]]:
         warnings.append("크롤링용 Chrome 을 켜지 못했습니다 — 집 PC 확인 필요")
         return 0, warnings
 
-    try:
+    def _baemin():
         from crawler.baemin import BaeminCrawler
         with BaeminCrawler() as c:
-            revs = c.fetch_reviews(
+            return c.fetch_reviews(
                 max_scroll=FULL_BAEMIN_SCROLL if full else BAEMIN_SCROLL)
+
+    try:
+        try:
+            revs = _baemin()
+        except Exception as e:  # noqa: BLE001
+            # 크롬이 먹통이라 못 붙은 거라면 껐다 켜고 한 번만 다시 해 본다.
+            if not (_is_attach_failure(e) and restart_chrome(str(e)[:60])):
+                raise
+            revs = _baemin()
         saved += db.save_reviews(revs)
         logger.info("배민 리뷰 %d건 수집", len(revs))
     except Exception as e:  # noqa: BLE001 — 한쪽 실패가 전체를 막지 않게
@@ -143,12 +204,20 @@ def collect_reviews(full=False) -> tuple[int, list[str]]:
         db.log_error("worker", f"배민 수집 실패: {e}", kind=type(e).__name__,
                      path="collect/baemin", detail=traceback.format_exc())
 
-    try:
+    def _coupang():
         from crawler.coupang import CoupangCrawler
         with CoupangCrawler() as c:
-            revs = (c.fetch_reviews(days=FULL_COUPANG_DAYS,
+            return (c.fetch_reviews(days=FULL_COUPANG_DAYS,
                                     max_pages=FULL_COUPANG_PAGES) if full
                     else c.fetch_reviews(days=COUPANG_DAYS))
+
+    try:
+        try:
+            revs = _coupang()
+        except Exception as e:  # noqa: BLE001
+            if not (_is_attach_failure(e) and restart_chrome(str(e)[:60])):
+                raise
+            revs = _coupang()
         saved += db.save_reviews(revs)
         logger.info("쿠팡 리뷰 %d건 수집", len(revs))
     except Exception as e:  # noqa: BLE001
