@@ -718,8 +718,12 @@ async function saveCat(sku){
 // 복사해 쓴다(사장님 요청 2026-08-17).
 // 이름·분류로 소개글 초안을 만들어 칸에 넣는다(저장은 사장님이 확인 후).
 async function draftIntro(sku){
-  const j = await api(`/item/${sku}/intro/draft`);
-  if(!j) return;
+  // api() 는 성공을 true 로만 알려준다(저장 전용). 여기선 초안 '내용'이
+  // 필요하므로 응답을 직접 읽는다 — 그대로 쓰면 항상 빈 칸이 된다.
+  const r = await fetch(`${BASE}/item/${sku}/intro/draft`, {method:"POST",
+    headers:{"Content-Type":"application/json"}, body:"{}"});
+  const j = await r.json().catch(()=>({ok:false}));
+  if(!j.ok){ toast("⚠ 초안 실패: "+(j.error||r.status)); return; }
   const ko = document.getElementById("ik-"+sku), en = document.getElementById("ie-"+sku);
   const had = (ko.value||"").trim() || (en.value||"").trim();
   if(had && !confirm("이미 적힌 소개글을 초안으로 덮어쓸까요?")) return;
