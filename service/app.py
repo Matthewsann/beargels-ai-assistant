@@ -1027,6 +1027,33 @@ def menu_ingredients_import_msfs(path_key):
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
+@app.route("/<path_key>/menu/item/new", methods=["POST"])
+def menu_item_new(path_key):
+    """새 메뉴 추가 — 이름·분류만 있으면 SKU 는 분류에서 자동으로 만든다."""
+    check(path_key)
+    body = request.get_json(force=True) or {}
+    try:
+        return jsonify({"ok": True, **db.menu_create(body)})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"메뉴 추가 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/menu/item/<sku>/delete", methods=["POST"])
+def menu_item_delete(path_key, sku):
+    """메뉴 삭제 — 레시피·세트 구성·채널 예외까지 함께."""
+    check(path_key)
+    try:
+        return jsonify({"ok": True, **db.menu_delete(sku)})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"메뉴 삭제 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
 @app.route("/<path_key>/menu/ingredient/merge/undo", methods=["POST"])
 def menu_ingredient_merge_undo(path_key):
     """직전 합치기 되돌리기 — 지운 자재를 되살리고 레시피를 제자리로."""

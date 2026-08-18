@@ -828,6 +828,80 @@ PREP_SUFFIX = "(반제품)"
 PREP_SUPPLIER = "직접제조"
 
 
+# 분류 → SKU 접두사. 새 메뉴를 만들 때 번호를 이어 붙인다.
+# (기존 데이터에서 실제로 쓰이는 규칙을 그대로 옮긴 것)
+_CATEGORY_PREFIX = {
+    "베이커리": "BK", "크림치즈": "CREAM", "샌드위치": "SAND", "샐러드": "SALAD",
+    "디저트": "DESRT", "커피": "COF", "논커피": "NCOF", "시그니처&스페셜": "SIG",
+    "에이드&스무디": "ADSM", "티": "TEA", "보틀": "BOT", "세트": "SET",
+    "반제품": "PREP",
+}
+
+
+def next_sku(category):
+    """그 분류의 다음 SKU. 분류를 모르면 ETC-001 부터.
+
+    번호는 **기존 최대 + 1**로 준다. 중간에 빈 번호가 있어도 재사용하지 않는다 —
+    지웠다 다시 만든 메뉴가 옛 SKU 를 물려받으면 채널 대조 기록과 엉킨다.
+    """
+    prefix = _CATEGORY_PREFIX.get((category or "").strip(), "ETC")
+    rows = get_client().table("menu_items").select("sku").execute().data
+    n = 0
+    for r in rows:
+        sku = str(r["sku"] or "")
+        if not sku.startswith(prefix + "-"):
+            continue
+        tail = sku.rsplit("-", 1)[-1]
+        if tail.isdigit():
+            n = max(n, int(tail))
+    return f"{prefix}-{n + 1:03d}"
+
+
+def menu_create(fields):
+    """새 메뉴 한 줄. 이름과 분류는 필수, SKU 는 분류에서 자동으로 만든다."""
+    name = (fields.get("name") or "").strip()
+    category = (fields.get("category") or "").strip()
+    if not name:
+        raise ValueError("메뉴 이름을 입력하세요.")
+    if not category:
+        raise ValueError("분류를 골라 주세요.")
+    for m in menu_all():
+        if (m.get("name") or "").strip() == name:
+            raise ValueError(f"'{name}' 메뉴가 이미 있습니다({m['sku']}).")
+
+    sku = next_sku(category)
+    payload = {k: v for k, v in fields.items() if k in _MENU_ITEM_COLS}
+    payload.update({
+        "sku": sku, "name": name, "category": category,
+        "menu_type": payload.get("menu_type") or "단일",
+        "store_active": payload.get("store_active", True),
+        "delivery_active": payload.get("delivery_active", True),
+        # 목록 맨 아래에 붙는다 — 순서는 나중에 손으로 정리한다.
+        "sort_order": payload.get("sort_order") or 9999,
+        "updated_at": datetime.utcnow().isoformat() + "Z",
+    })
+    get_client().table("menu_items").insert(payload).execute()
+    return {"sku": sku, "name": name, "category": category}
+
+
+def menu_delete(sku):
+    """메뉴 삭제 — 레시피·세트 구성·채널 예외까지 같이 지운다.
+
+    남겨두면 '어디에도 안 보이는 메뉴'의 레시피가 유령처럼 남는다.
+    """
+    sb = get_client()
+    sku = str(sku)
+    for r in recipes_all():
+        if r["sku"] == sku:
+            sb.table("menu_recipes").delete().eq("id", r["id"]).execute()
+    for c in components_all():
+        if c["sku"] == sku or c["component_sku"] == sku:
+            sb.table("menu_components").delete().eq("id", c["id"]).execute()
+    sb.table("menu_channels").delete().eq("sku", sku).execute()
+    sb.table("menu_items").delete().eq("sku", sku).execute()
+    return {"deleted": sku}
+
+
 def next_prep_sku():
     rows = (get_client().table("menu_items").select("sku")
             .eq("category", PREP_CATEGORY).execute().data)
