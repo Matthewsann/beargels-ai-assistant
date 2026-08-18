@@ -32,6 +32,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from alerts import session_expired
 from crawler.browser import (
     BrowserSession, SessionExpiredError, human_pause, is_session_expired,
+    stray_tabs_closed,
 )
 
 load_dotenv()
@@ -287,8 +288,15 @@ class BaeminCrawler:
                     seen[r["review_no"]] = r
             self.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             human_pause(1.5, 2.5)
+            strays_before = stray_tabs_closed()
             more = self._click_review_more()
             human_pause(2.0, 3.0)
+            # 오클릭 자가진단 — '더보기'를 눌렀는데 도움말 탭이 새로 떴다면
+            # 리뷰 목록의 버튼이 아니었다는 뜻이다. 더 누르지 않고 멈춘다
+            # (계속 누르면 탭만 쌓인다 — 2026-08-18 탭 76개).
+            if stray_tabs_closed() > strays_before:
+                logger.warning("'더보기' 오클릭(도움말) 감지 — 더 누르지 않습니다")
+                break
             # 잘못된 '더보기'(도움말 등)를 눌러 다른 페이지로 튕기면 되돌린다.
             # ⚠️ 정상 이동(리다이렉트)로 URL 에 매장 id 가 붙는다:
             #    /shops/reviews → /shops/14794435/reviews. 이건 이탈이 아니다.
@@ -315,7 +323,10 @@ class BaeminCrawler:
         """리뷰 목록의 '더보기'만 눌러 다음 묶음을 불러온다(눌렀으면 True).
 
         ⚠️ 페이지에는 도움말('자주 묻는 질문' 등) 쪽 '더보기'도 있어서 아무거나
-           누르면 ceo.baemin.com/qna 로 튕긴다(2026-08-13 사장님 발견). 그래서
+           누르면 ceo.baemin.com/qna 가 **새 탭**으로 열린다(2026-08-13 발견,
+           2026-08-18 탭 76개로 재발). 새 탭이라 URL 가드에 안 걸리므로
+           BrowserSession 이 그 탭을 닫고, fetch_reviews 가 오클릭으로 보고
+           '더보기' 클릭을 중단한다. 그래서
            **마지막 리뷰 카드보다 아래**에 있는 버튼만 고르고, 링크(a)나
            헤더·푸터·네비 안에 있는 것은 제외한다. 헤더가 클릭을 가로채므로
            DOM click 을 쓴다.
@@ -327,6 +338,9 @@ class BaeminCrawler:
                 if (!cards.length) return false;
                 const lastTop = cards[cards.length - 1].getBoundingClientRect().top;
                 const bad = /footer|nav|gnb|header|help|faq|qna/i;
+                // 도움말 영역은 클래스명이 아니라 **글**로 알아보는 게 확실하다.
+                const badText = /자주.{0,3}묻는|도움말|고객센터|문의하기|FAQ/i;
+                const last = cards[cards.length - 1].getBoundingClientRect();
                 const btn = [...document.querySelectorAll('button')].find(b => {
                     if ((b.textContent || '').trim() !== '더보기') return false;
                     if (b.closest('a, footer, nav, header')) return false;
@@ -334,7 +348,15 @@ class BaeminCrawler:
                         if (typeof e.className === 'string' && bad.test(e.className))
                             return false;
                     }
-                    return b.getBoundingClientRect().top > lastTop;
+                    // 리뷰 목록 바로 아래에 붙어 있는 버튼만 — 페이지 한참
+                    // 아래 도움말 섹션의 '더보기'까지 집어 들지 않게 한다.
+                    const r = b.getBoundingClientRect();
+                    if (r.top <= lastTop || r.top - last.bottom > 400) return false;
+                    // 버튼이 속한 영역에 리뷰 카드가 없고 도움말 문구가 있으면 제외.
+                    const box = b.closest('section, article, div');
+                    if (box && !box.querySelector('[class*="ReviewContent-module__"]')
+                        && badText.test(box.textContent || '')) return false;
+                    return true;
                 });
                 if (!btn) return false;
                 btn.click();

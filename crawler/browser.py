@@ -42,6 +42,52 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PROFILE_DIR = PROJECT_ROOT / ".browser_profile"
 
+# 크롤러가 **실수로 연 탭**의 주소 — 우리는 이런 페이지를 열 일이 없다.
+# 배민 리뷰 목록의 '더보기'를 누르다 도움말 쪽 버튼이 걸리면 ceo.baemin.com/qna
+# 가 **새 탭**으로 뜬다. 같은 탭 이동이 아니라 기존 URL 가드에 안 걸려 조용히
+# 쌓였고, 사장님 Chrome 에 탭이 76개까지 열렸다(2026-08-18).
+STRAY_TAB_URLS = ("ceo.baemin.com/qna", "ceo.baemin.com/faq",
+                  "ceo.baemin.com/help")
+
+_stray_closed = 0
+
+
+def stray_tabs_closed():
+    """지금까지 자동으로 닫은 '잘못 열린 탭' 수 — 크롤러가 오클릭 감지에 쓴다."""
+    return _stray_closed
+
+
+def is_stray_url(url):
+    return any(p in (url or "") for p in STRAY_TAB_URLS)
+
+
+def close_stray_tabs(context, log=True):
+    """열려 있는 잘못된 탭을 정리한다(닫은 수 반환).
+
+    ⚠️ **우리가 낸 쓰레기 탭만** 닫는다(STRAY_TAB_URLS). 사장님이 직접 열어둔
+       탭을 건드리면 안 되므로 주소를 정확히 맞춰 보고, 마지막 한 탭은 남긴다
+       (탭이 0개가 되면 Chrome 창이 닫힌다).
+    """
+    global _stray_closed
+    n = 0
+    try:
+        pages = list(context.pages)
+    except Exception:  # noqa: BLE001
+        return 0
+    for pg in pages:
+        if len(context.pages) - n <= 1:
+            break
+        try:
+            if is_stray_url(pg.url):
+                pg.close()
+                n += 1
+        except Exception:  # noqa: BLE001 — 이미 닫힌 탭 등
+            continue
+    _stray_closed += n
+    if n and log:
+        logger.warning("잘못 열린 탭 %d개를 닫았습니다(도움말 페이지).", n)
+    return n
+
 
 class SessionExpiredError(RuntimeError):
     """저장된 로그인 세션이 만료되어 수동 재로그인이 필요할 때 발생."""
@@ -120,9 +166,41 @@ class BrowserSession:
             self._pw.stop()
             raise ValueError(f"알 수 없는 BROWSER_MODE: {self.mode!r} (attach|profile)")
         self.page.set_default_timeout(15000)
+        # 크롤러는 새 탭을 열 일이 없다 — 열리면 즉시 닫는다. 배민 '더보기'
+        # 오클릭이 새 탭으로 떠서 URL 가드를 피해 갔다(2026-08-18).
+        self.page.on("popup", self._close_popup)
+        try:
+            self._context.on("page", self._close_popup)   # 팝업 외 경로 대비
+        except Exception:  # noqa: BLE001
+            pass
+        close_stray_tabs(self._context)      # 지난 실행이 남긴 탭도 치운다
         return self
 
+    @staticmethod
+    def _close_popup(popup):
+        """새로 열린 탭 처리 — 도움말 등 '우리 것이 아닌' 탭이면 닫는다."""
+        global _stray_closed
+        try:
+            url = popup.url or ""
+            if url in ("", "about:blank"):        # 주소가 아직이면 잠깐 기다린다
+                try:
+                    popup.wait_for_load_state("domcontentloaded", timeout=5000)
+                except Exception:  # noqa: BLE001
+                    pass
+                url = popup.url or ""
+            if is_stray_url(url):
+                popup.close()
+                _stray_closed += 1
+                logger.warning("잘못 열린 탭을 닫았습니다: %s", url[:80])
+        except Exception:  # noqa: BLE001 — 탭 정리가 크롤링을 막으면 안 된다
+            logger.debug("팝업 정리 실패(무시)", exc_info=True)
+
     def __exit__(self, *exc):
+        try:
+            if self._context:
+                close_stray_tabs(self._context)   # 남은 쓰레기 탭 정리
+        except Exception:  # noqa: BLE001
+            pass
         try:
             if self.mode == "attach":
                 if self.page:
