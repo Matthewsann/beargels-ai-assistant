@@ -1058,8 +1058,17 @@ def menu_intro_draft(path_key, sku):
     it = next((m for m in db.menu_all() if m["sku"] == sku), None)
     if not it:
         abort(404)
-    ko, en = intro_draft(it.get("name", ""), it.get("category", ""))
-    return jsonify({"ok": True, "intro_ko": ko, "intro_en": en})
+    # AI(무료 제미나이)로 쓰는 게 규칙 생성기보다 훨씬 낫다. 키가 없거나
+    # 할당량이 걸리면 규칙 초안으로 떨어뜨린다 — 버튼이 먹통이 되는 것보다 낫다.
+    try:
+        from intro_ai import draft as ai_draft
+        ko, en = ai_draft(it.get("name", ""), it.get("category", ""),
+                          it.get("composition"), it.get("description"))
+        return jsonify({"ok": True, "intro_ko": ko, "intro_en": en, "by": "ai"})
+    except Exception as e:  # noqa: BLE001
+        ko, en = intro_draft(it.get("name", ""), it.get("category", ""))
+        return jsonify({"ok": True, "intro_ko": ko, "intro_en": en, "by": "rule",
+                        "note": f"AI를 못 써서 기본 초안입니다 ({str(e)[:60]})"})
 
 
 @app.route("/<path_key>/menu/item/<sku>/delete", methods=["POST"])

@@ -728,7 +728,7 @@ async function draftIntro(sku){
   const had = (ko.value||"").trim() || (en.value||"").trim();
   if(had && !confirm("이미 적힌 소개글을 초안으로 덮어쓸까요?")) return;
   ko.value = j.intro_ko || ""; en.value = j.intro_en || "";
-  toast("초안을 넣었습니다 — 확인하고 저장하세요");
+  toast(j.note ? `⚠ ${j.note}` : "AI 초안을 넣었습니다 — 확인하고 저장하세요");
 }
 
 async function saveIntro(sku){
