@@ -35,6 +35,16 @@ class _Q:
         self.rows = [r for r in self.rows if r.get(col) != val]
         return self
 
+    def in_(self, col, vals):
+        self.calls.append(("in", col, tuple(vals)))
+        self.rows = [r for r in self.rows if r.get(col) in vals]
+        return self
+
+    def limit(self, n):
+        self.calls.append(("limit", n))
+        self.rows = self.rows[:n]
+        return self
+
     def is_(self, col, val):
         self.calls.append(("not_is", col, val))
         return self
@@ -161,6 +171,50 @@ def test_sort_and_paging(monkeypatch):
 def test_default_sort_is_newest(monkeypatch):
     _, _, calls = _call(monkeypatch)
     assert ("order", "written_date", True) in calls
+
+
+def test_same_day_order_matches_platform(monkeypatch):
+    """같은 날 리뷰는 리뷰번호로 순서를 고정한다.
+
+    written_date 는 시각이 없어 같은 날 리뷰의 순서가 매번 달라졌고, 그래서
+    비서 페이지 순서가 배민/쿠팡 앱과 달랐다(사장님 보고 2026-08-18).
+    리뷰번호(배민 YYYYMMDD+일련번호, 쿠팡 orderReviewId)는 작성 순서대로다.
+    """
+    _, _, calls = _call(monkeypatch)                  # 최신순
+    assert calls.index(("order", "written_date", True)) < calls.index(
+        ("order", "review_no", True))
+
+    _, _, calls = _call(monkeypatch, sort="old")      # 오래된 순
+    assert ("order", "written_date", False) in calls
+    assert ("order", "review_no", False) in calls
+
+    _, _, calls = _call(monkeypatch, sort="low")      # 낮은 별점순도 동점 고정
+    assert ("order", "rating", False) in calls
+    assert ("order", "review_no", True) in calls
+
+
+def test_attention_reviews_share_the_same_order(monkeypatch):
+    """'관리 필요' 화면도 같은 규칙을 쓴다 — 화면마다 순서가 다르면 안 된다."""
+    from database import supabase_client as db
+    calls = []
+    monkeypatch.setattr(db, "get_client", lambda: _Client(ROWS, calls))
+    db.get_attention_reviews()
+    assert ("order", "written_date", True) in calls
+    assert ("order", "review_no", True) in calls
+
+
+def test_pending_reviews_ordered_by_review_no(monkeypatch):
+    """답글 화면(오래된 순)의 동점 기준은 collected_at 이 아니라 리뷰번호다.
+
+    collected_at 은 '마지막 수집 시각'이라 재수집마다 바뀌어 순서가 흔들렸다.
+    """
+    from database import supabase_client as db
+    calls = []
+    monkeypatch.setattr(db, "get_client", lambda: _Client(ROWS, calls))
+    db.get_pending_reviews()
+    assert ("order", "written_date", False) in calls
+    assert ("order", "review_no", False) in calls
+    assert not [c for c in calls if c[:2] == ("order", "collected_at")]
 
 
 def test_db_failure_returns_empty_not_crash(monkeypatch):

@@ -596,16 +596,37 @@ def search_reviews(platform=None, rating=None, replied=None, q=None,
                   .not_.is_("platform_replied", "true"))
         return s
 
-    order = {"old": ("written_date", False),
-             "low": ("rating", False)}.get(sort, ("written_date", True))
     try:
-        resp = (_base().order(order[0], desc=order[1])
+        resp = (_order_reviews(_base(), sort)
                 .range(offset, offset + limit - 1).execute())
     except Exception:  # noqa: BLE001 — platform_replied 미적용 스키마 대비
         logger.exception("리뷰 검색 실패")
         return [], 0
     return resp.data or [], (resp.count if resp.count is not None
                              else len(resp.data or []))
+
+
+def _order_reviews(q, sort="new"):
+    """리뷰 목록 정렬 — **배민/쿠팡 앱 화면과 같은 순서**로 맞춘다.
+
+    written_date 는 시각이 없는 '날짜'라, 같은 날 리뷰끼리는 순서가 정해지지
+    않는다(Postgres 는 동점 행의 순서를 보장하지 않는다). 그래서 화면을 열
+    때마다·재수집할 때마다 같은 날 리뷰가 뒤섞여, 플랫폼 앱 순서와 달랐다
+    (사장님 보고 2026-08-18). 리뷰번호로 2차 정렬해 고친다:
+
+      - 배민 review_no = 'YYYYMMDD' + 8자리 일련번호 (16자리 고정)
+      - 쿠팡 review_no = orderReviewId, 작성 시간순 증가 (9자리)
+
+    둘 다 자릿수가 고정이라 문자열 정렬 = 작성 시간순이다. (쿠팡 번호가 언젠가
+    10자리가 되면 그때만 자릿수 보정이 필요하다.)
+
+    sort: 'new'(최신순) | 'old'(오래된순) | 'low'(낮은 별점순)
+    """
+    if sort == "low":
+        return (q.order("rating", desc=False)
+                 .order("written_date", desc=True).order("review_no", desc=True))
+    desc = sort != "old"
+    return q.order("written_date", desc=desc).order("review_no", desc=desc)
 
 
 # '관리 필요' 리뷰 판정 — 별점이 만점이 아니거나, 답글 유형이 불만/민감인 것.
@@ -632,9 +653,7 @@ def get_attention_reviews(platform=None, mode="all", limit=30, offset=0,
             q = q.in_("kind", list(CS_KINDS))
         else:
             q = q.or_(f"rating.lte.4,kind.in.({kinds})")
-        order = {"old": ("written_date", False),
-                 "low": ("rating", False)}.get(sort, ("written_date", True))
-        resp = (q.order(order[0], desc=order[1])
+        resp = (_order_reviews(q, sort)
                 .range(offset, offset + limit - 1).execute())
     except Exception:  # noqa: BLE001 — 조회 실패가 화면을 막지 않게
         logger.exception("관리 필요 리뷰 조회 실패")
@@ -647,7 +666,7 @@ def get_approved_reviews(limit=50):
     """자동 등록을 기다리는(수정 완료된) 리뷰 목록 — 오래된 순."""
     return (get_client().table("reviews").select("*")
             .eq("reply_status", "approved")
-            .order("written_date", desc=False)
+            .order("written_date", desc=False).order("review_no", desc=False)
             .limit(limit).execute().data)
 
 
@@ -757,7 +776,10 @@ def get_pending_reviews(limit=50):
             .in_("reply_status", ["none", "drafted"])
             .or_("platform_replied.is.null,platform_replied.eq.false")
             .order("written_date", desc=False)
-            .order("collected_at", desc=False)
+            # 같은 날 리뷰의 순서 — collected_at 은 '마지막 수집 시각'이라
+            # 재수집 때마다 값이 바뀌어 순서가 흔들렸다(플랫폼 앱과 불일치).
+            # 리뷰번호는 작성 순서대로라 순서가 고정된다(_order_reviews 참고).
+            .order("review_no", desc=False)
             .limit(limit).execute().data)
 
 
