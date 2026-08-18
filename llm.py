@@ -119,9 +119,15 @@ def _call_gemini(system: str, user: str, max_tokens: int, model: str | None = No
         )
         if resp.status_code != 400:
             break                      # 400(필드 미지원)일 때만 다음 설정 시도
-    if resp.status_code == 404 and model != GEMINI_FALLBACK_MODEL:
-        # 모델 이름이 바뀐 경우 한 번 더 시도(구글이 모델을 자주 교체한다)
-        logger.warning("Gemini 모델 %s 없음 → %s 로 재시도", model, GEMINI_FALLBACK_MODEL)
+    if resp.status_code in (404, 429) and model != GEMINI_FALLBACK_MODEL:
+        # 404 = 모델 이름이 바뀜(구글이 자주 교체한다).
+        # 429 = 그 모델의 무료 한도 소진. 한도는 **모델마다 다르다** — 기본
+        #       gemini-flash-latest 는 3.7-flash 로 풀려 하루 20건뿐이라
+        #       리뷰가 하루 60건씩 들어오면 답글이 곧 멈춘다(2026-08-17 실측).
+        #       flash-lite 는 한도가 넉넉해 거기로 넘긴다.
+        why = "없음" if resp.status_code == 404 else "무료 한도 소진"
+        logger.warning("Gemini 모델 %s %s → %s 로 재시도",
+                       model, why, GEMINI_FALLBACK_MODEL)
         return _call_gemini(system, user, max_tokens, GEMINI_FALLBACK_MODEL)
     if resp.status_code != 200:
         raise RuntimeError(f"Gemini 오류 {resp.status_code}: {resp.text[:300]}")
