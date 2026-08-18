@@ -580,6 +580,26 @@ function toggleDetail(sku){
       <button onclick="saveCat('${sku}')" style="font-size:11px">분류 저장</button></span>
       ${it.cost_source?`<div class="note">원가 출처: ${it.cost_source}</div>`:""}
       <div class="note"><a href="/{{ key }}/menu/ingredients?sku=${sku}">📖 이 메뉴 레시피 편집(원가 자동계산)</a></div>
+      <div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:8px">
+        <b style="font-size:12px">📝 플랫폼 소개글</b>
+        <span class="note">네이버·배민·쿠팡·토스 키오스크에 그대로 붙여 넣는 짧은 문구.
+          여기 한 번 적어두면 채널마다 다르게 쓸 일이 없습니다.</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+          <label style="flex:1;min-width:260px;font-size:11px;color:var(--sub)">한글
+            <textarea id="ik-${sku}" rows="2" style="width:100%;font-family:inherit;font-size:12px;
+              padding:5px 6px;border:1px solid var(--line);border-radius:4px;resize:vertical"
+              placeholder="예: 주문 즉시 바삭하게 토스팅한 플레인 베이글입니다.">${(it.intro_ko||"").replace(/</g,"&lt;")}</textarea></label>
+          <label style="flex:1;min-width:260px;font-size:11px;color:var(--sub)">English
+            <textarea id="ie-${sku}" rows="2" style="width:100%;font-family:inherit;font-size:12px;
+              padding:5px 6px;border:1px solid var(--line);border-radius:4px;resize:vertical"
+              placeholder="e.g. Plain bagel, grill-toasted to order.">${(it.intro_en||"").replace(/</g,"&lt;")}</textarea></label>
+        </div>
+        <div style="margin-top:5px">
+          <button onclick="saveIntro('${sku}')" style="font-size:11px">소개글 저장</button>
+          <button onclick="copyIntro('${sku}','ko')" style="font-size:11px">📋 한글 복사</button>
+          <button onclick="copyIntro('${sku}','en')" style="font-size:11px">📋 영문 복사</button>
+        </div>
+      </div>
       ${setEditor(sku)}
       ${it.composition?`<div class="note">구성: ${it.composition}</div>`:""}</div>
     <div class="chgrid">${CH.map(([ch,label])=>{
@@ -624,6 +644,27 @@ async function saveCat(sku){
   if(!j){ it.category = before; toast("⚠ 저장 실패"); return; }
   toast(`분류 '${before}' → '${v}' ✓`);
   render();
+}
+
+// 플랫폼 소개글 — 채널마다 새로 쓰다 보니 문구가 갈렸다. 여기 한 곳에 두고
+// 복사해 쓴다(사장님 요청 2026-08-17).
+async function saveIntro(sku){
+  const ko = document.getElementById("ik-"+sku).value.trim();
+  const en = document.getElementById("ie-"+sku).value.trim();
+  const it = DATA.items.find(i=>i.sku===sku);
+  const j = await api(`/item/${sku}`, {intro_ko: ko || null, intro_en: en || null});
+  if(!j){ toast("⚠ 저장 실패"); return; }
+  it.intro_ko = ko || null; it.intro_en = en || null;
+  toast("소개글 저장 ✓");
+}
+async function copyIntro(sku, lang){
+  const el = document.getElementById((lang==="ko"?"ik-":"ie-")+sku);
+  const v = (el.value||"").trim();
+  if(!v){ toast("아직 비어 있습니다"); return; }
+  try{ await navigator.clipboard.writeText(v); toast("복사됨"); return; }catch(_){}
+  // 클립보드 권한이 없을 때 — prompt() 는 페이지를 멈춰 세우므로 쓰지 않는다.
+  el.select(); let ok=false; try{ ok=document.execCommand("copy"); }catch(_){}
+  toast(ok ? "복사됨" : "복사 실패 — 직접 긁어 복사해 주세요");
 }
 
 async function saveCh(sku, ch){
