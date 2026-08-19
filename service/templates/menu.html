@@ -6,99 +6,233 @@
 <meta name="robots" content="noindex, nofollow">
 <title>베어글스 · 메뉴/원가</title>
 <style>
+/* 2026-08-19 UI/UX 개편 — 배민사장님·Square·Toast·NN/g 리서치 기반.
+   핵심 결정:
+   · 폰에서도 카드가 아니라 "좁힌 표 + 이름 열 고정" — 이 화면의 실사용은
+     원가율·가격의 열 비교라서(NN/g: 열 비교가 필요하면 표 유지).
+   · 폰 상세는 인라인 행 확장 대신 풀스크린 시트(필드 10개+는 시트가 정석).
+   · 저장은 필드 단위 blur 자동저장으로 통일 — 저장 버튼 9개 난립 해소.
+   · 상단 버튼 10개 → 검색·새메뉴·일괄·분석 + ⚙도구(나머지 전부) 재편. */
 :root{--bg:#f6f4ef;--card:#fff;--ink:#2b2620;--sub:#8b8378;--line:#e7e2d8;
---brown:#7a5c3e;--red:#c0392b;--redbg:#fdecea;--green:#1e7b4f;--amber:#b7791f;--amberbg:#fdf6e3}
+--brown:#7a5c3e;--brownbg:#f3ece2;--red:#c0392b;--redbg:#fdecea;
+--green:#1e7b4f;--greenbg:#eaf3e7;--amber:#b7791f;--amberbg:#fdf6e3}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
 font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;font-size:14px}
-header{position:sticky;top:0;z-index:10;background:var(--card);border-bottom:1px solid var(--line);padding:10px 14px}
-h1{font-size:16px;margin:0 0 8px}
-h1 small{color:var(--sub);font-weight:normal;font-size:12px;margin-left:6px}
-.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
-.chip{flex:0 0 auto;border:1px solid var(--line);background:var(--card);border-radius:14px;
-padding:4px 10px;font-size:12px;cursor:pointer;white-space:nowrap}
+header{position:sticky;top:0;z-index:10;background:var(--card);border-bottom:1px solid var(--line);padding:8px 12px}
+/* 우측 상단 고정 나이트모드 버튼(_sidebar, z60)이 ⚙도구·시트 제목을 덮지 않게 자리 확보 */
+@media (min-width:901px){ header{padding-right:56px} }
+h1{font-size:15px;margin:0 0 6px}
+h1 small{color:var(--sub);font-weight:normal;font-size:11px;margin-left:6px}
+
+/* ── 상단 바: 검색 + 주 액션 하나(➕) + 모드 토글 + ⚙도구 ─────────── */
+.topbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.topbar input[type=search]{flex:1;min-width:130px;border:1px solid var(--line);border-radius:9px;
+padding:8px 12px;font-size:14px;min-height:40px;background:var(--card);color:var(--ink)}
+.topbar button{border:1px solid var(--line);background:var(--card);color:var(--ink);
+border-radius:9px;padding:0 12px;font-size:13px;cursor:pointer;min-height:40px;white-space:nowrap}
+.topbar button.primary{background:var(--brown);border-color:var(--brown);color:#fff;font-weight:700}
+.topbar button.on{background:var(--brownbg);border-color:var(--brown);color:var(--brown);font-weight:600}
+
+/* ── 칩 두 줄: 분류 / 문제(=탭 필터) ─────────────────────────────── */
+.chips{display:flex;gap:6px;overflow-x:auto;padding:6px 0 2px;align-items:center;
+-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;border:1px solid var(--line);background:var(--card);border-radius:16px;
+padding:8px 12px;font-size:12px;cursor:pointer;white-space:nowrap;color:var(--ink)}
+.chip small{color:var(--sub);margin-left:3px}
 .chip.on{background:var(--brown);border-color:var(--brown);color:#fff}
-.bar{display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap}
-.bar input[type=search]{flex:1;min-width:120px;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px}
-.bar button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
-.stats{font-size:11px;color:var(--sub);margin-top:6px;display:flex;gap:10px;flex-wrap:wrap}
-.stats b.red{color:var(--red)} .stats b.amber{color:var(--amber)}
+.chip.on small{color:#e9ddcd}
+.chip.warnc{color:var(--amber)} .chip.warnc.on{background:var(--amber);border-color:var(--amber);color:#fff}
+.chip.redc{color:var(--red)} .chip.redc.on{background:var(--red);border-color:var(--red);color:#fff}
+.chip.bluec{color:#1a56db;border-color:#b8ccf0}
+/* 나이트모드 — 다크 팔레트는 강조색을 파스텔로 밝게 뒤집으므로(#c9a06b 등),
+   그 위 흰 글자는 대비 2:1 대로 씻겨 보인다. 어두운 글자로 덮는다. */
+html.dk .chip.bluec{color:#7fb3e8;border-color:#2a4a6e}
+html.dk .chip.on{color:#1c1a17}
+html.dk .chip.on small{color:#3d3427}
+html.dk .topbar button.primary,html.dk .fixbar button.save{color:#1c1a17}
+/* 채널 대조 창 — 불일치 한 건 = 한 줄 + 그 자리에서 처리하는 버튼들 */
+.drow{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;
+padding:8px 2px;border-bottom:1px solid var(--line);font-size:12.5px;line-height:1.5}
+.drow>div:last-child{display:flex;gap:5px;flex-wrap:wrap}
+button.mini{min-height:34px;font-size:11.5px;padding:0 9px;border:1px solid var(--line);
+border-radius:7px;background:var(--card);color:var(--ink);cursor:pointer;white-space:nowrap}
+.cnt{font-size:11px;color:var(--sub);white-space:nowrap;margin-left:auto;padding-left:8px}
+.cnt b{color:var(--ink)}
+.cnt .qm{cursor:pointer;border:1px solid var(--line);border-radius:50%;display:inline-flex;
+width:22px;height:22px;align-items:center;justify-content:center;margin-left:6px;background:var(--card)}
+
 main{padding:10px}
 /* 표 머리글을 스크롤에도 붙여 두려면 표 영역이 스스로 스크롤해야 한다.
-   overflow-x:auto 만 주면 세로축도 auto 로 계산돼 .wrap 이 스크롤 컨테이너가
-   되는데, 높이 제한이 없어 화면 밖으로 같이 밀려 나가 sticky 가 무력해진다.
    --hh(위쪽 헤더 높이)는 화면 크기가 바뀔 때 JS 가 다시 재어 넣는다. */
 .wrap{overflow:auto;max-height:calc(100vh - var(--hh,150px) - 20px);
-background:var(--card);border:1px solid var(--line);border-radius:10px}
-table{border-collapse:collapse;width:100%;min-width:900px}
-th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+background:var(--card);border:1px solid var(--line);border-radius:10px;
+max-width:1120px}/* 초광폭에서 숫자 열이 흩어지지 않게 */
+body.hasfix .wrap{max-height:calc(100vh - var(--hh,150px) - 84px)}/* 하단 고정 바가 있을 때 */
+table{border-collapse:collapse;width:100%;min-width:700px}
+th,td{padding:8px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
 th{position:sticky;top:0;z-index:3;background:#faf8f3;font-size:11px;color:var(--sub);font-weight:600;
 box-shadow:inset 0 -1px 0 var(--line)}
-td.name,th.name{text-align:left;max-width:230px;white-space:normal}
-td.name{cursor:pointer}
+th[data-sort]{cursor:pointer}
+th[data-sort] .arr{font-size:9px}
+/* 이름 열 고정 — 가로 스크롤 중에도 어느 메뉴 줄인지 안 놓친다(NN/g·Toast 패턴).
+   sticky 셀은 배경이 비치면 글자가 겹쳐 보이므로 반드시 불투명 배경. */
+td.name,th.name{text-align:left;position:sticky;left:0;z-index:2;background:var(--card);
+box-shadow:2px 0 4px rgba(0,0,0,.05);max-width:230px;white-space:normal}
+th.name{z-index:4;background:#faf8f3}
+td.name{cursor:pointer;padding-right:22px}
+td.name .chev{position:absolute;right:6px;top:50%;transform:translateY(-50%);
+color:var(--sub);font-size:11px;transition:transform .15s}
+tr.openrow td.name .chev{transform:translateY(-50%) rotate(90deg)}
 td.name .sku{color:var(--sub);font-size:10px}
 td.name .grp{color:var(--sub);font-size:10px;margin-left:4px}
 tr.cat td{background:#f1ede4;text-align:left;font-weight:700;font-size:12px;color:var(--brown)}
+/* 분류 행은 표 전체 폭 셀이라 셀 자체를 고정할 수 없다 — 라벨만 sticky. */
+tr.cat td .catlab{position:sticky;left:8px;display:inline-block}
 .ed{cursor:pointer;border-bottom:1px dashed #cbc2b4}
-.ed:hover{background:#fdf9ef}
-td input{width:76px;font-size:13px;padding:2px 4px;border:1px solid var(--brown);border-radius:4px;text-align:right}
-td input.wide{width:180px;text-align:left}
-input.bcell{width:100%;font-size:13px;padding:3px 5px;border:1px solid var(--line);border-radius:4px;text-align:right;background:var(--card);color:var(--ink)}
-input.bcell.bname{text-align:left}
-table.fixed{table-layout:fixed}
-table.fixed td.name,table.fixed th.name{max-width:none;width:34%}
-table.fixed td.cat{width:15%}
-input.bcell.bcat{text-align:left}
-tr.bulk input.bcell.bname{min-width:0}
-tr.bulk td.num{width:110px}
-tr.bulk td.name .sku{display:block;margin-top:2px}
-input.bcell:focus{outline:2px solid var(--brown);outline-offset:-1px}
-input.bcell.chg{background:#fdf6e3;border-color:var(--amber);font-weight:600}
+.ed:hover{background:var(--brownbg)}
+td input{width:76px;font-size:16px;padding:4px;border:1px solid var(--brown);border-radius:4px;text-align:right}
+/* 원가율 — 매장/배달 두 줄 스택(열 하나로 합쳐 폭 절약, 폰에서 특히) */
+td.rates{line-height:1.5}
+.rt{display:block;font-size:12px}
+.rt small{color:var(--sub);font-size:10px;margin-right:3px}
+.rt.bad{color:var(--red);font-weight:700}
+/* 판매 스위치 — 11px 텍스트 토글(오탭 1순위)을 44px 급 스위치로 */
+td.stat{text-align:left}
+.sw{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--sub);cursor:pointer;padding:2px 0}
+.sw input[type=checkbox]{appearance:none;-webkit-appearance:none;position:relative;width:34px;height:20px;
+border-radius:10px;background:var(--line);transition:.15s;cursor:pointer;margin:0;border:none;flex:0 0 auto}
+.sw input[type=checkbox]:checked{background:var(--green)}
+.sw input[type=checkbox]::after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;
+border-radius:50%;background:#fff;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.sw input[type=checkbox]:checked::after{left:16px}
 .over{background:var(--redbg);color:var(--red);font-weight:700}
 .warn{background:var(--amberbg);color:var(--amber)}
 .nocost{color:var(--sub);font-style:italic}
 .neg{color:var(--red);font-weight:700}
-.off{opacity:.45}
+.off td{opacity:.45}
+.off td.name{opacity:.65}
 .badge{display:inline-block;font-size:10px;border-radius:8px;padding:1px 6px;margin-left:4px}
 .badge.miss{background:var(--amberbg);color:var(--amber)}
 .badge.ovr{background:#e8f0fe;color:#1a56db}
+@keyframes rowflash{from{background:var(--amberbg)}to{background:transparent}}
+tr.flash td{animation:rowflash 1.6s ease-out}
+
+/* ── 일괄 수정 모드(스프레드시트) — 로직은 기존 그대로 ───────────── */
+input.bcell{width:100%;font-size:16px;padding:6px;border:1px solid var(--line);border-radius:4px;
+text-align:right;background:var(--card);color:var(--ink)}
+input.bcell.bname,input.bcell.bcat{text-align:left}
+table.fixed{table-layout:fixed}
+table.fixed td.name,table.fixed th.name{max-width:none;width:34%}
+table.fixed td.cat{width:15%}
+tr.bulk input.bcell.bname{min-width:0}
+tr.bulk td.num{width:110px}
+tr.bulk td.name .sku{display:block;margin-top:2px}
+input.bcell:focus{outline:2px solid var(--brown);outline-offset:-1px}
+input.bcell.chg{background:var(--amberbg);border-color:var(--amber);font-weight:600}
+
+/* ── 상세(PC 인라인 행 + 폰 풀스크린 시트 공용 내용) ─────────────── */
 .detail td{background:#fbfaf6;white-space:normal;text-align:left}
-.chgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;padding:4px 0}
-.chbox{border:1px solid var(--line);border-radius:8px;padding:8px;background:#fff}
+.dsec{border-top:1px dashed var(--line);margin-top:10px;padding-top:10px}
+.dsec>b{font-size:12px}
+.dsec .note{margin-top:2px}
+.frow{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:6px}
+.frow label{font-size:11px;color:var(--sub);display:flex;flex-direction:column;gap:3px}
+.frow input[type=text],.frow input[type=number]{font-size:16px;padding:8px;border:1px solid var(--line);
+border-radius:6px;background:var(--card);color:var(--ink);text-align:left;min-height:40px}
+.frow button,.dsec button{border:1px solid var(--line);background:var(--card);color:var(--ink);
+border-radius:7px;padding:0 10px;font-size:12px;cursor:pointer;min-height:38px}
+.dsec textarea{width:100%;font-family:inherit;font-size:16px;padding:8px;border:1px solid var(--line);
+border-radius:6px;resize:vertical;background:var(--card);color:var(--ink)}
+.danger{color:var(--red)}
+.chgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;padding:4px 0}
+.chbox{border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--card)}
 .chbox h4{margin:0 0 6px;font-size:12px}
-.chbox label{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--sub);margin:4px 0}
-.chbox input[type=text],.chbox input[type=number]{width:130px;font-size:12px;padding:3px 5px;border:1px solid var(--line);border-radius:4px}
+.chbox label{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--sub);margin:4px 0;gap:6px}
+.chbox input[type=text],.chbox input[type=number]{width:130px;font-size:16px;padding:6px;border:1px solid var(--line);border-radius:4px;background:var(--card);color:var(--ink)}
+.chbox button{min-height:36px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);font-size:11px;cursor:pointer;padding:0 10px}
+.chbox button.chg{background:var(--amberbg);border-color:var(--amber);color:var(--amber);font-weight:700}
 .chbox .calc{font-size:11px;margin-top:6px;border-top:1px dashed var(--line);padding-top:6px;line-height:1.5}
-dialog{border:1px solid var(--line);border-radius:12px;max-width:520px;width:92%;padding:16px}
+
+/* 폰 상세 = 풀스크린 시트. 바텀시트에 10필드는 금물(리서치 공통). */
+#sheet{position:fixed;inset:0;z-index:40;background:var(--bg);display:none;overflow-y:auto;
+overflow-x:hidden;overscroll-behavior:contain}
+#sheet.open{display:block}
+#sheet .shead{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;
+background:var(--card);border-bottom:1px solid var(--line);padding:8px 52px 8px 10px}
+/* 상세 안의 표(세트 구성)는 전역 nowrap 을 풀어야 폰 시트가 옆으로 안 밀린다 */
+.dsec table th,.dsec table td{white-space:normal}
+#sheet .shead button{border:none;background:none;font-size:20px;cursor:pointer;padding:8px;color:var(--ink)}
+#sheet .shead b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sheet .sbody{padding:12px;background:var(--card);min-height:100%}
+
+/* ── 하단 고정 바(일괄 수정 저장) — 엄지 존, 48px ─────────────────── */
+.fixbar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:none;align-items:center;gap:10px;
+background:var(--card);border-top:1px solid var(--line);padding:10px 14px;
+box-shadow:0 -2px 10px rgba(0,0,0,.08)}
+/* 사이드바(>900px, 고정 198px·z50)가 fixed 바의 왼쪽을 덮는다 — 옆에서 시작 */
+@media (min-width:901px){ .fixbar{left:198px} }
+.fixbar.show{display:flex}
+.fixbar .msg{font-size:13px}
+.fixbar .msg b{color:var(--amber)}
+.fixbar button{min-height:46px;border-radius:9px;border:1px solid var(--line);background:var(--card);
+color:var(--ink);font-size:14px;padding:0 18px;cursor:pointer}
+.fixbar button.save{background:var(--brown);border-color:var(--brown);color:#fff;font-weight:700;margin-left:auto}
+
+dialog{border:1px solid var(--line);border-radius:12px;max-width:520px;width:92%;padding:16px;
+background:var(--card);color:var(--ink)}
+dialog::backdrop{background:rgba(0,0,0,.35)}
 dialog h3{margin:0 0 10px;font-size:15px}
 dialog table{min-width:0}
 dialog td,dialog th{padding:4px 6px;font-size:12px}
-dialog input{width:70px;text-align:right;font-size:12px;padding:2px 4px;border:1px solid var(--line);border-radius:4px}
+dialog input{width:70px;text-align:right;font-size:16px;padding:4px;border:1px solid var(--line);border-radius:4px;background:var(--card);color:var(--ink)}
+dialog button{min-height:38px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink);cursor:pointer;font-size:13px;padding:0 12px}
 .note{font-size:11px;color:var(--sub);margin:8px 0}
-#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#333;color:#fff;
-padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:opacity .3s;pointer-events:none}
+/* ⚙도구 목록 — 다이얼로그 5개+페이지 2개의 단일 진입점 */
+.tools{display:flex;flex-direction:column;gap:6px}
+.tools button,.tools a{display:flex;align-items:center;gap:8px;min-height:46px;border:1px solid var(--line);
+border-radius:9px;background:var(--card);color:var(--ink);font-size:13.5px;padding:0 12px;cursor:pointer;
+text-decoration:none;text-align:left}
+.tools small{color:var(--sub);margin-left:auto;font-size:11px}
+
+#toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%);background:#333;color:#fff;
+padding:10px 16px;border-radius:22px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;
+z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
 #toast.show{opacity:1}
+#toast button{border:none;background:none;color:#ffd27a;font-weight:700;font-size:13px;cursor:pointer;padding:4px}
+
+/* ── 폰(≤640px): 표를 좁히고 만질 수 있는 칸을 '면'으로 ───────────── */
+@media (max-width:640px){
+  main{padding:6px}
+  /* 16px 미만 입력칸은 아이폰이 포커스 때 화면을 확대해 버린다 */
+  .topbar input[type=search]{font-size:16px}
+  table{min-width:560px}
+  th,td{padding:10px 8px}
+  td.name{max-width:150px;min-width:130px}
+  .ed{background:rgba(128,128,128,.07);border-bottom:none;border-radius:5px}
+  .topbar input[type=search]{flex-basis:100%;order:0}
+  /* 375px 에 버튼 4개는 한 줄에 안 들어간다 — 2×2 격자(엄지 타깃도 커짐) */
+  .topbar button{flex:1 1 calc(50% - 3px);order:1}
+  .chgrid{grid-template-columns:1fr}
+  dialog td input{width:140px !important}/* 인라인 230px 고정폭이 창을 뚫는다 */
+  #simBody{overflow-x:auto}
+}
 </style>
 </head>
 <body>
 {% include "_sidebar.html" %}
 <header>
   <h1>🥯 메뉴 정본 · 원가/마진 <small>여기 값이 모든 채널의 기준</small></h1>
-  <div class="chips" id="chips"></div>
-  <div class="bar">
-    <input type="search" id="q" placeholder="메뉴 검색…">
-    <button onclick="openNew()" style="font-weight:600">➕ 새 메뉴</button>
-    <button onclick="openFees()">⚙ 수수료</button>
-    <button onclick="openTargets()">🎯 목표원가율</button>
-    <button onclick="openDiff()">📡 채널 대조</button>
-    <button onclick="openSim()">🧮 주문 손익</button>
-    <button onclick="location.href='/{{ key }}/menu/tasks'">📋 작업지시서</button>
-    <button onclick="location.href='/{{ key }}/menu/ingredients'">🧺 자재/레시피</button>
+  <div class="topbar">
+    <input type="search" id="q" placeholder="메뉴 이름·SKU 검색">
+    <button class="primary" onclick="openNew()">➕ 새 메뉴</button>
     <button id="bulkBtn" onclick="toggleBulk()">✏️ 일괄 수정</button>
     <button id="colBtn" onclick="toggleCols()">📊 분석 열</button>
-    <label style="font-size:11px;color:var(--sub)"><input type="checkbox" id="onlyProblem" onchange="render()"> 문제만</label>
+    <button onclick="dlgTools.showModal()">⚙ 도구</button>
   </div>
-  <div class="stats" id="stats"></div>
+  <div class="chips" id="chips"></div>
+  <div class="chips" id="pchips"></div>
 </header>
 <main>
   <div class="wrap">
@@ -107,26 +241,61 @@ padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:opacity 
       <tbody id="tb"></tbody>
     </table>
   </div>
-  <p class="note">· <b>원가율</b> = 재료원가 ÷ 판매가. 재료비·판매가 모두 <b>부가세 포함</b> 기준입니다.
+</main>
+
+<div id="sheet" role="dialog" aria-modal="true">
+  <div class="shead">
+    <button onclick="closeSheet()" aria-label="뒤로">←</button>
+    <b id="sheetTitle"></b>
+  </div>
+  <div class="sbody" id="sheetBody"></div>
+</div>
+
+<div class="fixbar" id="bulkFix">
+  <span class="msg" id="bulkMsg"></span>
+  <button onclick="bDiscard()">되돌리기</button>
+  <button class="save" onclick="bSave()" id="bulkSaveBtn">저장</button>
+</div>
+
+<dialog id="dlgTools">
+  <h3>⚙ 도구</h3>
+  <div class="tools">
+    <button onclick="dlgTools.close();openFees()">💳 채널 수수료 설정</button>
+    <button onclick="dlgTools.close();openTargets()">🎯 분류별 목표 원가율</button>
+    <button onclick="dlgTools.close();openDiff()">📡 채널 노출 대조</button>
+    <button onclick="dlgTools.close();openSim()">🧮 주문 단위 손익</button>
+    <button onclick="dlgTools.close();dlgHelp.showModal()">❓ 계산 기준 설명</button>
+    <a href="/{{ key }}/menu/tasks">📋 작업지시서 <small>페이지 이동 →</small></a>
+    <a href="/{{ key }}/menu/ingredients">🧺 자재/레시피 <small>페이지 이동 →</small></a>
+  </div>
+  <div style="text-align:right;margin-top:10px"><button onclick="dlgTools.close()">닫기</button></div>
+</dialog>
+
+<dialog id="dlgHelp">
+  <h3>❓ 계산 기준</h3>
+  <p class="note" style="font-size:12px;line-height:1.7">
+  · <b>원가율</b> = 재료원가 ÷ 판매가. 재료비·판매가 모두 <b>부가세 포함</b> 기준입니다.
   <b>배달비·수수료는 여기 넣지 않습니다</b> — 배달비는 주문당 1회라 메뉴에 나누려면
   '주문이 얼마짜리인가'를 가정해야 하고, 그러면 12,500원 주문이면 28% · 17,500원 주문이면 20%로
-  숫자가 춤춥니다. 배달비·수수료는 🧮 주문 손익에서 <b>주문 단위</b>로 봅니다.<br>
-  · 목표 원가율은 <b>🎯 버튼에서 분류마다 매장·배달을 따로</b> 정합니다.
+  숫자가 춤춥니다. 배달비·수수료는 🧮 주문 손익에서 <b>주문 단위</b>로 봅니다.<br><br>
+  · 목표 원가율은 <b>🎯 도구에서 분류마다 매장·배달을 따로</b> 정합니다.
   배달은 수수료가 붙어 매장보다 여유가 없습니다 — 정해 두지 않은 분류는 35%(실측
-  객단가로 역산하면 이 선에서 주문 수익률 30%가 나오는 값).<br>
-  · <b>배달 손익분기</b> = 그 메뉴 수준의 <b>재료</b>원가율로 주문이 채워질 때 배달비를 감당하는 최소 주문금액
-  (최소주문 <span id="noteMin">12,500</span>원).
-  최소주문금액보다 낮으면 정상 주문은 흑자입니다. 넘으면 <span class="over" style="padding:0 4px">빨강</span>.<br>
-  · 광고비·즉시할인·인건비·임대료는 미포함. 🧮 버튼에서 주문 단위 손익을 확인하세요.
-  · 값은 셀을 탭해서 바로 수정(자동 저장).</p>
-</main>
+  객단가로 역산하면 이 선에서 주문 수익률 30%가 나오는 값).<br><br>
+  · <b>추천가</b> = 재료원가 ÷ 목표 원가율, 100원 단위 올림.<br><br>
+  · <b>배달 손익분기</b> = 그 메뉴 수준의 <b>재료</b> 원가율로 주문이 채워질 때 배달비를
+  감당하는 최소 주문금액(쿠팡 기준, 최소주문 <span id="noteMin">12,500</span>원).
+  최소주문금액보다 낮으면 정상 주문은 흑자, 넘으면 <span class="over" style="padding:0 4px">빨강</span>.<br><br>
+  · 광고비·즉시할인·인건비·임대료는 미포함.
+  · 표의 값은 셀을 탭해서 바로 수정하며 자동 저장됩니다.</p>
+  <div style="text-align:right"><button onclick="dlgHelp.close()">닫기</button></div>
+</dialog>
 
 <dialog id="dlgNew">
   <h3>➕ 새 메뉴 추가</h3>
   <p class="note" style="margin-top:0">이름과 분류만 넣으면 됩니다. SKU 는 분류에 맞춰
   자동으로 붙습니다(예: 디저트 → DESRT-039).<br>
-  <b>플랫폼 소개글(한/영)도 이름·분류를 보고 자동으로 초안이 들어갑니다</b> —
-  만든 뒤 상세 창에서 확인하고 다듬어 주세요.</p>
+  <b>영문명·플랫폼 소개글(한/영)도 자동으로 초안이 들어갑니다</b> —
+  만든 뒤 상세에서 확인하고 다듬어 주세요.</p>
   <table><tbody>
     <tr><td style="text-align:left">메뉴 이름 *</td>
       <td><input type="text" id="nm-new" style="width:230px;text-align:left"
@@ -189,7 +358,7 @@ padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:opacity 
   </div>
   <div id="simBody"></div>
   <div style="margin-top:10px;border-top:1px dashed var(--line);padding-top:8px">
-    <label style="font-size:12px"><input type="checkbox" id="simAlloc" onchange="saveAlloc()">
+    <label style="font-size:12px"><input type="checkbox" id="simAlloc" onchange="saveAlloc()" style="width:auto">
       메뉴 표에서도 배달비를 <b>판매가 비례</b>로 나눠 빼기 (전부원가 관점 — 가격 결정용)</label>
     <p class="note" style="margin:4px 0 0">켜면 각 메뉴가 "자기 몫의 배달비"까지 감당하는지 보입니다.
     끄면(기본) 기여마진만 봅니다. 균등 배분(1/품목수)은 저가 음료를 과도하게 벌주므로 쓰지 않습니다.</p>
@@ -204,20 +373,35 @@ padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:opacity 
 <script>
 const BASE = "/{{ key }}/menu";
 let DATA = {items:[], channels:[], settings:{}};
-let CAT = "전체";
+let CAT = "전체", PROB = null, SORT = null, OPEN_SKU = null;
 const CH = [["store","매장"],["baemin","배민"],["coupang","쿠팡이츠"],["naver","네이버"]];
 const won = n => n==null ? "–" : Math.round(n).toLocaleString("ko-KR");
 const pct = n => n==null ? "–" : (n*100).toFixed(1)+"%";
+const esc = s => (s??"").toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+const isMobile = () => matchMedia("(max-width:640px)").matches;
 
-function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");
-setTimeout(()=>t.classList.remove("show"),1500);}
+/* 토스트 — 실행 취소가 붙을 수 있다(셀 저장·노출 토글 직후 "되돌리기").
+   폰에서는 Escape 로 편집을 취소할 수 없어서, 잘못 저장한 뒤 되돌리는 쪽이
+   실사용에 맞다(blur=저장이라 오저장이 원천적으로 생긴다). */
+let toastTimer = null;
+function toast(msg, act){
+  const t = document.getElementById("toast");
+  t.innerHTML = esc(msg) + (act ? `<button id="toastAct">${esc(act.label)}</button>` : "");
+  t.style.pointerEvents = act ? "auto" : "none";
+  if (act) document.getElementById("toastAct").onclick = () => {
+    t.classList.remove("show"); act.fn(); };
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove("show"), act ? 4500 : 1600);
+}
 
 async function api(path, body){
   const r = await fetch(BASE+path,{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify(body)});
   const j = await r.json().catch(()=>({ok:false}));
   if(!j.ok){toast("⚠ 저장 실패: "+(j.error||r.status));return false;}
-  toast("저장됨 ✓");return true;
+  DIFF_CACHE = null;   // 무엇이든 저장되면 채널 대조 결과가 달라질 수 있다
+  return true;
 }
 
 function chOverride(sku, channel){
@@ -279,12 +463,8 @@ function costRate(it, ch){
   return (p && it.ingredient_cost != null) ? it.ingredient_cost / p : null;
 }
 
-// 배달 목표 원가율은 targetD(분류) 로 본다 — 매장처럼 분류마다 다르다.
-// 배달은 수수료(배민 10.8% · 쿠팡 14.1%)와 배달비가 붙어 매장보다 여유가 없다.
-
 // 원가 기준 추천 판매가 = 재료원가 ÷ 목표 원가율. 100원 단위로 올린다
 // (99원·50원 단위는 키오스크·배달앱에서 잔돈 인상만 준다).
-// 목표를 이미 지키고 있으면 굳이 올리라고 하지 않는다 — 지금 값을 그대로 둔다.
 function suggestPrice(it, ch){
   if (it.ingredient_cost == null) return null;
   const tg = STORE_PRICED.has(ch) ? target(it.category) : targetD(it.category);
@@ -292,10 +472,6 @@ function suggestPrice(it, ch){
   return Math.ceil(it.ingredient_cost / tg / 100) * 100;
 }
 
-// 배달비는 여기에 넣지 않는다. 주문당 1회 나가는 돈이라 메뉴에 나누려면
-// '주문이 얼마짜리인가'를 가정해야 하는데, 12,500원 주문이면 28%,
-// 17,500원 주문이면 20% 로 숫자가 춤춘다(2026-08-16 사장님과 정리).
-// 배달비·수수료는 🧮 주문 손익에서 주문 단위로 본다.
 // 이 메뉴 수준의 원가율로 주문이 채워졌을 때, 배달비를 감당하는 최소 주문금액.
 // 최소주문금액보다 낮으면 → 정상 주문은 반드시 흑자.
 function breakeven(it, ch){
@@ -305,23 +481,21 @@ function breakeven(it, ch){
   const denom = 1 - feeRate(ch) - r;
   return denom <= 0 ? Infinity : D/denom;
 }
-function hasProblem(it){
-  const rs = costRate(it,"store");
-  if (it.ingredient_cost == null) return true;
-  if (rs != null && rs > target(it.category)) return true;
-  for (const [ch] of CH) { const m = margin(it, ch);
-    if (m != null && m < 0 && (STORE_PRICED.has(ch) ? it.store_active : it.delivery_active)) return true; }
-  // 손익분기 객단가가 최소주문금액을 넘으면 그 메뉴 위주 주문은 적자가 난다.
-  const be = breakeven(it, "coupang");
-  if (be != null && be > (+om().min_order || 12500)) return true;
-  return false;
-}
+
+// ── 문제 필터 — 통계 숫자를 '탭하면 그것만 보이는' 칩으로(대시보드 정석).
+//    기존 '문제만' 체크박스는 유형 구분이 없어서 이 3개로 대체(상위호환).
+const probNocost = it => it.ingredient_cost == null;
+const probOver   = it => { const r = costRate(it,"store");
+  const rd = costRate(it,"baemin");
+  return (r != null && r > target(it.category)) || (rd != null && rd > targetD(it.category)); };
+const probBe     = it => { const b = breakeven(it,"coupang");
+  return b != null && b > (+om().min_order || 12500); };
+const PROBS = [["nocost","⚠ 원가 미입력",probNocost,"warnc"],
+               ["over","🔴 원가율 초과",probOver,"redc"],
+               ["be","📦 손익분기 초과",probBe,"redc"]];
 
 // ── 보기 모드 ────────────────────────────────────────────────
-// 정본을 '고치는' 화면인데 분석 열(추천가·손익분기)이 늘 자리를 차지해 가로로
-// 넘쳤고, 정작 고칠 칸이 화면 밖으로 밀려 있었다. 이름은 상세를 열어야만
-// 고칠 수 있어 3단계가 걸렸다(2026-08-16 사장님: "너무 수정하기 어려워").
-//  · 기본 : 이름·매장가·배달가·원가·원가율 — 고치는 데 필요한 것만
+//  · 기본 : 이름·매장가·배달가·원가·원가율·판매 — 고치는 데 필요한 것만
 //  · 분석 : 추천가·손익분기까지 함께
 //  · 일괄 : 이름까지 표에서 바로 타이핑, Enter/↑↓ 로 이동, 모아서 저장
 let BULK = false, COLS = false, EDITS = {};
@@ -330,14 +504,26 @@ function toggleBulk(){
   if (BULK && Object.keys(EDITS).length &&
       !confirm(`저장 안 한 수정 ${Object.keys(EDITS).length}건이 있습니다. 버릴까요?`)) return;
   BULK = !BULK; EDITS = {};
-  document.getElementById("bulkBtn").textContent = BULK ? "✕ 일괄 수정 끝" : "✏️ 일괄 수정";
+  document.getElementById("bulkBtn").textContent = BULK ? "✕ 일괄 끝" : "✏️ 일괄 수정";
+  document.getElementById("bulkBtn").classList.toggle("on", BULK);
   render();
 }
-function toggleCols(){ COLS = !COLS; render(); }
+function toggleCols(){
+  COLS = !COLS;
+  document.getElementById("colBtn").classList.toggle("on", COLS);
+  if (COLS && isMobile()) toast("분석 열은 옆으로 밀어 보세요 — 메뉴 이름은 고정됩니다");
+  render();
+}
 
 function bEdit(sku, field, val, el){
   const it = DATA.items.find(i=>i.sku===sku);
-  const v = (field === "name") ? val.trim() : (val === "" ? null : +val);
+  let v = (field === "name" || field === "category") ? val.trim() : (val === "" ? null : +val);
+  // 이름·분류는 비울 수 없다(dSave 와 같은 규칙) — 지우면 원래 값으로 되돌린다.
+  if ((field === "name" || field === "category") && !v){
+    v = it[field] ?? null;
+    if (el) el.value = v || "";
+    toast("비울 수 없는 칸입니다");
+  }
   const same = v === (it[field] ?? null);
   EDITS[sku] = EDITS[sku] || {};
   if (same){ delete EDITS[sku][field]; if(!Object.keys(EDITS[sku]).length) delete EDITS[sku]; }
@@ -356,20 +542,26 @@ function bKey(e){
   const next = document.querySelector(`.bcell[data-r="${nr}"][data-c="${c}"]`);
   if (next){ e.preventDefault(); next.focus(); if (next.select) next.select(); }
 }
+// 일괄 수정의 저장은 하단 고정 바(엄지 존) — 11px 통계 줄에 숨어 있던 것 승격.
 function bBar(){
-  const el = document.getElementById("bulkbar");
-  if (!el) return;
+  const bar = document.getElementById("bulkFix");
   const n = Object.keys(EDITS).length;
-  if (!BULK){ el.innerHTML = ""; return; }
-  el.innerHTML = n
-    ? `수정 <b class="amber">${n}</b>건
-       <button onclick="bSave()" style="font-size:11px">저장</button>
-       <button onclick="EDITS={};render()" style="font-size:11px">되돌리기</button>`
-    : `칸을 눌러 바로 고치세요 · Enter/↑↓ 위아래 · Tab 옆 칸`;
+  bar.classList.toggle("show", BULK);
+  document.body.classList.toggle("hasfix", BULK);
+  if (!BULK) return;
+  document.getElementById("bulkMsg").innerHTML = n
+    ? `수정 <b>${n}</b>건 (저장 전)`
+    : `칸을 눌러 바로 고치세요 · Enter/↑↓ 위아래`;
+  document.getElementById("bulkSaveBtn").textContent = n ? `저장 (${n})` : "저장";
+  document.getElementById("bulkSaveBtn").disabled = !n;
 }
+function bDiscard(){ EDITS = {}; render(); }
 async function bSave(){
   const entries = Object.entries(EDITS);
   if (!entries.length) return;
+  const btn = document.getElementById("bulkSaveBtn");
+  if (btn.disabled) return;
+  btn.disabled = true;   // 저장 중 이중 탭 방지 — 끝나면 render→bBar 가 되살린다
   let ok = 0, fail = 0;
   for (const [sku, fields] of entries){
     const body = {...fields};
@@ -383,39 +575,75 @@ async function bSave(){
   render();
 }
 
+// ── 정렬 — 열 머리 탭. 1탭 오름 → 2탭 내림 → 3탭 해제.
+//    정렬 중에는 분류 묶음 행을 끄고 평평하게(묶음과 정렬은 동시에 못 산다).
+const SORTKEYS = {
+  store_price: it => it.store_price,
+  delivery_price: it => it.delivery_price ?? it.store_price,
+  ingredient_cost: it => it.ingredient_cost,
+  rate: it => costRate(it,"store"),
+};
+function clickSort(k){
+  if (!SORT || SORT.k !== k) SORT = {k, d:1};
+  else if (SORT.d === 1) SORT.d = -1;
+  else SORT = null;
+  render();
+}
+
 function render(){
   const q = document.getElementById("q").value.trim();
-  const onlyP = document.getElementById("onlyProblem").checked;
   const cats = [...new Set(DATA.items.map(i=>i.category))];
+
+  // 분류 칩(개수 표기) — 인라인 onclick 은 따옴표 든 분류명에서 깨져서 데이터 속성으로.
   document.getElementById("chips").innerHTML =
-    ["전체",...cats].map(c=>`<span class="chip ${c===CAT?"on":""}" onclick="CAT='${c}';render()">${c}</span>`).join("");
+    [["전체", DATA.items.length], ...cats.map(c=>[c, DATA.items.filter(i=>i.category===c).length])]
+    .map(([c,n])=>`<span class="chip ${c===CAT?"on":""}" data-cat="${esc(c)}">${esc(c)}<small>${n}</small></span>`).join("");
+
   let items = DATA.items.filter(i=>(CAT==="전체"||i.category===CAT) &&
-    (!q || i.name.includes(q) || (i.sku||"").includes(q)) && (!onlyP || hasProblem(i)));
-  const nocost = DATA.items.filter(i=>i.ingredient_cost==null).length;
-  const over = DATA.items.filter(i=>{const r=costRate(i,"store");return r!=null&&r>target(i.category)}).length;
+    (!q || i.name.includes(q) || (i.sku||"").includes(q) || (i.name_en||"").toLowerCase().includes(q.toLowerCase())));
+  const probFn = PROB ? PROBS.find(p=>p[0]===PROB)[2] : null;
+  if (probFn) items = items.filter(probFn);
+
+  // 문제 칩 + "총 n개 중 m개" — 필터 걸린 걸 잊고 "메뉴가 사라졌다" 오해 방지.
+  // 채널 불일치도 여기 배지로 — 이 화면의 목적이 채널 통일 작업이라서.
   const minOrd = +om().min_order || 12500;
+  const nDiff = (DATA.snapshots||[]).length ? diffList().length : null;
+  document.getElementById("pchips").innerHTML =
+    PROBS.map(([k,label,fn,cls])=>{
+      const n = DATA.items.filter(fn).length;
+      return `<span class="chip ${cls} ${PROB===k?"on":""}" data-prob="${k}">${label} ${n}</span>`;}).join("")
+    + (nDiff==null ? `<span class="chip bluec" data-act="diff">📡 채널 대조</span>`
+       : `<span class="chip ${nDiff?"bluec":""}" data-act="diff">📡 채널 불일치 ${nDiff}</span>`)
+    + `<span class="cnt">총 <b>${DATA.items.length}</b>개 중 <b>${items.length}</b>개 표시`
+    + `<span class="qm" onclick="dlgHelp.showModal()" title="계산 기준">?</span></span>`;
   const nm = document.getElementById("noteMin"); if(nm) nm.textContent = won(minOrd);
-  const beOver = DATA.items.filter(i=>{const b=breakeven(i,"coupang");return b!=null&&b>minOrd}).length;
-  document.getElementById("stats").innerHTML =
-    `총 ${DATA.items.length}개 · <b class="amber">원가 미입력 ${nocost}</b> · <b class="red">목표 초과 ${over}</b>`
-    + ` · <b class="${beOver?"red":""}">손익분기>최소주문 ${beOver}</b>`
-    + ` · 보이는 것 ${items.length}개`
-    + `<span id="bulkbar" style="margin-left:auto"></span>`;
+
+  // 정렬(비일괄 모드만) — null 은 항상 끝으로.
+  if (SORT && !BULK){
+    const f = SORTKEYS[SORT.k];
+    items = [...items].sort((a,b)=>{
+      const x=f(a), y=f(b);
+      if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1;
+      return (x-y)*SORT.d;
+    });
+  }
+  const arr = k => SORT&&SORT.k===k ? `<span class="arr">${SORT.d===1?"▲":"▼"}</span>` : "";
 
   // 머리글 — 모드마다 열이 다르다
   document.getElementById("th").innerHTML = BULK
     ? `<tr><th class="name">메뉴명 (바로 고치세요)</th><th>분류</th><th>매장가</th><th>배달가</th>
          <th>재료원가</th><th>원가율<br>매장</th></tr>`
-    : `<tr><th class="name">메뉴 (탭하면 채널별 설정·세트 구성)</th>
-         <th>매장가</th><th>배달가</th><th>재료원가</th>
+    : `<tr><th class="name">메뉴 <span style="font-weight:400">(탭=상세)</span></th>
+         <th data-sort="store_price">매장가${arr("store_price")}</th>
+         <th data-sort="delivery_price">배달가${arr("delivery_price")}</th>
+         <th data-sort="ingredient_cost">재료원가${arr("ingredient_cost")}</th>
          ${COLS?`<th title="재료원가 ÷ 목표원가율, 100원 올림">추천가<br>매장</th>
                  <th title="재료원가 ÷ 목표원가율, 100원 올림">추천가<br>배달</th>`:""}
-         <th title="재료원가 ÷ 매장가">원가율<br>매장</th>
-         <th title="재료원가 ÷ 배달가. 배달비·수수료는 🧮 주문 손익에서 봅니다.">원가율<br>배달</th>
-         ${COLS?`<th title="이 원가율로 주문이 채워질 때 배달비를 감당하는 최소 주문금액">배달<br>손익분기</th>`:""}
-         <th>노출</th></tr>`;
-  const span = BULK ? 6 : (COLS ? 10 : 7);
-  document.getElementById("tbl").style.minWidth = BULK ? "760px" : (COLS ? "900px" : "720px");
+         <th data-sort="rate" title="재료원가 ÷ 판매가 (매장/배달)">원가율${arr("rate")}</th>
+         ${COLS?`<th title="이 원가율로 주문이 채워질 때 배달비를 감당하는 최소 주문금액 (쿠팡 기준)">배달<br>손익분기</th>`:""}
+         <th>판매</th></tr>`;
+  const span = BULK ? 6 : (COLS ? 9 : 6);
+  document.getElementById("tbl").style.minWidth = BULK ? "760px" : (COLS ? "900px" : (isMobile()?"560px":"700px"));
   document.getElementById("tbl").className = BULK ? "fixed" : "";
 
   // 일괄 모드는 메뉴 하나에 입력칸 4개를 만든다. 190개면 760개가 되어 폰에서
@@ -427,10 +655,11 @@ function render(){
 
   let html = "", lastCat = null, r = 0;
   for(const it of items){
-    if(it.category !== lastCat){ lastCat = it.category;
-      html += `<tr class="cat"><td colspan="${span}">${it.category} <small style="font-weight:400">목표 원가율 매장 ${(target(it.category)*100).toFixed(0)}% · 배달 ${(targetD(it.category)*100).toFixed(0)}%</small></td></tr>`; }
+    if(it.category !== lastCat && !SORT){ lastCat = it.category;
+      html += `<tr class="cat"><td colspan="${span}"><span class="catlab">${esc(it.category)}
+        <small style="font-weight:400">목표 매장 ${(target(it.category)*100).toFixed(0)}% · 배달 ${(targetD(it.category)*100).toFixed(0)}%</small></span></td></tr>`; }
     const rs = costRate(it,"store"), rd = costRate(it,"baemin");
-    const tg = target(it.category);
+    const tg = target(it.category), tgd = targetD(it.category);
 
     if (BULK){
       const e = EDITS[it.sku] || {};
@@ -438,11 +667,11 @@ function render(){
       const chg = f => (f in e) ? " chg" : "";
       html += `<tr class="bulk">
         <td class="name"><input class="bcell bname${chg("name")}" data-r="${r}" data-c="0"
-          value="${(v("name")||"").replace(/"/g,"&quot;")}"
+          value="${esc(v("name"))}"
           onchange="bEdit('${it.sku}','name',this.value,this)" onkeydown="bKey(event)">
           <span class="sku">${it.sku}</span></td>
         <td class="cat"><input class="bcell bcat${chg("category")}" list="catList" data-r="${r}" data-c="1"
-          value="${(v("category")||"").replace(/"/g,"&quot;")}"
+          value="${esc(v("category"))}"
           onchange="bEdit('${it.sku}','category',this.value,this)" onkeydown="bKey(event)"></td>
         <td class="num"><input class="bcell${chg("store_price")}" type="number" step="100" data-r="${r}" data-c="2"
           value="${v("store_price")??""}" onchange="bEdit('${it.sku}','store_price',this.value,this)" onkeydown="bKey(event)"></td>
@@ -457,29 +686,32 @@ function render(){
 
     const ovrCnt = DATA.channels.filter(c=>c.sku===it.sku&&(c.name_override||c.price_override!=null||c.active===false)).length;
     const inact = !it.store_active && !it.delivery_active;
-    html += `<tr class="${inact?"off":""}" data-sku="${it.sku}">
-      <td class="name" onclick="toggleDetail('${it.sku}')"><b>${it.name}</b>
+    html += `<tr class="mrow ${inact?"off":""} ${OPEN_SKU===it.sku?"openrow":""}" data-sku="${it.sku}">
+      <td class="name" onclick="toggleDetail('${it.sku}')"><b>${esc(it.name)}</b>
         ${it.ingredient_cost==null?'<span class="badge miss">원가 미입력</span>':""}
         ${ovrCnt?`<span class="badge ovr">채널예외 ${ovrCnt}</span>`:""}
-        <br><span class="sku">${it.sku}</span><span class="grp">${it.group_name||""}</span></td>
+        <br><span class="sku">${it.sku}</span><span class="grp">${esc(it.group_name||"")}</span>
+        <span class="chev">▶</span></td>
       <td class="ed" onclick="editCell(this,'${it.sku}','store_price')">${won(it.store_price)}</td>
       <td class="ed" onclick="editCell(this,'${it.sku}','delivery_price')">${won(it.delivery_price)}</td>
-      <td class="ed ${it.ingredient_cost==null?"nocost":""}" onclick="editCell(this,'${it.sku}','ingredient_cost')" title="${it.cost_source||""}">${it.ingredient_cost==null?"입력":won(it.ingredient_cost)}</td>
+      <td class="ed ${it.ingredient_cost==null?"nocost":""}" onclick="editCell(this,'${it.sku}','ingredient_cost')" title="${esc(it.cost_source||"")}">${it.ingredient_cost==null?"입력":won(it.ingredient_cost)}</td>
       ${COLS?(()=>{const sp=suggestPrice(it,"store"), cur=it.store_price;
         const low = sp!=null && cur!=null && cur < sp;
         return `<td class="${low?"warn":""}">${won(sp)}</td>`;})():""}
       ${COLS?(()=>{const sp=suggestPrice(it,"baemin"), cur=it.delivery_price??it.store_price;
         const low = sp!=null && cur!=null && cur < sp;
         return `<td class="${low?"warn":""}">${won(sp)}</td>`;})():""}
-      <td class="${rs!=null&&rs>tg?"over":""}">${pct(rs)}</td>
-      <td class="${rd!=null&&rd>targetD(it.category)?"over":""}" title="배달 목표 ${(targetD(it.category)*100).toFixed(0)}% · 재료비만">${pct(rd)}</td>
+      <td class="rates"><span class="rt ${rs!=null&&rs>tg?"bad":""}"><small>매장</small>${pct(rs)}</span>
+        <span class="rt ${rd!=null&&rd>tgd?"bad":""}"><small>배달</small>${pct(rd)}</span></td>
       ${COLS?(()=>{const b=breakeven(it,"coupang"), lim=+om().min_order||12500;
         if(b==null) return `<td>–</td>`;
         if(b===Infinity) return `<td class="over">불가</td>`;
         return `<td class="${b>lim?"over":""}" title="쿠팡 기준">${won(b)}</td>`;})():""}
-      <td style="font-size:11px">
-        <span class="ed" onclick="toggleActive('${it.sku}','store_active',${it.store_active})">매장${it.store_active?"✓":"✕"}</span>
-        <span class="ed" onclick="toggleActive('${it.sku}','delivery_active',${it.delivery_active})">배달${it.delivery_active?"✓":"✕"}</span></td>
+      <td class="stat">
+        <label class="sw"><input type="checkbox" ${it.store_active?"checked":""}
+          onchange="toggleActive('${it.sku}','store_active',this.checked)">매장</label>
+        <label class="sw"><input type="checkbox" ${it.delivery_active?"checked":""}
+          onchange="toggleActive('${it.sku}','delivery_active',this.checked)">배달</label></td>
     </tr>
     <tr class="detail" id="d-${it.sku}" style="display:none"><td colspan="${span}"></td></tr>`;
   }
@@ -489,32 +721,256 @@ function render(){
   {
     const cl = document.getElementById("catList") ||
       document.body.appendChild(Object.assign(document.createElement("datalist"), {id:"catList"}));
-    cl.innerHTML = cats.map(c=>`<option value="${c}">`).join("");
+    cl.innerHTML = cats.map(c=>`<option value="${esc(c)}">`).join("");
   }
-  document.getElementById("tb").innerHTML = html || `<tr><td colspan="${span}" style="text-align:center;color:var(--sub);padding:30px">해당 없음</td></tr>`;
-  document.getElementById("colBtn").textContent = COLS ? "📊 분석 열 끄기" : "📊 분석 열";
+  document.getElementById("tb").innerHTML = html || `<tr><td colspan="${span}" style="text-align:center;color:var(--sub);padding:30px">해당 없음${PROB?"<br><small>문제 칩 필터가 켜져 있습니다</small>":""}</td></tr>`;
+  // 열려 있던 상세는 다시 그려도 유지한다(P3) — 채널 예외를 연달아 고칠 때
+  // 매번 다시 열어야 했던 문제. 폰 시트는 표와 독립이라 손댈 필요 없다.
+  if (OPEN_SKU && !BULK && !sheetOpen()) openInline(OPEN_SKU);
   bBar();
 }
+
+// 칩·정렬 — 위임 리스너(따옴표 든 분류명에서 인라인 onclick 이 깨진다)
+document.getElementById("chips").addEventListener("click", e=>{
+  const c = e.target.closest(".chip"); if(!c) return;
+  CAT = c.dataset.cat; render();
+});
+document.getElementById("pchips").addEventListener("click", e=>{
+  const c = e.target.closest(".chip"); if(!c) return;
+  if (c.dataset.act === "diff"){ openDiff(); return; }
+  PROB = (PROB === c.dataset.prob) ? null : c.dataset.prob; render();
+});
+document.getElementById("th").addEventListener("click", e=>{
+  const t = e.target.closest("th[data-sort]"); if(!t) return;
+  clickSort(t.dataset.sort);
+});
 
 function editCell(td, sku, field){
   if (td.querySelector("input")) return;
   const it = DATA.items.find(i=>i.sku===sku);
   const cur = it[field] ?? "";
-  td.innerHTML = `<input type="number" step="10" value="${cur}">`;
+  td.innerHTML = `<input type="number" inputmode="decimal" step="10" value="${cur}">`;
   const inp = td.querySelector("input"); inp.focus(); inp.select();
   const done = async (save)=>{
     if (save){
       const v = inp.value === "" ? null : +inp.value;
       if (v !== it[field]){
-        it[field] = v;
+        const old = it[field] ?? null;
+        const oldSrc = it.cost_source;   // 되돌릴 때 출처도 같이 — 안 그러면
+        it[field] = v;                    // '직접 입력'이 남아 레시피 자동계산이 영영 안 덮는다
         if (field === "ingredient_cost") it.cost_source = "웹에서 직접 입력";
-        await api(`/item/${sku}`, {[field]: v, ...(field==="ingredient_cost"?{cost_source:it.cost_source}:{})});
+        const ok = await api(`/item/${sku}`, {[field]: v, ...(field==="ingredient_cost"?{cost_source:it.cost_source}:{})});
+        if (ok) toast(`${won(old)} → ${won(v)} 저장됨`, {label:"되돌리기", fn: async ()=>{
+          it[field] = old;
+          const body = {[field]: old};
+          if (field === "ingredient_cost"){ it.cost_source = oldSrc; body.cost_source = oldSrc ?? null; }
+          await api(`/item/${sku}`, body);
+          render(); toast("되돌렸습니다 ✓");
+        }});
+        else it[field] = old;
       }
     }
     render();
   };
   inp.onkeydown = e => { if(e.key==="Enter") done(true); if(e.key==="Escape") done(false); };
   inp.onblur = () => done(true);
+}
+
+// 노출 토글 — 실수 비용이 가장 큰 액션이라 되돌리기를 꼭 붙인다.
+async function toggleActive(sku, field, val){
+  const it = DATA.items.find(i=>i.sku===sku);
+  const old = it[field];
+  it[field] = val;
+  const ok = await api(`/item/${sku}`, {[field]: val});
+  if (!ok){ it[field] = old; render(); return; }
+  const label = (field==="store_active"?"매장":"배달") + (val?" 노출 ✓":" 내림");
+  toast(`${it.name} — ${label}`, {label:"되돌리기", fn: async ()=>{
+    it[field] = old;
+    await api(`/item/${sku}`, {[field]: old});
+    render(); toast("되돌렸습니다 ✓");
+  }});
+  render();
+}
+
+// ── 상세 — PC 는 인라인 행 확장(목록 맥락 유지), 폰은 풀스크린 시트.
+//    내용은 detailHTML() 하나를 같이 쓴다.
+function toggleDetail(sku){
+  if (isMobile()){ openSheet(sku); return; }
+  if (OPEN_SKU === sku){
+    OPEN_SKU = null;
+    const tr = document.getElementById("d-"+sku);
+    if (tr) tr.style.display = "none";
+    const row = document.querySelector(`tr[data-sku="${sku}"]`);
+    if (row) row.classList.remove("openrow");
+    return;
+  }
+  document.querySelectorAll(".detail").forEach(x=>x.style.display="none");
+  document.querySelectorAll("tr.openrow").forEach(x=>x.classList.remove("openrow"));
+  OPEN_SKU = sku;
+  openInline(sku);
+}
+function openInline(sku){
+  const tr = document.getElementById("d-"+sku);
+  if (!tr) return;
+  tr.style.display = "";
+  tr.firstElementChild.innerHTML = detailHTML(sku);
+  const row = document.querySelector(`tr[data-sku="${sku}"]`);
+  if (row) row.classList.add("openrow");
+}
+
+// 폰 시트 — 안드로이드 뒤로가기가 목록으로 돌아오게 pushState(페이지 이탈 방지).
+let sheetPushed = false;
+const sheetOpen = () => document.getElementById("sheet").classList.contains("open");
+function openSheet(sku){
+  OPEN_SKU = sku;
+  const it = DATA.items.find(i=>i.sku===sku);
+  document.getElementById("sheetTitle").textContent = it ? it.name : "";
+  document.getElementById("sheetBody").innerHTML = detailHTML(sku);
+  document.getElementById("sheet").classList.add("open");
+  document.body.style.overflow = "hidden";
+  if (!sheetPushed){ history.pushState({sheet:sku}, ""); sheetPushed = true; }
+  document.getElementById("sheet").scrollTop = 0;
+}
+function closeSheet(fromPop){
+  document.getElementById("sheet").classList.remove("open");
+  document.body.style.overflow = "";
+  OPEN_SKU = null;
+  if (!fromPop && sheetPushed){ sheetPushed = false; history.back(); }
+  else sheetPushed = false;
+  render();
+}
+addEventListener("popstate", ()=>{ if (sheetOpen()) closeSheet(true); });
+
+// 상세를 다시 그린다 — 세트 구성 추가/삭제 뒤 등.
+function refreshDetail(sku){
+  if (sheetOpen()){
+    document.getElementById("sheetBody").innerHTML = detailHTML(sku);
+    render();               // 아래 표의 원가 숫자도 같이
+  } else { OPEN_SKU = sku; render(); }
+}
+
+// ── 상세 내용 — 저장 버튼 없이 blur 자동저장(표의 셀과 같은 규칙).
+//    버튼은 부수효과 있는 것만 남긴다: ✨AI 초안, 📋복사, 복제, 삭제, 구성 추가.
+function detailHTML(sku){
+  const it = DATA.items.find(i=>i.sku===sku);
+  if (!it) return "";
+  return `
+    <div class="frow">
+      <label>정본 메뉴명
+        <input type="text" id="nm-${sku}" value="${esc(it.name)}" style="width:min(300px,80vw)"
+          onchange="dSave('${sku}','name',this)"></label>
+      <label>영문명 <span style="display:flex;gap:4px">
+        <input type="text" id="nen-${sku}" value="${esc(it.name_en)}" placeholder="Plain Bagel"
+          style="width:190px" onchange="dSave('${sku}','name_en',this)">
+        <button onclick="copyNameEn('${sku}')" title="영문명 복사">📋</button></span></label>
+      <label>분류
+        <input type="text" id="cat-${sku}" list="catList" value="${esc(it.category)}"
+          style="width:130px" onchange="dSave('${sku}','category',this)"></label>
+      <button onclick="duplicateMenu('${sku}')" title="이 메뉴를 복사해 새 메뉴로 (HOT/ICE·사이즈 변형에)">📄 복제</button>
+    </div>
+    <p class="note" style="margin:6px 0 0">칸을 고치면 바로 저장됩니다.
+    ${it.cost_source?` · 원가 출처: ${esc(it.cost_source)}`:""}
+    · <a href="/{{ key }}/menu/ingredients?sku=${sku}">📖 레시피 편집(원가 자동계산)</a></p>
+
+    <div class="dsec">
+      <b>📝 플랫폼 소개글</b>
+      <span class="note">네이버·배민·쿠팡·토스 키오스크에 그대로 붙여 넣는 짧은 문구.
+        여기 한 번 적어두면 채널마다 다르게 쓸 일이 없습니다.</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+        <label style="flex:1;min-width:250px;font-size:11px;color:var(--sub)">한글
+          <textarea id="ik-${sku}" rows="2" onchange="dSave('${sku}','intro_ko',this)"
+            placeholder="예: 주문 즉시 바삭하게 토스팅한 플레인 베이글입니다.">${esc(it.intro_ko)}</textarea></label>
+        <label style="flex:1;min-width:250px;font-size:11px;color:var(--sub)">English
+          <textarea id="ie-${sku}" rows="2" onchange="dSave('${sku}','intro_en',this)"
+            placeholder="e.g. Plain bagel, grill-toasted to order.">${esc(it.intro_en)}</textarea></label>
+      </div>
+      <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+        <button onclick="draftIntro('${sku}')">✨ AI 초안 만들기</button>
+        <button onclick="copyIntro('${sku}','ko')">📋 한글 복사</button>
+        <button onclick="copyIntro('${sku}','en')">📋 영문 복사</button>
+      </div>
+    </div>
+    ${setEditor(sku)}
+    ${it.composition?`<div class="note">구성: ${esc(it.composition)}</div>`:""}
+    <div class="dsec">
+      <b>📡 채널별 예외</b>
+      <span class="note">정본과 다른 이름·가격을 쓰는 채널만 채우세요. 비우면 정본을 따라갑니다.</span>
+      <div class="chgrid">${CH.map(([ch])=>chBox(it, ch)).join("")}</div>
+    </div>
+    <div class="dsec" style="text-align:right">
+      <button class="danger" onclick="delMenu('${sku}')">🗑 메뉴 삭제</button>
+    </div>`;
+}
+
+// 채널 박스 — 저장 버튼 하나(3필드 묶음이라 자동저장 예외). 고치면 버튼이
+// 노랗게 물들어 "저장 전"임을 알린다. 저장하면 이 박스만 다시 그린다 —
+// 다른 박스에 적어 둔 미저장 값을 날리지 않기 위해.
+function chBox(it, ch){
+  const sku = it.sku;
+  const label = CH.find(x=>x[0]===ch)[1];
+  const o = chOverride(sku, ch) || {};
+  const p = chPrice(it, ch), m = margin(it, ch), f = fee(ch);
+  const diff = o.name_override && o.name_override !== it.name;
+  const priced = !STORE_PRICED.has(ch);
+  return `<div class="chbox" id="chb-${ch}-${sku}"><h4>${label} ${diff?'<span class="badge miss">이름 다름</span>':""}</h4>
+    <label>메뉴명 예외 <input type="text" id="o-nm-${ch}-${sku}" value="${esc(o.name_override)}" placeholder="정본과 같음"
+      oninput="chDirty('${ch}','${sku}')"></label>
+    ${priced?`<label>가격 예외 <input type="number" id="o-pr-${ch}-${sku}" value="${o.price_override??""}"
+      placeholder="${won(it.delivery_price??it.store_price)}" oninput="chDirty('${ch}','${sku}')"></label>`
+    :`<p class="note" style="margin:2px 0">가격은 매장가를 그대로 씁니다</p>`}
+    <label>판매 <input type="checkbox" id="o-ac-${ch}-${sku}" ${o.active===false?"":"checked"} style="width:auto"
+      onchange="chDirty('${ch}','${sku}')"></label>
+    <button id="o-sv-${ch}-${sku}" onclick="saveCh('${sku}','${ch}')">저장</button>
+    <div class="calc">적용가 <b>${won(p)}</b> · 수수료 ${f.commission}%+${f.payment}% (부가세 포함 ${(feeRate(ch)*100).toFixed(1)}%)<br>
+    기여마진 (<b class="${m!=null&&m<0?"neg":""}">${won(m)}</b>)${(()=>{
+      const r=costRate(it,ch), tg=STORE_PRICED.has(ch)?target(it.category):targetD(it.category);
+      return r==null ? "" : ` · 원가율 (<b class="${r>tg?"neg":""}">${pct(r)}</b>)`;})()}
+    ${(()=>{const b=breakeven(it,ch), lim=+om().min_order||12500;
+      if(b==null) return "";
+      if(b===Infinity) return `<br><span class="neg">이 원가율로는 배달비 감당 불가</span>`;
+      return `<br>배달 손익분기 <b class="${b>lim?"neg":""}">${won(b)}</b>
+        ${b>lim?`(최소주문 ${won(lim)} 초과 ⚠)`:`(최소주문 ${won(lim)} 이내 ✓)`}`;})()}</div>
+  </div>`;
+}
+function chDirty(ch, sku){
+  const b = document.getElementById(`o-sv-${ch}-${sku}`);
+  if (b){ b.classList.add("chg"); b.textContent = "저장 (변경됨)"; }
+}
+async function saveCh(sku, ch){
+  const nm = document.getElementById(`o-nm-${ch}-${sku}`).value.trim() || null;
+  const prEl = document.getElementById(`o-pr-${ch}-${sku}`);
+  const pr = prEl ? prEl.value : "";
+  const ac = document.getElementById(`o-ac-${ch}-${sku}`).checked;
+  const ok = await diffOverride(sku, ch,
+    {name_override:nm, price_override: pr===""?null:+pr, active: ac});
+  if (!ok) return;
+  toast("저장됨 ✓");
+  // 이 박스만 갱신(적용가·기여마진 재계산). 상세 전체를 다시 그리면
+  // 다른 채널 박스에 적어 둔 미저장 값이 날아간다.
+  const it = DATA.items.find(i=>i.sku===sku);
+  const box = document.getElementById(`chb-${ch}-${sku}`);
+  if (box) box.outerHTML = chBox(it, ch);
+  // 다른 박스에 미저장 값이 없을 때만 표를 다시 그린다(행 배지·불일치 칩 갱신)
+  if (!document.querySelector(".chbox button.chg")) render();
+}
+
+// 상세 필드 자동저장 — 실패하면 원래 값으로 되돌린다.
+async function dSave(sku, field, el){
+  const it = DATA.items.find(i=>i.sku===sku);
+  const raw = el.value.trim();
+  if ((field === "name" || field === "category") && !raw){
+    el.value = it[field] || ""; toast("비울 수 없는 칸입니다"); return; }
+  const v = raw || null;
+  if (v === (it[field] ?? null)) return;
+  const old = it[field] ?? null;
+  it[field] = v;
+  const ok = await api(`/item/${sku}`, {[field]: v});
+  if (!ok){ it[field] = old; el.value = old || ""; return; }
+  toast("저장됨 ✓");
+  if (field === "name" && sheetOpen())
+    document.getElementById("sheetTitle").textContent = v;
+  // 이름·분류는 표에도 보이는 값이라 표를 다시 그린다(열린 상세는 유지됨).
+  if (field === "name" || field === "category") render();
 }
 
 // ── 세트 구성 ───────────────────────────────────────────────
@@ -532,29 +988,29 @@ function setEditor(sku){
   const line = c => {
     const cost = costOf(c.component_sku);
     const nm = (DATA.items.find(i=>i.sku===c.component_sku)||{}).name || c.component_sku;
-    return `<tr><td style="text-align:left">${nm}
-        ${c.choice_group?`<span class="badge ovr">택1 · ${c.choice_group}</span>`:""}</td>
+    return `<tr><td style="text-align:left">${esc(nm)}
+        ${c.choice_group?`<span class="badge ovr">택1 · ${esc(c.choice_group)}</span>`:""}</td>
       <td>${c.qty>1?c.qty+"개":""}</td>
       <td>${cost==null?'<span class="warn">원가 미상</span>':won(cost*(c.qty||1))}</td>
-      <td><span class="ed" onclick="delComp(${c.id})">삭제</span></td></tr>`;
+      <td><button style="min-height:32px" onclick="delComp(${c.id})">삭제</button></td></tr>`;
   };
 
   // 고를 수 있는 메뉴 — 자기 자신과 이미 담은 것은 뺀다.
   const taken = new Set(rows.map(r=>r.component_sku));
   const opts = DATA.items.filter(i=>i.sku!==sku && !taken.has(i.sku))
-    .map(i=>`<option value="${i.sku}">${i.name}${i.ingredient_cost==null?" (원가 미상)":""}</option>`).join("");
+    .map(i=>`<option value="${i.sku}">${esc(i.name)}${i.ingredient_cost==null?" (원가 미상)":""}</option>`).join("");
 
   const miss = rows.filter(c=>costOf(c.component_sku)==null).length;
-  return `<div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:8px">
-    <b style="font-size:12px">🎁 세트 구성</b>
+  return `<div class="dsec">
+    <b>🎁 세트 구성</b>
     <span class="note">구성 메뉴 원가를 합칩니다. '택1'은 같은 이름끼리 묶이고 <b>가장 비싼 것</b>으로 계산합니다.</span>
     ${rows.length?`<table style="width:100%;min-width:0;margin-top:4px"><tbody>${rows.map(line).join("")}</tbody></table>`:'<div class="note">아직 구성이 없습니다.</div>'}
     ${miss?`<div class="note warn" style="padding:4px 6px">구성 중 ${miss}개가 원가 미상이라 세트 원가를 못 냅니다 — 그 메뉴 레시피를 먼저 채워주세요.</div>`:""}
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">
-      <select id="cp-sku-${sku}" style="max-width:230px;font-size:12px;padding:3px 5px;border:1px solid var(--line);border-radius:4px">${opts}</select>
-      <input type="number" id="cp-qty-${sku}" value="1" min="1" step="1" style="width:52px" title="수량">
-      <input type="text" id="cp-grp-${sku}" placeholder="택1 묶음(선택)" style="width:120px;font-size:12px;padding:3px 5px;border:1px solid var(--line);border-radius:4px" title="예: 음료 — 같은 값끼리 택1로 묶입니다">
-      <button style="font-size:11px" onclick="addComp('${sku}')">구성 추가</button>
+      <select id="cp-sku-${sku}" style="max-width:230px;font-size:14px;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)">${opts}</select>
+      <input type="number" id="cp-qty-${sku}" value="1" min="1" step="1" style="width:60px;font-size:16px;padding:8px;border:1px solid var(--line);border-radius:6px" title="수량">
+      <input type="text" id="cp-grp-${sku}" placeholder="택1 묶음(선택)" style="width:120px;font-size:16px;padding:8px;border:1px solid var(--line);border-radius:6px" title="예: 음료 — 같은 값끼리 택1로 묶입니다">
+      <button onclick="addComp('${sku}')">구성 추가</button>
     </div></div>`;
 }
 
@@ -567,107 +1023,22 @@ async function addComp(sku){
   if(!j) return;
   await reloadData();
   toast("구성 추가 ✓");
-  render(); toggleDetail(sku);
+  refreshDetail(sku);
 }
 async function delComp(id){
+  const sku = (DATA.components.find(c=>c.id===id)||{}).sku;
   const j = await api(`/component/${id}/delete`);
   if(!j) return;
-  const sku = (DATA.components.find(c=>c.id===id)||{}).sku;
   await reloadData();
   toast("삭제 ✓");
-  render(); if(sku) toggleDetail(sku);
+  if(sku) refreshDetail(sku); else render();
 }
 async function reloadData(){
   const d = await fetch(BASE+"/data").then(r=>r.json());
-  if(!d.error) DATA = d;
+  if(!d.error){ DATA = d; DIFF_CACHE = null; }
 }
 
-async function toggleActive(sku, field, cur){
-  event.stopPropagation();
-  const it = DATA.items.find(i=>i.sku===sku);
-  it[field] = !cur;
-  await api(`/item/${sku}`, {[field]: !cur});
-  render();
-}
-
-function toggleDetail(sku){
-  const tr = document.getElementById("d-"+sku);
-  if (tr.style.display !== "none"){ tr.style.display = "none"; return; }
-  document.querySelectorAll(".detail").forEach(x=>x.style.display="none");
-  const it = DATA.items.find(i=>i.sku===sku);
-  tr.style.display = "";
-  tr.firstElementChild.innerHTML = `
-    <div style="font-size:12px;margin-bottom:6px"><b>정본 메뉴명</b>
-      <input class="wide" type="text" id="nm-${sku}" value="${(it.name||"").replace(/"/g,"&quot;")}" style="width:min(320px,80%);padding:4px 6px;border:1px solid var(--line);border-radius:4px">
-      <button onclick="saveName('${sku}')" style="font-size:11px">이름 저장</button>
-      <button onclick="delMenu('${sku}')" style="font-size:11px;float:right;color:var(--red)">🗑 메뉴 삭제</button>
-      <span style="margin-left:10px"><b>영문명</b>
-      <input type="text" id="nen-${sku}" value="${(it.name_en||"").replace(/"/g,"&quot;")}"
-        placeholder="Plain Bagel"
-        style="width:190px;text-align:left;padding:4px 6px;border:1px solid var(--line);border-radius:4px">
-      <button onclick="saveNameEn('${sku}')" style="font-size:11px">영문명 저장</button>
-      <button onclick="copyNameEn('${sku}')" style="font-size:11px">📋</button></span>
-      <span style="margin-left:10px"><b>분류</b>
-      <input type="text" id="cat-${sku}" list="catList" value="${(it.category||"").replace(/"/g,"&quot;")}"
-        style="width:140px;text-align:left;padding:4px 6px;border:1px solid var(--line);border-radius:4px">
-      <button onclick="saveCat('${sku}')" style="font-size:11px">분류 저장</button></span>
-      ${it.cost_source?`<div class="note">원가 출처: ${it.cost_source}</div>`:""}
-      <div class="note"><a href="/{{ key }}/menu/ingredients?sku=${sku}">📖 이 메뉴 레시피 편집(원가 자동계산)</a></div>
-      <div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:8px">
-        <b style="font-size:12px">📝 플랫폼 소개글</b>
-        <span class="note">네이버·배민·쿠팡·토스 키오스크에 그대로 붙여 넣는 짧은 문구.
-          여기 한 번 적어두면 채널마다 다르게 쓸 일이 없습니다.</span>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-          <label style="flex:1;min-width:260px;font-size:11px;color:var(--sub)">한글
-            <textarea id="ik-${sku}" rows="2" style="width:100%;font-family:inherit;font-size:12px;
-              padding:5px 6px;border:1px solid var(--line);border-radius:4px;resize:vertical"
-              placeholder="예: 주문 즉시 바삭하게 토스팅한 플레인 베이글입니다.">${(it.intro_ko||"").replace(/</g,"&lt;")}</textarea></label>
-          <label style="flex:1;min-width:260px;font-size:11px;color:var(--sub)">English
-            <textarea id="ie-${sku}" rows="2" style="width:100%;font-family:inherit;font-size:12px;
-              padding:5px 6px;border:1px solid var(--line);border-radius:4px;resize:vertical"
-              placeholder="e.g. Plain bagel, grill-toasted to order.">${(it.intro_en||"").replace(/</g,"&lt;")}</textarea></label>
-        </div>
-        <div style="margin-top:5px">
-          <button onclick="saveIntro('${sku}')" style="font-size:11px">소개글 저장</button>
-          <button onclick="copyIntro('${sku}','ko')" style="font-size:11px">📋 한글 복사</button>
-          <button onclick="copyIntro('${sku}','en')" style="font-size:11px">📋 영문 복사</button>
-          <button onclick="draftIntro('${sku}')" style="font-size:11px">✨ 초안 만들기</button>
-        </div>
-      </div>
-      ${setEditor(sku)}
-      ${it.composition?`<div class="note">구성: ${it.composition}</div>`:""}</div>
-    <div class="chgrid">${CH.map(([ch,label])=>{
-      const o = chOverride(sku, ch) || {};
-      const p = chPrice(it, ch), m = margin(it, ch), f = fee(ch);
-      const diff = o.name_override && o.name_override !== it.name;
-      return `<div class="chbox"><h4>${label} ${diff?'<span class="badge miss">이름 다름</span>':""}</h4>
-        <label>메뉴명 예외 <input type="text" id="o-nm-${ch}-${sku}" value="${(o.name_override||"").replace(/"/g,"&quot;")}" placeholder="정본과 같음"></label>
-        <label>가격 예외 <input type="number" id="o-pr-${ch}-${sku}" value="${o.price_override??""}" placeholder="${ch==="store"?won(it.store_price):won(it.delivery_price??it.store_price)}"></label>
-        <label>판매 <input type="checkbox" id="o-ac-${ch}-${sku}" ${o.active===false?"":"checked"}></label>
-        <button style="font-size:11px" onclick="saveCh('${sku}','${ch}')">저장</button>
-        <div class="calc">적용가 <b>${won(p)}</b> · 수수료 ${f.commission}%+${f.payment}% (부가세 포함 ${(feeRate(ch)*100).toFixed(1)}%)<br>
-        기여마진 (<b class="${m!=null&&m<0?"neg":""}">${won(m)}</b>)${(()=>{
-          const r=costRate(it,ch), tg=STORE_PRICED.has(ch)?target(it.category):targetD(it.category);
-          return r==null ? "" : ` · 원가율 (<b class="${r>tg?"neg":""}">${pct(r)}</b>)`;})()}
-        ${(()=>{const b=breakeven(it,ch), lim=+om().min_order||12500;
-          if(b==null) return "";
-          if(b===Infinity) return `<br><span class="neg">이 원가율로는 배달비 감당 불가</span>`;
-          return `<br>배달 손익분기 <b class="${b>lim?"neg":""}">${won(b)}</b>
-            ${b>lim?`(최소주문 ${won(lim)} 초과 ⚠)`:`(최소주문 ${won(lim)} 이내 ✓)`}`;})()}</div>
-      </div>`;}).join("")}</div>`;
-}
-
-async function saveName(sku){
-  const v = document.getElementById("nm-"+sku).value.trim();
-  if(!v) return;
-  const it = DATA.items.find(i=>i.sku===sku);
-  it.name = v;
-  await api(`/item/${sku}`, {name:v});
-  render();
-}
-
-// 분류는 목표 원가율을 가르는 값이라 바꾸면 원가율 판정도 같이 달라진다.
-// 신메뉴 추가 — 그동안 화면에 없어서 DB 를 직접 건드려야 했다(2026-08-17).
+// ── 새 메뉴 · 복제 · 삭제 ───────────────────────────────────
 function openNew(){
   for(const id of ["nm-new","cat-new","sp-new","dp-new"])
     document.getElementById(id).value = "";
@@ -675,6 +1046,13 @@ function openNew(){
   if(CAT && CAT!=="전체") document.getElementById("cat-new").value = CAT;
   document.getElementById("newErr").textContent = "";
   dlgNew.showModal();
+}
+// 방금 만든 줄로 스크롤 + 1.5초 하이라이트 — 조용히 생기면 "안 됐다"고 느낀다.
+function revealRow(sku){
+  const row = document.querySelector(`tr[data-sku="${sku}"]`);
+  if (!row) return;
+  row.scrollIntoView({block:"center"});
+  row.classList.add("flash");
 }
 async function createMenu(){
   const body = {
@@ -691,54 +1069,59 @@ async function createMenu(){
   if(!j.ok){ err.textContent = "⚠ " + (j.error||"추가 실패"); return; }
   dlgNew.close();
   await reloadData();
-  CAT = j.category; document.getElementById("q").value = "";
+  CAT = j.category; PROB = null; SORT = null;
+  document.getElementById("q").value = "";
   toast(`'${j.name}' 추가됨 (${j.sku})${j.intro_ko?" · 소개글 초안 자동 작성":""}`);
   render();
   // 방금 만든 메뉴를 열어 원가·소개글을 바로 채울 수 있게 한다.
-  setTimeout(()=>toggleDetail(j.sku), 100);
+  setTimeout(()=>{ revealRow(j.sku); toggleDetail(j.sku); }, 100);
+}
+// 복제 — HOT/ICE·사이즈 변형 등록 비용을 줄인다(네이버 '복사' 패턴).
+// 소개글까지 같이 넘기면 서버가 AI 초안을 새로 만들지 않아 즉시 끝난다.
+// 노출은 꺼서 만든다 — 미완성 메뉴가 채널 대조에 잡히는 사고 방지.
+async function duplicateMenu(sku){
+  const it = DATA.items.find(i=>i.sku===sku);
+  if (!it) return;
+  toast("복제 중…");
+  const body = {
+    name: "(복사) " + it.name, category: it.category,
+    store_price: it.store_price, delivery_price: it.delivery_price,
+    ingredient_cost: it.ingredient_cost,
+    cost_source: it.cost_source ? `복제(${sku}): ${it.cost_source}` : null,
+    composition: it.composition, intro_ko: it.intro_ko, intro_en: it.intro_en,
+    store_active: false, delivery_active: false,
+  };
+  const r = await fetch(`${BASE}/item/new`, {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  const j = await r.json().catch(()=>({ok:false}));
+  if(!j.ok){ toast("⚠ 복제 실패: "+(j.error||"")); return; }
+  await reloadData();
+  if (sheetOpen()) closeSheet();
+  render();
+  toast(`'${j.name}' 만들었습니다 — 이름을 고치고 노출을 켜세요`);
+  setTimeout(()=>{ revealRow(j.sku); toggleDetail(j.sku); }, 100);
 }
 async function delMenu(sku){
   const it = DATA.items.find(i=>i.sku===sku);
-  if(!confirm(`'${it?it.name:sku}' 메뉴를 삭제할까요?\n레시피·세트 구성·채널 예외도 함께 지워집니다.`)) return;
+  // 이 메뉴가 든 세트가 있으면 미리 알린다 — 지우고 나서 알면 늦다.
+  const inSets = (DATA.components||[]).filter(c=>c.component_sku===sku)
+    .map(c=>(DATA.items.find(i=>i.sku===c.sku)||{}).name).filter(Boolean);
+  const warn = inSets.length ? `\n⚠ 이 메뉴가 든 세트 ${inSets.length}개(${inSets.slice(0,3).join(", ")}${inSets.length>3?" 외":""})의 원가가 빠집니다.` : "";
+  if(!confirm(`'${it?it.name:sku}' 메뉴를 삭제할까요?\n레시피·세트 구성·채널 예외도 함께 지워집니다.${warn}`)) return;
   const j = await api(`/item/${sku}/delete`);
   if(!j) return;
+  if (sheetOpen()) closeSheet();
+  OPEN_SKU = null;
   await reloadData();
   toast("삭제 ✓");
   render();
 }
 
-async function saveNameEn(sku){
-  const v = document.getElementById("nen-"+sku).value.trim();
-  const it = DATA.items.find(i=>i.sku===sku);
-  if(v === (it.name_en||"")){ toast("그대로입니다"); return; }
-  const j = await api(`/item/${sku}`, {name_en: v || null});
-  if(!j) return;
-  it.name_en = v || null;
-}
-async function copyNameEn(sku){
-  const v = (document.getElementById("nen-"+sku).value||"").trim();
-  if(!v){ toast("아직 비어 있습니다"); return; }
-  try{ await navigator.clipboard.writeText(v); toast("복사됨: "+v); }
-  catch(_){ toast("복사 실패 — 직접 긁어 복사해 주세요"); }
-}
-
-async function saveCat(sku){
-  const v = document.getElementById("cat-"+sku).value.trim();
-  if(!v){ toast("분류를 입력하세요"); return; }
-  const it = DATA.items.find(i=>i.sku===sku);
-  if(v === it.category){ toast("그대로입니다"); return; }
-  const before = it.category;
-  it.category = v;
-  const j = await api(`/item/${sku}`, {category:v});
-  if(!j){ it.category = before; toast("⚠ 저장 실패"); return; }
-  toast(`분류 '${before}' → '${v}' ✓`);
-  render();
-}
-
-// 플랫폼 소개글 — 채널마다 새로 쓰다 보니 문구가 갈렸다. 여기 한 곳에 두고
-// 복사해 쓴다(사장님 요청 2026-08-17).
-// 이름·분류로 소개글 초안을 만들어 칸에 넣는다(저장은 사장님이 확인 후).
+// ── 소개글 ──────────────────────────────────────────────────
+// 이름·분류로 소개글 초안을 만들어 칸에 넣는다(저장은 확인 후 — 칸을 벗어나면
+// 자동저장이 이어받는다).
 async function draftIntro(sku){
+  toast("AI 초안 만드는 중…");
   // api() 는 성공을 true 로만 알려준다(저장 전용). 여기선 초안 '내용'이
   // 필요하므로 응답을 직접 읽는다 — 그대로 쓰면 항상 빈 칸이 된다.
   const r = await fetch(`${BASE}/item/${sku}/intro/draft`, {method:"POST",
@@ -746,48 +1129,34 @@ async function draftIntro(sku){
   const j = await r.json().catch(()=>({ok:false}));
   if(!j.ok){ toast("⚠ 초안 실패: "+(j.error||r.status)); return; }
   const ko = document.getElementById("ik-"+sku), en = document.getElementById("ie-"+sku);
+  // AI 응답을 기다리는 사이 상세/시트를 닫았을 수 있다
+  if(!ko || !en){ toast("상세 창이 닫혀 초안을 넣지 못했습니다 — 다시 열어 주세요"); return; }
   const had = (ko.value||"").trim() || (en.value||"").trim();
   if(had && !confirm("이미 적힌 소개글을 초안으로 덮어쓸까요?")) return;
   ko.value = j.intro_ko || ""; en.value = j.intro_en || "";
+  dSave(sku, "intro_ko", ko); dSave(sku, "intro_en", en);
   // 영문 메뉴명은 비어 있을 때만 채운다 — 이미 정한 이름을 덮으면 곤란하다.
   const nen = document.getElementById("nen-"+sku);
-  if(nen && j.name_en && !(nen.value||"").trim()) nen.value = j.name_en;
-  toast(j.note ? `⚠ ${j.note}` : "AI 초안을 넣었습니다 — 확인하고 저장하세요");
+  if(nen && j.name_en && !(nen.value||"").trim()){
+    nen.value = j.name_en; dSave(sku, "name_en", nen);
+  }
+  toast(j.note ? `⚠ ${j.note}` : "AI 초안을 넣고 저장했습니다 — 마음에 안 들면 고치세요");
 }
-
-async function saveIntro(sku){
-  const ko = document.getElementById("ik-"+sku).value.trim();
-  const en = document.getElementById("ie-"+sku).value.trim();
-  const it = DATA.items.find(i=>i.sku===sku);
-  const nen = (document.getElementById("nen-"+sku)?.value || "").trim();
-  const j = await api(`/item/${sku}`, {intro_ko: ko || null, intro_en: en || null,
-                                       name_en: nen || null});
-  if(!j){ toast("⚠ 저장 실패"); return; }
-  it.intro_ko = ko || null; it.intro_en = en || null; it.name_en = nen || null;
-  toast("소개글 저장 ✓");
-}
-async function copyIntro(sku, lang){
-  const el = document.getElementById((lang==="ko"?"ik-":"ie-")+sku);
-  const v = (el.value||"").trim();
+async function copyText(v){
   if(!v){ toast("아직 비어 있습니다"); return; }
-  try{ await navigator.clipboard.writeText(v); toast("복사됨"); return; }catch(_){}
+  try{ await navigator.clipboard.writeText(v); toast("복사됨 ✓"); return; }catch(_){}
   // 클립보드 권한이 없을 때 — prompt() 는 페이지를 멈춰 세우므로 쓰지 않는다.
-  el.select(); let ok=false; try{ ok=document.execCommand("copy"); }catch(_){}
-  toast(ok ? "복사됨" : "복사 실패 — 직접 긁어 복사해 주세요");
+  const ta = document.createElement("textarea");
+  ta.value = v; document.body.appendChild(ta); ta.select();
+  let ok=false; try{ ok=document.execCommand("copy"); }catch(_){}
+  ta.remove();
+  toast(ok ? "복사됨 ✓" : "복사 실패 — 직접 긁어 복사해 주세요");
 }
+const copyNameEn = sku => copyText((document.getElementById("nen-"+sku).value||"").trim());
+const copyIntro = (sku, lang) =>
+  copyText((document.getElementById((lang==="ko"?"ik-":"ie-")+sku).value||"").trim());
 
-async function saveCh(sku, ch){
-  const nm = document.getElementById(`o-nm-${ch}-${sku}`).value.trim() || null;
-  const pr = document.getElementById(`o-pr-${ch}-${sku}`).value;
-  const ac = document.getElementById(`o-ac-${ch}-${sku}`).checked;
-  const payload = {name_override:nm, price_override: pr===""?null:+pr, active: ac};
-  let o = chOverride(sku, ch);
-  if(!o){ o = {sku, channel:ch}; DATA.channels.push(o); }
-  Object.assign(o, payload);
-  await api(`/channel/${sku}/${ch}`, payload);
-  render();
-}
-
+// ── 설정 다이얼로그들(수수료·목표·대조·손익) — 기존 로직 그대로 ────
 function openFees(){
   const f = DATA.settings.channel_fees || {};
   document.getElementById("feeRows").innerHTML = CH.map(([ch,label])=>{
@@ -808,8 +1177,8 @@ async function saveFees(){
       vat_on_fees:true};
   }
   DATA.settings.channel_fees = f;
-  await api("/settings/channel_fees", f);
-  dlgFees.close(); render();
+  if (await api("/settings/channel_fees", f)){ toast("저장됨 ✓"); dlgFees.close(); }
+  render();
 }
 
 function openTargets(){
@@ -818,24 +1187,26 @@ function openTargets(){
   const cats = [...new Set(DATA.items.map(i=>i.category))];
   document.getElementById("targetRows").innerHTML =
     `<tr><th style="text-align:left">분류</th><th>매장</th><th>배달</th></tr>` +
-    cats.map(c=>
-    `<tr><td style="text-align:left">${c}</td>
-       <td><input id="t-${c}" value="${t[c]??35}"> %</td>
-       <td><input id="td-${c}" value="${d[c]??35}"> %</td></tr>`).join("");
+    cats.map((c,i)=>
+    `<tr><td style="text-align:left">${esc(c)}</td>
+       <td><input id="t-cat-${i}" value="${t[c]??35}"> %</td>
+       <td><input id="td-cat-${i}" value="${d[c]??35}"> %</td></tr>`).join("");
   dlgTargets.showModal();
 }
 async function saveTargets(){
   const t = DATA.settings.target_cost_rates || {};
   const d = DATA.settings.target_cost_rates_delivery || {};
-  for(const c of [...new Set(DATA.items.map(i=>i.category))]){
-    t[c] = +document.getElementById("t-"+c).value || 35;
-    d[c] = +document.getElementById("td-"+c).value || 35;
-  }
+  const cats = [...new Set(DATA.items.map(i=>i.category))];
+  cats.forEach((c,i)=>{
+    t[c] = +document.getElementById(`t-cat-${i}`).value || 35;
+    d[c] = +document.getElementById(`td-cat-${i}`).value || 35;
+  });
   DATA.settings.target_cost_rates = t;
   DATA.settings.target_cost_rates_delivery = d;
-  await api("/settings/target_cost_rates", t);
-  await api("/settings/target_cost_rates_delivery", d);
-  dlgTargets.close(); render();
+  const ok1 = await api("/settings/target_cost_rates", t);
+  const ok2 = await api("/settings/target_cost_rates_delivery", d);
+  if (ok1 && ok2){ toast("저장됨 ✓"); dlgTargets.close(); }
+  render();
 }
 
 // ── 주문 단위 손익 ──────────────────────────────────────────────
@@ -904,63 +1275,212 @@ async function saveOrderModel(){
   m.min_order = +document.getElementById("simMin").value || 12500;
   m.allocation = document.getElementById("simAlloc").checked ? "proportional" : "order";
   DATA.settings.order_model = m;
-  await api("/settings/order_model", m);
+  if (await api("/settings/order_model", m)) toast("저장됨 ✓");
   render(); renderSim();
 }
 
 const norm = s => (s||"").replace(/\[[^\]]*\]/g,"").replace(/[^0-9a-zA-Z가-힣]/g,"").toLowerCase();
+const CH_LABEL = {baemin:"배민", coupang:"쿠팡이츠", naver:"네이버"};
+// 이름 유사도(0~1) — 두 글자 조각(bigram)이 얼마나 겹치는가. 오타 한 글자면 0.7대.
+function sim2(a, b){
+  a = norm(a); b = norm(b);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  const grams = s => { const g = new Set();
+    for (let i = 0; i < s.length-1; i++) g.add(s.slice(i, i+2)); return g; };
+  const A = grams(a), B = grams(b);
+  if (!A.size || !B.size) return 0;
+  let hit = 0; for (const g of A) if (B.has(g)) hit++;
+  return 2*hit/(A.size+B.size);
+}
+
+/* ── 채널 통일 작업대 ─────────────────────────────────────────
+   이 화면의 존재 이유: 정본을 기준으로 채널(배민·쿠팡·네이버)의 이름·가격을
+   통일하는 것. 그래서 불일치는 (1) 첫 화면 칩에 개수로 뜨고 (2) 대조 창의
+   줄마다 그 자리에서 처리하는 버튼이 붙는다:
+   · 채널이 맞으면  → [정본을 채널값으로] 또는 [채널 예외로 인정]
+   · 정본이 맞으면  → [📋 복사] 해서 채널 앱에 붙여넣기 (채널 앱은 여기서 못 고침)
+   · 정본에 없으면  → [➕ 정본에 추가] / 채널에 없으면 → [이 채널선 안 팖] */
+let DIFF_CACHE = null;   // 유사도 계산이 무겁다 — 저장·재적재 때만 다시 센다
+function diffList(){
+  if (DIFF_CACHE) return DIFF_CACHE;
+  const out = [];
+  const snaps = DATA.snapshots || [];
+  for (const ch of ["baemin","coupang","naver"]){
+    const rows = snaps.filter(s=>s.channel===ch);
+    if (!rows.length) continue;
+    const matched = new Set();
+    for (const s of rows){
+      // matched_sku 는 수집 당시 값 — 이후 정본 정리로 SKU 가 사라졌을 수 있다.
+      // 그때는 이름 매칭으로 다시 찾는다(안 그러면 멀쩡한 메뉴가 전부 '정본에 없음').
+      // '채널 이름 예외'로 인정한 메뉴는 예외 이름으로도 찾는다 — 안 그러면
+      // 예외로 인정해도 다음 대조에서 또 불일치로 잡힌다.
+      const it = (s.matched_sku && DATA.items.find(i=>i.sku===s.matched_sku))
+                || DATA.items.find(i=>norm(i.name)===norm(s.menu_name))
+                || DATA.items.find(i=>{const o=chOverride(i.sku,ch);
+                     return o && o.name_override && norm(o.name_override)===norm(s.menu_name);});
+      if (it) matched.add(it.sku);
+      if (!it){
+        // 한 글자 오타('슈패너'↔'슈페너')는 '없음'이 아니라 '이름이 살짝 다름'이다
+        // — 가장 비슷한 정본 메뉴를 추측해서 바로 연결할 수 있게 한다.
+        let guess = null, best = 0.55;
+        for (const c of DATA.items){
+          const v = sim2(c.name, s.menu_name);
+          if (v > best){ best = v; guess = c; }
+        }
+        out.push({ch, kind:"extra", snap:s, guess}); continue;
+      }
+      const expected = chPrice(it, ch);
+      const wantName = (chOverride(it.sku,ch)||{}).name_override || it.name;
+      const nameDiff = norm(wantName)!==norm(s.menu_name);
+      const priceDiff = s.price!=null && expected!=null && s.price!==expected;
+      if (nameDiff) out.push({ch, kind:"name", snap:s, it});
+      if (priceDiff) out.push({ch, kind:"price", snap:s, it, expected});
+    }
+    // 정본에서 배달 노출인데 채널에 없는 것
+    for (const it of DATA.items.filter(i=>i.delivery_active)){
+      if (matched.has(it.sku)) continue;
+      const o = chOverride(it.sku, ch);
+      if (o && o.active===false) continue;   // 일부러 안 파는 메뉴
+      out.push({ch, kind:"missing", it});
+    }
+  }
+  DIFF_CACHE = out;
+  return out;
+}
 
 function openDiff(){
   const snaps = DATA.snapshots || [];
-  const chLabel = {baemin:"배민", coupang:"쿠팡이츠", naver:"네이버"};
   let html = "";
   if (!snaps.length){
     html = `<p class="note">아직 수집된 스냅샷이 없습니다. 아래 "채널수집 요청"을 누르면
     집 PC 일꾼이 배민·쿠팡·네이버의 노출 메뉴를 긁어 옵니다(1~2분).
     끝나면 이 창을 다시 열어 보세요.</p>`;
   }
+  const probs = diffList();
+  const mini = (label, fn, title) =>
+    `<button class="mini" onclick="${fn}" title="${esc(title||"")}">${label}</button>`;
   for (const ch of ["baemin","coupang","naver"]){
     const rows = snaps.filter(s=>s.channel===ch);
     if (!rows.length) continue;
     const when = rows[0].collected_at ? rows[0].collected_at.slice(0,16).replace("T"," ") : "";
-    // 채널에 있는데 정본과 다른 것들
+    const mine = probs.filter(p=>p.ch===ch);
     let body = "";
-    const matchedSkus = new Set();
-    for (const s of rows){
-      const it = s.matched_sku ? DATA.items.find(i=>i.sku===s.matched_sku)
-                : DATA.items.find(i=>norm(i.name)===norm(s.menu_name));
-      if (it) matchedSkus.add(it.sku);
-      if (!it){
-        body += `<tr><td style="text-align:left">${s.menu_name}</td><td>${won(s.price)}</td>
-          <td colspan="2" class="warn">정본에 없음 → 정본에 추가하거나 채널에서 내리기</td></tr>`;
+    for (const p of mine){
+      if (p.kind === "extra"){
+        const g = p.guess;
+        body += `<div class="drow"><div><b>${esc(p.snap.menu_name)}</b> · ${won(p.snap.price)}원
+          <span class="warn" style="padding:0 4px">정본에 없음</span>
+          ${g?`<br><small style="color:var(--sub)">혹시 정본의 '<b>${esc(g.name)}</b>'? (이름이 살짝 다름)</small>`:""}</div>
+          <div>${g?
+            mini("📋 정본 이름 복사", `copyText(${JSON.stringify(g.name).replace(/"/g,"&quot;")})`, "채널 앱의 이름을 정본으로 고칠 때 붙여넣기")
+            + mini("채널 이름을 예외로", `diffAllowName('${g.sku}','${ch}',${JSON.stringify(p.snap.menu_name).replace(/"/g,"&quot;")})`, `'${esc(g.name)}'(${g.sku})에 연결하고, 이 채널은 이 이름을 쓰는 걸로 인정`)
+            :""}
+          ${mini("➕ 정본에 추가", `diffAddNew('${ch}',${p.snap.id??"null"},this)` ,"진짜 새 메뉴라면 — 이름·가격을 채워서 새 메뉴 창을 엽니다")}</div></div>`;
         continue;
       }
-      const expected = chPrice(it, ch);
-      const nameDiff = norm(it.name)!==norm(s.menu_name);
-      const priceDiff = s.price!=null && expected!=null && s.price!==expected;
-      if (!nameDiff && !priceDiff) continue;
-      body += `<tr><td style="text-align:left">${s.menu_name}${nameDiff?`<br><small style="color:var(--sub)">정본: ${it.name}</small>`:""}</td>
-        <td class="${priceDiff?"over":""}">${won(s.price)}</td>
-        <td>${won(expected)}</td>
-        <td>${nameDiff?"이름 다름":""}${nameDiff&&priceDiff?" · ":""}${priceDiff?"가격 다름":""}</td></tr>`;
+      if (p.kind === "missing"){
+        body += `<div class="drow"><div><b>${esc(p.it.name)}</b> · 기준가 ${won(chPrice(p.it,ch))}원
+          <span class="warn" style="padding:0 4px">채널에 없음</span></div>
+          <div>${mini("📋 이름·가격 복사", `diffCopyReg('${p.it.sku}','${ch}')`, "채널 앱에 등록할 때 붙여넣기")}
+          ${mini("이 채널선 안 팖", `diffMarkOff('${p.it.sku}','${ch}')`, "예외로 저장해 다음부터 안 잡히게")}</div></div>`;
+        continue;
+      }
+      if (p.kind === "name"){
+        body += `<div class="drow"><div><b>${esc(p.it.name)}</b>
+          <span class="warn" style="padding:0 4px">이름 다름</span><br>
+          <small style="color:var(--sub)">채널: ${esc(p.snap.menu_name)}</small></div>
+          <div>${mini("📋 정본 이름 복사", `copyText(${JSON.stringify(p.it.name).replace(/"/g,"&quot;")})`, "채널 앱에 붙여넣어 정본으로 통일")}
+          ${mini("채널 이름을 예외로", `diffAllowName('${p.it.sku}','${ch}',${JSON.stringify(p.snap.menu_name).replace(/"/g,"&quot;")})`, "이 채널은 일부러 다른 이름을 쓰는 걸로 인정")}</div></div>`;
+        continue;
+      }
+      // price
+      body += `<div class="drow"><div><b>${esc(p.it.name)}</b>
+        <span class="over" style="padding:0 4px">가격 다름</span><br>
+        <small style="color:var(--sub)">채널 ${won(p.snap.price)}원 · 정본 기준 ${won(p.expected)}원</small></div>
+        <div>${mini("📋 기준가 복사", `copyText('${Math.round(p.expected)}')`, "채널 앱에 붙여넣어 정본으로 통일")}
+        ${mini("정본을 채널가로", `diffAdopt('${p.it.sku}','${ch}',${p.snap.price})`, "채널 가격이 맞는 경우 — 정본을 고칩니다")}
+        ${mini("채널 예외로 인정", `diffAllowPrice('${p.it.sku}','${ch}',${p.snap.price})`, "이 채널만 일부러 다른 가격을 쓰는 걸로")}</div></div>`;
     }
-    // 정본에서 배달 노출인데 채널에 없는 것
-    for (const it of DATA.items.filter(i=>i.delivery_active)){
-      if (matchedSkus.has(it.sku)) continue;
-      const o = chOverride(it.sku, ch);
-      if (o && o.active===false) continue;   // 일부러 안 파는 메뉴
-      body += `<tr><td style="text-align:left" class="nocost">${it.name}</td>
-        <td>–</td><td>${won(chPrice(it,ch))}</td><td class="warn">채널에 없음</td></tr>`;
-    }
-    html += `<h4 style="margin:10px 0 4px">${chLabel[ch]} <small style="color:var(--sub);font-weight:400">
-      노출 ${rows.length}개 · 수집 ${when}</small></h4>`;
-    html += body
-      ? `<table style="min-width:0;width:100%"><thead><tr><th style="text-align:left">채널 메뉴명</th>
-         <th>채널가</th><th>정본 기준가</th><th>문제</th></tr></thead><tbody>${body}</tbody></table>`
-      : `<p class="note">✅ 정본과 완전히 일치</p>`;
+    // 수집이 오래됐으면 그 사이 채널이 바뀌었을 수 있다 — 비교보다 재수집이 먼저.
+    const ageDays = rows[0].collected_at
+      ? Math.floor((Date.now() - new Date(rows[0].collected_at)) / 86400000) : null;
+    html += `<h4 style="margin:12px 0 4px">${CH_LABEL[ch]} <small style="color:var(--sub);font-weight:400">
+      노출 ${rows.length}개 · 불일치 ${mine.length}건 · 수집 ${when}
+      ${ageDays!=null && ageDays>=3 ? `<span class="warn" style="padding:0 5px;border-radius:6px">⚠ ${ageDays}일 전 — 재수집 권장</span>` : ""}</small></h4>`;
+    html += mine.length ? body : `<p class="note">✅ 정본과 완전히 일치</p>`;
   }
   document.getElementById("diffBody").innerHTML = html || `<p class="note">표시할 내용이 없습니다.</p>`;
-  dlgDiff.showModal();
+  // 창이 이미 열린 채(처리 버튼이 다시 부른 경우) showModal 하면 예외로 죽는다
+  if (!dlgDiff.open) dlgDiff.showModal();
+}
+
+// 채널 예외 3필드를 항상 함께 보낸다(부분 전송 시 기존 값이 어떻게 될지에
+// 기대지 않는다 — saveCh 와 같은 규칙). 실패하면 로컬 낙관 반영을 되돌린다.
+async function diffOverride(sku, ch, patch){
+  let o = chOverride(sku, ch);
+  const isNew = !o;
+  if(!o){ o = {sku, channel:ch}; DATA.channels.push(o); }
+  const before = {name_override:o.name_override??null,
+                  price_override:o.price_override??null, active:o.active!==false};
+  Object.assign(o, patch);
+  const ok = await api(`/channel/${sku}/${ch}`, {
+    name_override: o.name_override ?? null,
+    price_override: o.price_override ?? null,
+    active: o.active !== false });
+  if (!ok){
+    if (isNew) DATA.channels = DATA.channels.filter(x=>x!==o);
+    else Object.assign(o, before);
+  }
+  return ok;
+}
+async function diffAllowName(sku, ch, name){
+  if (await diffOverride(sku, ch, {name_override:name})){
+    toast("이 채널 이름을 예외로 저장 ✓"); openDiff(); render(); }
+}
+async function diffAllowPrice(sku, ch, price){
+  if (await diffOverride(sku, ch, {price_override:price})){
+    toast("이 채널 가격을 예외로 저장 ✓"); openDiff(); render(); }
+}
+async function diffMarkOff(sku, ch){
+  if (await diffOverride(sku, ch, {active:false})){
+    toast(`${CH_LABEL[ch]}에선 안 파는 걸로 저장 ✓`); openDiff(); render(); }
+}
+// 채널 가격이 맞을 때 — 정본 쪽을 고친다. 배민·쿠팡은 배달가(예외가 이미
+// 있으면 예외를), 네이버는 매장가(매장·네이버는 같은 값을 쓰는 게 정본 규칙).
+async function diffAdopt(sku, ch, price){
+  const it = DATA.items.find(i=>i.sku===sku);
+  const o = chOverride(sku, ch);
+  if (!STORE_PRICED.has(ch) && o && o.price_override != null){
+    if (await diffOverride(sku, ch, {price_override:price}))
+      toast("채널 예외 가격을 갱신 ✓");
+  } else {
+    const field = STORE_PRICED.has(ch) ? "store_price" : "delivery_price";
+    const old = it[field];
+    it[field] = price;
+    if (!(await api(`/item/${sku}`, {[field]: price}))){ it[field] = old; return; }
+    toast(`정본 ${field==="store_price"?"매장가":"배달가"} ${won(old)} → ${won(price)} ✓`);
+  }
+  openDiff(); render();
+}
+function diffCopyReg(sku, ch){
+  const it = DATA.items.find(i=>i.sku===sku);
+  if (it) copyText(`${it.name} ${Math.round(chPrice(it,ch)||0)}원`);
+}
+// '정본에 없음' → 새 메뉴 창을 채널 값으로 미리 채워서 연다.
+function diffAddNew(ch, snapId, btn){
+  const row = btn.closest(".drow");
+  const nm = row ? row.querySelector("b").textContent : "";
+  const s = (DATA.snapshots||[]).find(x=>x.id===snapId) ||
+            (DATA.snapshots||[]).find(x=>x.channel===ch && x.menu_name===nm);
+  dlgDiff.close();
+  openNew();
+  if (s){
+    document.getElementById("nm-new").value = s.menu_name || "";
+    const p = s.price ?? "";
+    if (STORE_PRICED.has(ch)) document.getElementById("sp-new").value = p;
+    else document.getElementById("dp-new").value = p;
+  }
 }
 
 async function requestCollect(){
@@ -969,9 +1489,13 @@ async function requestCollect(){
   toast(j.ok ? "수집 요청됨 — 집 PC가 켜져 있으면 1~2분 뒤 완료" : "⚠ 요청 실패");
 }
 
-document.getElementById("q").addEventListener("input", render);
+// 검색 — 타이핑마다 전체를 다시 그리면 폰이 버벅여서 살짝 미룬다.
+let qTimer = null;
+document.getElementById("q").addEventListener("input", ()=>{
+  clearTimeout(qTimer); qTimer = setTimeout(render, 120);
+});
 
-// 표 영역 높이 = 화면 − 위쪽 헤더. 헤더는 칩·검색줄·통계가 줄바꿈되며 높이가
+// 표 영역 높이 = 화면 − 위쪽 헤더. 헤더는 칩·검색줄이 줄바꿈되며 높이가
 // 달라져서(특히 좁은 화면) 고정값을 쓰면 표가 잘리거나 남는다 — 실제로 잰다.
 function fitTable(){
   const h = document.querySelector("header");
@@ -983,7 +1507,7 @@ fitTable();
 
 fetch(BASE+"/data").then(r=>r.json()).then(d=>{
   if(d.error){ document.getElementById("tb").innerHTML =
-    `<tr><td colspan="10" style="text-align:left;padding:20px">⚠ ${d.error}<br><br>
+    `<tr><td colspan="9" style="text-align:left;padding:20px">⚠ ${d.error}<br><br>
     Supabase에 테이블이 없다면 <code>supabase/migrations/005_menu_master.sql</code> 실행 후
     <code>python scripts/seed_menu_master.py</code> 를 집 PC에서 실행하세요.</td></tr>`; return; }
   DATA = d; render();
