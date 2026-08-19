@@ -35,8 +35,15 @@ SYSTEM = """너는 '베어글스'라는 동네 베이글 카페의 메뉴 소개
 - 빵류는 "주문 즉시 토스팅"이 사실이다(꼭 넣을 필요는 없다).
 - 수제청·크림치즈는 매장/본사에서 실제로 만들므로 '수제'를 쓸 수 있다.
 
+영문 메뉴명(name_en):
+- 키오스크·영문 메뉴판에 그대로 걸 이름. 문장이 아니라 **이름**이다.
+- 각 단어 첫 글자를 대문자로(Plain Bagel, Jambon Beurre Sandwich).
+- 한국 고유 식재료는 소리대로 적고 필요하면 짧게 덧붙인다
+  (인절미 → Injeolmi, 유자 → Yuja, 우베 → Ube).
+- 용량·수량 표기는 그대로 살린다(1L, 200g, 6P).
+
 출력은 JSON 만. 설명이나 코드블록 없이:
-{"ko": "한글 소개", "en": "English intro"}"""
+{"ko": "한글 소개", "en": "English intro", "name_en": "English Menu Name"}"""
 
 
 def _prompt(name, category, composition=None, description=None):
@@ -58,13 +65,14 @@ def _parse(text):
     obj = json.loads(m.group(0))
     ko = (obj.get("ko") or "").strip()
     en = (obj.get("en") or "").strip()
+    name_en = (obj.get("name_en") or "").strip()
     if not ko or not en:
         raise ValueError("ko/en 이 비어 있음")
-    return ko, en
+    return ko, en, name_en
 
 
 def draft(name, category="", composition=None, description=None):
-    """(한글, 영문). 실패하면 예외를 올린다 — 호출부가 규칙 생성기로 넘어간다.
+    """(한글 소개, 영문 소개, 영문 메뉴명). 실패하면 예외를 올린다.
 
     사장님 선택에 따라 **무료 제미나이**를 쓴다. llm.complete 는 공급자를
     자동으로 고르므로, 여기서는 제미나이를 직접 부른다(클로드 크레딧을 메뉴

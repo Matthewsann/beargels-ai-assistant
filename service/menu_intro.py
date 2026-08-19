@@ -153,11 +153,15 @@ def _clean(name: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-def draft(name: str, category: str = "") -> tuple[str, str]:
-    """(한글, 영문) 초안. 못 만들면 빈 문자열."""
+def draft(name: str, category: str = "") -> tuple[str, str, str]:
+    """(한글 소개, 영문 소개, 영문 메뉴명) 초안. 못 만들면 빈 문자열.
+
+    영문 메뉴명은 규칙으로는 제대로 못 만든다(고유명사·표기 문제). AI 가 쓰는
+    게 맞아서 여기서는 빈 값을 준다 — 호출부가 덮어쓰지 않고 그냥 비워 둔다.
+    """
     base = _clean(name)
     if not base:
-        return "", ""
+        return "", "", ""
 
     item_ko = item_en = ""
     for key, ko, en in ITEM:
@@ -192,4 +196,4 @@ def draft(name: str, category: str = "") -> tuple[str, str]:
     if any(t in base for t in TOASTABLE) and (category or "") in ("베이커리", "샌드위치"):
         ko += TOAST_KO
         en += TOAST_EN
-    return ko, en
+    return ko, en, ""

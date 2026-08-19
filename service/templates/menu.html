@@ -601,6 +601,12 @@ function toggleDetail(sku){
       <input class="wide" type="text" id="nm-${sku}" value="${(it.name||"").replace(/"/g,"&quot;")}" style="width:min(320px,80%);padding:4px 6px;border:1px solid var(--line);border-radius:4px">
       <button onclick="saveName('${sku}')" style="font-size:11px">이름 저장</button>
       <button onclick="delMenu('${sku}')" style="font-size:11px;float:right;color:var(--red)">🗑 메뉴 삭제</button>
+      <span style="margin-left:10px"><b>영문명</b>
+      <input type="text" id="nen-${sku}" value="${(it.name_en||"").replace(/"/g,"&quot;")}"
+        placeholder="Plain Bagel"
+        style="width:190px;text-align:left;padding:4px 6px;border:1px solid var(--line);border-radius:4px">
+      <button onclick="saveNameEn('${sku}')" style="font-size:11px">영문명 저장</button>
+      <button onclick="copyNameEn('${sku}')" style="font-size:11px">📋</button></span>
       <span style="margin-left:10px"><b>분류</b>
       <input type="text" id="cat-${sku}" list="catList" value="${(it.category||"").replace(/"/g,"&quot;")}"
         style="width:140px;text-align:left;padding:4px 6px;border:1px solid var(--line);border-radius:4px">
@@ -701,6 +707,21 @@ async function delMenu(sku){
   render();
 }
 
+async function saveNameEn(sku){
+  const v = document.getElementById("nen-"+sku).value.trim();
+  const it = DATA.items.find(i=>i.sku===sku);
+  if(v === (it.name_en||"")){ toast("그대로입니다"); return; }
+  const j = await api(`/item/${sku}`, {name_en: v || null});
+  if(!j) return;
+  it.name_en = v || null;
+}
+async function copyNameEn(sku){
+  const v = (document.getElementById("nen-"+sku).value||"").trim();
+  if(!v){ toast("아직 비어 있습니다"); return; }
+  try{ await navigator.clipboard.writeText(v); toast("복사됨: "+v); }
+  catch(_){ toast("복사 실패 — 직접 긁어 복사해 주세요"); }
+}
+
 async function saveCat(sku){
   const v = document.getElementById("cat-"+sku).value.trim();
   if(!v){ toast("분류를 입력하세요"); return; }
@@ -728,6 +749,9 @@ async function draftIntro(sku){
   const had = (ko.value||"").trim() || (en.value||"").trim();
   if(had && !confirm("이미 적힌 소개글을 초안으로 덮어쓸까요?")) return;
   ko.value = j.intro_ko || ""; en.value = j.intro_en || "";
+  // 영문 메뉴명은 비어 있을 때만 채운다 — 이미 정한 이름을 덮으면 곤란하다.
+  const nen = document.getElementById("nen-"+sku);
+  if(nen && j.name_en && !(nen.value||"").trim()) nen.value = j.name_en;
   toast(j.note ? `⚠ ${j.note}` : "AI 초안을 넣었습니다 — 확인하고 저장하세요");
 }
 
@@ -735,9 +759,11 @@ async function saveIntro(sku){
   const ko = document.getElementById("ik-"+sku).value.trim();
   const en = document.getElementById("ie-"+sku).value.trim();
   const it = DATA.items.find(i=>i.sku===sku);
-  const j = await api(`/item/${sku}`, {intro_ko: ko || null, intro_en: en || null});
+  const nen = (document.getElementById("nen-"+sku)?.value || "").trim();
+  const j = await api(`/item/${sku}`, {intro_ko: ko || null, intro_en: en || null,
+                                       name_en: nen || null});
   if(!j){ toast("⚠ 저장 실패"); return; }
-  it.intro_ko = ko || null; it.intro_en = en || null;
+  it.intro_ko = ko || null; it.intro_en = en || null; it.name_en = nen || null;
   toast("소개글 저장 ✓");
 }
 async function copyIntro(sku, lang){

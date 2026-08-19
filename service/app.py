@@ -1036,12 +1036,19 @@ def menu_item_new(path_key):
     # 소개글을 손으로만 쓰게 두면 결국 비고, 그러면 채널마다 문구가 또 갈린다.
     # 이름·분류로 초안을 만들어 넣어 둔다(사장님이 다듬는 걸 전제로 한 초안).
     if not (body.get("intro_ko") or "").strip():
-        ko, en = intro_draft(body.get("name", ""), body.get("category", ""))
+        try:
+            from intro_ai import draft as ai_draft
+            ko, en, name_en = ai_draft(body.get("name", ""), body.get("category", ""))
+        except Exception:  # noqa: BLE001 — AI 를 못 쓰면 규칙 초안이라도
+            ko, en, name_en = intro_draft(body.get("name", ""), body.get("category", ""))
         body["intro_ko"], body["intro_en"] = ko, en
+        if name_en and not (body.get("name_en") or "").strip():
+            body["name_en"] = name_en
     try:
         out = db.menu_create(body)
         out["intro_ko"] = body.get("intro_ko")
         out["intro_en"] = body.get("intro_en")
+        out["name_en"] = body.get("name_en")
         return jsonify({"ok": True, **out})
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
@@ -1062,12 +1069,14 @@ def menu_intro_draft(path_key, sku):
     # 할당량이 걸리면 규칙 초안으로 떨어뜨린다 — 버튼이 먹통이 되는 것보다 낫다.
     try:
         from intro_ai import draft as ai_draft
-        ko, en = ai_draft(it.get("name", ""), it.get("category", ""),
-                          it.get("composition"), it.get("description"))
-        return jsonify({"ok": True, "intro_ko": ko, "intro_en": en, "by": "ai"})
+        ko, en, name_en = ai_draft(it.get("name", ""), it.get("category", ""),
+                                   it.get("composition"), it.get("description"))
+        return jsonify({"ok": True, "intro_ko": ko, "intro_en": en,
+                        "name_en": name_en, "by": "ai"})
     except Exception as e:  # noqa: BLE001
-        ko, en = intro_draft(it.get("name", ""), it.get("category", ""))
-        return jsonify({"ok": True, "intro_ko": ko, "intro_en": en, "by": "rule",
+        ko, en, name_en = intro_draft(it.get("name", ""), it.get("category", ""))
+        return jsonify({"ok": True, "intro_ko": ko, "intro_en": en,
+                        "name_en": name_en, "by": "rule",
                         "note": f"AI를 못 써서 기본 초안입니다 ({str(e)[:60]})"})
 
 

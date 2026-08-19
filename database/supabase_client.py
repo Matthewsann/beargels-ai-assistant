@@ -794,6 +794,8 @@ _MENU_ITEM_COLS = (
     # 플랫폼(네이버·배민·쿠팡·토스 키오스크)에 넣을 짧은 소개. description 은
     # 정본용 긴 글이라 그대로 붙이기엔 길다.
     "intro_ko", "intro_en",
+    # 키오스크·영문 메뉴판에 거는 이름(문장이 아니라 이름)
+    "name_en",
     "store_price", "delivery_price", "ingredient_cost", "cost_source",
     "store_active", "delivery_active", "sort_order",
 )
