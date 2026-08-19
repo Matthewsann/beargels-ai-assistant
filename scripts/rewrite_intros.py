@@ -42,12 +42,16 @@ def main():
     ap.add_argument("--only-empty", action="store_true", help="비어 있는 것만")
     ap.add_argument("--limit", type=int, default=0, help="개수 제한(0=전부)")
     ap.add_argument("--gap", type=float, default=4.0, help="호출 간격(초)")
+    ap.add_argument("--only-name-en", action="store_true",
+                    help="영문 메뉴명이 없는 것만 (소개글은 그대로 둠)")
     args = ap.parse_args()
 
     menus = [m for m in db.menu_all()
              if m.get("store_active") or m.get("delivery_active")]
     if args.only_empty:
         menus = [m for m in menus if not (m.get("intro_ko") or "").strip()]
+    if args.only_name_en:
+        menus = [m for m in menus if not (m.get("name_en") or "").strip()]
     menus.sort(key=lambda m: (m.get("category") or "", m["sku"]))
     if args.limit:
         menus = menus[:args.limit]
@@ -58,12 +62,19 @@ def main():
     ok = fail = 0
     for i, m in enumerate(menus, 1):
         try:
-            ko, en = ai_draft(m["name"], m.get("category"),
-                              m.get("composition"), m.get("description"))
-            db.menu_update_item(m["sku"], {"intro_ko": ko, "intro_en": en})
+            ko, en, name_en = ai_draft(m["name"], m.get("category"),
+                                       m.get("composition"), m.get("description"))
+            fields = {}
+            # --only-name-en 일 때는 이미 손본 소개글을 덮지 않는다.
+            if not args.only_name_en:
+                fields.update({"intro_ko": ko, "intro_en": en})
+            if name_en and not (m.get("name_en") or "").strip():
+                fields["name_en"] = name_en
+            if fields:
+                db.menu_update_item(m["sku"], fields)
             ok += 1
-            print(f"[{i}/{len(menus)}] {m['sku']} {m['name'][:24]}\n"
-                  f"    {ko}\n    {en}", flush=True)
+            print(f"[{i}/{len(menus)}] {m['sku']} {m['name'][:24]} → {name_en}",
+                  flush=True)
         except Exception as e:  # noqa: BLE001
             fail += 1
             print(f"[{i}/{len(menus)}] {m['sku']} {m['name'][:24]} → 실패 "
