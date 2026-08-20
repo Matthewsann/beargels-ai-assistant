@@ -31,7 +31,15 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5")
+# 답글은 300~500자짜리 짧은 글이라 깊게 생각할 게 없다. effort 를 낮추면
+# 같은 모델에서 품질은 그대로면서 토큰(=돈)과 응답시간이 크게 준다.
+# ⚠️ 이름을 BEARGELS_ 로 시작하게 둔다 — CLAUDE_EFFORT 같은 흔한 이름은
+# 개발 도구가 쓰는 환경변수와 부딪혀 .env 값이 조용히 무시된다(2026-08-18 실측).
+CLAUDE_EFFORT = os.getenv("BEARGELS_LLM_EFFORT", "low")
+# 지시문(말투 규칙·배운 것·예시)은 매번 똑같다 → 캐시에 올려 90% 싸게 읽는다.
+# 캐시가 걸리려면 앞부분이 1024토큰쯤은 돼야 해서 짧은 지시문엔 안 붙인다.
+CACHE_MIN_CHARS = int(os.getenv("CLAUDE_CACHE_MIN_CHARS", "2000"))
 # 'gemini-flash-latest' 는 구글이 최신 플래시로 자동 연결해 주는 별칭이라
 # 모델 은퇴에 강하다. 구모델은 무료쿼터가 0이 되거나 404 로 사라진다
 # (2.5-flash 404, 2.0-flash 쿼터0 — 2026-08-06 실키로 확인).
@@ -81,9 +89,19 @@ def _call_claude(system: str, user: str, max_tokens: int) -> str:
     client = Anthropic(api_key=_key("ANTHROPIC_API_KEY"))
     kwargs = {"model": CLAUDE_MODEL, "max_tokens": max_tokens,
               "messages": [{"role": "user", "content": user}]}
+    if CLAUDE_EFFORT:
+        kwargs["output_config"] = {"effort": CLAUDE_EFFORT}
     if system:
-        kwargs["system"] = system
+        # 긴 지시문은 캐시 블록으로 보낸다(같은 지시문이 반복되므로).
+        kwargs["system"] = ([{"type": "text", "text": system,
+                              "cache_control": {"type": "ephemeral"}}]
+                            if len(system) >= CACHE_MIN_CHARS else system)
     msg = client.messages.create(**kwargs)
+    if getattr(msg, "usage", None) is not None:
+        logger.debug("claude 토큰 in=%s cache_read=%s out=%s",
+                     msg.usage.input_tokens,
+                     getattr(msg.usage, "cache_read_input_tokens", 0),
+                     msg.usage.output_tokens)
     return "".join(b.text for b in msg.content if b.type == "text")
 
 

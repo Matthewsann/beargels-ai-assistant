@@ -662,6 +662,63 @@ def get_attention_reviews(platform=None, mode="all", limit=30, offset=0,
                              else len(resp.data or []))
 
 
+# ---------------------------------------------------------------------------
+# 화면용 숫자 세기 — 목록을 통째로 받지 않는다
+# ---------------------------------------------------------------------------
+# 왜: 대시보드가 '몇 건인지'만 쓰면서 리뷰 500건을 통째로(180KB) 받아오고
+#     있었다. PythonAnywhere ↔ Supabase 왕복이 한 번에 0.3~1.3초라, 화면
+#     하나에 5초가 걸렸다(2026-08-18 서버 실측). 개수는 서버에서 세게 한다.
+
+def _pending_base(select="id"):
+    """답글이 아직 안 끝난 리뷰의 공통 조건(get_pending_reviews 와 같은 기준)."""
+    return (get_client().table("reviews").select(select, count="exact")
+            .in_("reply_status", ["none", "drafted"])
+            .or_("platform_replied.is.null,platform_replied.eq.false"))
+
+
+def _count(q) -> int:
+    """조건에 맞는 건수만 받아온다(행은 안 받는다)."""
+    try:
+        return q.limit(1).execute().count or 0
+    except Exception:  # noqa: BLE001 — 숫자 하나 때문에 화면이 죽으면 안 된다
+        logger.exception("건수 조회 실패")
+        return 0
+
+
+def count_pending(with_draft=None, platform=None, escalate=False) -> int:
+    """등록해야 할 리뷰 건수.
+
+    with_draft: True=초안 있는 것만, False=초안 없는 것만, None=전체
+    escalate:   True=사장님이 직접 대응할 민감 리뷰만
+    """
+    q = _pending_base()
+    if platform:
+        q = q.eq("platform", platform)
+    if with_draft is True:
+        q = q.not_.is_("reply_draft", "null")
+    elif with_draft is False:
+        q = q.is_("reply_draft", "null")
+    if escalate:
+        q = q.or_("kind.eq.escalate,reply_draft.like.⚠️%")
+    return _count(q)
+
+
+def count_by_status(status) -> int:
+    """reply_status 가 그 상태인 리뷰 건수(approved/posted 등)."""
+    return _count(get_client().table("reviews").select("id", count="exact")
+                  .eq("reply_status", status))
+
+
+def oldest_pending_date():
+    """가장 오래 기다린(초안 있는) 리뷰의 작성일 — 기한 감각용. 없으면 None."""
+    try:
+        rows = (_pending_base("written_date").not_.is_("reply_draft", "null")
+                .order("written_date", desc=False).limit(1).execute().data)
+    except Exception:  # noqa: BLE001
+        return None
+    return (rows[0].get("written_date") if rows else None)
+
+
 def get_approved_reviews(limit=50):
     """자동 등록을 기다리는(수정 완료된) 리뷰 목록 — 오래된 순."""
     return (get_client().table("reviews").select("*")

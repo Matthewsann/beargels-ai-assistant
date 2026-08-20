@@ -26,7 +26,9 @@ import json
 import os
 import pathlib
 import sys
+import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -105,6 +107,55 @@ def check(path_key: str) -> None:
         abort(404)
 
 
+# ---------------------------------------------------------------------------
+# 화면을 빠르게 — 동시에 조회하고, 자주 같은 답이 나오는 건 잠깐 재사용
+# ---------------------------------------------------------------------------
+# PythonAnywhere ↔ Supabase 왕복이 한 번에 0.3~1.3초다(서버 실측 2026-08-18).
+# 화면 하나가 조회를 6번 하면 그게 그대로 더해져 5초가 된다. 그래서
+#   ① 서로 필요 없는 조회는 **동시에** 돌리고(가장 느린 것 하나 시간만 든다)
+#   ② 일꾼 상태·작업 상태·알림처럼 몇 초 사이 안 바뀌는 건 잠깐 캐시한다.
+_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="db")
+
+
+def gather(**calls) -> dict:
+    """여러 조회를 동시에 실행해 결과를 이름표로 돌려준다.
+
+    하나가 실패해도 나머지는 살린다(그 자리만 None). 화면 전체가 죽는 것보다
+    숫자 하나가 비는 편이 낫다.
+    """
+    futures = {k: _POOL.submit(fn) for k, fn in calls.items()}
+    out = {}
+    for k, f in futures.items():
+        try:
+            out[k] = f.result(timeout=25)
+        except Exception:  # noqa: BLE001
+            out[k] = None
+    return out
+
+
+def cached(seconds: float):
+    """같은 답을 몇 초 동안 재사용하는 아주 작은 캐시(인자 없는 함수용)."""
+    def deco(fn):
+        box = {"t": 0.0, "v": None}
+
+        def wrap():
+            now = time.monotonic()
+            if box["v"] is not None and now - box["t"] < seconds:
+                return box["v"]
+            box["v"], box["t"] = fn(), now
+            return box["v"]
+        wrap.__name__ = fn.__name__
+        wrap.__doc__ = fn.__doc__
+        return wrap
+    return deco
+
+
+@cached(4)      # 화면이 5초마다 물어보는 값 — 그 사이엔 같은 답이면 충분하다
+def _latest_job_cached():
+    return db.latest_job()
+
+
+@cached(4)
 def _worker_view() -> dict:
     """집 PC 일꾼 상태를 화면용으로 정리."""
     try:
@@ -222,6 +273,7 @@ OWNER_ALERT_KINDS = ("SeriousReview", "SessionExpired", "ReplyReplaced",
                      "Notice", "StuckApprovedRevived")
 
 
+@cached(15)
 def _owner_alerts(limit=5) -> list[dict]:
     """미확인 알림(최신순, 최대 limit건). 실패해도 화면은 뜬다."""
     try:
@@ -320,35 +372,45 @@ def home(path_key):
     """
     check(path_key)
     error, stat = None, {}
+    # 숫자만 필요한 화면이다 — 리뷰를 통째로 받지 않고 개수만 세고,
+    # 서로 무관한 조회는 동시에 돌린다(2026-08-18 속도 개선: 5.2초 → 1초대).
     try:
-        pending = db.get_pending_reviews(limit=200)
-        todo = [r for r in pending if r.get("reply_draft")]
+        g = gather(
+            todo_baemin=lambda: db.count_pending(with_draft=True, platform="baemin"),
+            todo_coupang=lambda: db.count_pending(with_draft=True, platform="coupang"),
+            escalate=lambda: db.count_pending(with_draft=True, escalate=True),
+            waiting=lambda: db.count_pending(with_draft=False),
+            posting=lambda: db.count_by_status("approved"),
+            posted=lambda: db.count_by_status("posted"),
+            oldest=db.oldest_pending_date,
+            job=_latest_job_cached,
+            worker=_worker_view,
+            alerts=_owner_alerts,
+        )
         stat = {
-            "todo": len(todo),
-            "todo_baemin": sum(1 for r in todo if r.get("platform") == "baemin"),
-            "todo_coupang": sum(1 for r in todo if r.get("platform") == "coupang"),
+            "todo": (g["todo_baemin"] or 0) + (g["todo_coupang"] or 0),
+            "todo_baemin": g["todo_baemin"] or 0,
+            "todo_coupang": g["todo_coupang"] or 0,
             # 사장님이 직접 대응해야 하는 민감 리뷰 — 가장 급한 항목이라 따로.
-            "escalate": sum(1 for r in todo
-                            if r.get("kind") == "escalate"
-                            or (r.get("reply_draft") or "").strip().startswith("⚠️")),
-            "waiting": len(pending) - len(todo),      # 초안 생성 대기
-            "posting": len(db.get_approved_reviews(limit=200)),
-            "posted": len(db.get_posted_reviews(limit=500)),
+            "escalate": g["escalate"] or 0,
+            "waiting": g["waiting"] or 0,            # 초안 생성 대기
+            "posting": g["posting"] or 0,
+            "posted": g["posted"] or 0,
         }
         # 가장 오래 기다린 리뷰 — 답글 기한 감각을 준다.
-        oldest = next((r.get("written_date") for r in todo if r.get("written_date")),
-                      None)
+        oldest = g["oldest"]
         stat["oldest"] = oldest
         stat["oldest_days"] = (
             (datetime.now().date() - datetime.fromisoformat(oldest).date()).days
             if oldest else None)
-        job = _job_view(db.latest_job())
+        job = _job_view(g["job"])
     except Exception as e:  # noqa: BLE001
         error = f"현황을 불러오지 못했어요: {str(e)[:150]}"
-        job = None
+        job, g = None, {}
     return render_template(
-        "dashboard.html", key=path_key, stat=stat, worker=_worker_view(),
-        job=job, error=error, alerts=_owner_alerts(),
+        "dashboard.html", key=path_key, stat=stat,
+        worker=g.get("worker") or _worker_view(),
+        job=job, error=error, alerts=g.get("alerts") or [],
     )
 
 
@@ -362,7 +424,11 @@ def todo(path_key):
     plat = (request.args.get("plat") or "").strip()   # baemin|coupang|빈값(전체)
     sort = (request.args.get("sort") or "").strip()   # new=최신순 | 빈값=오래된순
     try:
-        raw_rows = db.get_pending_reviews(limit=100)   # 오래된 순(기한 임박 먼저)
+        g = gather(rows=lambda: db.get_pending_reviews(limit=100),
+                   approved=lambda: db.count_by_status("approved"),
+                   job=_latest_job_cached, worker=_worker_view,
+                   alerts=_owner_alerts)
+        raw_rows = g["rows"] or []     # 오래된 순(기한 임박 먼저)
         if plat:                       # 쿠팡만/배민만 보기
             raw_rows = [r for r in raw_rows if r.get("platform") == plat]
         if sort == "new":              # 최신 리뷰부터 보고 싶을 때
@@ -375,16 +441,17 @@ def todo(path_key):
         for r in reviews:
             r["trusted"] = (not r["escalate"]) and r.get("kind") in trusted
         waiting = len(rows) - len(reviews)
-        job = _job_view(db.latest_job())
-        approved_count = len(db.get_approved_reviews(limit=100))
+        job = _job_view(g["job"])
+        approved_count = g["approved"] or 0
     except Exception as e:  # noqa: BLE001
         error = f"데이터를 불러오지 못했어요: {str(e)[:150]}"
-        job = None
+        job, g = None, {}
         approved_count = 0
     return render_template(
-        "staff.html", key=path_key, reviews=reviews, worker=_worker_view(),
+        "staff.html", key=path_key, reviews=reviews,
+        worker=g.get("worker") or _worker_view(),
         job=job, error=error, waiting=waiting, approved_count=approved_count,
-        plat=plat, sort=sort, alerts=_owner_alerts(),
+        plat=plat, sort=sort, alerts=g.get("alerts") or [],
     )
 
 
