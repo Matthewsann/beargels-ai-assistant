@@ -482,6 +482,41 @@ def status(path_key):
         return jsonify({"error": str(e)[:150]}), 200
 
 
+@app.route("/<path_key>/_perf")
+def perf(path_key):
+    """화면이 왜 느린지 **서버에서** 재 본다(진단용, 사장님 화면엔 안 나옴).
+
+    집에서 재면 빠른데 화면은 느린 이유를 알려면, 실제로 돌아가는 곳
+    (PythonAnywhere)에서 조회 하나하나의 시간을 재야 한다. 사장님 보고
+    2026-08-18 "버튼이 다 느려".
+    """
+    check(path_key)
+    import time as _t
+    out, t0 = [], _t.perf_counter()
+
+    def take(name, fn):
+        s = _t.perf_counter()
+        try:
+            r = fn()
+            n = len(r) if isinstance(r, list) else (1 if r else 0)
+            err = ""
+        except Exception as e:  # noqa: BLE001
+            n, err = -1, str(e)[:80]
+        out.append({"name": name, "ms": round((_t.perf_counter() - s) * 1000),
+                    "rows": n, "error": err})
+
+    take("pending(200)", lambda: db.get_pending_reviews(limit=200))
+    take("approved(200)", lambda: db.get_approved_reviews(limit=200))
+    take("posted(500)", lambda: db.get_posted_reviews(limit=500))
+    take("latest_job", db.latest_job)
+    take("worker_status", db.worker_status)
+    take("errors(50)", lambda: db.get_errors(limit=50))
+    take("search(30)", lambda: db.search_reviews(limit=30))
+    take("pending 재조회", lambda: db.get_pending_reviews(limit=200))
+    return jsonify({"total_ms": round((_t.perf_counter() - t0) * 1000),
+                    "steps": out})
+
+
 @app.route("/<path_key>/review/<int:review_id>/save", methods=["POST"])
 def save_draft(path_key, review_id):
     check(path_key)
