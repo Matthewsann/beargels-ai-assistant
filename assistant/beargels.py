@@ -507,6 +507,35 @@ def _oc_bucket(n):
     return 1 if n == 1 else 2 if n < 5 else 3 if n < 20 else 4
 
 
+# 조사·흔한 말은 빼고 '무슨 이야기인지'를 나타내는 낱말만 남긴다.
+# (형태소 분석기를 붙이면 더 낫지만, 설치 없이 돌아가는 게 우선이다.)
+_STOP_WORDS = frozenset("""
+그리고 그런데 하지만 정말 진짜 너무 조금 완전 다시 항상 계속 아주 매우 근데
+있어요 있습니다 했어요 합니다 같아요 같습니다 이번 여기 저기 우리 제가 저는
+주문 배달 리뷰 사장님 감사 감사합니다 잘먹었습니다 잘먹었어요
+""".split())
+
+
+def _keywords(text, min_len=2):
+    """리뷰에서 뜻을 담은 낱말만 뽑는다(간단한 어절 분리 + 조사 꼬리 제거)."""
+    out = set()
+    for w in re.findall(r"[가-힣A-Za-z]{2,}", (text or "")):
+        w = re.sub(r"(이에요|예요|에요|입니다|이었|했던|하고|해서|이고|은|는|이|가|을|를|에|의|도|만|과|와)$", "", w)
+        if len(w) >= min_len and w not in _STOP_WORDS:
+            out.add(w)
+    return out
+
+
+def _clean_menu(name):
+    """플랫폼 메뉴명에서 관리용 꼬리표를 뗀다.
+
+    쿠팡 메뉴명은 '[SET] 베이글 샌드위치 + 음료' 처럼 대괄호 표시가 붙어 있어,
+    그대로 프롬프트에 넣으면 답글 본문에 "[SET] 베이글…" 이 그대로 나갔다
+    (실제 초안에서 확인 2026-08-18). 고객에게 보일 이름만 남긴다.
+    """
+    return re.sub(r"\[[^\]]{1,12}\]\s*", "", (name or "")).strip()
+
+
 def pick_examples(review, kind, k=4):
     """이 리뷰와 가장 비슷한 사장님 답글 예시 k개(없으면 빈 목록).
 
@@ -521,11 +550,19 @@ def pick_examples(review, kind, k=4):
     rating = review.get("rating")
     clen = len((review.get("content") or "").strip())
 
+    words = _keywords(review.get("content"))
+
     def score(ex):
         s = 0
         ex_menus = {m.strip() for m in (ex.get("menus") or []) if m}
         if menus and ex_menus & menus:
             s += 6                       # 같은 메뉴 이야기가 제일 도움이 된다
+        # 무슨 이야기를 한 리뷰인지가 실은 가장 중요하다 — '따뜻해서 좋았다'와
+        # '늦게 왔다'는 같은 메뉴·같은 별점이어도 답글이 전혀 다르다.
+        # 겹치는 낱말 수만큼(최대 5점) 얹는다(2026-08-18).
+        common = words & _keywords(ex.get("content"))
+        if common:
+            s += min(len(common) * 2, 5)
         if oc_b and _oc_bucket(ex.get("order_count")) == oc_b:
             s += 4                       # 단골 대우가 같은 예시
         if rating and ex.get("rating") == rating:
@@ -681,7 +718,7 @@ def generate_review_reply(review):
     rating = review.get("rating")
     content = (review.get("content") or "").strip()
     author = _clean_author(review.get("author"))
-    menus = ", ".join(review.get("menus") or []) or "주문 메뉴"
+    menus = ", ".join(_clean_menu(m) for m in (review.get("menus") or []))         or "주문 메뉴"
     # 주문 횟수는 단골·VIP 판단의 핵심 지표 — 넘겨받지 못했으면 원본에서 캔다.
     oc = order_count_of(review)
     cfg = PLATFORM_REPLY.get(review.get("platform"),
