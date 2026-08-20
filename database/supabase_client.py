@@ -752,6 +752,35 @@ def edit_rate_by_kind(limit=500):
     return stats
 
 
+# AI 초안을 직원이 얼마나 고쳤는지 = 답글 품질의 성적표. 이 숫자가 충분히
+# 쌓이고(표본) 충분히 낮아지면(수정률), 그때 API 없는 자체 모델로 갈아탈
+# 재료가 된다(사장님 결정 2026-08-18: 데이터부터 모으기).
+LEARNING_TARGET_PAIRS = 500
+
+
+def learning_progress(limit=1000) -> dict:
+    """학습 재료 현황 — {pairs, edited, rate, target}.
+
+    pairs: 우리가 등록한 답글 중 'AI 원본'이 남아 있는 건수(=학습 쌍).
+    rate:  그중 직원이 손댄 비율(공백 차이만 있으면 안 고친 것으로 본다).
+    """
+    try:
+        rows = (get_client().table("reviews").select("ai_draft, reply_draft")
+                .eq("reply_status", "posted").not_.is_("ai_draft", "null")
+                .limit(limit).execute().data)
+    except Exception:  # noqa: BLE001 — 숫자 하나 때문에 화면이 죽지 않게
+        logger.exception("학습 현황 조회 실패")
+        return {"pairs": 0, "edited": 0, "rate": 0.0,
+                "target": LEARNING_TARGET_PAIRS}
+    edited = sum(1 for r in rows
+                 if " ".join((r.get("ai_draft") or "").split())
+                 != " ".join((r.get("reply_draft") or "").split()))
+    n = len(rows)
+    return {"pairs": n, "edited": edited,
+            "rate": round(edited / n, 3) if n else 0.0,
+            "target": LEARNING_TARGET_PAIRS}
+
+
 def get_edit_pairs(days=1, limit=50):
     """최근 며칠 사이 직원이 실제로 고친 (AI원본, 최종본) 쌍 — 새벽 공부용."""
     since = (datetime.now().astimezone() - timedelta(days=days)).isoformat()

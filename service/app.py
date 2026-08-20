@@ -167,6 +167,11 @@ def cached(seconds: float):
     return deco
 
 
+@cached(300)    # 천천히 변하는 값 — 화면 속도를 위해 5분 재사용
+def _learning_cached():
+    return db.learning_progress()
+
+
 @cached(4)      # 화면이 5초마다 물어보는 값 — 그 사이엔 같은 답이면 충분하다
 def _latest_job_cached():
     return db.latest_job()
@@ -403,6 +408,7 @@ def home(path_key):
             posted=lambda: db.count_by_status("posted"),
             oldest=db.oldest_pending_date,
             job=_latest_job_cached,
+            learning=_learning_cached,
             worker=_worker_view,
             alerts=_owner_alerts,
         )
@@ -428,6 +434,7 @@ def home(path_key):
         job, g = None, {}
     return render_template(
         "dashboard.html", key=path_key, stat=stat,
+        learning=g.get("learning"),
         worker=g.get("worker") or _worker_view(),
         job=job, error=error, alerts=g.get("alerts") or [],
     )

@@ -115,6 +115,25 @@
   </div>
   {% endif %}
 
+  {# AI 답글 학습 현황 — '언제 우리 모델로 갈아탈 수 있나'의 눈금.
+     직원이 초안을 고친 비율이 낮아지고 표본이 쌓일수록 자체 모델이 가까워진다. #}
+  {% if learning and learning.pairs %}
+  <div class="panel">
+    <div class="lbl" style="margin-bottom:6px;">🤖 AI 답글 학습 현황</div>
+    <div class="status">
+      배운 사례 <b>{{ learning.pairs }}</b>건 / 목표 {{ learning.target }}건
+      · 직원이 고친 비율 <b>{{ (learning.rate * 100) | round(0) | int }}%</b>
+    </div>
+    <div style="height:8px;background:var(--line);border-radius:6px;margin-top:8px;">
+      <div style="height:8px;border-radius:6px;background:var(--accent, #7a9e7e);
+                  width:{{ [ (learning.pairs / learning.target * 100) | round(0) | int, 100 ] | min }}%;"></div>
+    </div>
+    <div class="lbl" style="margin-top:6px;">
+      답글을 등록할수록 AI가 사장님 말투를 더 정확히 배웁니다.
+    </div>
+  </div>
+  {% endif %}
+
   <div class="panel">
     <div class="status" id="wstat">
       <span class="dot {{ 'busy' if worker.state == 'working' else ('on' if worker.alive else 'off') }}"></span>
