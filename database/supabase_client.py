@@ -857,11 +857,14 @@ def category_reorder(order: list) -> dict:
     분류 안에서의 기존 줄 순서는 그대로 둔다 — 여기서 바꾸려는 건 분류끼리의
     앞뒤일 뿐이다.
     """
+    if not order:
+        raise ValueError("분류 순서가 비어 있습니다")
     items = menu_all()
     rank = {c: i for i, c in enumerate(order)}
-    rest = sorted({i["category"] for i in items} - set(order))
-    for c in rest:                        # 목록에 없던 분류는 뒤로
-        rank[c] = len(rank)
+    # 목록에 없던 분류는 뒤로 — 지금 메뉴판에 있는 순서 그대로 붙인다.
+    # 가나다순으로 정렬하면 알려주지 않은 분류가 제멋대로 재배치된다.
+    for it in items:
+        rank.setdefault(it["category"], len(rank))
     items.sort(key=lambda i: (rank.get(i["category"], 9999), i.get("sort_order") or 0))
     cli = get_client()
     n = 0

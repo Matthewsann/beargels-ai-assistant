@@ -1102,6 +1102,10 @@ def menu_category_order(path_key):
     order = (request.get_json(force=True) or {}).get("order") or []
     if not isinstance(order, list):
         return jsonify({"ok": False, "error": "순서 목록이 아닙니다"}), 400
+    # 빈 목록을 넘기면 남은 분류가 가나다순으로 재배치되어 메뉴판이 통째로
+    # 뒤집힌다(실제로 당해 봤다). 목록이 비면 아무것도 하지 않는다.
+    if not order:
+        return jsonify({"ok": False, "error": "분류 순서가 비어 있습니다"}), 400
     try:
         return jsonify({"ok": True, **db.category_reorder(order)})
     except Exception as e:  # noqa: BLE001
