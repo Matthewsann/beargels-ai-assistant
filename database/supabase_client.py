@@ -825,6 +825,55 @@ def menu_update_item(sku, fields: dict):
             .eq("sku", sku).execute().data)
 
 
+# ── 분류(카테고리) 관리 ────────────────────────────────────────────
+# 분류는 메뉴마다 붙은 글자라, 이름을 바꾸려면 그 분류의 메뉴를 전부 고쳐야 한다.
+# 게다가 목표 원가율이 분류 '이름'을 열쇠로 저장돼 있어서, 메뉴만 고치면
+# 목표값이 통째로 미아가 되고 전부 '기타 35%' 로 떨어진다 — 함께 옮긴다.
+_CAT_SETTING_KEYS = ("target_cost_rates", "target_cost_rates_delivery")
+
+
+def category_rename(old: str, new: str) -> dict:
+    old, new = (old or "").strip(), (new or "").strip()
+    if not old or not new:
+        raise ValueError("분류 이름이 비었습니다")
+    if old == new:
+        return {"moved": 0}
+    cli = get_client()
+    moved = (cli.table("menu_items")
+             .update({"category": new,
+                      "updated_at": datetime.utcnow().isoformat() + "Z"})
+             .eq("category", old).execute().data) or []
+    for key in _CAT_SETTING_KEYS:
+        cur = menu_settings_all().get(key)
+        if isinstance(cur, dict) and old in cur:
+            cur[new] = cur.pop(old)      # 새 이름이 이미 있으면 옛 값이 이긴다
+            menu_set_setting(key, cur)
+    return {"moved": len(moved)}
+
+
+def category_reorder(order: list) -> dict:
+    """분류 순서 = 메뉴판 순서. sort_order 를 분류 단위로 다시 매긴다.
+
+    분류 안에서의 기존 줄 순서는 그대로 둔다 — 여기서 바꾸려는 건 분류끼리의
+    앞뒤일 뿐이다.
+    """
+    items = menu_all()
+    rank = {c: i for i, c in enumerate(order)}
+    rest = sorted({i["category"] for i in items} - set(order))
+    for c in rest:                        # 목록에 없던 분류는 뒤로
+        rank[c] = len(rank)
+    items.sort(key=lambda i: (rank.get(i["category"], 9999), i.get("sort_order") or 0))
+    cli = get_client()
+    n = 0
+    for i, it in enumerate(items, 1):
+        want = (rank.get(it["category"], 9999) + 1) * 1000 + i
+        if it.get("sort_order") != want:
+            cli.table("menu_items").update({"sort_order": want}).eq(
+                "sku", it["sku"]).execute()
+            n += 1
+    return {"updated": n}
+
+
 PREP_CATEGORY = "반제품"          # 매장에서 만들어 쓰는 것 — 판매 메뉴가 아니다
 PREP_SUFFIX = "(반제품)"
 PREP_SUPPLIER = "직접제조"

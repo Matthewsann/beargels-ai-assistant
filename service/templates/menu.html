@@ -45,6 +45,9 @@ padding:8px 12px;font-size:12px;cursor:pointer;white-space:nowrap;color:var(--in
 .chip.on small{color:#e9ddcd}
 .chip.warnc{color:var(--amber)} .chip.warnc.on{background:var(--amber);border-color:var(--amber);color:#fff}
 .chip.redc{color:var(--red)} .chip.redc.on{background:var(--red);border-color:var(--red);color:#fff}
+.chip.okc{color:var(--green)} .chip.okc.on{background:var(--green);border-color:var(--green);color:#fff}
+.chip.offc{color:var(--sub)} .chip.offc.on{background:var(--sub);border-color:var(--sub);color:#fff}
+.chips .sep{flex:0 0 auto;width:1px;height:20px;background:var(--line);margin:0 2px}
 .chip.bluec{color:#1a56db;border-color:#b8ccf0}
 /* 나이트모드 — 다크 팔레트는 강조색을 파스텔로 밝게 뒤집으므로(#c9a06b 등),
    그 위 흰 글자는 대비 2:1 대로 씻겨 보인다. 어두운 글자로 덮는다. */
@@ -116,6 +119,14 @@ border-radius:50%;background:#fff;transition:.15s;box-shadow:0 1px 2px rgba(0,0,
 .badge{display:inline-block;font-size:10px;border-radius:8px;padding:1px 6px;margin-left:4px}
 .badge.miss{background:var(--amberbg);color:var(--amber)}
 .badge.ovr{background:#e8f0fe;color:#1a56db}
+/* 숨김은 흐리게만 두면 "왜 안 보이지"를 못 찾는다 — 배지로 분명히 말한다 */
+.badge.hid{background:var(--sub);color:var(--card);font-weight:700}
+/* 선택 모드 — 평상시엔 체크박스가 아예 없다(토스·배민 패턴) */
+.selbox,.catbox{appearance:auto;-webkit-appearance:auto;width:20px;height:20px;
+margin:0 0 0 6px;vertical-align:middle;accent-color:var(--brown);cursor:pointer;flex:0 0 auto}
+.catbox{margin:0 6px 0 0}
+tr.picked td{background:var(--brownbg)}
+tr.picked td.name{background:var(--brownbg)}
 @keyframes rowflash{from{background:var(--amberbg)}to{background:transparent}}
 tr.flash td{animation:rowflash 1.6s ease-out}
 
@@ -173,7 +184,8 @@ background:var(--card);border-top:1px solid var(--line);padding:10px 14px;
 box-shadow:0 -2px 10px rgba(0,0,0,.08)}
 /* 사이드바(>900px, 고정 198px·z50)가 fixed 바의 왼쪽을 덮는다 — 옆에서 시작 */
 @media (min-width:901px){ .fixbar{left:198px} }
-.fixbar.show{display:flex}
+.fixbar.show{display:flex;flex-wrap:wrap}
+.fixbar button:disabled{opacity:.4;cursor:default}
 .fixbar .msg{font-size:13px}
 .fixbar .msg b{color:var(--amber)}
 .fixbar button{min-height:46px;border-radius:9px;border:1px solid var(--line);background:var(--card);
@@ -195,6 +207,14 @@ dialog button{min-height:38px;border:1px solid var(--line);border-radius:7px;bac
 border-radius:9px;background:var(--card);color:var(--ink);font-size:13.5px;padding:0 12px;cursor:pointer;
 text-decoration:none;text-align:left}
 .tools small{color:var(--sub);margin-left:auto;font-size:11px}
+/* 분류 관리 — 이름 칸은 넓게, 순서 버튼은 오른쪽 끝에 */
+.catrow{display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--line)}
+.catrow .ord{width:22px;text-align:right;color:var(--sub);font-size:11px;flex:0 0 auto}
+.catrow input{flex:1;min-width:0;width:auto;text-align:left;font-size:16px;padding:8px;
+border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
+.catrow small{color:var(--sub);font-size:11px;white-space:nowrap;flex:0 0 auto}
+.catrow .mv{display:flex;gap:3px;flex:0 0 auto}
+.catrow .mini{min-height:34px;min-width:34px;padding:0}
 
 #toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%);background:#333;color:#fff;
 padding:10px 16px;border-radius:22px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;
@@ -227,6 +247,7 @@ z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
   <div class="topbar">
     <input type="search" id="q" placeholder="메뉴 이름·SKU 검색">
     <button class="primary" onclick="openNew()">➕ 새 메뉴</button>
+    <button id="selBtn" onclick="toggleSelect()">☑ 선택</button>
     <button id="bulkBtn" onclick="toggleBulk()">✏️ 일괄 수정</button>
     <button id="colBtn" onclick="toggleCols()">📊 분석 열</button>
     <button onclick="dlgTools.showModal()">⚙ 도구</button>
@@ -257,9 +278,18 @@ z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
   <button class="save" onclick="bSave()" id="bulkSaveBtn">저장</button>
 </div>
 
+<div class="fixbar" id="selFix">
+  <span class="msg" id="selMsg"></span>
+  <button onclick="selAll()" id="selAllBtn">전체 선택</button>
+  <button onclick="selApply('hide')" id="selHideBtn">🚫 숨기기</button>
+  <button onclick="selApply('store')" id="selStoreBtn">매장 켜기</button>
+  <button class="save" onclick="selApply('delivery')" id="selDelBtn">배달 켜기</button>
+</div>
+
 <dialog id="dlgTools">
   <h3>⚙ 도구</h3>
   <div class="tools">
+    <button onclick="dlgTools.close();openCats()">🗂 분류 관리 <small>이름 · 순서</small></button>
     <button onclick="dlgTools.close();openFees()">💳 채널 수수료 설정</button>
     <button onclick="dlgTools.close();openTargets()">🎯 분류별 목표 원가율</button>
     <button onclick="dlgTools.close();openDiff()">📡 채널 노출 대조</button>
@@ -313,6 +343,16 @@ z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
   <div style="text-align:right;margin-top:8px">
     <button onclick="createMenu()" style="font-weight:600">만들기</button>
     <button onclick="dlgNew.close()">닫기</button></div>
+</dialog>
+
+<dialog id="dlgCats" style="max-width:560px">
+  <h3>🗂 분류 관리</h3>
+  <p class="note" style="margin-top:0">여기 순서가 <b>고객이 보는 메뉴판 순서</b>입니다.
+  이름을 바꾸면 그 분류의 메뉴 전부와 목표 원가율이 함께 따라옵니다.</p>
+  <div id="catRows" style="max-height:58vh;overflow:auto"></div>
+  <div style="text-align:right;margin-top:10px">
+    <button onclick="saveCatOrder()" style="font-weight:600">순서 저장</button>
+    <button onclick="dlgCats.close()">닫기</button></div>
 </dialog>
 
 <dialog id="dlgFees">
@@ -373,7 +413,7 @@ z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
 <script>
 const BASE = "/{{ key }}/menu";
 let DATA = {items:[], channels:[], settings:{}};
-let CAT = "전체", PROB = null, SORT = null, OPEN_SKU = null;
+let CAT = "전체", PROB = null, SORT = null, OPEN_SKU = null, STATE = null;
 const CH = [["store","매장"],["baemin","배민"],["coupang","쿠팡이츠"],["naver","네이버"]];
 const won = n => n==null ? "–" : Math.round(n).toLocaleString("ko-KR");
 const pct = n => n==null ? "–" : (n*100).toFixed(1)+"%";
@@ -490,6 +530,12 @@ const probOver   = it => { const r = costRate(it,"store");
   return (r != null && r > target(it.category)) || (rd != null && rd > targetD(it.category)); };
 const probBe     = it => { const b = breakeven(it,"coupang");
   return b != null && b > (+om().min_order || 12500); };
+// 판매 상태 — 매장·배달 둘 다 꺼져 있으면 '숨김'(고객에게 안 보임).
+// 채널(배민/쿠팡/네이버)에서만 내린 것은 채널 예외라 여기가 아니라 상세에서 본다.
+const isSelling = it => !!(it.store_active || it.delivery_active);
+const STATES = [["on","🟢 판매중",isSelling],
+                ["off","🚫 숨김", it=>!isSelling(it)]];
+
 const PROBS = [["nocost","⚠ 원가 미입력",probNocost,"warnc"],
                ["over","🔴 원가율 초과",probOver,"redc"],
                ["be","📦 손익분기 초과",probBe,"redc"]];
@@ -499,6 +545,90 @@ const PROBS = [["nocost","⚠ 원가 미입력",probNocost,"warnc"],
 //  · 분석 : 추천가·손익분기까지 함께
 //  · 일괄 : 이름까지 표에서 바로 타이핑, Enter/↑↓ 로 이동, 모아서 저장
 let BULK = false, COLS = false, EDITS = {};
+// 선택 모드 — 평상시 목록은 체크박스 없이 깨끗하게 두고, 필요할 때만 켠다.
+// 여러 메뉴를 한 번에 내리는 게 실제로 가장 잦은 작업이라 따로 뒀다.
+let SEL = null;   // null = 선택 모드 아님 / Set(sku)
+
+function toggleSelect(){
+  SEL = SEL ? null : new Set();
+  const b = document.getElementById("selBtn");
+  b.textContent = SEL ? "✕ 선택 끝" : "☑ 선택";
+  b.classList.toggle("on", !!SEL);
+  if (SEL && BULK) toggleBulk();     // 두 모드를 같이 켜면 화면이 엉킨다
+  render();
+}
+function selToggle(sku, on){
+  if (!SEL) return;
+  on ? SEL.add(sku) : SEL.delete(sku);
+  selBar();
+  const row = document.querySelector(`tr[data-sku="${sku}"]`);
+  if (row) row.classList.toggle("picked", on);
+}
+// 분류 머리줄의 체크박스 — 그 분류에서 지금 보이는 것 전부.
+function selCat(cat, on){
+  document.querySelectorAll(`tr[data-cat="${CSS.escape(cat)}"]`).forEach(tr=>{
+    const sku = tr.dataset.sku;
+    on ? SEL.add(sku) : SEL.delete(sku);
+    tr.classList.toggle("picked", on);
+    const cb = tr.querySelector(".selbox"); if (cb) cb.checked = on;
+  });
+  selBar();
+}
+function selAll(){
+  const rows = [...document.querySelectorAll("tr[data-sku]")];
+  const on = SEL.size < rows.length;
+  rows.forEach(tr=>{
+    on ? SEL.add(tr.dataset.sku) : SEL.delete(tr.dataset.sku);
+    tr.classList.toggle("picked", on);
+    const cb = tr.querySelector(".selbox"); if (cb) cb.checked = on;
+  });
+  document.querySelectorAll(".catbox").forEach(cb=>cb.checked = on);
+  selBar();
+}
+function selBar(){
+  const bar = document.getElementById("selFix");
+  bar.classList.toggle("show", !!SEL);
+  document.body.classList.toggle("hasfix", !!SEL || BULK);
+  if (!SEL) return;
+  const n = SEL.size;
+  document.getElementById("selMsg").innerHTML = n
+    ? `선택 <b>${n}</b>개`
+    : `내릴 메뉴를 골라주세요`;
+  for (const id of ["selHideBtn","selStoreBtn","selDelBtn"])
+    document.getElementById(id).disabled = !n;
+  const rows = document.querySelectorAll("tr[data-sku]").length;
+  document.getElementById("selAllBtn").textContent =
+    (n && n >= rows) ? "전체 해제" : "전체 선택";
+}
+// 되돌리기 쉬운 값만 일괄로 바꾼다 — 이름·가격 일괄 덮어쓰기는 만들지 않는다
+// (실수 한 번에 200개가 망가진다). '판매중으로'가 아니라 매장·배달을 따로
+// 켜는 이유: 매장 전용 메뉴를 되살리면서 배달까지 켜 버리면 안 된다.
+async function selApply(kind){
+  if (!SEL || !SEL.size) return;
+  const skus = [...SEL];
+  const label = {hide:"숨기기", store:"매장 판매", delivery:"배달 판매"}[kind];
+  const body = kind === "hide" ? {store_active:false, delivery_active:false}
+             : kind === "store" ? {store_active:true} : {delivery_active:true};
+  if (!confirm(`${skus.length}개 메뉴를 '${label}' 처리할까요?`)) return;
+  const before = skus.map(s=>{ const it = DATA.items.find(i=>i.sku===s);
+    return {sku:s, store_active:it.store_active, delivery_active:it.delivery_active}; });
+  for (const id of ["selHideBtn","selStoreBtn","selDelBtn"])
+    document.getElementById(id).disabled = true;
+  let ok = 0, fail = 0;
+  for (const sku of skus){
+    if (await api(`/item/${sku}`, body)){
+      Object.assign(DATA.items.find(i=>i.sku===sku), body); ok++;
+    } else fail++;
+  }
+  SEL.clear(); render();
+  toast(`${label} ${ok}건${fail?` · 실패 ${fail}건`:""}`, ok ? {label:"되돌리기", fn: async ()=>{
+    for (const b of before){
+      await api(`/item/${b.sku}`, {store_active:b.store_active, delivery_active:b.delivery_active});
+      Object.assign(DATA.items.find(i=>i.sku===b.sku), b);
+    }
+    render(); toast("되돌렸습니다 ✓");
+  }} : null);
+}
 
 function toggleBulk(){
   if (BULK && Object.keys(EDITS).length &&
@@ -506,6 +636,9 @@ function toggleBulk(){
   BULK = !BULK; EDITS = {};
   document.getElementById("bulkBtn").textContent = BULK ? "✕ 일괄 끝" : "✏️ 일괄 수정";
   document.getElementById("bulkBtn").classList.toggle("on", BULK);
+  if (BULK && SEL){ SEL = null;   // 두 모드를 같이 켜면 화면이 엉킨다
+    const b = document.getElementById("selBtn");
+    b.textContent = "☑ 선택"; b.classList.remove("on"); }
   render();
 }
 function toggleCols(){
@@ -547,7 +680,7 @@ function bBar(){
   const bar = document.getElementById("bulkFix");
   const n = Object.keys(EDITS).length;
   bar.classList.toggle("show", BULK);
-  document.body.classList.toggle("hasfix", BULK);
+  document.body.classList.toggle("hasfix", BULK || !!SEL);
   if (!BULK) return;
   document.getElementById("bulkMsg").innerHTML = n
     ? `수정 <b>${n}</b>건 (저장 전)`
@@ -603,13 +736,19 @@ function render(){
     (!q || i.name.includes(q) || (i.sku||"").includes(q) || (i.name_en||"").toLowerCase().includes(q.toLowerCase())));
   const probFn = PROB ? PROBS.find(p=>p[0]===PROB)[2] : null;
   if (probFn) items = items.filter(probFn);
+  const stFn = STATE ? STATES.find(s=>s[0]===STATE)[2] : null;
+  if (stFn) items = items.filter(stFn);
 
   // 문제 칩 + "총 n개 중 m개" — 필터 걸린 걸 잊고 "메뉴가 사라졌다" 오해 방지.
   // 채널 불일치도 여기 배지로 — 이 화면의 목적이 채널 통일 작업이라서.
   const minOrd = +om().min_order || 12500;
   const nDiff = (DATA.snapshots||[]).length ? diffList().length : null;
   document.getElementById("pchips").innerHTML =
-    PROBS.map(([k,label,fn,cls])=>{
+    STATES.map(([k,label,fn])=>{
+      const n = DATA.items.filter(fn).length;
+      return `<span class="chip ${k==="off"?"offc":"okc"} ${STATE===k?"on":""}" data-state="${k}">${label} ${n}</span>`;}).join("")
+    + `<span class="sep"></span>`
+    + PROBS.map(([k,label,fn,cls])=>{
       const n = DATA.items.filter(fn).length;
       return `<span class="chip ${cls} ${PROB===k?"on":""}" data-prob="${k}">${label} ${n}</span>`;}).join("")
     + (nDiff==null ? `<span class="chip bluec" data-act="diff">📡 채널 대조</span>`
@@ -656,7 +795,8 @@ function render(){
   let html = "", lastCat = null, r = 0;
   for(const it of items){
     if(it.category !== lastCat && !SORT){ lastCat = it.category;
-      html += `<tr class="cat"><td colspan="${span}"><span class="catlab">${esc(it.category)}
+      html += `<tr class="cat"><td colspan="${span}"><span class="catlab">
+        ${SEL?`<input type="checkbox" class="catbox" onchange="selCat('${esc(it.category).replace(/'/g,"\\'")}',this.checked)">`:""}${esc(it.category)}
         <small style="font-weight:400">목표 매장 ${(target(it.category)*100).toFixed(0)}% · 배달 ${(targetD(it.category)*100).toFixed(0)}%</small></span></td></tr>`; }
     const rs = costRate(it,"store"), rd = costRate(it,"baemin");
     const tg = target(it.category), tgd = targetD(it.category);
@@ -686,8 +826,12 @@ function render(){
 
     const ovrCnt = DATA.channels.filter(c=>c.sku===it.sku&&(c.name_override||c.price_override!=null||c.active===false)).length;
     const inact = !it.store_active && !it.delivery_active;
-    html += `<tr class="mrow ${inact?"off":""} ${OPEN_SKU===it.sku?"openrow":""}" data-sku="${it.sku}">
+    html += `<tr class="mrow ${inact?"off":""} ${OPEN_SKU===it.sku?"openrow":""} ${SEL&&SEL.has(it.sku)?"picked":""}"
+      data-sku="${it.sku}" data-cat="${esc(it.category)}">
       <td class="name" onclick="toggleDetail('${it.sku}')"><b>${esc(it.name)}</b>
+        ${SEL?`<input type="checkbox" class="selbox" ${SEL.has(it.sku)?"checked":""}
+          onclick="event.stopPropagation();selToggle('${it.sku}',this.checked)">`:""}
+        ${inact?'<span class="badge hid">숨김</span>':""}
         ${it.ingredient_cost==null?'<span class="badge miss">원가 미입력</span>':""}
         ${ovrCnt?`<span class="badge ovr">채널예외 ${ovrCnt}</span>`:""}
         <br><span class="sku">${it.sku}</span><span class="grp">${esc(it.group_name||"")}</span>
@@ -727,7 +871,7 @@ function render(){
   // 열려 있던 상세는 다시 그려도 유지한다(P3) — 채널 예외를 연달아 고칠 때
   // 매번 다시 열어야 했던 문제. 폰 시트는 표와 독립이라 손댈 필요 없다.
   if (OPEN_SKU && !BULK && !sheetOpen()) openInline(OPEN_SKU);
-  bBar();
+  bBar(); selBar();
 }
 
 // 칩·정렬 — 위임 리스너(따옴표 든 분류명에서 인라인 onclick 이 깨진다)
@@ -738,6 +882,7 @@ document.getElementById("chips").addEventListener("click", e=>{
 document.getElementById("pchips").addEventListener("click", e=>{
   const c = e.target.closest(".chip"); if(!c) return;
   if (c.dataset.act === "diff"){ openDiff(); return; }
+  if (c.dataset.state){ STATE = (STATE === c.dataset.state) ? null : c.dataset.state; render(); return; }
   PROB = (PROB === c.dataset.prob) ? null : c.dataset.prob; render();
 });
 document.getElementById("th").addEventListener("click", e=>{
@@ -783,10 +928,15 @@ async function toggleActive(sku, field, val){
   it[field] = val;
   const ok = await api(`/item/${sku}`, {[field]: val});
   if (!ok){ it[field] = old; render(); return; }
-  const label = (field==="store_active"?"매장":"배달") + (val?" 노출 ✓":" 내림");
+  let label = (field==="store_active"?"매장":"배달") + (val?" 판매 ✓":" 내림");
+  if (!isSelling(it)) label += " · 이제 숨김(고객에게 안 보임)";
+  if (sheetOpen() && OPEN_SKU === sku)
+    document.getElementById("sheetBody").innerHTML = detailHTML(sku);
   toast(`${it.name} — ${label}`, {label:"되돌리기", fn: async ()=>{
     it[field] = old;
     await api(`/item/${sku}`, {[field]: old});
+    if (sheetOpen() && OPEN_SKU === sku)
+      document.getElementById("sheetBody").innerHTML = detailHTML(sku);
     render(); toast("되돌렸습니다 ✓");
   }});
   render();
@@ -896,6 +1046,19 @@ function detailHTML(sku){
       <b>📡 채널별 예외</b>
       <span class="note">정본과 다른 이름·가격을 쓰는 채널만 채우세요. 비우면 정본을 따라갑니다.</span>
       <div class="chgrid">${CH.map(([ch])=>chBox(it, ch)).join("")}</div>
+    </div>
+    <div class="dsec">
+      <b>🟢 판매 상태</b>
+      <span class="note">둘 다 끄면 <b>숨김</b> — 고객에게 안 보입니다. 지우는 게 아니라
+        보관이라 언제든 다시 켤 수 있습니다. 특정 채널만 내리려면 위 '채널별 예외'에서.</span>
+      <div class="frow" style="align-items:center">
+        <label class="sw" style="font-size:13px"><input type="checkbox" ${it.store_active?"checked":""}
+          onchange="toggleActive('${sku}','store_active',this.checked)">매장 판매</label>
+        <label class="sw" style="font-size:13px"><input type="checkbox" ${it.delivery_active?"checked":""}
+          onchange="toggleActive('${sku}','delivery_active',this.checked)">배달 판매</label>
+        ${isSelling(it)?`<button onclick="hideMenu('${sku}')">🚫 숨기기</button>`
+          :`<span class="badge hid" style="font-size:12px;padding:4px 10px">지금 숨김 상태</span>`}
+      </div>
     </div>
     <div class="dsec" style="text-align:right">
       <button class="danger" onclick="delMenu('${sku}')">🗑 메뉴 삭제</button>
@@ -1101,6 +1264,23 @@ async function duplicateMenu(sku){
   toast(`'${j.name}' 만들었습니다 — 이름을 고치고 노출을 켜세요`);
   setTimeout(()=>{ revealRow(j.sku); toggleDetail(j.sku); }, 100);
 }
+// 숨기기 = 매장·배달 한 번에 끄기. 스위치를 하나씩 끄는 것보다 이게 실제 동작이다.
+async function hideMenu(sku){
+  const it = DATA.items.find(i=>i.sku===sku);
+  const before = {store_active:it.store_active, delivery_active:it.delivery_active};
+  Object.assign(it, {store_active:false, delivery_active:false});
+  if (!await api(`/item/${sku}`, {store_active:false, delivery_active:false})){
+    Object.assign(it, before); return; }
+  if (sheetOpen()) document.getElementById("sheetBody").innerHTML = detailHTML(sku);
+  render();
+  toast(`'${it.name}' 숨김 — 고객에게 안 보입니다`, {label:"되돌리기", fn: async ()=>{
+    Object.assign(it, before);
+    await api(`/item/${sku}`, before);
+    if (sheetOpen()) document.getElementById("sheetBody").innerHTML = detailHTML(sku);
+    render(); toast("되돌렸습니다 ✓");
+  }});
+}
+
 async function delMenu(sku){
   const it = DATA.items.find(i=>i.sku===sku);
   // 이 메뉴가 든 세트가 있으면 미리 알린다 — 지우고 나서 알면 늦다.
@@ -1155,6 +1335,67 @@ async function copyText(v){
 const copyNameEn = sku => copyText((document.getElementById("nen-"+sku).value||"").trim());
 const copyIntro = (sku, lang) =>
   copyText((document.getElementById((lang==="ko"?"ik-":"ie-")+sku).value||"").trim());
+
+// ── 분류 관리 ───────────────────────────────────────────────
+// 분류 이름은 메뉴마다 붙은 글자라 손으로 바꾸면 43개를 하나씩 고쳐야 했다.
+// 순서는 sort_order 라 화면에서 만질 방법이 아예 없었다.
+let CATORDER = null;   // 창을 연 동안만 쓰는 임시 순서
+
+const catsInOrder = () => {
+  const seen = [];
+  for (const i of DATA.items) if (!seen.includes(i.category)) seen.push(i.category);
+  return seen;
+};
+
+function openCats(){ CATORDER = catsInOrder(); drawCats(); dlgCats.showModal(); }
+
+function drawCats(){
+  const cnt = c => DATA.items.filter(i=>i.category===c).length;
+  const sell = c => DATA.items.filter(i=>i.category===c && isSelling(i)).length;
+  document.getElementById("catRows").innerHTML = CATORDER.map((c,idx)=>`
+    <div class="catrow">
+      <span class="ord">${idx+1}</span>
+      <input type="text" value="${esc(c)}" data-old="${esc(c)}"
+        onchange="renameCat(${idx},this)">
+      <small>${cnt(c)}개 · 판매중 ${sell(c)}</small>
+      <span class="mv">
+        <button class="mini" onclick="moveCat(${idx},-1)" ${idx===0?"disabled":""}>▲</button>
+        <button class="mini" onclick="moveCat(${idx},1)" ${idx===CATORDER.length-1?"disabled":""}>▼</button>
+      </span>
+    </div>`).join("");
+}
+function moveCat(idx, d){
+  const j = idx + d;
+  if (j < 0 || j >= CATORDER.length) return;
+  [CATORDER[idx], CATORDER[j]] = [CATORDER[j], CATORDER[idx]];
+  drawCats();
+}
+async function renameCat(idx, el){
+  const from = el.dataset.old, to = el.value.trim();
+  if (!to){ el.value = from; toast("분류 이름은 비울 수 없습니다"); return; }
+  if (to === from) return;
+  if (CATORDER.includes(to) &&
+      !confirm(`'${to}' 분류가 이미 있습니다.\n'${from}' 의 메뉴를 '${to}' 로 합칠까요?`)){
+    el.value = from; return; }
+  const r = await fetch(`${BASE}/category/rename`, {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({from, to})});
+  const j = await r.json().catch(()=>({ok:false}));
+  if (!j.ok){ el.value = from; toast("⚠ 이름 변경 실패: "+(j.error||r.status)); return; }
+  await reloadData();
+  CATORDER = catsInOrder();
+  drawCats(); render();
+  toast(`'${from}' → '${to}' · 메뉴 ${j.moved}개 따라옴 ✓`);
+}
+async function saveCatOrder(){
+  const r = await fetch(`${BASE}/category/order`, {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({order: CATORDER})});
+  const j = await r.json().catch(()=>({ok:false}));
+  if (!j.ok){ toast("⚠ 순서 저장 실패: "+(j.error||r.status)); return; }
+  await reloadData();
+  render();
+  toast(`메뉴판 순서 저장 ✓ (${j.updated}개 정렬)`);
+  dlgCats.close();
+}
 
 // ── 설정 다이얼로그들(수수료·목표·대조·손익) — 기존 로직 그대로 ────
 function openFees(){

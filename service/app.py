@@ -1080,6 +1080,36 @@ def menu_intro_draft(path_key, sku):
                         "note": f"AI를 못 써서 기본 초안입니다 ({str(e)[:60]})"})
 
 
+@app.route("/<path_key>/menu/category/rename", methods=["POST"])
+def menu_category_rename(path_key):
+    """분류 이름 바꾸기 — 그 분류의 메뉴 전부 + 목표 원가율 키까지 함께."""
+    check(path_key)
+    b = request.get_json(force=True) or {}
+    try:
+        return jsonify({"ok": True, **db.category_rename(b.get("from"), b.get("to"))})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"분류 이름 변경 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/menu/category/order", methods=["POST"])
+def menu_category_order(path_key):
+    """분류 순서 = 메뉴판 순서."""
+    check(path_key)
+    order = (request.get_json(force=True) or {}).get("order") or []
+    if not isinstance(order, list):
+        return jsonify({"ok": False, "error": "순서 목록이 아닙니다"}), 400
+    try:
+        return jsonify({"ok": True, **db.category_reorder(order)})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"분류 순서 변경 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
 @app.route("/<path_key>/menu/item/<sku>/delete", methods=["POST"])
 def menu_item_delete(path_key, sku):
     """메뉴 삭제 — 레시피·세트 구성·채널 예외까지 함께."""
