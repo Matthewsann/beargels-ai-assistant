@@ -45,7 +45,7 @@ DEFAULT_PROFILE_DIR = PROJECT_ROOT / ".browser_profile"
 # 크롤러가 **실수로 연 탭**의 주소 — 우리는 이런 페이지를 열 일이 없다.
 # 배민 리뷰 목록의 '더보기'를 누르다 도움말 쪽 버튼이 걸리면 ceo.baemin.com/qna
 # 가 **새 탭**으로 뜬다. 같은 탭 이동이 아니라 기존 URL 가드에 안 걸려 조용히
-# 쌓였고, 사장님 Chrome 에 탭이 76개까지 열렸다(2026-08-18).
+# 쌓였고, 사장님 Chrome 에 탭이 76개까지 열렸다(2026-08-21).
 STRAY_TAB_URLS = ("ceo.baemin.com/qna", "ceo.baemin.com/faq",
                   "ceo.baemin.com/help")
 
@@ -136,7 +136,7 @@ class BrowserSession:
             port = get_cdp_port()
             try:
                 # 기본 3분은 너무 길다 — Chrome 이 먹통이면 수집 한 번이
-                # 6분씩 헛돌았다(2026-08-18). 빨리 실패하고 복구에 넘긴다.
+                # 6분씩 헛돌았다(2026-08-21). 빨리 실패하고 복구에 넘긴다.
                 self._browser = self._pw.chromium.connect_over_cdp(
                     f"http://127.0.0.1:{port}",
                     timeout=float(os.getenv("CDP_CONNECT_TIMEOUT_MS", "45000")))
@@ -170,7 +170,7 @@ class BrowserSession:
             raise ValueError(f"알 수 없는 BROWSER_MODE: {self.mode!r} (attach|profile)")
         self.page.set_default_timeout(15000)
         # 크롤러는 새 탭을 열 일이 없다 — 열리면 즉시 닫는다. 배민 '더보기'
-        # 오클릭이 새 탭으로 떠서 URL 가드를 피해 갔다(2026-08-18).
+        # 오클릭이 새 탭으로 떠서 URL 가드를 피해 갔다(2026-08-21).
         self.page.on("popup", self._close_popup)
         try:
             self._context.on("page", self._close_popup)   # 팝업 외 경로 대비
