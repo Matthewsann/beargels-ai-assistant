@@ -1239,6 +1239,21 @@ def menu_category_order(path_key):
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
+@app.route("/<path_key>/menu/items/order", methods=["POST"])
+def menu_items_order(path_key):
+    """메뉴 순서 = 채널 메뉴판 줄 순서."""
+    check(path_key)
+    skus = (request.get_json(force=True) or {}).get("skus") or []
+    if not isinstance(skus, list) or not skus:
+        return jsonify({"ok": False, "error": "순서 목록이 비어 있습니다"}), 400
+    try:
+        return jsonify({"ok": True, **db.items_reorder(skus)})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"메뉴 순서 변경 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
 @app.route("/<path_key>/menu/item/<sku>/delete", methods=["POST"])
 def menu_item_delete(path_key, sku):
     """메뉴 삭제 — 레시피·세트 구성·채널 예외까지 함께."""

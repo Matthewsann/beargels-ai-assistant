@@ -33,6 +33,14 @@ padding:8px 12px;font-size:14px;min-height:40px;background:var(--card);color:var
 border-radius:9px;padding:0 12px;font-size:13px;cursor:pointer;min-height:40px;white-space:nowrap}
 .topbar button.primary{background:var(--brown);border-color:var(--brown);color:#fff;font-weight:700}
 .topbar button.on{background:var(--brownbg);border-color:var(--brown);color:var(--brown);font-weight:600}
+/* 모드는 서로 배타적이라 한 덩어리(세그먼트)로 묶는다 — 버튼이 흩어져 있으면
+   지금 무슨 모드인지가 안 보인다 */
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;flex:0 0 auto}
+.seg button{border:none;border-right:1px solid var(--line);border-radius:0;min-height:40px;
+padding:0 11px;background:var(--card);color:var(--ink);font-size:13px;cursor:pointer;white-space:nowrap}
+.seg button:last-child{border-right:none}
+.seg button.on{background:var(--brown);color:#fff;font-weight:700}
+html.dk .seg button.on{color:#1c1a17}
 
 /* ── 칩 두 줄: 분류 / 문제(=탭 필터) ─────────────────────────────── */
 .chips{display:flex;gap:6px;overflow-x:auto;padding:6px 0 2px;align-items:center;
@@ -95,6 +103,11 @@ tr.cat td{background:#f1ede4;text-align:left;font-weight:700;font-size:12px;colo
 tr.cat td .catlab{position:sticky;left:8px;display:inline-block}
 .ed{cursor:pointer;border-bottom:1px dashed #cbc2b4}
 .ed:hover{background:var(--brownbg)}
+/* 재료원가 — 고치는 칸이 아니라 레시피로 가는 문이라 링크처럼 보이게 */
+td.lnk{cursor:pointer;color:var(--brown);text-decoration:underline;
+text-decoration-style:dotted;text-underline-offset:3px}
+td.lnk:hover{background:var(--brownbg)}
+td.lnk.nocost{color:var(--amber);font-style:normal;font-size:12px}
 td input{width:76px;font-size:16px;padding:4px;border:1px solid var(--brown);border-radius:4px;text-align:right}
 /* 원가율 — 매장/배달 두 줄 스택(열 하나로 합쳐 폭 절약, 폰에서 특히) */
 td.rates{line-height:1.5}
@@ -215,6 +228,9 @@ border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(
 .catrow small{color:var(--sub);font-size:11px;white-space:nowrap;flex:0 0 auto}
 .catrow .mv{display:flex;gap:3px;flex:0 0 auto}
 .catrow .mini{min-height:34px;min-width:34px;padding:0}
+/* 순서 모드 — 이름 아래 한 줄로 붙여 표 폭을 안 늘린다 */
+.mvg{display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle}
+.mvg .mini{min-height:30px;min-width:30px;padding:0;font-size:11px;line-height:1}
 
 #toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%);background:#333;color:#fff;
 padding:10px 16px;border-radius:22px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;
@@ -247,8 +263,11 @@ z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
   <div class="topbar">
     <input type="search" id="q" placeholder="메뉴 이름·SKU 검색">
     <button class="primary" onclick="openNew()">➕ 새 메뉴</button>
-    <button id="selBtn" onclick="toggleSelect()">☑ 선택</button>
-    <button id="bulkBtn" onclick="toggleBulk()">✏️ 일괄 수정</button>
+    <span class="seg" id="modeSeg">
+      <button data-mode="select">☑ 선택</button>
+      <button data-mode="bulk">✏️ 수정</button>
+      <button data-mode="order">↕ 순서</button>
+    </span>
     <button id="colBtn" onclick="toggleCols()">📊 분석 열</button>
     <button onclick="dlgTools.showModal()">⚙ 도구</button>
   </div>
@@ -284,6 +303,12 @@ z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
   <button onclick="selApply('hide')" id="selHideBtn">🚫 숨기기</button>
   <button onclick="selApply('store')" id="selStoreBtn">매장 켜기</button>
   <button class="save" onclick="selApply('delivery')" id="selDelBtn">배달 켜기</button>
+</div>
+
+<div class="fixbar" id="ordFix">
+  <span class="msg" id="ordMsg"></span>
+  <button onclick="ordReset()">되돌리기</button>
+  <button class="save" onclick="ordSave()" id="ordSaveBtn">순서 저장</button>
 </div>
 
 <dialog id="dlgTools">
@@ -413,7 +438,7 @@ z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
 <script>
 const BASE = "/{{ key }}/menu";
 let DATA = {items:[], channels:[], settings:{}};
-let CAT = "전체", PROB = null, SORT = null, OPEN_SKU = null, STATE = null;
+let CAT = "전체", PROB = null, SORT = null, OPEN_SKU = null, STATE = null, VIEW = [];
 const CH = [["store","매장"],["baemin","배민"],["coupang","쿠팡이츠"],["naver","네이버"]];
 const won = n => n==null ? "–" : Math.round(n).toLocaleString("ko-KR");
 const pct = n => n==null ? "–" : (n*100).toFixed(1)+"%";
@@ -549,14 +574,28 @@ let BULK = false, COLS = false, EDITS = {};
 // 여러 메뉴를 한 번에 내리는 게 실제로 가장 잦은 작업이라 따로 뒀다.
 let SEL = null;   // null = 선택 모드 아님 / Set(sku)
 
-function toggleSelect(){
-  SEL = SEL ? null : new Set();
-  const b = document.getElementById("selBtn");
-  b.textContent = SEL ? "✕ 선택 끝" : "☑ 선택";
-  b.classList.toggle("on", !!SEL);
-  if (SEL && BULK) toggleBulk();     // 두 모드를 같이 켜면 화면이 엉킨다
+// 모드는 하나만 켜진다 — 같이 켜면 화면이 엉킨다. 다시 누르면 기본으로.
+let MODE = "view";   // view | select | bulk | order
+function setMode(m){
+  if (MODE === m) m = "view";
+  if (MODE === "bulk" && Object.keys(EDITS).length &&
+      !confirm(`저장 안 한 수정 ${Object.keys(EDITS).length}건이 있습니다. 버릴까요?`)) return;
+  if (MODE === "order" && ORDDIRTY &&
+      !confirm("저장 안 한 순서 변경이 있습니다. 버릴까요?")){ return; }
+  if (MODE === "order" && ORDDIRTY) DATA.items = [...ORDBASE];   // 되돌리고 나간다
+  MODE = m;
+  BULK = (m === "bulk");
+  SEL  = (m === "select") ? new Set() : null;
+  EDITS = {};
+  ORDDIRTY = false;
+  ORDBASE = (m === "order") ? [...DATA.items] : null;
+  document.querySelectorAll("#modeSeg button").forEach(b=>
+    b.classList.toggle("on", b.dataset.mode === MODE));
   render();
 }
+document.getElementById("modeSeg").addEventListener("click", e=>{
+  const b = e.target.closest("button[data-mode]"); if (b) setMode(b.dataset.mode);
+});
 function selToggle(sku, on){
   if (!SEL) return;
   on ? SEL.add(sku) : SEL.delete(sku);
@@ -630,16 +669,67 @@ async function selApply(kind){
   }} : null);
 }
 
-function toggleBulk(){
-  if (BULK && Object.keys(EDITS).length &&
-      !confirm(`저장 안 한 수정 ${Object.keys(EDITS).length}건이 있습니다. 버릴까요?`)) return;
-  BULK = !BULK; EDITS = {};
-  document.getElementById("bulkBtn").textContent = BULK ? "✕ 일괄 끝" : "✏️ 일괄 수정";
-  document.getElementById("bulkBtn").classList.toggle("on", BULK);
-  if (BULK && SEL){ SEL = null;   // 두 모드를 같이 켜면 화면이 엉킨다
-    const b = document.getElementById("selBtn");
-    b.textContent = "☑ 선택"; b.classList.remove("on"); }
+// ── 메뉴 순서 ────────────────────────────────────────────────
+// 화면에 보이는 순서가 곧 채널 메뉴판 순서(sort_order)다. 지금까지는 만질
+// 방법이 아예 없었다. 분류를 넘나드는 이동은 '분류 바꾸기'라 여기선 막는다.
+let ORDDIRTY = false, ORDBASE = null;
+
+// 화면에 보이는 이웃과 자리를 바꾼다. 걸러진 줄을 기준으로 하면 "▲를 눌렀는데
+// 아무 일도 없다"가 된다(가려진 줄과 바뀌므로).
+function moveItem(sku, d){
+  if (MODE !== "order") return;   // 순서 모드 밖에서는 손대지 않는다
+  const vi = VIEW.findIndex(x=>x.sku===sku);
+  if (vi < 0) return;
+  const me = VIEW[vi], you = VIEW[vi + d];
+  if (!you || you.category !== me.category) return;   // 분류를 넘지 않는다
+  const arr = DATA.items, a = arr.indexOf(me), b = arr.indexOf(you);
+  [arr[a], arr[b]] = [arr[b], arr[a]];
+  ORDDIRTY = true;
   render();
+  const row = document.querySelector(`tr[data-sku="${sku}"]`);
+  if (row){ row.scrollIntoView({block:"center"}); row.classList.add("flash"); }
+}
+// 분류 안에서 맨 위/맨 아래로 — 20칸을 ▲로 올리는 건 고문이다.
+// 기준은 화면에 보이는 같은 분류의 첫/마지막 줄.
+function moveEdge(sku, top){
+  if (MODE !== "order") return;
+  const arr = DATA.items;
+  const it = arr.find(x=>x.sku===sku); if (!it) return;
+  const same = VIEW.filter(x=>x.category===it.category && x.sku!==sku);
+  if (!same.length) return;
+  const anchor = top ? same[0] : same[same.length-1];
+  arr.splice(arr.indexOf(it), 1);                       // 먼저 빼고
+  arr.splice(arr.indexOf(anchor) + (top ? 0 : 1), 0, it);
+  ORDDIRTY = true; render();
+  const row = document.querySelector(`tr[data-sku="${sku}"]`);
+  if (row){ row.scrollIntoView({block:"center"}); row.classList.add("flash"); }
+}
+function ordBar(){
+  const bar = document.getElementById("ordFix");
+  bar.classList.toggle("show", MODE === "order");
+  if (MODE !== "order") return;
+  document.getElementById("ordMsg").innerHTML = ORDDIRTY
+    ? `순서 <b>바뀜</b> — 저장 전`
+    : `▲▼ 로 옮기세요 · 분류 안에서만 움직입니다`;
+  document.getElementById("ordSaveBtn").disabled = !ORDDIRTY;
+}
+function ordReset(){
+  if (!ORDBASE) return;
+  DATA.items = [...ORDBASE]; ORDDIRTY = false; render();
+  toast("되돌렸습니다");
+}
+async function ordSave(){
+  const btn = document.getElementById("ordSaveBtn");
+  if (btn.disabled) return;
+  btn.disabled = true;
+  const skus = DATA.items.map(i=>i.sku);
+  const r = await fetch(`${BASE}/items/order`, {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({skus})});
+  const j = await r.json().catch(()=>({ok:false}));
+  if (!j.ok){ toast("⚠ 순서 저장 실패: "+(j.error||r.status)); ordBar(); return; }
+  ORDBASE = [...DATA.items]; ORDDIRTY = false;
+  render();
+  toast(`메뉴 순서 저장 ✓ (${j.updated}개)`);
 }
 function toggleCols(){
   COLS = !COLS;
@@ -757,8 +847,8 @@ function render(){
     + `<span class="qm" onclick="dlgHelp.showModal()" title="계산 기준">?</span></span>`;
   const nm = document.getElementById("noteMin"); if(nm) nm.textContent = won(minOrd);
 
-  // 정렬(비일괄 모드만) — null 은 항상 끝으로.
-  if (SORT && !BULK){
+  // 정렬 — 순서를 손보는 중에 정렬이 끼면 뭘 옮긴 건지 알 수 없다.
+  if (SORT && MODE === "view"){
     const f = SORTKEYS[SORT.k];
     items = [...items].sort((a,b)=>{
       const x=f(a), y=f(b);
@@ -791,6 +881,7 @@ function render(){
   const BULK_MAX = 60;
   const cut = BULK && items.length > BULK_MAX;
   if (cut) items = items.slice(0, BULK_MAX);
+  VIEW = items;   // 순서 이동은 '화면에 보이는 이웃' 기준으로 한다
 
   let html = "", lastCat = null, r = 0;
   for(const it of items){
@@ -831,6 +922,12 @@ function render(){
       <td class="name" onclick="toggleDetail('${it.sku}')"><b>${esc(it.name)}</b>
         ${SEL?`<input type="checkbox" class="selbox" ${SEL.has(it.sku)?"checked":""}
           onclick="event.stopPropagation();selToggle('${it.sku}',this.checked)">`:""}
+        ${MODE==="order"?`<span class="mvg" onclick="event.stopPropagation()">
+          <button class="mini" onclick="moveEdge('${it.sku}',true)" title="분류 맨 위로">⤒</button>
+          <button class="mini" onclick="moveItem('${it.sku}',-1)" title="위로">▲</button>
+          <button class="mini" onclick="moveItem('${it.sku}',1)" title="아래로">▼</button>
+          <button class="mini" onclick="moveEdge('${it.sku}',false)" title="분류 맨 아래로">⤓</button>
+        </span>`:""}
         ${inact?'<span class="badge hid">숨김</span>':""}
         ${it.ingredient_cost==null?'<span class="badge miss">원가 미입력</span>':""}
         ${ovrCnt?`<span class="badge ovr">채널예외 ${ovrCnt}</span>`:""}
@@ -838,7 +935,9 @@ function render(){
         <span class="chev">▶</span></td>
       <td class="ed" onclick="editCell(this,'${it.sku}','store_price')">${won(it.store_price)}</td>
       <td class="ed" onclick="editCell(this,'${it.sku}','delivery_price')">${won(it.delivery_price)}</td>
-      <td class="ed ${it.ingredient_cost==null?"nocost":""}" onclick="editCell(this,'${it.sku}','ingredient_cost')" title="${esc(it.cost_source||"")}">${it.ingredient_cost==null?"입력":won(it.ingredient_cost)}</td>
+      <td class="lnk ${it.ingredient_cost==null?"nocost":""}" onclick="gotoRecipe('${it.sku}')"
+        title="${esc(it.cost_source||"레시피에서 자동 계산됩니다")} — 탭하면 레시피 편집">
+        ${it.ingredient_cost==null?"레시피 →":won(it.ingredient_cost)}</td>
       ${COLS?(()=>{const sp=suggestPrice(it,"store"), cur=it.store_price;
         const low = sp!=null && cur!=null && cur < sp;
         return `<td class="${low?"warn":""}">${won(sp)}</td>`;})():""}
@@ -871,7 +970,8 @@ function render(){
   // 열려 있던 상세는 다시 그려도 유지한다(P3) — 채널 예외를 연달아 고칠 때
   // 매번 다시 열어야 했던 문제. 폰 시트는 표와 독립이라 손댈 필요 없다.
   if (OPEN_SKU && !BULK && !sheetOpen()) openInline(OPEN_SKU);
-  bBar(); selBar();
+  bBar(); selBar(); ordBar();
+  document.body.classList.toggle("hasfix", MODE !== "view");
 }
 
 // 칩·정렬 — 위임 리스너(따옴표 든 분류명에서 인라인 onclick 이 깨진다)
@@ -889,6 +989,13 @@ document.getElementById("th").addEventListener("click", e=>{
   const t = e.target.closest("th[data-sort]"); if(!t) return;
   clickSort(t.dataset.sort);
 });
+
+// 재료원가는 손으로 적는 값이 아니라 레시피에서 나오는 값이다 — 셀을 누르면
+// 그 메뉴의 레시피 편집으로 간다(?sku= 를 주면 바로 그 메뉴가 열린다).
+// 직접 입력이 필요한 경우(완제품 사입 등)는 상세의 '재료원가 직접 입력'에서.
+function gotoRecipe(sku){
+  location.href = `${BASE}/ingredients?sku=${encodeURIComponent(sku)}`;
+}
 
 function editCell(td, sku, field){
   if (td.querySelector("input")) return;
@@ -1018,9 +1125,20 @@ function detailHTML(sku){
           style="width:130px" onchange="dSave('${sku}','category',this)"></label>
       <button onclick="duplicateMenu('${sku}')" title="이 메뉴를 복사해 새 메뉴로 (HOT/ICE·사이즈 변형에)">📄 복제</button>
     </div>
-    <p class="note" style="margin:6px 0 0">칸을 고치면 바로 저장됩니다.
-    ${it.cost_source?` · 원가 출처: ${esc(it.cost_source)}`:""}
-    · <a href="/{{ key }}/menu/ingredients?sku=${sku}">📖 레시피 편집(원가 자동계산)</a></p>
+    <p class="note" style="margin:6px 0 0">칸을 고치면 바로 저장됩니다.</p>
+
+    <div class="dsec">
+      <b>💰 재료원가</b>
+      <span class="note">레시피에 자재를 넣으면 자동으로 계산됩니다. 완제품을 사 오는 메뉴처럼
+        레시피가 없는 것만 직접 적어 주세요 — 직접 적으면 자동계산이 덮지 않습니다.</span>
+      <div class="frow" style="align-items:center">
+        <label>재료원가(원)
+          <input type="number" step="10" id="ic-${sku}" value="${it.ingredient_cost??""}"
+            style="width:130px;text-align:right" onchange="saveCost('${sku}',this)"></label>
+        <button onclick="gotoRecipe('${sku}')">📖 레시피 편집 →</button>
+        ${it.ingredient_cost!=null?`<span class="note" style="margin:0">출처: ${esc(it.cost_source||"미상")}</span>`:""}
+      </div>
+    </div>
 
     <div class="dsec">
       <b>📝 플랫폼 소개글</b>
@@ -1115,6 +1233,25 @@ async function saveCh(sku, ch){
   if (box) box.outerHTML = chBox(it, ch);
   // 다른 박스에 미저장 값이 없을 때만 표를 다시 그린다(행 배지·불일치 칩 갱신)
   if (!document.querySelector(".chbox button.chg")) render();
+}
+
+// 원가를 손으로 적으면 레시피 자동계산이 덮지 않도록 출처를 바꿔 둔다.
+// 비우면 출처도 지워 자동계산이 다시 이 메뉴를 맡게 한다.
+async function saveCost(sku, el){
+  const it = DATA.items.find(i=>i.sku===sku);
+  const v = el.value === "" ? null : +el.value;
+  if (v === (it.ingredient_cost ?? null)) return;
+  const old = it.ingredient_cost ?? null, oldSrc = it.cost_source;
+  const src = v == null ? null : "웹에서 직접 입력";
+  it.ingredient_cost = v; it.cost_source = src;
+  if (!await api(`/item/${sku}`, {ingredient_cost: v, cost_source: src})){
+    it.ingredient_cost = old; it.cost_source = oldSrc; el.value = old ?? ""; return; }
+  render();
+  toast(`재료원가 ${won(old)} → ${won(v)} 저장됨`, {label:"되돌리기", fn: async ()=>{
+    it.ingredient_cost = old; it.cost_source = oldSrc;
+    await api(`/item/${sku}`, {ingredient_cost: old, cost_source: oldSrc ?? null});
+    render(); toast("되돌렸습니다 ✓");
+  }});
 }
 
 // 상세 필드 자동저장 — 실패하면 원래 값으로 되돌린다.

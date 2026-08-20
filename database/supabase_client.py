@@ -934,6 +934,30 @@ def category_reorder(order: list) -> dict:
     return {"updated": n}
 
 
+def items_reorder(skus: list) -> dict:
+    """받은 차례대로 sort_order 를 다시 매긴다 — 화면 순서 = 채널 메뉴판 순서.
+
+    목록에 없는 메뉴는 건드리지 않고 뒤에 그대로 남긴다(분류 칩으로 걸러 놓고
+    한 분류만 손보는 경우가 대부분이라, 안 보이던 메뉴가 밀려나면 안 된다).
+    """
+    if not skus:
+        raise ValueError("순서 목록이 비어 있습니다")
+    items = menu_all()
+    pos = {s: i for i, s in enumerate(skus)}
+    rest = [i for i in items if i["sku"] not in pos]
+    ordered = sorted((i for i in items if i["sku"] in pos),
+                     key=lambda i: pos[i["sku"]]) + rest
+    cli = get_client()
+    n = 0
+    for i, it in enumerate(ordered, 1):
+        want = i * 10
+        if it.get("sort_order") != want:
+            cli.table("menu_items").update({"sort_order": want}).eq(
+                "sku", it["sku"]).execute()
+            n += 1
+    return {"updated": n}
+
+
 PREP_CATEGORY = "반제품"          # 매장에서 만들어 쓰는 것 — 판매 메뉴가 아니다
 PREP_SUFFIX = "(반제품)"
 PREP_SUPPLIER = "직접제조"
