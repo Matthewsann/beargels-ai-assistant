@@ -60,6 +60,10 @@ automation/reels/
 automation/reels_완성본/
 .env.bak
 .env.*.bak
+# 날짜가 뒤에 붙은 백업(.env.bak.20260818)은 위 두 줄에 안 걸린다 —
+# 실제로 git add -A 에 쓸려 들어가 GitHub 가 막았다(2026-08-21).
+.env.bak*
+.env.*.bak.*
 
 # 발주 사이트 수집 원본 — 거래처 단가가 들어 있어 올리지 않는다(집 PC 로컬)
 data/msfs_raw.json
