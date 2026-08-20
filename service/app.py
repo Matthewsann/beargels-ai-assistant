@@ -117,6 +117,23 @@ def check(path_key: str) -> None:
 _POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="db")
 
 
+def _ajax() -> bool:
+    """화면 JS 가 부른 요청인가.
+
+    버튼이 <form> 이면 누를 때마다 POST → 리다이렉트 → **페이지 전체 재생성**
+    이라 2초씩 멈춘 것처럼 보였다(사장님 2026-08-18 "액션이 다 느려").
+    JS 가 부를 때는 JSON 만 돌려주고, 화면은 그 자리에서 카드를 지운다.
+    """
+    return request.headers.get("X-Requested-With") == "fetch"
+
+
+def _done(path_key, target="todo", **extra):
+    """동작 완료 응답 — JS 면 JSON, 평범한 폼 전송이면 원래대로 리다이렉트."""
+    if _ajax():
+        return jsonify({"ok": True, **extra})
+    return redirect(url_for(target, path_key=path_key))
+
+
 def gather(**calls) -> dict:
     """여러 조회를 동시에 실행해 결과를 이름표로 돌려준다.
 
@@ -302,6 +319,8 @@ def ack_alert(path_key, alert_id):
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"알림 확인 실패({alert_id}): {e}",
                      kind=type(e).__name__, path=request.path)
+    if _ajax():
+        return jsonify({"ok": True})
     return redirect(request.referrer or url_for("home", path_key=path_key))
 
 
@@ -520,7 +539,9 @@ def collect(path_key):
     except Exception as e:  # noqa: BLE001 — 화면은 상태로 안내, 원인은 기록
         db.log_error("service", str(e), kind=type(e).__name__,
                      path=request.path, detail=traceback.format_exc())
-    return redirect(url_for("todo", path_key=path_key))
+        if _ajax():
+            return jsonify({"ok": False, "error": str(e)[:150]})
+    return _done(path_key)
 
 
 @app.route("/<path_key>/wake", methods=["POST"])
@@ -884,7 +905,9 @@ def skip(path_key, review_id):
         db.log_error("service", f"넘어가기 표시 실패(review {review_id}): {e}",
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
-    return redirect(url_for("todo", path_key=path_key))
+        if _ajax():
+            return jsonify({"ok": False, "error": str(e)[:150]})
+    return _done(path_key)
 
 
 # ---------------------------------------------------------------------------
