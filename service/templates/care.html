@@ -73,30 +73,42 @@
 
   {# 무엇을 볼지 #}
   <div class="filters">
-    <a href="{{ url_for('care_reviews', path_key=key, plat=plat, sort=sort) }}"
-       class="{{ 'on' if mode == 'all' }}">전체(저평점+CS)</a>
-    <a href="{{ url_for('care_reviews', path_key=key, mode='low', plat=plat, sort=sort) }}"
-       class="{{ 'on' if mode == 'low' }}">⭐ 별점 5점 미만</a>
-    <a href="{{ url_for('care_reviews', path_key=key, mode='cs', plat=plat, sort=sort) }}"
-       class="{{ 'on' if mode == 'cs' }}">🚨 CS 리뷰</a>
+    <a href="{{ url_with(mode=None) }}" class="{{ 'on' if mode == 'all' }}">전체(저평점+CS)</a>
+    <a href="{{ url_with(mode='low') }}" class="{{ 'on' if mode == 'low' }}">⭐ 별점 5점 미만</a>
+    <a href="{{ url_with(mode='cs') }}" class="{{ 'on' if mode == 'cs' }}">🚨 CS 리뷰</a>
   </div>
+
+  {# 답글 여부 — 아직 답 안 한 문제 리뷰가 제일 급하다 #}
+  <div class="filters">
+    <span class="lbl" style="align-self:center;min-width:44px;">답글</span>
+    <a href="{{ url_with(replied=None) }}" class="{{ 'on' if not rep }}">전체</a>
+    <a href="{{ url_with(replied='n') }}" class="{{ 'on' if rep == 'n' }}">⬜ 아직 안 함</a>
+    <a href="{{ url_with(replied='y') }}" class="{{ 'on' if rep == 'y' }}">✅ 답글 있음</a>
+  </div>
+
+  {# 기간 #}
+  <div class="filters">
+    <span class="lbl" style="align-self:center;min-width:44px;">기간</span>
+    <a href="{{ url_with(days=None) }}" class="{{ 'on' if not days }}">전체</a>
+    {% for d, t in [(7, '7일'), (30, '30일'), (90, '3개월')] %}
+    <a href="{{ url_with(days=d) }}" class="{{ 'on' if days == d }}">{{ t }}</a>
+    {% endfor %}
+  </div>
+
   {# 플랫폼 #}
   <div class="filters">
-    <a href="{{ url_for('care_reviews', path_key=key, mode=mode, sort=sort) }}"
-       class="{{ 'on' if not plat }}">전체</a>
-    <a href="{{ url_for('care_reviews', path_key=key, mode=mode, plat='baemin', sort=sort) }}"
-       class="{{ 'on' if plat == 'baemin' }}">🔵 배민</a>
-    <a href="{{ url_for('care_reviews', path_key=key, mode=mode, plat='coupang', sort=sort) }}"
-       class="{{ 'on' if plat == 'coupang' }}">🟠 쿠팡</a>
+    <span class="lbl" style="align-self:center;min-width:44px;">채널</span>
+    <a href="{{ url_with(plat=None) }}" class="{{ 'on' if not plat }}">전체</a>
+    <a href="{{ url_with(plat='baemin') }}" class="{{ 'on' if plat == 'baemin' }}">🔵 배민</a>
+    <a href="{{ url_with(plat='coupang') }}" class="{{ 'on' if plat == 'coupang' }}">🟠 쿠팡</a>
   </div>
+
   {# 정렬 #}
   <div class="filters">
-    <a href="{{ url_for('care_reviews', path_key=key, mode=mode, plat=plat) }}"
-       class="{{ 'on' if sort == 'new' }}">🕒 최신순</a>
-    <a href="{{ url_for('care_reviews', path_key=key, mode=mode, plat=plat, sort='low') }}"
-       class="{{ 'on' if sort == 'low' }}">⭐ 낮은 별점순</a>
-    <a href="{{ url_for('care_reviews', path_key=key, mode=mode, plat=plat, sort='old') }}"
-       class="{{ 'on' if sort == 'old' }}">⏳ 오래된순</a>
+    <span class="lbl" style="align-self:center;min-width:44px;">정렬</span>
+    <a href="{{ url_with(sort=None) }}" class="{{ 'on' if sort == 'new' }}">🕒 최신순</a>
+    <a href="{{ url_with(sort='low') }}" class="{{ 'on' if sort == 'low' }}">⭐ 낮은 별점순</a>
+    <a href="{{ url_with(sort='old') }}" class="{{ 'on' if sort == 'old' }}">⏳ 오래된순</a>
   </div>
 
   <div class="lbl" style="margin-bottom:9px;">
@@ -135,11 +147,11 @@
   {% if pages > 1 %}
   <div class="pager">
     {% if page > 1 %}
-    <a href="{{ url_for('care_reviews', path_key=key, mode=mode, plat=plat, sort=sort, page=page-1) }}">← 이전</a>
+    <a href="{{ url_with(page=page-1) }}">← 이전</a>
     {% endif %}
     <span class="cur">{{ page }} / {{ pages }}</span>
     {% if page < pages %}
-    <a href="{{ url_for('care_reviews', path_key=key, mode=mode, plat=plat, sort=sort, page=page+1) }}">다음 →</a>
+    <a href="{{ url_with(page=page+1) }}">다음 →</a>
     {% endif %}
   </div>
   {% endif %}

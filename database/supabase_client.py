@@ -644,6 +644,9 @@ def _order_reviews(q, sort="new"):
 
     sort: 'new'(최신순) | 'old'(오래된순) | 'low'(낮은 별점순)
     """
+    # 등록한 답글 화면은 '언제 등록했는지'가 기준이다(리뷰 작성일이 아니라).
+    if sort in ("posted", "posted_old"):
+        return q.order("posted_at", desc=(sort == "posted"))
     if sort in ("low", "high"):
         return (q.order("rating", desc=(sort == "high"))
                  .order("written_date", desc=True).order("review_no", desc=True))
@@ -657,7 +660,7 @@ CS_KINDS = ("complaint", "escalate")
 
 
 def get_attention_reviews(platform=None, mode="all", limit=30, offset=0,
-                          sort="new"):
+                          sort="new", days=None, replied=None):
     """별점 5점 미만 + CS(불만·민감) 리뷰만 모아 본다 — 관리 필요 화면용.
 
     Args:
@@ -675,6 +678,14 @@ def get_attention_reviews(platform=None, mode="all", limit=30, offset=0,
             q = q.in_("kind", list(CS_KINDS))
         else:
             q = q.or_(f"rating.lte.4,kind.in.({kinds})")
+        if days:                          # 최근 N일만 (요즘 흐름 보기)
+            since = (datetime.now().date() - timedelta(days=int(days))).isoformat()
+            q = q.gte("written_date", since)
+        if replied is True:
+            q = q.or_("reply_status.eq.posted,platform_replied.is.true")
+        elif replied is False:            # 아직 답글 안 단 문제 리뷰 = 제일 급함
+            q = (q.neq("reply_status", "posted")
+                  .not_.is_("platform_replied", "true"))
         resp = (_order_reviews(q, sort)
                 .range(offset, offset + limit - 1).execute())
     except Exception:  # noqa: BLE001 — 조회 실패가 화면을 막지 않게

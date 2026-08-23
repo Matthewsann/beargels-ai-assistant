@@ -761,36 +761,44 @@ def post_reply(path_key, review_id):
 
 @app.route("/<path_key>/history")
 def history(path_key):
-    """등록한 답글 확인·수정 화면 — 최근 등록순.
+    """등록한 답글 확인·수정 화면.
 
     등록 후에도 마음에 안 들면 여기서 고쳐 재게시할 수 있다(사장님 요청
-    2026-08-12).
+    2026-08-12). 필터·정렬은 전체 리뷰 화면과 같은 방식(url_with)으로 쓴다
+    — 예전엔 채널·별점 두 줄이 전부라 "지난달 불만 답글만" 같은 걸 볼 수
+    없었다(사장님 지적 2026-08-23).
     """
     check(path_key)
-    error, rows = None, []
-    plat = (request.args.get("plat") or "").strip()   # baemin|coupang|빈값(전체)
-    sort = (request.args.get("sort") or "").strip()   # rating|빈값(최신순)
+    plat = (request.args.get("plat") or "").strip() or None
+    sort = (request.args.get("sort") or "").strip() or "posted"
+    q = (request.args.get("q") or "").strip() or None
+    rating = request.args.get("rating", type=int)
+    rating_max = request.args.get("rating_max", type=int)
+    kind = request.args.get("kind") or None
+    days = request.args.get("days", type=int)
     page = max(1, request.args.get("page", default=1, type=int))
-    pages = 1
+
+    error, rows, total = None, [], 0
     try:
-        for r in db.get_posted_reviews(limit=500):
-            if plat and r.get("platform") != plat:
-                continue
+        # 예전엔 500건을 통째로 받아 파이썬에서 걸렀다(180KB, 1초+).
+        # 이제 조건·쪽 나누기를 서버에서 한다.
+        found, total = db.search_reviews(
+            source="ours", platform=plat, rating=rating, rating_max=rating_max,
+            kind=kind, days=days, q=q, sort=sort,
+            limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE)
+        for r in found:
             v = _review_view(r)
             v["posted_at"] = (r.get("posted_at") or "")[:16].replace("T", " ")
+            v["kind"] = r.get("kind") or ""
             rows.append(v)
-        if sort == "rating":
-            # 낮은 별점 먼저 — 문제 리뷰의 답글을 먼저 점검하기 위함.
-            rows.sort(key=lambda v: (v.get("rating") or 0, v.get("posted_at") or ""))
-        # 답글이 쌓일수록 한 화면이 끝없이 길어져 쪽 단위로 끊는다(2026-08-13).
-        pages = max(1, -(-len(rows) // PAGE_SIZE))
-        page = min(page, pages)
-        rows = rows[(page - 1) * PAGE_SIZE: page * PAGE_SIZE]
     except Exception as e:  # noqa: BLE001
         error = f"데이터를 불러오지 못했어요: {str(e)[:150]}"
+    pages = max(1, -(-total // PAGE_SIZE))
     return render_template("history.html", key=path_key, rows=rows,
-                           error=error, plat=plat, sort=sort,
-                           page=page, pages=pages)
+                           error=error, plat=plat, sort=sort, total=total,
+                           q=q or "", rating=rating, rating_max=rating_max,
+                           kind=kind, days=days,
+                           page=min(page, pages), pages=pages)
 
 
 def _summarize_ratings(rows):
@@ -879,12 +887,15 @@ def care_reviews(path_key):
     mode = request.args.get("mode") or "all"      # all | low | cs
     plat = request.args.get("plat") or None
     sort = request.args.get("sort") or "new"
+    days = request.args.get("days", type=int)
+    rep = request.args.get("replied")
+    replied = True if rep == "y" else False if rep == "n" else None
     page = max(1, request.args.get("page", default=1, type=int))
 
     error, rows, total = None, [], 0
     try:
         found, total = db.get_attention_reviews(
-            platform=plat, mode=mode, sort=sort,
+            platform=plat, mode=mode, sort=sort, days=days, replied=replied,
             limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE)
         for r in found:
             v = _review_view(r)
@@ -900,7 +911,7 @@ def care_reviews(path_key):
 
     return render_template(
         "care.html", key=path_key, rows=rows, error=error, total=total,
-        mode=mode, plat=plat, sort=sort, page=page,
+        mode=mode, plat=plat, sort=sort, page=page, days=days, rep=rep or "",
         pages=max(1, -(-total // PAGE_SIZE)), alerts=_owner_alerts(),
     )
 
