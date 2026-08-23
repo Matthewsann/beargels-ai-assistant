@@ -117,6 +117,29 @@ def check(path_key: str) -> None:
 _POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="db")
 
 
+@app.context_processor
+def _filter_helpers():
+    """화면에서 필터 링크를 만들 때 쓰는 도우미.
+
+    예전엔 필터 링크마다 url_for(...) 에 나머지 조건을 손으로 다 나열했다 —
+    조건을 하나 추가할 때마다 모든 링크를 고쳐야 해서, 새 필터를 넣기가
+    사실상 불가능했다(그래서 필터가 몇 년째 4종뿐이었다).
+    """
+    def url_with(**over):
+        args = {k: v for k, v in request.args.items() if v not in (None, "")}
+        args.update(over)
+        # 값이 비면 뺀다(=그 조건 해제). 조건이 바뀌면 1쪽부터 다시 본다.
+        args = {k: v for k, v in args.items() if v not in (None, "", "all")}
+        if "page" not in over:
+            args.pop("page", None)
+        return url_for(request.endpoint, **{**(request.view_args or {}), **args})
+
+    def is_on(name, value=None):
+        cur = request.args.get(name) or ""
+        return cur == (str(value) if value is not None else "")
+    return {"url_with": url_with, "is_on": is_on}
+
+
 def _ajax() -> bool:
     """화면 JS 가 부른 요청인가.
 
@@ -770,6 +793,21 @@ def history(path_key):
                            page=page, pages=pages)
 
 
+def _summarize_ratings(rows):
+    """조건에 맞는 리뷰의 별점 요약 — 몇 점짜리가 얼마나 되는지 한눈에.
+
+    목록만 보면 '4점 이하가 늘었나?' 같은 감이 안 온다. 별점만 따로 받아와
+    (본문·원본 없이) 평균과 분포를 낸다 — payload 가 작아 느려지지 않는다.
+    """
+    ns = [r.get("rating") for r in (rows or []) if isinstance(r.get("rating"), int)]
+    if not ns:
+        return None
+    dist = {n: ns.count(n) for n in (5, 4, 3, 2, 1)}
+    return {"n": len(ns), "avg": round(sum(ns) / len(ns), 2), "dist": dist,
+            "low": sum(v for k, v in dist.items() if k <= 4),
+            "capped": len(ns) >= 1000}
+
+
 PAGE_SIZE = 30
 
 
@@ -786,15 +824,29 @@ def reviews_all(path_key):
     sort = request.args.get("sort") or "new"
     q = (request.args.get("q") or "").strip() or None
     rating = request.args.get("rating", type=int)
+    rating_max = request.args.get("rating_max", type=int)
+    kind = request.args.get("kind") or None
+    days = request.args.get("days", type=int)
+    source = request.args.get("source") or None
     rep = request.args.get("replied")
     replied = True if rep == "y" else False if rep == "n" else None
     page = max(1, request.args.get("page", default=1, type=int))
 
-    error, rows, total = None, [], 0
+    filters = dict(platform=plat, rating=rating, rating_max=rating_max,
+                   kind=kind, days=days, source=source, replied=replied, q=q)
+
+    error, rows, total, summary = None, [], 0, None
     try:
-        found, total = db.search_reviews(
-            platform=plat, rating=rating, replied=replied, q=q, sort=sort,
-            limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE)
+        # 목록과 요약(평균 별점·답글률)을 동시에 — 왕복 지연이 겹치지 않게.
+        g = gather(
+            page=lambda: db.search_reviews(
+                sort=sort, limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE,
+                **filters),
+            summary=lambda: db.search_reviews(count_only=True, limit=1000,
+                                              **filters),
+        )
+        found, total = g["page"] or ([], 0)
+        summary = _summarize_ratings((g["summary"] or ([], 0))[0])
         for r in found:
             v = _review_view(r)
             v["replied"] = (r.get("reply_status") == "posted"
@@ -808,6 +860,8 @@ def reviews_all(path_key):
 
     return render_template(
         "reviews.html", key=path_key, rows=rows, error=error, total=total,
+        summary=summary, kind=kind, days=days, source=source,
+        rating_max=rating_max,
         plat=plat, sort=sort, q=q or "", rating=rating, rep=rep or "",
         page=page, pages=max(1, -(-total // PAGE_SIZE)),
         worker=_worker_view(), job=_job_view(db.latest_job()),

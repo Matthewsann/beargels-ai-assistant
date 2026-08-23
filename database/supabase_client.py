@@ -563,12 +563,16 @@ def _search_filter(q):
     terms = {base, base.replace(" ", "")} - {""}
     parts = []
     for t in terms:
-        parts += [f"content.ilike.%{t}%", f"author.ilike.%{t}%"]
+        # raw(플랫폼 원본)에는 주문 메뉴명이 들어 있다 — '크림치즈' 로 그 메뉴를
+        # 시킨 리뷰를 모아 볼 수 있게 함께 훑는다(2026-08-23).
+        parts += [f"content.ilike.%{t}%", f"author.ilike.%{t}%",
+                  f"raw.ilike.%{t}%"]
     return ",".join(parts)
 
 
 def search_reviews(platform=None, rating=None, replied=None, q=None,
-                   limit=50, offset=0, sort="new"):
+                   limit=50, offset=0, sort="new", days=None, kind=None,
+                   rating_max=None, source=None, count_only=False):
     """수집된 **모든** 리뷰를 조건으로 찾는다 — 전체 리뷰 관리 화면용.
 
     Args:
@@ -581,14 +585,28 @@ def search_reviews(platform=None, rating=None, replied=None, q=None,
         sort: 'new'(최신순) | 'old' | 'low'(낮은 별점순)
     Returns: (행 목록, 조건에 맞는 전체 건수)
     """
-    def _base():
-        s = get_client().table("reviews").select("*", count="exact")
+    def _base(select="*"):
+        s = get_client().table("reviews").select(select, count="exact")
         if platform:
             s = s.eq("platform", platform)
         if rating:
             s = s.eq("rating", int(rating))
+        if rating_max:                      # '4점 이하'처럼 범위로 보기
+            s = s.lte("rating", int(rating_max))
+        if kind:                            # 답글 유형(불만·질문·칭찬…)
+            s = s.in_("kind", list(kind) if isinstance(kind, (list, tuple))
+                      else [kind])
+        if days:                            # 최근 N일
+            since = (datetime.now().date() - timedelta(days=int(days))).isoformat()
+            s = s.gte("written_date", since)
         if q:
             s = s.or_(_search_filter(q))
+        # 답글을 '누가' 달았는지 — 우리 페이지로 등록한 것과 직원이 앱에서
+        # 직접 단 것을 구분해야 학습 재료가 어디서 새는지 보인다.
+        if source == "ours":
+            s = s.eq("reply_status", "posted")
+        elif source == "app":
+            s = s.neq("reply_status", "posted").eq("platform_replied", True)
         if replied is True:
             s = s.or_("reply_status.eq.posted,platform_replied.is.true")
         elif replied is False:
@@ -597,6 +615,10 @@ def search_reviews(platform=None, rating=None, replied=None, q=None,
         return s
 
     try:
+        if count_only:                      # 요약용 — 별점만 받아 온다
+            resp = _base("rating").limit(limit).execute()
+            return resp.data or [], (resp.count if resp.count is not None
+                                     else len(resp.data or []))
         resp = (_order_reviews(_base(), sort)
                 .range(offset, offset + limit - 1).execute())
     except Exception:  # noqa: BLE001 — platform_replied 미적용 스키마 대비
@@ -622,8 +644,8 @@ def _order_reviews(q, sort="new"):
 
     sort: 'new'(최신순) | 'old'(오래된순) | 'low'(낮은 별점순)
     """
-    if sort == "low":
-        return (q.order("rating", desc=False)
+    if sort in ("low", "high"):
+        return (q.order("rating", desc=(sort == "high"))
                  .order("written_date", desc=True).order("review_no", desc=True))
     desc = sort != "old"
     return q.order("written_date", desc=desc).order("review_no", desc=desc)
