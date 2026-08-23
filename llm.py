@@ -31,7 +31,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 # 답글은 300~500자짜리 짧은 글이라 깊게 생각할 게 없다. effort 를 낮추면
 # 같은 모델에서 품질은 그대로면서 토큰(=돈)과 응답시간이 크게 준다.
 # ⚠️ 이름을 BEARGELS_ 로 시작하게 둔다 — CLAUDE_EFFORT 같은 흔한 이름은
