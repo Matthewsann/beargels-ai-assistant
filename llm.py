@@ -31,7 +31,15 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5")
+# 불만·민감 리뷰만은 더 큰 모델로 쓴다. 평범한 감사 답글은 작은 모델로 충분하지만
+# (예시를 그대로 따라 쓰면 되니까), 사과·해명이 필요한 글은 문장 하나가
+# 가게 평판을 좌우한다 — 여기서 아끼면 남는 게 없다.
+CLAUDE_MODEL_SENSITIVE = os.getenv("CLAUDE_MODEL_SENSITIVE", "claude-sonnet-4-6")
+# effort(생각 깊이 조절)는 모델마다 받는 게 다르다. Haiku 4.5·Sonnet 4.5 는
+# 이 값을 보내면 400 으로 거절한다 → 받는 모델에만 붙인다.
+_EFFORT_MODELS = ("opus-5", "opus-4-8", "opus-4-7", "opus-4-6",
+                  "sonnet-5", "sonnet-4-6", "fable-5")
 # 답글은 300~500자짜리 짧은 글이라 깊게 생각할 게 없다. effort 를 낮추면
 # 같은 모델에서 품질은 그대로면서 토큰(=돈)과 응답시간이 크게 준다.
 # ⚠️ 이름을 BEARGELS_ 로 시작하게 둔다 — CLAUDE_EFFORT 같은 흔한 이름은
@@ -84,12 +92,13 @@ def available() -> bool:
 # 공급자별 호출
 # ---------------------------------------------------------------------------
 
-def _call_claude(system: str, user: str, max_tokens: int) -> str:
+def _call_claude(system: str, user: str, max_tokens: int, model=None) -> str:
     from anthropic import Anthropic
     client = Anthropic(api_key=_key("ANTHROPIC_API_KEY"))
-    kwargs = {"model": CLAUDE_MODEL, "max_tokens": max_tokens,
+    model = model or CLAUDE_MODEL
+    kwargs = {"model": model, "max_tokens": max_tokens,
               "messages": [{"role": "user", "content": user}]}
-    if CLAUDE_EFFORT:
+    if CLAUDE_EFFORT and any(m in model for m in _EFFORT_MODELS):
         kwargs["output_config"] = {"effort": CLAUDE_EFFORT}
     if system:
         # 긴 지시문은 캐시 블록으로 보낸다(같은 지시문이 반복되므로).
@@ -161,7 +170,12 @@ def _call_gemini(system: str, user: str, max_tokens: int, model: str | None = No
     return text
 
 
-_CALLERS = {"claude": _call_claude, "gemini": _call_gemini}
+def _call_gemini_any(system, user, max_tokens, model=None):
+    """gemini 는 claude 쪽 모델 이름을 받지 않는다 — 인자만 맞춘다."""
+    return _call_gemini(system, user, max_tokens)
+
+
+_CALLERS = {"claude": _call_claude, "gemini": _call_gemini_any}
 
 
 def _is_credit_error(e: Exception) -> bool:
@@ -194,8 +208,13 @@ _AUTH_DEAD: set = set()
 # 공개 함수
 # ---------------------------------------------------------------------------
 
-def complete(system: str = "", user: str = "", max_tokens: int = 1500) -> str:
-    """AI 에게 물어 답 텍스트를 받는다. 공급자는 자동 선택 · 실패 시 다음 것으로 넘어간다."""
+def complete(system: str = "", user: str = "", max_tokens: int = 1500,
+             model: str | None = None) -> str:
+    """AI 에게 물어 답 텍스트를 받는다. 공급자는 자동 선택 · 실패 시 다음 것으로 넘어간다.
+
+    model: 이번 호출에만 쓸 Claude 모델(없으면 CLAUDE_MODEL). 불만 리뷰처럼
+           품질이 중요한 곳에서 더 큰 모델을 지정하는 데 쓴다.
+    """
     providers = available_providers()
     if not providers:
         raise NoProviderError(
@@ -210,7 +229,7 @@ def complete(system: str = "", user: str = "", max_tokens: int = 1500) -> str:
         # 떨어지면 멀쩡한 리뷰가 저품질 초안을 받는다(2026-08-16 점검).
         for attempt in range(2):
             try:
-                return _CALLERS[name](system, user, max_tokens)
+                return _CALLERS[name](system, user, max_tokens, model)
             except Exception as e:  # noqa: BLE001
                 last = e
                 if _is_auth_error(e):

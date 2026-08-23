@@ -179,7 +179,21 @@ class LLMUnavailable(RuntimeError):
     """Claude 호출 실패(크레딧 부족·네트워크 등)."""
 
 
-def _ask_claude(system, user, max_tokens=1500):
+# 유형별 모델 — 평범한 감사 답글은 작은 모델(Haiku)로 충분하지만, 사과·해명이
+# 필요한 글은 문장 하나가 가게 평판을 좌우한다. 그런 리뷰만 큰 모델로 쓴다
+# (사장님 지시로 기본 모델을 Haiku 로 내리면서 함께 넣음, 2026-08-23).
+_SENSITIVE_KINDS = ("complaint", "escalate", "question")
+
+
+def _model_for(kind):
+    """이 유형의 답글을 어떤 모델로 쓸지(기본 모델이면 None)."""
+    if kind in _SENSITIVE_KINDS:
+        import llm
+        return llm.CLAUDE_MODEL_SENSITIVE
+    return None
+
+
+def _ask_claude(system, user, max_tokens=1500, model=None):
     """AI 에 질의한다. 실패 시 LLMUnavailable 로 감싸 던진다.
 
     공급자(Claude / Gemini)는 llm.py 가 .env 를 보고 자동으로 고른다 —
@@ -196,7 +210,8 @@ def _ask_claude(system, user, max_tokens=1500):
     import llm
 
     try:
-        return llm.complete(system=system, user=user, max_tokens=max_tokens).strip()
+        return llm.complete(system=system, user=user, max_tokens=max_tokens,
+                            model=model).strip()
     except Exception as e:  # noqa: BLE001
         logger.warning("AI 호출 실패: %s", str(e)[:200])
         raise LLMUnavailable(str(e)) from e
@@ -585,6 +600,10 @@ def _examples_block(review, kind, k=4):
         return ""
     lines = ["[사장님이 실제로 쓴 답글 — 이 말투·길이·구성을 그대로 따라 쓴다]"]
     for i, ex in enumerate(picked, 1):
+        # 예시 답글에도 '[SET]' 같은 관리용 꼬리표가 섞여 있다(과거에 그대로
+        # 붙여 쓴 답글이 있다). 예시로 보여주면 모델이 그걸 따라 쓴다 —
+        # 실제로 Haiku 초안에 다시 나타났다(2026-08-23). 예시부터 지운다.
+        ex = dict(ex, reply=_clean_menu(ex.get("reply")))
         rv = ex.get("content") or "(사진/무텍스트)"
         oc = ex.get("order_count")
         meta = f"★{ex.get('rating')}"
@@ -761,8 +780,11 @@ def generate_review_reply(review):
             f"자연스럽게."
         )
         draft = _truncate_at_sentence(
-            _ask_claude(REPLY_PERSONA, user, max_tokens=600), max_len)
-        return _strip_banned(draft, max_len)
+            _ask_claude(REPLY_PERSONA, user, max_tokens=600,
+                        model=_model_for(typ)), max_len)
+        # 마지막 방어선 — 어떤 모델을 쓰든 '[SET]' 같은 꼬리표가 손님에게
+        # 나가지 않게 본문에서도 한 번 더 지운다.
+        return _strip_banned(_clean_menu(draft), max_len)
     except LLMUnavailable:
         # 템플릿도 검문을 태운다 — 사람이 쓴 문구라도 규칙이 바뀌면 어긋날 수 있다.
         return _strip_banned(
