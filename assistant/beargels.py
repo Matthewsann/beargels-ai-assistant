@@ -530,6 +530,27 @@ _EXAMPLES_PATH = Path(__file__).resolve().parent.parent / "reference" / \
 _EXAMPLES_CACHE = None
 
 
+_REFERENCE_PATH = _EXAMPLES_PATH.parent / "reply_examples_reference.json"
+_REFERENCE_CACHE = None
+
+
+def _reference_bank():
+    """말투는 지금 규칙과 다르지만 내용은 참고할 만한 옛 답글 창고.
+
+    실답글 1,592건 중 지금 말투 규칙을 통과하는 건 열에 하나뿐이라, 질문·민감
+    처럼 드문 유형은 예시가 두세 개뿐이다. 그런 유형에서만 이 창고를 내용
+    참고용으로 덧붙인다 — 말투는 베끼지 말라고 명시해서 넣는다.
+    """
+    global _REFERENCE_CACHE
+    if _REFERENCE_CACHE is None:
+        try:
+            _REFERENCE_CACHE = json.loads(
+                _REFERENCE_PATH.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            _REFERENCE_CACHE = {}
+    return _REFERENCE_CACHE
+
+
 def _example_bank():
     global _EXAMPLES_CACHE
     if _EXAMPLES_CACHE is None:
@@ -577,13 +598,13 @@ def _clean_menu(name):
     return re.sub(r"\[[^\]]{1,12}\]\s*", "", (name or "")).strip()
 
 
-def pick_examples(review, kind, k=4):
+def pick_examples(review, kind, k=4, bank=None):
     """이 리뷰와 가장 비슷한 사장님 답글 예시 k개(없으면 빈 목록).
 
     비슷함의 기준(가중치 순): 같은 메뉴 > 같은 주문횟수 구간 > 같은 별점 >
     비슷한 리뷰 길이. 같은 예시만 반복해 쓰지 않도록 리뷰번호로 섞는다.
     """
-    bank = _example_bank().get(kind) or []
+    bank = bank if bank is not None else (_example_bank().get(kind) or [])
     if not bank:
         return []
     menus = {m.strip() for m in (review.get("menus") or []) if m}
@@ -638,6 +659,20 @@ def _examples_block(review, kind, k=4):
         lines.append(f"\n예시{i} ({meta}) 리뷰: \"{rv[:60]}\"\n답글: {ex['reply']}")
     lines.append("\n⚠️ 위 답글을 베끼지 말고, **말투와 구성만** 따라 이번 리뷰에 "
                  "맞는 내용으로 새로 쓴다.")
+
+    # 예시가 부족한 유형(질문·민감처럼 드문 것)은 옛 답글을 내용 참고용으로
+    # 덧붙인다. 말투는 지금 규칙과 다르므로 따라하지 말라고 못 박는다.
+    short = k - len(picked)
+    if short > 0:
+        refs = pick_examples(review, kind, short,
+                             bank=_reference_bank().get(kind) or [])
+        if refs:
+            lines.append("[참고 — 예전에 비슷한 리뷰에 답한 내용. "
+                         "말투(격식체)는 따라하지 말고 무엇을 짚었는지만 참고]")
+            for ex in refs:
+                lines.append("· 리뷰 \"%s\" -> %s"
+                             % ((ex.get("content") or "")[:50],
+                                _clean_menu(ex["reply"])[:120]))
     return "\n".join(lines) + "\n\n"
 
 
