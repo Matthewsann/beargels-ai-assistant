@@ -74,3 +74,25 @@ def test_escalation_draft_is_a_guide_not_a_refusal():
     # 사실 확인 전이라 보상·환불을 약속하면 안 된다.
     for banned in ("환불", "보상", "교환", "쿠폰", "고객센터"):
         assert banned not in draft, f"민감 리뷰 초안에 '{banned}' 가 들어감"
+
+
+# --- 보상 약속 차단은 코드로 (모델을 믿지 않는다) ---------------------------
+# 지시문에 "환불·보상 안내 금지"라고 써 뒀는데도 모델이 "환불은 고객센터로
+# 접수해 주세요" 문장을 넣은 초안이 실제로 나왔다(2026-08-23). 모델을 바꿀
+# 때마다 다시 터질 수 있으므로 코드로 잘라낸다.
+
+def test_compensation_sentences_are_removed():
+    from assistant.beargels import _drop_compensation
+    out = _drop_compensation(
+        "먼저 불편을 드려 죄송합니다. 즉시 점검하겠습니다.\n\n"
+        "환불 관련 사항은 앱 내 고객센터로 접수해 주세요. 다시 사과드립니다.")
+    for banned in ("환불", "보상", "교환", "쿠폰", "고객센터"):
+        assert banned not in out
+    assert "죄송합니다" in out and "점검하겠습니다" in out   # 사과·다짐은 남는다
+    assert "다시 사과드립니다" in out                        # 같은 문단의 멀쩡한 문장도
+
+
+def test_normal_reply_is_untouched():
+    from assistant.beargels import _drop_compensation
+    text = "맛있게 드셨다니 기뻐요! 또 오세요 🥯"
+    assert _drop_compensation(text) == text

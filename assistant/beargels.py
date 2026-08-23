@@ -185,6 +185,32 @@ class LLMUnavailable(RuntimeError):
 _SENSITIVE_KINDS = ("complaint", "escalate", "question")
 
 
+# 사실 확인 전에 보상을 약속하면 되돌릴 수 없다 — 지시문에 써 두는 것만으로는
+# 부족했다. 모델이 "환불은 고객센터로 접수해 주시면…" 문장을 넣은 초안이 실제로
+# 나왔다(2026-08-23 회귀 테스트). 어떤 모델을 쓰든 코드로 잘라낸다.
+_COMPENSATION_WORDS = ("환불", "보상", "교환", "쿠폰", "고객센터", "배상", "변상")
+
+
+def _drop_compensation(text):
+    """보상·환불·고객센터를 언급한 문장만 통째로 뺀다(나머지는 그대로).
+
+    문장 단위로 지우는 이유: 낱말만 바꾸면 "○○은 앱으로 접수해 주세요" 같은
+    반쪽짜리 안내가 남아 뜻이 더 이상해진다.
+    """
+    if not any(w in (text or "") for w in _COMPENSATION_WORDS):
+        return text
+    out = []
+    for para in (text or "").split(chr(10)):
+        if not para.strip():
+            out.append(para)
+            continue
+        kept = [t for t in re.split(r"(?<=[.!?…])\s+", para)
+                if not any(w in t for w in _COMPENSATION_WORDS)]
+        out.append(" ".join(kept).strip())
+    cleaned = chr(10).join(out)
+    return re.sub(chr(10) + "{3,}", chr(10) * 2, cleaned).strip()
+
+
 def _model_for(kind):
     """이 유형의 답글을 어떤 모델로 쓸지(기본 모델이면 None)."""
     if kind in _SENSITIVE_KINDS:
@@ -784,7 +810,14 @@ def generate_review_reply(review):
                         model=_model_for(typ)), max_len)
         # 마지막 방어선 — 어떤 모델을 쓰든 '[SET]' 같은 꼬리표가 손님에게
         # 나가지 않게 본문에서도 한 번 더 지운다.
-        return _strip_banned(_clean_menu(draft), max_len)
+        draft = _clean_menu(draft)
+        if typ in _SENSITIVE_KINDS:
+            draft = _drop_compensation(draft)
+            if len(draft) < 40:          # 너무 많이 잘렸으면 안전한 템플릿으로
+                return _strip_banned(
+                    _template_reply(typ, review, author, oc, rating, max_len),
+                    max_len)
+        return _strip_banned(draft, max_len)
     except LLMUnavailable:
         # 템플릿도 검문을 태운다 — 사람이 쓴 문구라도 규칙이 바뀌면 어긋날 수 있다.
         return _strip_banned(
