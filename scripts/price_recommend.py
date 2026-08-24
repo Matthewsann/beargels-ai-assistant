@@ -1,4 +1,4 @@
-"""재료원가가 잡힌 메뉴의 추천 매장가 — 원가율 × 시장가 이중 기준.
+"""메뉴별 추천 판매가 — 매장가는 원가율 × 시장가, 배달가는 매장가 × 1.13.
 
 추천가는 두 기준을 함께 본다:
 
@@ -16,6 +16,20 @@
 - 플레인 베이글: 런던베이글뮤지엄 ~3,800 · 코끼리베이글 2,800~2,900
 - 베이글 샌드위치: 코끼리 8,600~9,200 · 성수권 8,000~11,300 · 런던 최고 14,800
 - 탄단지 샐러드: 프랜차이즈 8,600~11,400
+## 추천 배달가 (2026-08-24, 사장님 확정)
+
+배달가는 원가에서 따로 뽑지 않는다. **매장가 × 1.13**, 100원 반올림이다.
+근거는 수수료 차이뿐이다 — 중개+결제(부가세 포함)가 매장 1.43% · 배민 10.78% ·
+쿠팡 14.08% 라, 매장과 같은 마진을 남기려면 배민 +10.5% / 쿠팡 +14.7% 가 필요하다.
+배달가는 정본에 하나뿐이므로 그 사이인 13% 로 잡고 전 채널에 같은 값을 쓴다.
+
+배달비(주문당 정액 3,500원)는 여기 얹지 않는다. 메뉴마다 나누면 저가 음료가 전부
+적자로 보이는데, 실측 객단가(배민 17,519 · 쿠팡 17,110)가 손익분기 객단가
+6,500원의 두 배가 넘어 주문 단위에서 이미 회수된다. 메뉴-원가-관리.md 참고.
+
+인상률 상한은 15% 로 본다 — 손님은 매장 가격을 알고 오므로 그 위는 리뷰에서
+지적거리가 된다. 이미 그보다 높게 받고 있는 메뉴(세트·샐러드)는 '유지'로 둔다.
+
 쓰는 법: python scripts/price_recommend.py [--csv]
 """
 from __future__ import annotations
@@ -41,6 +55,12 @@ load_dotenv(ROOT / ".env")
 from database import supabase_client as db  # noqa: E402
 
 OUT = ROOT / "data" / "price_recommendations.csv"
+DOUT = ROOT / "data" / "delivery_price_recommendations.csv"
+
+# 배달가 = 매장가 × (1 + 이 값). 근거는 위 설명 참고.
+DELIVERY_MARKUP = 0.13
+# 이미 이 배율 위로 받고 있으면 더 올리라고 하지 않는다(손님 체감 상한).
+DELIVERY_MAX = 1.15
 
 # 카테고리별 시장 밴드 (매장가 기준, 원) — (하단, 중심, 상단)
 # 하단: 저가 경쟁권 / 중심: 동급 베이커리·디저트 카페 평균 / 상단: 프리미엄권
@@ -71,6 +91,22 @@ def main():
 
     menus = db.menu_all()
     targets = db.menu_settings_all().get("target_cost_rates") or {}
+
+    # 배달가는 원가가 없어도 매장가만 있으면 뽑힌다 — 원가 미입력 메뉴까지 다 본다.
+    drows = []
+    for m in menus:
+        price = m.get("store_price")
+        if not price or not m.get("delivery_active"):
+            continue
+        cur = m.get("delivery_price")
+        rec = r100(price * (1 + DELIVERY_MARKUP))
+        if cur and cur >= price * DELIVERY_MAX:
+            rec = cur                    # 이미 상한 위 — 인하는 권하지 않는다
+        drows.append({
+            "sku": m["sku"], "cat": m.get("category") or "기타", "name": m["name"],
+            "store": int(price), "cur": int(cur) if cur else None, "rec": rec,
+            "delta": (rec - int(cur)) if cur else None,
+        })
 
     rows = []
     for m in menus:
@@ -130,6 +166,20 @@ def main():
             print(f"{r['name'][:28]:<30} {r['price']:>7,} (상단 {r['hi']:,})  "
                   f"원가율 {r['cur_rate']:.0f}% (목표 {r['target']:.0f}%)")
 
+    # ── 추천 배달가 ────────────────────────────────────────────────
+    d_up = [d for d in drows if d["cur"] is not None and d["rec"] > d["cur"]]
+    d_new = [d for d in drows if d["cur"] is None]
+    d_ok = [d for d in drows if d["cur"] is not None and d["rec"] <= d["cur"]]
+    print(f"\n{'=' * 100}")
+    print(f"추천 배달가 (매장가 × {1 + DELIVERY_MARKUP:.2f}, 100원 반올림) — "
+          f"올릴 것 {len(d_up)} · 배달가 미입력 {len(d_new)} · 현행 유지 {len(d_ok)}")
+    print("=" * 100)
+    print(f"{'메뉴':<30} {'매장가':>7} {'현재 배달':>9} {'추천':>7} {'차이':>7}")
+    for d in sorted(d_up + d_new, key=lambda x: (x["cat"], -x["store"])):
+        cur = f"{d['cur']:,}" if d["cur"] is not None else "미입력"
+        delta = f"{d['delta']:+,}" if d["delta"] else ""
+        print(f"{d['name'][:28]:<30} {d['store']:>7,} {cur:>9} {d['rec']:>7,} {delta:>7}")
+
     if args.csv:
         OUT.parent.mkdir(parents=True, exist_ok=True)
         with OUT.open("w", encoding="utf-8-sig", newline="") as f:
@@ -147,6 +197,22 @@ def main():
                             f"{r['new_rate']:.1f}", f"{r['target']:.0f}",
                             r["mid"] or "", r["hi"] or "", verdict])
         print(f"\n→ {OUT}")
+
+        with DOUT.open("w", encoding="utf-8-sig", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["SKU", "카테고리", "메뉴", "매장가", "현재 배달가",
+                        "추천 배달가", "차이", "현재 인상률%", "판단"])
+            for d in sorted(drows, key=lambda x: (x["cat"], -x["store"])):
+                if d["cur"] is None:
+                    verdict, rate = "배달가 미입력", ""
+                else:
+                    rate = f"{(d['cur'] / d['store'] - 1) * 100:.1f}"
+                    verdict = "인상 제안" if d["rec"] > d["cur"] else "유지"
+                w.writerow([d["sku"], d["cat"], d["name"], d["store"],
+                            d["cur"] if d["cur"] is not None else "",
+                            d["rec"], d["delta"] if d["delta"] else "",
+                            rate, verdict])
+        print(f"→ {DOUT}")
     return 0
 
 

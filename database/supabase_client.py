@@ -948,7 +948,7 @@ def menu_update_item(sku, fields: dict):
 # 분류는 메뉴마다 붙은 글자라, 이름을 바꾸려면 그 분류의 메뉴를 전부 고쳐야 한다.
 # 게다가 목표 원가율이 분류 '이름'을 열쇠로 저장돼 있어서, 메뉴만 고치면
 # 목표값이 통째로 미아가 되고 전부 '기타 35%' 로 떨어진다 — 함께 옮긴다.
-_CAT_SETTING_KEYS = ("target_cost_rates", "target_cost_rates_delivery")
+_CAT_SETTING_KEYS = ("target_cost_rates",)
 
 
 def category_rename(old: str, new: str) -> dict:
