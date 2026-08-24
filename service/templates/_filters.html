@@ -1,0 +1,133 @@
+{# ────────────────────────────────────────────────────────────────────────
+   리뷰·답글 화면 공용 필터 (사장님 지시 2026-08-24: 화면마다 다르면 안 됨)
+
+   쓰는 법:  {% set screen = 'todo' %}{% include "_filters.html" %}
+   screen: todo | reviews | care | history
+
+   url_with(...) 은 '지금 조건을 그대로 두고 하나만 바꾼' 주소를 만든다
+   (service/app.py 의 _filter_helpers). 그래서 조건을 늘려도 링크를
+   일일이 고칠 필요가 없다.
+──────────────────────────────────────────────────────────────────────── #}
+
+{# 자주 쓰는 조합 — 한 번에 걸린다 #}
+<div class="filters">
+  <a href="{{ url_with(days=7, kind=None, rating=None, rating_max=None, replied=None, source=None) }}"
+     class="{{ 'on' if days == 7 and not kind and not rating_max }}">🗓 최근 7일</a>
+  <a href="{{ url_with(rating_max=4, days=None, kind=None, rating=None, replied=None, source=None) }}"
+     class="{{ 'on' if rating_max == 4 }}">😟 ★4 이하</a>
+  <a href="{{ url_with(kind='complaint', days=None, rating=None, rating_max=None, replied=None, source=None) }}"
+     class="{{ 'on' if kind == 'complaint' }}">🚨 불만</a>
+  {% if screen == 'reviews' %}
+  <a href="{{ url_with(replied='n', days=None, rating=None, rating_max=None, kind=None, source=None) }}"
+     class="{{ 'on' if rep == 'n' and not days }}">⬜ 답글 없는 것</a>
+  <a href="{{ url_with(source='app', days=None, rating=None, rating_max=None, kind=None, replied=None) }}"
+     class="{{ 'on' if source == 'app' }}">📱 앱에서 직접</a>
+  {% endif %}
+  <a href="{{ url_with(days=None, kind=None, rating=None, rating_max=None, replied=None, source=None, q=None, plat=None) }}"
+     class="{{ 'on' if not (days or kind or rating or rating_max or rep or source or q or plat) }}">↺ 조건 해제</a>
+</div>
+
+{# 관리 필요 화면 전용 — 무엇을 볼지 #}
+{% if screen == 'care' %}
+<div class="filters">
+  <span class="lbl" style="align-self:center;min-width:44px;">범위</span>
+  <a href="{{ url_with(mode=None) }}" class="{{ 'on' if mode in ('all', None, '') }}">전체(저평점+CS)</a>
+  <a href="{{ url_with(mode='low') }}" class="{{ 'on' if mode == 'low' }}">⭐ 별점 5점 미만</a>
+  <a href="{{ url_with(mode='cs') }}" class="{{ 'on' if mode == 'cs' }}">🚨 CS 리뷰</a>
+</div>
+{% endif %}
+
+{# 기간 #}
+<div class="filters">
+  <span class="lbl" style="align-self:center;min-width:44px;">기간</span>
+  <a href="{{ url_with(days=None) }}" class="{{ 'on' if not days }}">전체</a>
+  {% for d, t in [(7, '7일'), (30, '30일'), (90, '3개월')] %}
+  <a href="{{ url_with(days=d) }}" class="{{ 'on' if days == d }}">{{ t }}</a>
+  {% endfor %}
+</div>
+
+{# 채널 #}
+<div class="filters">
+  <span class="lbl" style="align-self:center;min-width:44px;">채널</span>
+  <a href="{{ url_with(plat=None) }}" class="{{ 'on' if not plat }}">전체</a>
+  <a href="{{ url_with(plat='baemin') }}" class="{{ 'on' if plat == 'baemin' }}">🔵 배민</a>
+  <a href="{{ url_with(plat='coupang') }}" class="{{ 'on' if plat == 'coupang' }}">🟠 쿠팡</a>
+</div>
+
+{# 별점 #}
+<div class="filters">
+  <span class="lbl" style="align-self:center;min-width:44px;">별점</span>
+  <a href="{{ url_with(rating=None, rating_max=None) }}"
+     class="{{ 'on' if not rating and not rating_max }}">전체</a>
+  {% for n in [5, 4, 3, 2, 1] %}
+  <a href="{{ url_with(rating=n, rating_max=None) }}" class="{{ 'on' if rating == n }}">★{{ n }}</a>
+  {% endfor %}
+  <a href="{{ url_with(rating_max=4, rating=None) }}" class="{{ 'on' if rating_max == 4 }}">★4 이하</a>
+  <a href="{{ url_with(rating_max=3, rating=None) }}" class="{{ 'on' if rating_max == 3 }}">★3 이하</a>
+</div>
+
+{# 리뷰 유형 — 초안 만들 때 붙는 분류 #}
+<div class="filters">
+  <span class="lbl" style="align-self:center;min-width:44px;">유형</span>
+  <a href="{{ url_with(kind=None) }}" class="{{ 'on' if not kind }}">전체</a>
+  {% for k, t in [('complaint', '불만'), ('escalate', '민감'), ('question', '질문'),
+                  ('praise_detail', '칭찬+내용'), ('rating_only', '별점만'),
+                  ('photo_only', '사진만'), ('neutral', '덤덤')] %}
+  <a href="{{ url_with(kind=k) }}" class="{{ 'on' if kind == k }}">{{ t }}</a>
+  {% endfor %}
+</div>
+
+{# 답글 상태 — 전체 리뷰 화면에서만 의미가 있다 #}
+{% if screen == 'reviews' %}
+<div class="filters">
+  <span class="lbl" style="align-self:center;min-width:44px;">답글</span>
+  <a href="{{ url_with(replied=None, source=None) }}"
+     class="{{ 'on' if not rep and not source }}">전체</a>
+  <a href="{{ url_with(replied='y', source=None) }}" class="{{ 'on' if rep == 'y' }}">✅ 있음</a>
+  <a href="{{ url_with(replied='n', source=None) }}" class="{{ 'on' if rep == 'n' }}">⬜ 없음</a>
+  <a href="{{ url_with(source='ours', replied=None) }}"
+     class="{{ 'on' if source == 'ours' }}">🖥 이 페이지로 등록</a>
+  <a href="{{ url_with(source='app', replied=None) }}"
+     class="{{ 'on' if source == 'app' }}">📱 앱에서 직접</a>
+</div>
+{% elif screen == 'care' %}
+<div class="filters">
+  <span class="lbl" style="align-self:center;min-width:44px;">답글</span>
+  <a href="{{ url_with(replied=None) }}" class="{{ 'on' if not rep }}">전체</a>
+  <a href="{{ url_with(replied='n') }}" class="{{ 'on' if rep == 'n' }}">⬜ 아직 안 함</a>
+  <a href="{{ url_with(replied='y') }}" class="{{ 'on' if rep == 'y' }}">✅ 답글 있음</a>
+</div>
+{% endif %}
+
+{# 정렬 — 화면 성격에 따라 기준만 다르다 #}
+<div class="filters">
+  <span class="lbl" style="align-self:center;min-width:44px;">정렬</span>
+  {% if screen == 'history' %}
+    <a href="{{ url_with(sort=None) }}" class="{{ 'on' if sort == 'posted' }}">🕒 최근 등록순</a>
+    <a href="{{ url_with(sort='posted_old') }}" class="{{ 'on' if sort == 'posted_old' }}">⏳ 오래된 등록순</a>
+    <a href="{{ url_with(sort='low') }}" class="{{ 'on' if sort == 'low' }}">⭐ 낮은 별점순</a>
+    <a href="{{ url_with(sort='new') }}" class="{{ 'on' if sort == 'new' }}">📝 리뷰 최신순</a>
+  {% elif screen == 'todo' %}
+    <a href="{{ url_with(sort=None) }}" class="{{ 'on' if sort == 'old' }}">⏳ 기한 임박순</a>
+    <a href="{{ url_with(sort='new') }}" class="{{ 'on' if sort == 'new' }}">🕒 최신순</a>
+    <a href="{{ url_with(sort='low') }}" class="{{ 'on' if sort == 'low' }}">⭐ 낮은 별점순</a>
+  {% else %}
+    <a href="{{ url_with(sort=None) }}" class="{{ 'on' if sort in ('new', '') }}">🕒 최신순</a>
+    <a href="{{ url_with(sort='old') }}" class="{{ 'on' if sort == 'old' }}">⏳ 오래된순</a>
+    <a href="{{ url_with(sort='low') }}" class="{{ 'on' if sort == 'low' }}">⭐ 낮은 별점순</a>
+    <a href="{{ url_with(sort='high') }}" class="{{ 'on' if sort == 'high' }}">🌟 높은 별점순</a>
+  {% endif %}
+</div>
+
+{# 검색 — 리뷰 본문·작성자·주문 메뉴를 함께 훑는다 #}
+<form method="get" class="filters" style="gap:6px;">
+  {% for k, v in [('plat', plat), ('days', days), ('kind', kind), ('rating', rating),
+                  ('rating_max', rating_max), ('sort', sort), ('replied', rep),
+                  ('source', source), ('mode', mode)] %}
+    {% if v %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}
+  {% endfor %}
+  <input type="search" name="q" value="{{ q }}" placeholder="리뷰·작성자·메뉴 검색"
+         style="flex:1;min-width:150px;padding:6px 11px;border-radius:20px;
+                border:1px solid var(--line);background:var(--card);color:var(--ink);">
+  <button class="btn" type="submit">검색</button>
+</form>

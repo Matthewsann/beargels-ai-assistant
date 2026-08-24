@@ -498,31 +498,39 @@ def home(path_key):
 
 @app.route("/<path_key>/todo")
 def todo(path_key):
-    """등록해야 할 답글 — 초안을 확인·수정하고 등록하는 실제 작업 화면."""
+    """등록해야 할 답글 — 초안을 확인·수정하고 등록하는 실제 작업 화면.
+
+    필터·정렬은 다른 리뷰 화면(전체 리뷰·관리 필요·등록한 답글)과 **똑같은
+    방식**을 쓴다(사장님 지시 2026-08-24). 화면마다 필터가 다르면 직원이
+    매번 다시 배워야 한다.
+    """
     check(path_key)
-    error = None
-    reviews = []
-    waiting = 0
-    plat = (request.args.get("plat") or "").strip()   # baemin|coupang|빈값(전체)
-    sort = (request.args.get("sort") or "").strip()   # new=최신순 | 빈값=오래된순
+    error, reviews, waiting = None, [], 0
+    plat = (request.args.get("plat") or "").strip() or None
+    sort = (request.args.get("sort") or "").strip() or "old"   # 기한 임박 먼저
+    q = (request.args.get("q") or "").strip() or None
+    rating = request.args.get("rating", type=int)
+    rating_max = request.args.get("rating_max", type=int)
+    kind = request.args.get("kind") or None
+    days = request.args.get("days", type=int)
+
+    filters = dict(platform=plat, rating=rating, rating_max=rating_max,
+                   kind=kind, days=days, q=q, pending_only=True)
     try:
-        g = gather(rows=lambda: db.get_pending_reviews(limit=100),
-                   approved=lambda: db.count_by_status("approved"),
-                   job=_latest_job_cached, worker=_worker_view,
-                   alerts=_owner_alerts)
-        raw_rows = g["rows"] or []     # 오래된 순(기한 임박 먼저)
-        if plat:                       # 쿠팡만/배민만 보기
-            raw_rows = [r for r in raw_rows if r.get("platform") == plat]
-        if sort == "new":              # 최신 리뷰부터 보고 싶을 때
-            raw_rows = list(reversed(raw_rows))
-        rows = [_review_view(r) for r in raw_rows]
-        # 초안이 있는 것만 보여준다 — 초안 없는 카드가 화면을 덮으면
-        # 직원이 무엇을 해야 하는지 알 수 없다. 나머지는 건수로만 알린다.
-        reviews = [r for r in rows if r["has_draft"]]
+        g = gather(
+            rows=lambda: db.search_reviews(has_draft=True, sort=sort,
+                                           limit=100, **filters),
+            waiting=lambda: db.search_reviews(has_draft=False, limit=1,
+                                              **filters),
+            approved=lambda: db.count_by_status("approved"),
+            job=_latest_job_cached, worker=_worker_view, alerts=_owner_alerts)
+        found, total = g["rows"] or ([], 0)
+        reviews = [_review_view(r) for r in found]
         trusted = _trusted_kinds()
         for r in reviews:
             r["trusted"] = (not r["escalate"]) and r.get("kind") in trusted
-        waiting = len(rows) - len(reviews)
+        # 초안이 아직 없는 리뷰는 카드로 덮지 않고 건수로만 알린다.
+        waiting = (g["waiting"] or ([], 0))[1]
         job = _job_view(g["job"])
         approved_count = g["approved"] or 0
     except Exception as e:  # noqa: BLE001
@@ -533,7 +541,9 @@ def todo(path_key):
         "staff.html", key=path_key, reviews=reviews,
         worker=g.get("worker") or _worker_view(),
         job=job, error=error, waiting=waiting, approved_count=approved_count,
-        plat=plat, sort=sort, alerts=g.get("alerts") or [],
+        plat=plat, sort=sort, q=q or "", rating=rating, rating_max=rating_max,
+        kind=kind, days=days, total=len(reviews),
+        alerts=g.get("alerts") or [],
     )
 
 

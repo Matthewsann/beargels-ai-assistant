@@ -101,70 +101,8 @@
        않는다 — 같은 링크가 두 번 보여 헷갈렸다(2026-08-13 점검). #}
   </div>
 
-  {# 필터 — 전체 리뷰 화면과 같은 방식(url_with: 지금 조건 유지 + 하나만 변경) #}
-  <div class="filters">
-    <a href="{{ url_with(days=7, kind=None, rating=None, rating_max=None) }}"
-       class="{{ 'on' if days == 7 and not kind }}">🗓 최근 7일</a>
-    <a href="{{ url_with(kind='complaint', days=None, rating=None, rating_max=None) }}"
-       class="{{ 'on' if kind == 'complaint' }}">🚨 불만 답글</a>
-    <a href="{{ url_with(rating_max=4, days=None, kind=None, rating=None) }}"
-       class="{{ 'on' if rating_max == 4 }}">😟 ★4 이하</a>
-  </div>
-
-  <div class="filters">
-    <span class="lbl" style="align-self:center;min-width:44px;">기간</span>
-    <a href="{{ url_with(days=None) }}" class="{{ 'on' if not days }}">전체</a>
-    {% for d, t in [(7, '7일'), (30, '30일'), (90, '3개월')] %}
-    <a href="{{ url_with(days=d) }}" class="{{ 'on' if days == d }}">{{ t }}</a>
-    {% endfor %}
-  </div>
-
-  <div class="filters">
-    <span class="lbl" style="align-self:center;min-width:44px;">채널</span>
-    <a href="{{ url_with(plat=None) }}" class="{{ 'on' if not plat }}">전체</a>
-    <a href="{{ url_with(plat='baemin') }}" class="{{ 'on' if plat == 'baemin' }}">🔵 배민</a>
-    <a href="{{ url_with(plat='coupang') }}" class="{{ 'on' if plat == 'coupang' }}">🟠 쿠팡</a>
-  </div>
-
-  <div class="filters">
-    <span class="lbl" style="align-self:center;min-width:44px;">별점</span>
-    <a href="{{ url_with(rating=None, rating_max=None) }}"
-       class="{{ 'on' if not rating and not rating_max }}">전체</a>
-    {% for n in [5, 4, 3, 2, 1] %}
-    <a href="{{ url_with(rating=n, rating_max=None) }}" class="{{ 'on' if rating == n }}">★{{ n }}</a>
-    {% endfor %}
-    <a href="{{ url_with(rating_max=4, rating=None) }}" class="{{ 'on' if rating_max == 4 }}">★4 이하</a>
-  </div>
-
-  <div class="filters">
-    <span class="lbl" style="align-self:center;min-width:44px;">유형</span>
-    <a href="{{ url_with(kind=None) }}" class="{{ 'on' if not kind }}">전체</a>
-    {% for k, t in [('complaint', '불만'), ('escalate', '민감'), ('question', '질문'),
-                    ('praise_detail', '칭찬+내용'), ('rating_only', '별점만'),
-                    ('neutral', '덤덤')] %}
-    <a href="{{ url_with(kind=k) }}" class="{{ 'on' if kind == k }}">{{ t }}</a>
-    {% endfor %}
-  </div>
-
-  <div class="filters">
-    <span class="lbl" style="align-self:center;min-width:44px;">정렬</span>
-    <a href="{{ url_with(sort=None) }}" class="{{ 'on' if sort == 'posted' }}">🕒 최근 등록순</a>
-    <a href="{{ url_with(sort='posted_old') }}" class="{{ 'on' if sort == 'posted_old' }}">⏳ 오래된 등록순</a>
-    <a href="{{ url_with(sort='low') }}" class="{{ 'on' if sort == 'low' }}">⭐ 낮은 별점순</a>
-    <a href="{{ url_with(sort='new') }}" class="{{ 'on' if sort == 'new' }}">📝 리뷰 최신순</a>
-  </div>
-
-  {# 답글 본문·리뷰 내용·메뉴로 찾기 #}
-  <form method="get" class="filters" style="gap:6px;">
-    {% for k, v in [('plat', plat), ('days', days), ('kind', kind),
-                    ('rating', rating), ('rating_max', rating_max), ('sort', sort)] %}
-      {% if v %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}
-    {% endfor %}
-    <input type="search" name="q" value="{{ q }}" placeholder="답글·리뷰·메뉴 검색"
-           style="flex:1;min-width:150px;padding:6px 11px;border-radius:20px;
-                  border:1px solid var(--line);background:var(--card);color:var(--ink);">
-    <button class="btn" type="submit">검색</button>
-  </form>
+  {% set screen = 'history' %}
+  {% include "_filters.html" %}
 
   <div class="lbl" style="margin-bottom:9px;">
     조건에 맞는 답글 <b style="color:var(--ink);">{{ total }}건</b>

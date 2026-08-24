@@ -134,6 +134,13 @@
   .pill.visit.again{ color:#7a6a2f; border-color:#e6dcbb; background:#fbf7ea; }
   .pill.visit.reg  { color:#8a5a12; border-color:#eed9b8; background:#fdf4e7; }
   .pill.visit.vip  { color:#7b3f8f; border-color:#e2cdea; background:#f9f2fb; }
+
+  /* 공용 필터 칩 (_filters.html) */
+  .filters { display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+  .filters a { font-size:13px; padding:6px 13px; border-radius:20px; text-decoration:none;
+               border:1px solid var(--line); background:var(--card); color:var(--muted); }
+  .filters a.on { background:var(--accent-bg, #eef4ef); color:var(--accent, #4a7a52);
+                  border-color:var(--accent, #4a7a52); font-weight:600; }
 </style>
 </head>
 <body>
@@ -212,20 +219,8 @@
     {% endif %}
   {% endif %}
 
-  <div class="navbar" style="margin-bottom:6px;">
-    <a href="{{ url_for('todo', path_key=key, sort=sort or None) }}"
-       class="{{ 'on' if not plat }}">전체</a>
-    <a href="{{ url_for('todo', path_key=key, plat='baemin', sort=sort or None) }}"
-       class="{{ 'on' if plat == 'baemin' }}">🔵 배민만</a>
-    <a href="{{ url_for('todo', path_key=key, plat='coupang', sort=sort or None) }}"
-       class="{{ 'on' if plat == 'coupang' }}">🟠 쿠팡만</a>
-  </div>
-  <div class="navbar" style="margin-bottom:10px;">
-    <a href="{{ url_for('todo', path_key=key, plat=plat or None) }}"
-       class="{{ 'on' if sort != 'new' }}">⏳ 오래된순</a>
-    <a href="{{ url_for('todo', path_key=key, plat=plat or None, sort='new') }}"
-       class="{{ 'on' if sort == 'new' }}">🕒 최신순</a>
-  </div>
+  {% set screen = 'todo' %}
+  {% include "_filters.html" %}
 
   {% if reviews %}
     <div class="status listbar">

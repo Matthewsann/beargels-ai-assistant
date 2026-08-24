@@ -572,7 +572,8 @@ def _search_filter(q):
 
 def search_reviews(platform=None, rating=None, replied=None, q=None,
                    limit=50, offset=0, sort="new", days=None, kind=None,
-                   rating_max=None, source=None, count_only=False):
+                   rating_max=None, source=None, count_only=False,
+                   pending_only=False, has_draft=None):
     """수집된 **모든** 리뷰를 조건으로 찾는다 — 전체 리뷰 관리 화면용.
 
     Args:
@@ -612,6 +613,15 @@ def search_reviews(platform=None, rating=None, replied=None, q=None,
         elif replied is False:
             s = (s.neq("reply_status", "posted")
                   .not_.is_("platform_replied", "true"))
+        # '지금 답글 달 것'(답글 화면)의 조건 — get_pending_reviews 와 같은 기준.
+        # 필터를 화면마다 따로 만들지 않고 한 곳에서 쓰기 위해 여기에 뒀다.
+        if pending_only:
+            s = (s.in_("reply_status", ["none", "drafted"])
+                  .or_("platform_replied.is.null,platform_replied.eq.false"))
+        if has_draft is True:
+            s = s.not_.is_("reply_draft", "null")
+        elif has_draft is False:
+            s = s.is_("reply_draft", "null")
         return s
 
     try:
