@@ -75,6 +75,20 @@ display:flex;justify-content:space-between;gap:8px}
 .acnone{padding:10px 11px;font-size:12px;color:var(--sub)}
 .ewrap{display:inline-flex;gap:4px;align-items:center}
 .supsel{font-size:12px;padding:3px 5px;border:1px solid var(--brown);border-radius:5px;background:var(--card);color:var(--ink)}
+/* 분류별 펼쳐 보기 */
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:2px 0}
+.seg button{border:none;background:var(--card);color:var(--sub);font-size:12.5px;
+padding:6px 12px;cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:none}
+.seg button.on{background:var(--brown);color:#fff;font-weight:700}
+tr.xmenu td{background:var(--brownbg);font-weight:700}
+tr.xline td{color:var(--sub);font-size:12px}
+tr.xline td.l{padding-left:22px}
+tr.xsum td{font-weight:700;border-top:2px solid var(--brown)}
+.prepill{display:inline-block;font-size:9.5px;padding:1px 5px;border-radius:4px;
+margin-left:5px;background:var(--brownbg);color:var(--brown);vertical-align:1px}
+.packill{display:inline-block;font-size:9.5px;padding:1px 5px;border-radius:4px;
+margin-left:5px;background:var(--line);color:var(--sub);vertical-align:1px}
 .okbtn{border:none;background:var(--green);color:#fff;border-radius:5px;
 padding:3px 8px;font-size:12px;cursor:pointer;line-height:1.4}
 /* 엑셀식 일괄편집 */
@@ -123,6 +137,7 @@ let EDITS={};            // {자재id: {필드: 값}}  — 저장 전 변경분
 let SEL=new Set();       // 일괄 적용용 선택 줄
 let RBULK=false, REDITS={};   // 레시피 탭 일괄편집
 let PICK=false, PQ='', PSEL=new Set();   // 재료 여러 개 고르기
+let RVIEW='list';        // 레시피 탭 보기: list=메뉴목록 / menu=메뉴별 펼침 / ing=자재별
 let DRAFT=[];                            // 아직 저장 안 한 새 재료 [{ingredient_id, qty}]
 const won=n=>n==null?"–":Math.round(n).toLocaleString("ko-KR");
 const w1=n=>n==null?"–":(Math.round(n*100)/100).toLocaleString("ko-KR");
@@ -793,6 +808,84 @@ function costSplit(sku){
   return {food, pack, total:food+pack};
 }
 
+// ── 분류별 펼쳐 보기 (보기 전용) ─────────────────────────────
+// 지금까지는 메뉴를 하나씩 눌러야 레시피가 보였다. 분류 단위로 원가를
+// 훑을 때 스무 번을 눌러야 해서, 같은 범위를 두 축으로 펼쳐 놓는다.
+// 고치는 것은 여전히 메뉴별 레시피 화면에서 한다 — 여기서는 읽기만.
+
+// 한 메뉴의 레시피 줄을 {자재, 사용량, 단가, 줄원가} 로 편다.
+function recipeLines(sku){
+  const out=[];
+  for(const ln of DATA.recipes.filter(r=>r.sku===sku)){
+    const ing=DATA.ingredients.find(i=>i.id===ln.ingredient_id);
+    if(!ing) continue;                       // 자재가 지워진 유령 줄은 건너뛴다
+    const uc=unitCost(ing);
+    out.push({ing, qty:+ln.qty||0, uc, cost:(+ln.qty||0)*uc, pack:isPack(ing)});
+  }
+  // 비싼 줄이 위로 — 원가를 흔드는 게 뭔지 먼저 보인다
+  return out.sort((a,b)=>b.cost-a.cost);
+}
+// 반제품인지 — 자재 이름이 '(반제품)' 으로 끝나거나 분류가 '반제품 재료'
+const isPrep=ing=>(ing.category==="반제품 재료")||/\(반제품\)/.test(ing.name||"");
+function ingTag(ing){
+  return isPrep(ing)?'<span class="prepill">반제품</span>'
+       : isPack(ing)?'<span class="packill">포장</span>' : "";
+}
+
+// A안 — 메뉴 축. 메뉴 한 줄 + 그 아래 자재 줄들.
+function recRowsByMenu(list){
+  let html="", food=0, pack=0, n=0;
+  for(const it of list){
+    const lines=recipeLines(it.sku);
+    const sp=costSplit(it.sku);
+    const base=it.store_price??it.delivery_price;
+    const rate=(lines.length&&base)?sp.food/base:null;
+    const tg=target(it.category);
+    food+=sp.food; pack+=sp.pack; n++;
+    html+=`<tr class="xmenu" onclick="SKU='${it.sku}';render()" style="cursor:pointer">
+      <td class="l">${it.name}${lines.length?"":
+        '<span class="pill" style="background:var(--amberbg);color:var(--amber)">레시피 없음</span>'}</td>
+      <td></td><td></td>
+      <td>${lines.length?won(sp.food):"–"}</td>
+      <td>${won(base)}</td>
+      <td style="${rate!=null&&rate>tg?"color:var(--red);font-weight:700":""}">${
+        rate==null?"–":(rate*100).toFixed(1)+"%"}</td></tr>`;
+    for(const l of lines){
+      html+=`<tr class="xline"><td class="l">${l.ing.name}${ingTag(l.ing)}</td>
+        <td>${w1(l.qty)}${l.ing.unit||""}</td><td>${w1(l.uc)}</td>
+        <td>${won(l.cost)}</td><td></td><td></td></tr>`;
+    }
+  }
+  const kinds=new Set();
+  for(const it of list) for(const l of recipeLines(it.sku)) kinds.add(l.ing.id);
+  html+=`<tr class="xsum"><td class="l">메뉴 ${n}개 · 자재 ${kinds.size}종</td>
+    <td></td><td></td><td>${won(food)}${pack?`<br><span class="sub">+포장 ${won(pack)}</span>`:""}</td>
+    <td></td><td></td></tr>`;
+  return html;
+}
+
+// B안 — 자재 축. 같은 범위를 자재로 모아 총 사용량·합계를 낸다.
+function recRowsByIng(list){
+  const agg=new Map();
+  for(const it of list) for(const l of recipeLines(it.sku)){
+    // 단위가 다른 같은 이름은 합치지 않는다 — g 와 ea 를 더하면 뜻이 없다
+    const k=l.ing.id;
+    const a=agg.get(k)||{ing:l.ing, qty:0, cost:0, menus:new Set()};
+    a.qty+=l.qty; a.cost+=l.cost; a.menus.add(it.sku); agg.set(k,a);
+  }
+  const rows=[...agg.values()].sort((a,b)=>b.cost-a.cost);
+  let html="", tot=0;
+  for(const a of rows){
+    tot+=a.cost;
+    html+=`<tr><td class="l">${a.ing.name}${ingTag(a.ing)}</td>
+      <td>${w1(a.qty)}${a.ing.unit||""}</td><td>${w1(unitCost(a.ing))}</td>
+      <td>${won(a.cost)}</td><td>${a.menus.size}개</td><td></td></tr>`;
+  }
+  html+=`<tr class="xsum"><td class="l">자재 ${rows.length}종 합계</td>
+    <td></td><td></td><td>${won(tot)}</td><td>메뉴 ${list.length}개</td><td></td></tr>`;
+  return html;
+}
+
 // 메뉴 목록 — 검색·분류·'레시피 없음' 필터. 탭하면 편집 화면으로.
 function renderRecList(){
   const q=MQ.trim();
@@ -838,6 +931,11 @@ function renderRecList(){
       oninput="MQ=this.value;renderRecList()">
       <button onclick="clearSearch('recSearch',v=>{MQ=v;renderRecList()})">✕ 지우기</button></div>
     <div class="fchips" id="recChips"></div>
+    <div class="seg" id="recSeg">
+      <button onclick="RVIEW='list';renderRecList()">목록</button>
+      <button onclick="RVIEW='menu';renderRecList()">📖 메뉴별</button>
+      <button onclick="RVIEW='ing';renderRecList()">🧺 자재별</button>
+    </div>
     <div class="cnt" id="recCnt"></div>
     <div class="wrap"><table id="recTable"></table></div>
     <p class="note">· <b>레시피 없음</b> 칩을 누르면 원가가 아직 없는 메뉴만 모아 봅니다 — 여기부터 채우면 됩니다.<br>
@@ -847,11 +945,35 @@ function renderRecList(){
   }
   document.getElementById("recChips").innerHTML=chipDefs.map(([c,n])=>
     `<span class="fchip ${c===MCAT?"on":""}" onclick="MCAT='${c}';renderRecList()">${c}<small>${n}</small></span>`).join("");
-  document.getElementById("recCnt").textContent=
-    `${list.length}개 표시 · 탭하면 레시피 편집`+(q?` · 검색: "${q}"`:"");
-  document.getElementById("recTable").innerHTML=`
+  [...document.querySelectorAll("#recSeg button")].forEach((b,i)=>
+    b.classList.toggle("on", ["list","menu","ing"][i]===RVIEW));
+
+  const tbl=document.getElementById("recTable");
+  if(RVIEW==="list"){
+    document.getElementById("recCnt").textContent=
+      `${list.length}개 표시 · 탭하면 레시피 편집`+(q?` · 검색: "${q}"`:"");
+    tbl.innerHTML=`
       <tr><th class="l">메뉴</th><th>원가<br>(식자재+포장)</th><th>원가율<br>(식자재)</th><th>레시피</th><th></th></tr>
       ${rows||`<tr><td colspan="5" class="empty">해당 메뉴 없음</td></tr>`}`;
+    return;
+  }
+  // 펼쳐 보기는 레시피가 있는 메뉴만 — 없는 메뉴까지 늘어놓으면 표만 길어진다.
+  // 몇 개를 뺐는지는 아래 건수에 적어 둔다(빠뜨린 줄 모르면 안 되니까).
+  const withRec=list.filter(i=>lineCount(i.sku));
+  const skipped=list.length-withRec.length;
+  document.getElementById("recCnt").textContent=
+    (RVIEW==="menu"?"메뉴별로 레시피를 펼쳤습니다":"같은 범위를 자재 축으로 모았습니다")
+    +` · ${withRec.length}개 메뉴`
+    +(skipped?` · 레시피 없는 ${skipped}개는 제외`:"")+(q?` · 검색: "${q}"`:"");
+  if(!withRec.length){
+    tbl.innerHTML=`<tr><td class="empty">이 분류에는 레시피가 있는 메뉴가 없습니다.</td></tr>`;
+    return;
+  }
+  tbl.innerHTML = RVIEW==="menu"
+    ? `<tr><th class="l">메뉴 / 자재</th><th>사용량</th><th>단가</th><th>원가</th>
+         <th>매장가</th><th>원가율</th></tr>${recRowsByMenu(withRec)}`
+    : `<tr><th class="l">자재</th><th>총 사용량</th><th>단가</th><th>합계 원가</th>
+         <th>쓰는 메뉴</th><th></th></tr>${recRowsByIng(withRec)}`;
 }
 
 function renderRec(){
