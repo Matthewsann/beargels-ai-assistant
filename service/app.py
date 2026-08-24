@@ -1253,21 +1253,6 @@ def menu_ingredient_delete(path_key, ing_id):
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
-@app.route("/<path_key>/menu/ingredients/import_msfs", methods=["POST"])
-def menu_ingredients_import_msfs(path_key):
-    """엠즈푸드 발주품목(orderlink) → 자재 등록. 재실행해도 안전."""
-    check(path_key)
-    try:
-        import json as _json
-        spec = _json.loads((ROOT / "data" / "msfs_ingredients.json")
-                           .read_text(encoding="utf-8"))
-        return jsonify({"ok": True, **db.import_msfs(spec)})
-    except Exception as e:  # noqa: BLE001
-        db.log_error("service", f"엠즈푸드 자재 등록 실패: {e}", kind=type(e).__name__,
-                     path=request.path, detail=traceback.format_exc())
-        return jsonify({"ok": False, "error": str(e)[:200]}), 500
-
-
 @app.route("/<path_key>/menu/item/new", methods=["POST"])
 def menu_item_new(path_key):
     """새 메뉴 추가 — 이름·분류만 있으면 SKU 는 분류에서 자동으로 만든다."""
