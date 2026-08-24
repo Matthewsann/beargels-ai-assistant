@@ -333,10 +333,14 @@ z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
   <b>배달비·수수료는 여기 넣지 않습니다</b> — 배달비는 주문당 1회라 메뉴에 나누려면
   '주문이 얼마짜리인가'를 가정해야 하고, 그러면 12,500원 주문이면 28% · 17,500원 주문이면 20%로
   숫자가 춤춥니다. 배달비·수수료는 🧮 주문 손익에서 <b>주문 단위</b>로 봅니다.<br><br>
-  · 목표 원가율은 <b>🎯 도구에서 분류마다 매장·배달을 따로</b> 정합니다.
-  배달은 수수료가 붙어 매장보다 여유가 없습니다 — 정해 두지 않은 분류는 35%(실측
-  객단가로 역산하면 이 선에서 주문 수익률 30%가 나오는 값).<br><br>
-  · <b>추천가</b> = 재료원가 ÷ 목표 원가율, 100원 단위 올림.<br><br>
+  · 목표 원가율은 <b>🎯 도구에서 분류마다</b> 정합니다(매장·배달 공통, 기본 35%).
+  배달가가 매장가를 따라가므로 배달 원가율은 매장보다 늘 낮게 나옵니다 —
+  목표를 두 벌 둘 이유가 없습니다.<br><br>
+  · <b>추천가 매장</b> = 재료원가 ÷ 목표 원가율, 100원 단위 올림.<br>
+  · <b>추천가 배달</b> = <b>매장가 × 1.13</b>, 100원 단위 반올림. 배달앱 수수료가
+  매장보다 배민 +9.4%p · 쿠팡 +12.7%p 높아, 매장과 같은 마진을 남기려면 배민 +10.5% ·
+  쿠팡 +14.7%가 필요합니다. 배달가는 정본 하나뿐이라 그 사이인 13%로 잡습니다.
+  <b>배달비는 얹지 않습니다</b> — 주문당 정액이라 🧮 주문 손익에서 회수됩니다.<br><br>
   · <b>배달 손익분기</b> = 그 메뉴 수준의 <b>재료</b> 원가율로 주문이 채워질 때 배달비를
   감당하는 최소 주문금액(쿠팡 기준, 최소주문 <span id="noteMin">12,500</span>원).
   최소주문금액보다 낮으면 정상 주문은 흑자, 넘으면 <span class="over" style="padding:0 4px">빨강</span>.<br><br>
@@ -474,10 +478,12 @@ function chOverride(sku, channel){
 }
 function fee(ch){ return (DATA.settings.channel_fees||{})[ch] || {commission:0,payment:0,delivery_fee:0}; }
 function target(cat){ const t=DATA.settings.target_cost_rates||{}; return (t[cat] ?? t["기타"] ?? 35)/100; }
-// 배달 목표 원가율도 카테고리별로 둔다(사장님 2026-08-16). 안 정해 둔 분류는
-// 35% — 실측 객단가로 역산하면 이 선에서 주문 수익률 30%가 나온다(쿠팡 기준).
-function targetD(cat){ const t=DATA.settings.target_cost_rates_delivery||{};
-  return (t[cat] ?? t["기타"] ?? 35)/100; }
+
+// 배달가는 원가에서 따로 뽑지 않고 매장가에 수수료 차이만 얹는다(사장님 2026-08-24).
+// 배민 10.78% · 쿠팡 14.08% (중개+결제, 부가세 포함) vs 매장 1.43% — 매장과 같은
+// 마진을 남기려면 배민 +10.5% / 쿠팡 +14.7%. 배달가는 정본 하나라 그 사이인 13%.
+// 배달비(주문당 정액)는 여기 얹지 않는다 — 주문 단위(🧮)에서 회수된다.
+const DELIVERY_MARKUP = 0.13;
 function om(){ return DATA.settings.order_model || {min_order:12500, allocation:"order", aov:{}}; }
 
 // 수수료율(중개+결제, 부가세 포함) — 주문금액에 비례하므로 메뉴별로 나눠도 정확하다.
@@ -528,11 +534,17 @@ function costRate(it, ch){
   return (p && it.ingredient_cost != null) ? it.ingredient_cost / p : null;
 }
 
-// 원가 기준 추천 판매가 = 재료원가 ÷ 목표 원가율. 100원 단위로 올린다
-// (99원·50원 단위는 키오스크·배달앱에서 잔돈 인상만 준다).
+// 추천 판매가 — 100원 단위로 맞춘다(99원·50원 단위는 키오스크·배달앱에서
+// 잔돈 인상만 준다).
+//   매장: 재료원가 ÷ 목표 원가율, 올림
+//   배달: 매장가 × 1.13, 반올림 — 원가가 아니라 매장가를 따라간다
 function suggestPrice(it, ch){
+  if (!STORE_PRICED.has(ch)){
+    if (!it.store_price) return null;
+    return Math.round(it.store_price * (1 + DELIVERY_MARKUP) / 100) * 100;
+  }
   if (it.ingredient_cost == null) return null;
-  const tg = STORE_PRICED.has(ch) ? target(it.category) : targetD(it.category);
+  const tg = target(it.category);
   if (!tg) return null;
   return Math.ceil(it.ingredient_cost / tg / 100) * 100;
 }
@@ -552,7 +564,8 @@ function breakeven(it, ch){
 const probNocost = it => it.ingredient_cost == null;
 const probOver   = it => { const r = costRate(it,"store");
   const rd = costRate(it,"baemin");
-  return (r != null && r > target(it.category)) || (rd != null && rd > targetD(it.category)); };
+  const tg = target(it.category);   // 목표는 분류마다 하나 — 매장·배달 공통
+  return (r != null && r > tg) || (rd != null && rd > tg); };
 const probBe     = it => { const b = breakeven(it,"coupang");
   return b != null && b > (+om().min_order || 12500); };
 // 판매 상태 — 매장·배달 둘 다 꺼져 있으면 '숨김'(고객에게 안 보임).
@@ -867,7 +880,7 @@ function render(){
          <th data-sort="delivery_price">배달가${arr("delivery_price")}</th>
          <th data-sort="ingredient_cost">재료원가${arr("ingredient_cost")}</th>
          ${COLS?`<th title="재료원가 ÷ 목표원가율, 100원 올림">추천가<br>매장</th>
-                 <th title="재료원가 ÷ 목표원가율, 100원 올림">추천가<br>배달</th>`:""}
+                 <th title="매장가 × 1.13 (수수료 차이), 100원 반올림">추천가<br>배달</th>`:""}
          <th data-sort="rate" title="재료원가 ÷ 판매가 (매장/배달)">원가율${arr("rate")}</th>
          ${COLS?`<th title="이 원가율로 주문이 채워질 때 배달비를 감당하는 최소 주문금액 (쿠팡 기준)">배달<br>손익분기</th>`:""}
          <th>판매</th></tr>`;
@@ -888,9 +901,9 @@ function render(){
     if(it.category !== lastCat && !SORT){ lastCat = it.category;
       html += `<tr class="cat"><td colspan="${span}"><span class="catlab">
         ${SEL?`<input type="checkbox" class="catbox" onchange="selCat('${esc(it.category).replace(/'/g,"\\'")}',this.checked)">`:""}${esc(it.category)}
-        <small style="font-weight:400">목표 매장 ${(target(it.category)*100).toFixed(0)}% · 배달 ${(targetD(it.category)*100).toFixed(0)}%</small></span></td></tr>`; }
+        <small style="font-weight:400">목표 원가율 ${(target(it.category)*100).toFixed(0)}%</small></span></td></tr>`; }
     const rs = costRate(it,"store"), rd = costRate(it,"baemin");
-    const tg = target(it.category), tgd = targetD(it.category);
+    const tg = target(it.category);
 
     if (BULK){
       const e = EDITS[it.sku] || {};
@@ -945,7 +958,7 @@ function render(){
         const low = sp!=null && cur!=null && cur < sp;
         return `<td class="${low?"warn":""}">${won(sp)}</td>`;})():""}
       <td class="rates"><span class="rt ${rs!=null&&rs>tg?"bad":""}"><small>매장</small>${pct(rs)}</span>
-        <span class="rt ${rd!=null&&rd>tgd?"bad":""}"><small>배달</small>${pct(rd)}</span></td>
+        <span class="rt ${rd!=null&&rd>tg?"bad":""}"><small>배달</small>${pct(rd)}</span></td>
       ${COLS?(()=>{const b=breakeven(it,"coupang"), lim=+om().min_order||12500;
         if(b==null) return `<td>–</td>`;
         if(b===Infinity) return `<td class="over">불가</td>`;
@@ -1204,7 +1217,7 @@ function chBox(it, ch){
     <button id="o-sv-${ch}-${sku}" onclick="saveCh('${sku}','${ch}')">저장</button>
     <div class="calc">적용가 <b>${won(p)}</b> · 수수료 ${f.commission}%+${f.payment}% (부가세 포함 ${(feeRate(ch)*100).toFixed(1)}%)<br>
     기여마진 (<b class="${m!=null&&m<0?"neg":""}">${won(m)}</b>)${(()=>{
-      const r=costRate(it,ch), tg=STORE_PRICED.has(ch)?target(it.category):targetD(it.category);
+      const r=costRate(it,ch), tg=target(it.category);
       return r==null ? "" : ` · 원가율 (<b class="${r>tg?"neg":""}">${pct(r)}</b>)`;})()}
     ${(()=>{const b=breakeven(it,ch), lim=+om().min_order||12500;
       if(b==null) return "";
@@ -1559,31 +1572,25 @@ async function saveFees(){
   render();
 }
 
+// 목표 원가율은 분류마다 하나다 — 배달은 따로 두지 않는다(사장님 2026-08-24).
+// 배달가가 매장가 × 1.13 이라 배달 원가율은 매장보다 늘 낮게 나온다. 같은 목표를
+// 양쪽에 대면 충분하고, 두 벌을 관리하면 어느 쪽이 기준인지만 흐려진다.
 function openTargets(){
   const t = DATA.settings.target_cost_rates || {};
-  const d = DATA.settings.target_cost_rates_delivery || {};
   const cats = [...new Set(DATA.items.map(i=>i.category))];
   document.getElementById("targetRows").innerHTML =
-    `<tr><th style="text-align:left">분류</th><th>매장</th><th>배달</th></tr>` +
+    `<tr><th style="text-align:left">분류</th><th>목표 원가율</th></tr>` +
     cats.map((c,i)=>
     `<tr><td style="text-align:left">${esc(c)}</td>
-       <td><input id="t-cat-${i}" value="${t[c]??35}"> %</td>
-       <td><input id="td-cat-${i}" value="${d[c]??35}"> %</td></tr>`).join("");
+       <td><input id="t-cat-${i}" value="${t[c]??35}"> %</td></tr>`).join("");
   dlgTargets.showModal();
 }
 async function saveTargets(){
   const t = DATA.settings.target_cost_rates || {};
-  const d = DATA.settings.target_cost_rates_delivery || {};
   const cats = [...new Set(DATA.items.map(i=>i.category))];
-  cats.forEach((c,i)=>{
-    t[c] = +document.getElementById(`t-cat-${i}`).value || 35;
-    d[c] = +document.getElementById(`td-cat-${i}`).value || 35;
-  });
+  cats.forEach((c,i)=>{ t[c] = +document.getElementById(`t-cat-${i}`).value || 35; });
   DATA.settings.target_cost_rates = t;
-  DATA.settings.target_cost_rates_delivery = d;
-  const ok1 = await api("/settings/target_cost_rates", t);
-  const ok2 = await api("/settings/target_cost_rates_delivery", d);
-  if (ok1 && ok2){ toast("저장됨 ✓"); dlgTargets.close(); }
+  if (await api("/settings/target_cost_rates", t)){ toast("저장됨 ✓"); dlgTargets.close(); }
   render();
 }
 

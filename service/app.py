@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import sys
 import time
 import traceback
@@ -398,13 +399,45 @@ def _order_info(r: dict) -> dict:
     order_no = r.get("order_no") or raw.get("abbrOrderId") or ""
     ordered = (r.get("ordered_at") or raw.get("orderedAt") or "")
     count = r.get("order_count") or raw.get("orderCount")
+    if not isinstance(count, int):
+        # 배민 raw 는 JSON 이 아니라 카드 텍스트다 — '3회 주문 고객'에서 뽑는다.
+        # 이걸 안 해서 배민 리뷰는 주문 횟수가 아예 안 보였다(2026-08-24).
+        m = re.search(r"(\d+)\s*회\s*주문", r.get("raw") or "")
+        count = int(m.group(1)) if m else None
     delivery = r.get("delivery_type") or raw.get("orderType") or ""
+    count = count if isinstance(count, int) and count > 0 else None
     return {
         "order_no": order_no,
         "ordered_at": str(ordered).replace("T", " ")[:16],
-        "order_count": count if isinstance(count, int) and count > 0 else None,
+        "order_count": count,
+        "visit": _visit_label(count),
+        "visit_class": _visit_class(count),
         "delivery": {"REGULAR": "배달", "TAKE_OUT": "포장"}.get(delivery, delivery),
     }
+
+
+def _visit_label(n):
+    """'몇 번째 주문 고객'인지 한눈에 — 답글 말투가 달라지는 기준이다.
+
+    38번째 주문한 분에게 처음 오신 것처럼 답하면 안 되고, 첫 주문인 분께
+    '또 찾아주셔서'라고 하면 더 이상하다(사장님 강조).
+    """
+    if not n:
+        return ""
+    if n == 1:
+        return "🆕 첫 주문"
+    if n < 5:
+        return f"🔁 {n}번째 주문"
+    if n < 10:
+        return f"💛 단골 · {n}번째"
+    return f"👑 VIP · {n}번째"
+
+
+def _visit_class(n):
+    if not n:
+        return ""
+    return "new" if n == 1 else ("vip" if n >= 10 else
+                                 ("reg" if n >= 5 else "again"))
 
 
 # ---------------------------------------------------------------------------
@@ -1577,8 +1610,7 @@ def menu_channel_save(path_key, sku, channel):
 @app.route("/<path_key>/menu/settings/<key>", methods=["POST"])
 def menu_settings_save(path_key, key):
     check(path_key)
-    if key not in ("channel_fees", "target_cost_rates",
-                   "target_cost_rates_delivery", "order_model", "task_done"):
+    if key not in ("channel_fees", "target_cost_rates", "order_model", "task_done"):
         abort(400)
     try:
         db.menu_set_setting(key, request.get_json(force=True))

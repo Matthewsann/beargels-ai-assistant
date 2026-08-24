@@ -78,6 +78,15 @@
                color:var(--muted); background:var(--card); border:1px solid var(--line); }
   .filters a.on { background:var(--accent-bg); color:var(--accent);
                   border-color:var(--accent-bg); font-weight:600; }
+
+  /* 몇 번째 주문 고객인지 — 단골에게 '처음 오셨네요'라고 하면 안 된다 */
+  .pill.visit { font-size:11px; padding:2px 8px; border-radius:20px;
+                border:1px solid var(--line); background:var(--card);
+                color:var(--muted); white-space:nowrap; }
+  .pill.visit.new  { color:#5b7f60; border-color:#cfe0d1; background:#f2f8f3; }
+  .pill.visit.again{ color:#7a6a2f; border-color:#e6dcbb; background:#fbf7ea; }
+  .pill.visit.reg  { color:#8a5a12; border-color:#eed9b8; background:#fdf4e7; }
+  .pill.visit.vip  { color:#7b3f8f; border-color:#e2cdea; background:#f9f2fb; }
 </style>
 </head>
 <body>
@@ -176,7 +185,7 @@
       <div class="who">
         <div class="whoname">
           {{ r.author }}
-          {% if r.order_count %}<span class="pill">{{ r.order_count }}회 주문</span>{% endif %}
+          {% if r.visit %}<span class="pill visit {{ r.visit_class }}">{{ r.visit }}</span>{% endif %}
         </div>
         <div class="stars">{{ '★' * (r.rating or 0) }}<span class="dim">{{ '☆' * (5 - (r.rating or 0)) }}</span></div>
         <div class="dim">{{ r.date }}</div>
