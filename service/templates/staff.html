@@ -340,11 +340,30 @@
               onclick="postSelected()" disabled>✅ 선택 등록</button>
     </div>
   {% else %}
+    {# 필터를 걸어 0건인 것과 진짜로 다 끝난 것은 완전히 다른 상황이다.
+       똑같이 '다 처리했어요'라고 하면 남은 일을 못 본 채 넘어간다. #}
+    {% if days or kind or rating or rating_max or q or plat %}
+    <div class="empty">
+      🔍 지금 조건에 맞는 답글이 없어요.<br>
+      <span class="lbl">걸어 둔 조건: 
+        {%- if plat %} {{ '배민' if plat == 'baemin' else '쿠팡' }}{% endif %}
+        {%- if days %} 최근 {{ days }}일{% endif %}
+        {%- if rating %} ★{{ rating }}{% endif %}
+        {%- if rating_max %} ★{{ rating_max }} 이하{% endif %}
+        {%- if kind %} 유형 {{ kind }}{% endif %}
+        {%- if q %} '{{ q }}'{% endif %}
+      </span><br>
+      <a class="btn" style="display:inline-block;margin-top:10px;"
+         href="{{ url_with(days=None, kind=None, rating=None, rating_max=None, q=None, plat=None) }}">
+        ↺ 조건 해제하고 전체 보기</a>
+    </div>
+    {% else %}
     <div class="empty">
       🎉 답글을 기다리는 리뷰가 없어요.<br>
       새 리뷰는 낮 시간엔 2시간마다 자동으로 가져와요.<br>
       지금 당장 확인하려면 위 <b>리뷰수집</b>을 눌러주세요.
     </div>
+    {% endif %}
   {% endif %}
 
   {% if waiting %}
