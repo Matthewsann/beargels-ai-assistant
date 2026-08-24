@@ -216,3 +216,33 @@ def test_fact_card_menu_names_are_clean():
         assert not re.search(r"\[[^\]]{1,12}\]", n), f"관리용 태그가 남음: {n}"
         assert "대박맛집" not in n, f"배민 키워드칩이 붙음: {n}"
         assert "반제품" not in n, f"손님이 주문할 수 없는 항목: {n}"
+
+
+# --- 분량 기준이 실제 사장님 답글에서 나왔는지 (2026-08-24) -----------------
+# 지침에 "짧고 산뜻하게 감사만"이라고 적혀 있었는데, 직원 최종본은 그 유형이
+# 오히려 가장 길었다(별점만 리뷰 249자·5문장). 지침과 실제가 반대라
+# AI 초안을 매번 다시 쓰게 만들었다 — 수정률이 안 떨어지던 큰 원인.
+
+def test_length_targets_exist_for_every_kind():
+    from assistant.beargels import TARGET_BY_KIND, SENTENCES_BY_KIND
+    for kind in ("rating_only", "praise_detail", "neutral", "complaint"):
+        assert kind in TARGET_BY_KIND, f"{kind} 목표 길이 없음"
+        assert kind in SENTENCES_BY_KIND, f"{kind} 문장 수 없음"
+        lo, hi = SENTENCES_BY_KIND[kind]
+        assert 2 <= lo < hi <= 8
+
+
+def test_rating_only_guide_is_not_curt():
+    """별점만 리뷰에 '한 줄 감사'로 끝내라고 시키면 안 된다(실측과 반대)."""
+    from assistant.beargels import _TYPE_GUIDE
+    g = _TYPE_GUIDE["rating_only"]
+    assert "짧고 산뜻" not in g
+    assert "사진" in g            # 없는 사진을 언급하지 말라는 경고는 유지
+
+
+def test_regular_customer_count_is_not_fed_to_model():
+    """5회 이상 단골은 숫자를 세지 않는다 — 직원 답글의 3.7%만 숫자를 쓴다."""
+    import inspect
+    from assistant import beargels
+    src = inspect.getsource(beargels.generate_review_reply)
+    assert "숫자는 세지 말 것" in src
