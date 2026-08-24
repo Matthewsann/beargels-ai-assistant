@@ -73,6 +73,11 @@ def main() -> int:
     if apply and touched:
         updated = db.recompute_costs(sorted(touched))
         print(f"원가 재계산: {len(updated)}개 메뉴 (수기 입력 원가는 보존)")
+        # 반제품 원가 → 짝인 자재 pack_cost → 그 자재를 쓰는 메뉴까지.
+        # 이걸 빠뜨리면 반제품을 쓰는 메뉴가 원가 0원으로 남는다.
+        synced, more = db.prep_sync()
+        if synced:
+            print(f"반제품 자재값 동기화: {synced}개 · 뒤이어 재계산 {len(more)}개 메뉴")
     if not apply:
         print("\n실제 주입: python scripts/seed_ingredients.py --apply")
     else:

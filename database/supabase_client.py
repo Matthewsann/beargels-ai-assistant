@@ -1811,8 +1811,13 @@ def seed_ingredients_bulk(spec):
             lines, on_conflict="sku,ingredient_id").execute()
     touched = sorted({ln["sku"] for ln in lines})
     updated = recompute_costs(touched) if touched else {}
+    # 반제품 레시피가 이 시드로 처음 채워지면 그 반제품의 원가가 잡힌다.
+    # 그 값을 짝인 자재로 흘려보내지 않으면, 반제품을 쓰는 메뉴는 자재 단가가
+    # 0원이라 원가 0원으로 남는다(실사고: 요거트 크림치즈 2026-08-24).
+    synced, more = prep_sync()
+    updated = {**updated, **more}
     return {"ingredients_added": len(new_rows), "lines_added": len(lines),
-            "recomputed": len(updated)}
+            "recomputed": len(updated), "preps_synced": synced}
 
 
 def skus_using_ingredient(ing_id):
