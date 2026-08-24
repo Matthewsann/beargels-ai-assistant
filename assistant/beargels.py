@@ -477,6 +477,69 @@ def complaint_reason(review):
     return "기타 불만"
 
 
+# 같은 '불만'이라도 답글이 완전히 다르다 — 메뉴가 빠진 것은 확인·재발방지,
+# 눅눅해진 것은 포장 개선, 배달 지연은 우리가 어디까지 책임지는지가 다르다.
+# 예시도 사유별로 골라야 맞는 게 나온다(사장님 지시 2026-08-23).
+_SUBKIND_OF_REASON = {
+    "이물질": "foreign",
+    "누락/오배송": "missing",
+    "조리": "cooking",
+    "상태/포장": "packaging",
+    "배달": "delivery",
+}
+
+# 질문도 무엇을 묻는지에 따라 답이 다르다.
+_QUESTION_SUBKINDS = (
+    ("menu", ("메뉴", "베이글", "크림치즈", "샌드위치", "음료", "커피",
+              "글루텐", "알레르기", "칼로리", "당")),
+    ("order", ("포장", "픽업", "주문", "배달", "예약", "단체", "수량")),
+    ("hours", ("영업", "몇시", "오픈", "마감", "휴무", "주차", "위치")),
+)
+
+
+def subkind_of(review, kind=None):
+    """유형을 한 단계 더 나눈다(없으면 None).
+
+    'complaint' → complaint:missing / packaging / delivery / cooking …
+    'question'  → question:menu / order / hours
+    나머지 유형은 세분화하지 않는다 — 나눠 봐야 답글이 달라지지 않는다.
+    """
+    kind = kind or classify_review(review)
+    if kind in ("complaint", "escalate"):
+        sub = _SUBKIND_OF_REASON.get(complaint_reason(review))
+        return f"{kind}:{sub}" if sub else None
+    if kind == "question":
+        t = review.get("content") or ""
+        for name, kws in _QUESTION_SUBKINDS:
+            if any(k in t for k in kws):
+                return f"question:{name}"
+    return None
+
+
+# 세부 유형별 추가 지침 — 부모 유형 지침 뒤에 덧붙는다.
+_SUBKIND_GUIDE = {
+    "complaint:missing": ("메뉴 누락은 우리 실수다. 변명하지 말고 사과한 뒤, "
+                          "'포장 전 주문서 대조 확인'처럼 **무엇을 바꾸겠다는지** "
+                          "구체적으로 적는다. 다시 보내드린다는 말은 하지 않는다."),
+    "complaint:packaging": ("식은·눅눅·쏟아짐은 포장·보온 문제다. 포장 방식(용기·"
+                           "밀봉·분리 포장)을 어떻게 점검하겠다는지 적는다."),
+    "complaint:delivery": ("배달 지연은 배달 기사·플랫폼 배차 영향이 크다. "
+                           "'늦어 불편하셨을 것'에 먼저 사과하되, 우리가 할 수 있는 "
+                           "부분(조리 시점 조절·픽업 시간 관리)만 약속한다. "
+                           "배달사 탓으로 돌리는 말은 쓰지 않는다."),
+    "complaint:cooking": ("맛·익힘·간 문제는 조리 기준 문제다. 굽기·재료 상태를 "
+                          "어떻게 점검하겠다는지 적는다. 취향 탓으로 돌리지 않는다."),
+    "complaint:foreign": ("이물질은 가장 무거운 사안이다. 사과와 즉시 점검만 "
+                          "말하고, 원인을 단정하거나 가볍게 넘기지 않는다."),
+    "question:menu": ("메뉴 질문이다. **아는 사실만** 답한다. 확실하지 않으면 "
+                      "'매장으로 문의 주시면 정확히 안내드릴게요'로 넘긴다 — "
+                      "지어내면 손님이 헛걸음한다."),
+    "question:order": "주문·포장 관련 질문이다. 가능한 것만 분명히 답한다.",
+    "question:hours": ("영업시간·위치 질문이다. 확실하지 않은 시간·주소는 "
+                       "말하지 말고 매장 문의로 안내한다."),
+}
+
+
 def is_serious_review(review):
     """심각(불만) 리뷰인지 판별한다: 컴플레인/에스컬레이션 또는 별점 ≤3."""
     if classify_review(review) in ("complaint", "escalate"):
@@ -640,9 +703,32 @@ def pick_examples(review, kind, k=4, bank=None):
     return shuffled[:k]
 
 
+def _guide_for(review, kind):
+    """유형 지침 + (있으면) 세부 유형 지침을 붙여 준다."""
+    guide = _TYPE_GUIDE.get(kind, "")
+    extra = _SUBKIND_GUIDE.get(subkind_of(review, kind) or "", "")
+    return (guide + " " + extra).strip()
+
+
+def _bank_for(review, kind):
+    """예시 창고를 고른다 — 세부 유형이 있으면 그걸 먼저, 모자라면 부모 유형.
+
+    '누락' 불만에 '배달 지연' 예시를 주면 엉뚱한 답글이 나온다. 사유가 같은
+    예시부터 쓰고, 그것만으로 모자랄 때 같은 유형 전체에서 채운다.
+    """
+    banks = _example_bank()
+    sub = subkind_of(review, kind)
+    out = list(banks.get(sub) or []) if sub else []
+    seen = {ex.get("reply") for ex in out}
+    for ex in (banks.get(kind) or []):
+        if ex.get("reply") not in seen:
+            out.append(ex)
+    return out
+
+
 def _examples_block(review, kind, k=4):
     """프롬프트에 넣을 예시 블록 문자열(없으면 빈 문자열)."""
-    picked = pick_examples(review, kind, k)
+    picked = pick_examples(review, kind, k, bank=_bank_for(review, kind))
     if not picked:
         return ""
     lines = ["[사장님이 실제로 쓴 답글 — 이 말투·길이·구성을 그대로 따라 쓴다]"]
@@ -833,7 +919,7 @@ def generate_review_reply(review):
             f"[{cfg['label']}] {visit} '{author}'가 {menus} 주문 후 "
             f"별점 {rating}점으로 남긴 리뷰:\n"
             f"\"{content or ('(사진만, 텍스트 없음)' if typ == 'photo_only' else '(내용 없이 별점만 남김)')}\"\n\n"
-            f"[이 리뷰 유형 대응 지침] {_TYPE_GUIDE.get(typ, '')}\n"
+            f"[이 리뷰 유형 대응 지침] {_guide_for(review, typ)}\n"
             f"위 지침대로 답글을 써줘. 글자수를 넉넉히 활용해 {target}자 내외로 "
             f"정성껏 길게(최대 {max_len}자 초과 금지). 단 억지로 늘리거나 같은 말을 "
             f"반복하지 말고, 주문 메뉴·경험을 구체적으로 짚어 진짜 내용으로 "

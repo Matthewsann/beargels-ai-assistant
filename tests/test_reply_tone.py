@@ -188,3 +188,31 @@ def test_no_examples_is_not_fatal():
     bg._EXAMPLES_CACHE = {}
     assert bg._examples_block({"menus": []}, "rating_only") == ""
     bg._EXAMPLES_CACHE = None
+
+
+# --- 사실 카드(프롬프트에 들어가는 '사실')가 오염되지 않았는지 ------------
+# 틀린 사실 하나가 그대로 손님에게 나간다. 2026-08-23 점검에서 관리용 태그가
+# 붙은 메뉴명·사라진 제조 사실·주문 불가한 반제품이 발견됐다.
+
+def test_fact_card_keeps_manufacturing_truth():
+    import pathlib
+    card = (pathlib.Path(__file__).resolve().parent.parent
+            / "reference" / "reply_context.md").read_text(encoding="utf-8")
+    assert "본사 새벽 냉동" in card      # 베이글은 매장에서 굽지 않는다
+    assert "그릴 토스팅" in card
+
+
+def test_fact_card_menu_names_are_clean():
+    import pathlib
+    import re
+    card = (pathlib.Path(__file__).resolve().parent.parent
+            / "reference" / "reply_context.md").read_text(encoding="utf-8")
+    section = card.split("## 판매 메뉴")
+    assert len(section) > 1, "판매 메뉴 절이 있어야 한다"
+    names = [l[2:].strip() for l in section[1].split("##")[0].split("\n")
+             if l.startswith("- ")]
+    assert names, "메뉴가 비면 AI 가 메뉴명을 지어낸다"
+    for n in names:
+        assert not re.search(r"\[[^\]]{1,12}\]", n), f"관리용 태그가 남음: {n}"
+        assert "대박맛집" not in n, f"배민 키워드칩이 붙음: {n}"
+        assert "반제품" not in n, f"손님이 주문할 수 없는 항목: {n}"

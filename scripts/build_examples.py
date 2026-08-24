@@ -22,7 +22,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from assistant.beargels import (  # noqa: E402
-    _REPLY_BANNED, classify_review, order_count_of,
+    _REPLY_BANNED, classify_review, order_count_of, subkind_of,
 )
 from database import supabase_client as db  # noqa: E402
 
@@ -111,16 +111,20 @@ def main() -> int:
                     "reply": reply,
                 })
             continue
-        bank = banks.setdefault(kind, [])
-        if len(bank) >= PER_KIND:
-            continue
-        bank.append({
-            "rating": r.get("rating"),
-            "content": (r.get("content") or "").strip()[:120],
-            "menus": (r.get("menus") or [])[:3],
-            "order_count": order_count_of(r),
-            "reply": reply,
-        })
+        # 부모 유형 창고와 세부 유형 창고에 모두 넣는다 — 세부 쪽이 비면
+        # 부모 창고에서 채우므로 중복 보관이 낭비가 아니다.
+        sub = subkind_of(r, kind)
+        for key in ([kind] + ([sub] if sub else [])):
+            bank = banks.setdefault(key, [])
+            if len(bank) >= PER_KIND:
+                continue
+            bank.append({
+                "rating": r.get("rating"),
+                "content": (r.get("content") or "").strip()[:120],
+                "menus": (r.get("menus") or [])[:3],
+                "order_count": order_count_of(r),
+                "reply": reply,
+            })
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(banks, ensure_ascii=False, indent=1), encoding="utf-8")

@@ -170,8 +170,19 @@ _CONTEXT_HEADER = """# 베어글스 답글 백데이터 (사실·맥락)
 - 취급: 베이글, 베이글 샌드위치, 치아바타 샌드위치, 샐러드, 디저트(테디 케이크
   등), 음료. 세트 구성 다양.
 
-## 실제 메뉴명 (리뷰/주문에서 확인된 것 — 답글에 언급 시 이 표기 사용)
+## 판매 메뉴 (정본 — 답글엔 이 표기를 쓰고, 없는 메뉴는 지어내지 않는다)
 {menus}
+
+## 🔴 제조 사실 (사장님 확정 2026-08-16 — 답글에서 절대 어기지 말 것)
+- 베이글은 **본사 새벽 냉동 배송**. 매장에서 반죽·베이킹 하지 않는다.
+  매장 조리는 **그릴 토스팅**이다.
+- 금지: "직접 반죽했어요", "수제", "매장에서 구웠어요", "갓 구운",
+  "새벽부터 구웠어요" — 사실이 아니다.
+- 허용: "맛있게 구워서(=토스팅해서) 보내드릴게요", "바삭하게 구워드릴게요".
+  토스팅을 가리키는 '굽다'는 사실이라 괜찮다. 반죽·제빵을 암시하는 문장만 금지.
+- ⚠️ 이 블록은 파일을 다시 만들 때도 남아야 한다(생성기 헤더에 박아 둠).
+  2026-08-23 점검에서, 손으로 적어 둔 이 내용이 재생성 때 통째로 날아가
+  있는 것을 발견했다.
 
 ## 알아둘 것
 - 러스크를 서비스(무료)로 챙겨드리는 경우가 있음(리뷰에 '서비스 러스크' 언급).
@@ -183,14 +194,46 @@ _CONTEXT_HEADER = """# 베어글스 답글 백데이터 (사실·맥락)
 """
 
 
+def _menu_lines_from_master():
+    """메뉴 목록을 **정본(menu_items)** 에서 만든다.
+
+    예전엔 리뷰 원본에 찍힌 주문 메뉴명을 세어 상위 40개를 넣었는데, 그 이름이
+    오염돼 있었다 — 관리용 태그(SET/Original), 배민 키워드칩이 붙은
+    '플레인 베이글 대박맛집입니다', 깨진 이름, 같은 메뉴의 표기 3종 중복.
+    그게 그대로 답글에 나가던 원인이다(2026-08-23 점검).
+    """
+    from assistant.beargels import _clean_menu
+    from database import supabase_client as db
+    try:
+        rows = db.menu_all()
+    except Exception:  # noqa: BLE001 — DB 를 못 봐도 파일은 만들어야 한다
+        logger.warning("정본 메뉴를 못 읽어 옛 방식으로 넘어갑니다")
+        return None
+    seen, out = set(), []
+    for r in rows:
+        # 반제품(매장 재료)은 손님이 주문하는 메뉴가 아니다 — 답글에 나오면 안 된다.
+        if (r.get("menu_type") or "") == "반제품":
+            continue
+        name = _clean_menu(r.get("name"))
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        out.append("- " + name)
+    return chr(10).join(out) or None
+
+
 def _write_context(data):
-    """생성기가 참고할 사실/맥락(reply_context.md)을 코퍼스에서 뽑아 저장."""
+    """생성기가 참고할 사실/맥락(reply_context.md)을 저장한다."""
     from collections import Counter
-    mc = Counter()
-    for d in data:
-        for m in (d.get("menus") or []):
-            mc[m] += 1
-    menu_lines = "\n".join(f"- {m}" for m, _ in mc.most_common(40)) or "- (수집된 메뉴 없음)"
+    menu_lines = _menu_lines_from_master()
+    if menu_lines is None:                  # 정본을 못 읽을 때만 옛 방식
+        mc = Counter()
+        for d in data:
+            for m in (d.get("menus") or []):
+                mc[m] += 1
+        menu_lines = ("\n".join("- " + m for m, _ in mc.most_common(40))
+                      or "- (수집된 메뉴 없음)")
+    
     (REF_DIR / "reply_context.md").write_text(
         _CONTEXT_HEADER.format(menus=menu_lines), encoding="utf-8")
 
