@@ -246,3 +246,33 @@ def test_regular_customer_count_is_not_fed_to_model():
     from assistant import beargels
     src = inspect.getsource(beargels.generate_review_reply)
     assert "숫자는 세지 말 것" in src
+
+
+# --- 메뉴를 지어내지 못하게: 주문한 메뉴의 실제 사실을 프롬프트에 넣는다 -----
+# 이름만 주면 모델이 상상해서 쓴다 — '런던식 터키쉬 샌드위치'(베이글)를 두고
+# "치아바타에 베이글의 식감까지"라고 쓴 초안이 실제로 나왔다(2026-08-24).
+
+def test_menu_facts_come_from_master(monkeypatch):
+    from assistant import beargels as B
+    monkeypatch.setattr(B, "_MENU_FACTS_CACHE", {
+        B._menu_key("런던식 터키쉬 샌드위치"):
+            ("런던식 터키쉬 샌드위치", "담백한 터키햄과 두 가지 치즈"),
+    })
+    out = B.menu_facts_for(["[SET] 런던식 터키쉬 샌드위치"])
+    assert "담백한 터키햄" in out          # 태그가 붙어 있어도 찾아낸다
+    assert B.menu_facts_for(["없는메뉴xyz"]) == ""   # 모르면 지어내지 않는다
+
+
+def test_banned_endings_are_replaced():
+    """'바라며' 같은 어미 변형이 목록에 없어 그대로 나갔다(실측)."""
+    from assistant.beargels import _fix_banned_locally, _REPLY_BANNED
+    out = _fix_banned_locally("든든한 한 끼가 되셨기를 바라며, 또 뵐게요")
+    assert "바라며" not in out
+    for w in ("바라며", "바라겠", "기원합니다"):
+        assert w in _REPLY_BANNED
+
+
+def test_menu_tag_and_trailing_letter_are_stripped():
+    from assistant.beargels import _clean_menu
+    assert _clean_menu("[B]둘을 위한 커플 세트R") == "둘을 위한 커플 세트"
+    assert _clean_menu("[SET] 베이글 샌드위치 + 음료 세트") == "베이글 샌드위치 + 음료 세트"

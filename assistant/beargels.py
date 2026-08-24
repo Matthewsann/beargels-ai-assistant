@@ -698,6 +698,64 @@ def _keywords(text, min_len=2):
     return out
 
 
+_MENU_FACTS_CACHE = None
+
+
+def _menu_facts_table():
+    """정본 메뉴의 '무엇으로 만든 메뉴인지'를 이름으로 찾을 수 있게 준비한다."""
+    global _MENU_FACTS_CACHE
+    if _MENU_FACTS_CACHE is not None:
+        return _MENU_FACTS_CACHE
+    table = {}
+    try:
+        from database import supabase_client as _db
+        for r in _db.menu_all():
+            name = _clean_menu(r.get("name"))
+            if not name:
+                continue
+            fact = (r.get("intro_ko") or r.get("description") or "").strip()
+            comp = (r.get("composition") or "").strip()
+            if comp:
+                fact = (fact + f" (구성: {comp})").strip()
+            if fact:
+                table[_menu_key(name)] = (name, " ".join(fact.split())[:180])
+    except Exception:  # noqa: BLE001 — 못 읽어도 답글은 만들어야 한다
+        logger.warning("정본 메뉴 사실을 못 읽었습니다 — 이름만으로 씁니다")
+    _MENU_FACTS_CACHE = table
+    return table
+
+
+def _menu_key(name):
+    """이름 대조용 키 — 공백·따옴표·괄호 차이를 무시한다."""
+    return re.sub(r"[\s'\"()\[\]·,./]+", "", (name or "")).lower()
+
+
+def menu_facts_for(menus, limit=4):
+    """주문한 메뉴의 **실제 구성·소개**를 프롬프트용 문장으로 만든다.
+
+    왜 필요한가: 지금까지 프롬프트에는 메뉴 **이름만** 들어갔다. 그러니 모델이
+    이름을 보고 상상해서 썼다 — 실제로 '런던식 터키쉬 샌드위치'를 두고
+    "치아바타에 베이글의 식감까지 살려낸"이라는 초안이 나왔다(2026-08-24).
+    정본에 구성·소개가 다 있는데 안 쓰고 있었다.
+    """
+    table = _menu_facts_table()
+    out, seen = [], set()
+    for m in (menus or []):
+        key = _menu_key(_clean_menu(m))
+        hit = table.get(key)
+        if not hit:            # 정확히 없으면 이름이 포함된 메뉴로 찾아본다
+            for k, v in table.items():
+                if key and (key in k or k in key):
+                    hit = v
+                    break
+        if hit and hit[0] not in seen:
+            seen.add(hit[0])
+            out.append(f"· {hit[0]}: {hit[1]}")
+        if len(out) >= limit:
+            break
+    return chr(10).join(out)
+
+
 def _clean_menu(name):
     """플랫폼 메뉴명에서 관리용 꼬리표를 뗀다.
 
@@ -705,7 +763,9 @@ def _clean_menu(name):
     그대로 프롬프트에 넣으면 답글 본문에 "[SET] 베이글…" 이 그대로 나갔다
     (실제 초안에서 확인 2026-08-21). 고객에게 보일 이름만 남긴다.
     """
-    return re.sub(r"\[[^\]]{1,12}\]\s*", "", (name or "")).strip()
+    out = re.sub(r"\[[^\]]{1,12}\]\s*", "", (name or "")).strip()
+    # 플랫폼 메뉴명 끝에 붙는 외톨이 영문 한 글자('…커플 세트R')도 뗀다.
+    return re.sub(r"(?<=[가-힣0-9)])\s*[A-Z]$", "", out).strip()
 
 
 def pick_examples(review, kind, k=4, bank=None):
@@ -967,6 +1027,21 @@ def generate_review_reply(review):
         # 사장님이 실제로 쓴 비슷한 답글을 함께 보여준다 — 무료·저가 모델은
         # 규칙보다 예시를 훨씬 잘 따라한다(사장님 제안 2026-08-18).
         ctx_block += _examples_block(review, typ)
+
+        # 주문한 메뉴가 **무엇으로 만든 메뉴인지** 알려준다. 이름만 주면
+        # 모델이 상상해서 쓴다(치아바타를 두고 "베이글의 식감"이라고 쓴 초안이
+        # 실제로 나왔다, 2026-08-24).
+        facts = menu_facts_for(review.get("menus"))
+        if facts:
+            ctx_block += ("[주문한 메뉴 사실 — 이 내용만 근거로 메뉴를 "
+                          "이야기한다. 여기 없는 재료·식감을 지어내지 마라]" + chr(10)
+                          + facts + chr(10) + chr(10))
+        # 별점이 만점이 아니면 자축하지 말고 개선 한마디를 넣게 한다.
+        if isinstance(rating, int) and rating <= 4:
+            ctx_block += (f"[⚠️ 별점 {rating}점 — 만점이 아니다] 무엇이 아쉬웠는지 "
+                          "글에 없더라도 마냥 자축하지 말고, '더 잘 챙기겠다'는 "
+                          "한마디를 자연스럽게 넣는다. '별점 감사합니다'로 넘기지 "
+                          "마라." + chr(10) + chr(10))
         user = (
             f"{ctx_block}"
             f"[{cfg['label']}] {visit} '{author}'가 {menus} 주문 후 "
@@ -1001,6 +1076,7 @@ def generate_review_reply(review):
 # 생성 후 최종 검문 — 모델이 프롬프트의 금지 규칙을 흘리는 일이 실제로 있다
 # (Gemini가 '바라요'를 씀, 2026-08-06). AI 말투·방문 표현·브랜드 금지어.
 _REPLY_BANNED = (
+    "바라며", "바라겠", "기원합니다",
     "바라요", "바랍니다", "되셨으면", "되었길", "즐거운 한 끼",
     "정성껏 준비하겠습니다", "정성을 다하겠습니다", "큰 힘이 됩니다",
     "보답하겠습니다", "보답할게요",
@@ -1017,6 +1093,14 @@ _REPLY_BANNED = (
 # ⚠️ 긴 표현을 먼저 둔다 — 짧은 것이 먼저 걸리면 이중 치환돼 문장이 깨진다
 #    ('드셨길 바랍니다' → '맛있게 맛있게 드셨길요' 사고, 2026-08-16).
 _BANNED_FIX = (
+    # '~바라며/바라겠' 는 목록에 없어서 초안에 그대로 나갔다(2026-08-24 실측:
+    # "든든한 한 끼가 되셨기를 바라며"). 어미 변형까지 막는다.
+    ("되셨기를 바라며", "되셨으면 좋겠어요"),
+    ("되시길 바라며", "되셨으면 좋겠어요"),
+    ("되었기를 바라며", "되었으면 좋겠어요"),
+    ("바라며", "좋겠고"),
+    ("바라겠", "좋겠"),
+    ("기원합니다", "좋겠어요"),
     ("되셨으면 좋겠습니다", "되셨길요"),
     ("드셨길 바랍니다", "드셨길요"),
     ("드셨길 바라요", "드셨길요"),
