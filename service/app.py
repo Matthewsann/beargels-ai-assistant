@@ -36,10 +36,21 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# menu_intro 는 service/ 안에서만 찾을 수 있는 모듈이다. 운영(service/wsgi.py)은
+# service/ 를 sys.path 에 직접 넣어 두지만, `import service.app` 으로 불러오는
+# 테스트에서는 그게 안 되어 있어 ModuleNotFoundError 로 죽었다.
+_SERVICE_DIR = pathlib.Path(__file__).resolve().parent
+if str(_SERVICE_DIR) not in sys.path:
+    sys.path.insert(0, str(_SERVICE_DIR))
+
+from urllib.parse import parse_qsl  # noqa: E402
+
 from dotenv import load_dotenv  # noqa: E402
 from flask import (  # noqa: E402
-    Flask, abort, jsonify, redirect, render_template, request, url_for,
+    Flask, Request, abort, jsonify, redirect, render_template, request,
+    url_for,
 )
+from werkzeug.utils import cached_property  # noqa: E402
 
 # 설정은 service/.env 를 먼저 본다(클라우드 서버에는 이 파일만 올린다 —
 # 집 PC 의 .env 에는 배민·쿠팡 비밀번호까지 들어 있어 올리면 안 된다).
@@ -50,7 +61,27 @@ load_dotenv(ROOT / ".env")
 from database import supabase_client as db  # noqa: E402
 from menu_intro import draft as intro_draft  # noqa: E402
 
+class _SafeRequest(Request):
+    """query string 에 UTF-8 로 못 읽는 원문 바이트가 섞여 있어도 안 죽는다.
+
+    오류 기록(2026-08-24, /todo): 옛 북마크·기기 인코딩 문제로 EUC-KR 등
+    바이트가 그대로 섞여 오면 werkzeug 가 request.args 접근 시
+    UnicodeDecodeError 를 던져 요청 전체가 500 으로 죽었다. 못 읽는 바이트만
+    U+FFFD 로 바꿔서라도 나머지 파라미터는 정상 처리한다.
+    """
+
+    @cached_property
+    def args(self):
+        try:
+            qs = self.query_string.decode()
+        except UnicodeDecodeError:
+            qs = self.query_string.decode("utf-8", "replace")
+        return self.parameter_storage_class(
+            parse_qsl(qs, keep_blank_values=True, errors="werkzeug.url_quote"))
+
+
 app = Flask(__name__)
+app.request_class = _SafeRequest
 
 # 비밀 주소 조각 — 없으면 앱이 뜨지 않는다(실수로 전체 공개되는 걸 막는다).
 SERVICE_PATH = (os.getenv("SERVICE_PATH") or "").strip().strip("/")
