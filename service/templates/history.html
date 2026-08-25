@@ -142,8 +142,13 @@
        줄인다. [고치기]를 눌러야 편집칸이 열린다. #}
     <label class="lbl">등록된 답글</label>
     <div class="peek" id="p{{ r.id }}">{{ r.draft }}</div>
+    {% if r.expired %}
+      {# 플랫폼이 막아 둔 것이라 눌러 봐야 실패한다 — 버튼 대신 이유를 보여준다 #}
+      <div class="lbl">⏰ 등록 후 {{ edit_days }}일이 지나 이 답글은 더 이상 고칠 수 없어요.</div>
+    {% else %}
     <button class="btn" type="button" id="o{{ r.id }}"
             onclick="openEdit({{ r.id }})">✏️ 고치기</button>
+    {% endif %}
     <div class="editbox" id="b{{ r.id }}">
       <textarea id="d{{ r.id }}" rows="5">{{ r.draft }}</textarea>
       <div class="acts mini" style="display:flex;gap:6px;flex-wrap:wrap;">

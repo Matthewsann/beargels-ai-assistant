@@ -37,6 +37,15 @@
 </div>
 {% endif %}
 
+{# 등록한 답글 전용 — 수정 기한이 지난 답글은 고칠 수 없어 기본으로 감춘다 #}
+{% if screen == 'history' %}
+<div class="filters">
+  <span class="lbl" style="align-self:center;min-width:44px;">기한</span>
+  <a href="{{ url_with(expired=None) }}" class="{{ 'on' if not expired }}">✏️ 아직 고칠 수 있는 것</a>
+  <a href="{{ url_with(expired='1') }}" class="{{ 'on' if expired }}">⏰ 기한 지난 것도 보기</a>
+</div>
+{% endif %}
+
 {# 기간 #}
 <div class="filters">
   <span class="lbl" style="align-self:center;min-width:44px;">기간</span>

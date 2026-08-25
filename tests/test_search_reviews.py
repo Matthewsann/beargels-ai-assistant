@@ -225,3 +225,22 @@ def test_db_failure_returns_empty_not_crash(monkeypatch):
 
     monkeypatch.setattr(db, "get_client", boom)
     assert db.search_reviews() == ([], 0)
+
+
+# --- 답글 수정 기한 (2026-08-25 사장님 지시) --------------------------------
+# 배민은 등록 후 30일이 지나면 사장님 댓글을 고칠 수 없다. 그런 답글에
+# 고치기·AI 버튼을 띄우면 눌러 봐야 실패한다 → 기본 목록에서 뺀다.
+
+def test_expired_helper():
+    import datetime
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "service"))
+    import app as A
+    today = datetime.date.today()
+    fresh = (today - datetime.timedelta(days=5)).isoformat()
+    old = (today - datetime.timedelta(days=A.REPLY_EDIT_DAYS + 1)).isoformat()
+    assert A._is_expired(old) is True
+    assert A._is_expired(fresh) is False
+    assert A._is_expired(None) is False        # 모르면 막지 않는다
+    assert A._is_expired("이상한값") is False

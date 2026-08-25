@@ -447,6 +447,27 @@ def _order_info(r: dict) -> dict:
     }
 
 
+# 답글 수정 기한 — 배민은 등록 후 30일이 지나면 "사장님 댓글을 등록할 수
+# 없어요"로 막힌다(플랫폼 안내 문구로 실측). 기한이 지난 답글에 고치기·AI
+# 버튼을 띄우면 눌러 봐야 실패한다 → 기본 목록에서 뺀다(사장님 지시
+# 2026-08-25). 일꾼 쪽 WORKER_REPLY_WINDOW_DAYS 와 같은 기준.
+REPLY_EDIT_DAYS = int(os.getenv("REPLY_EDIT_DAYS", "30"))
+
+
+def _days_since(date_str):
+    try:
+        return (datetime.now().date()
+                - datetime.fromisoformat(date_str).date()).days
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _is_expired(date_str):
+    """이 리뷰의 답글 수정 기한이 지났는지(모르면 False — 막지 않는다)."""
+    age = _days_since(date_str)
+    return age is not None and age > REPLY_EDIT_DAYS
+
+
 def _visit_label(n):
     """'몇 번째 주문 고객'인지 한눈에 — 답글 말투가 달라지는 기준이다.
 
@@ -850,7 +871,10 @@ def history(path_key):
     rating_max = request.args.get("rating_max", type=int)
     kind = request.args.get("kind") or None
     days = request.args.get("days", type=int)
+    # 수정 기한이 지난 답글은 고칠 수 없으므로 기본으로 감춘다.
+    show_expired = request.args.get("expired") == "1"
     page = max(1, request.args.get("page", default=1, type=int))
+    window = None if (show_expired or days) else REPLY_EDIT_DAYS
 
     error, rows, total = None, [], 0
     try:
@@ -858,12 +882,13 @@ def history(path_key):
         # 이제 조건·쪽 나누기를 서버에서 한다.
         found, total = db.search_reviews(
             source="ours", platform=plat, rating=rating, rating_max=rating_max,
-            kind=kind, days=days, q=q, sort=sort,
+            kind=kind, days=(days or window), q=q, sort=sort,
             limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE)
         for r in found:
             v = _review_view(r)
             v["posted_at"] = (r.get("posted_at") or "")[:16].replace("T", " ")
             v["kind"] = r.get("kind") or ""
+            v["expired"] = _is_expired(r.get("written_date"))
             rows.append(v)
     except Exception as e:  # noqa: BLE001
         error = f"데이터를 불러오지 못했어요: {str(e)[:150]}"
@@ -871,7 +896,8 @@ def history(path_key):
     return render_template("history.html", key=path_key, rows=rows,
                            error=error, plat=plat, sort=sort, total=total,
                            q=q or "", rating=rating, rating_max=rating_max,
-                           kind=kind, days=days,
+                           kind=kind, days=days, expired=show_expired,
+                           edit_days=REPLY_EDIT_DAYS,
                            page=min(page, pages), pages=pages)
 
 
