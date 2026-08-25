@@ -772,6 +772,14 @@ def run_post_edit_job(job) -> None:
                           f"답글은 그대로예요. 집 PC에서 "
                           f"5_자동등록_고치기.bat 을 실행해 주세요.", 0)
     except Exception as e:  # noqa: BLE001
+        # 기한 만료는 재시도해도 영영 실패한다 — run_post_job 과 같은 이유로
+        # error_log 에 남기지 않는다(매일 새벽 점검이 매번 같은 걸 또 봄).
+        # (지연 import 라 클래스 이름으로 판별한다)
+        if type(e).__name__ == "ReplyDeadlineError":
+            logger.info("답글 수정 #%s — 기한 만료 (리뷰 %s)", jid, rid)
+            db.finish_job(jid, "error", f"리뷰 {rid} 답글 수정 실패: {e}", 0)
+            db.worker_ping("idle", "대기 중")
+            return
         logger.error("답글 수정 #%s 실패: %s", jid, e)
         db.log_error("worker", f"답글 수정 실패(리뷰 {rid}): {e}",
                      kind=type(e).__name__, path="run_post_edit_job",

@@ -129,3 +129,44 @@ def test_missing_review_is_skipped_cleanly(agent):
 
     ag.run_post_job({"id": 2, "message": "999"})
     assert finished[0][0] == "done"
+
+
+# ---------------------------------------------------------------------------
+# 답글 '수정' 중 플랫폼 기한 만료 — run_post_job 처럼 조용히 정리해야 한다
+# (사장님 제보 2026-08-25: 쿠팡 답글 수정 실패 id 89. run_post_job 은 이미
+#  ReplyDeadlineError 를 봐주고 error_log 에 안 남기는데, run_post_edit_job
+#  에는 그 처리가 없어 매일 새벽 점검이 똑같은 걸 계속 다시 보고했다.)
+# ---------------------------------------------------------------------------
+
+def test_edit_job_deadline_over_does_not_log_error(agent, monkeypatch):
+    ag, fake = agent
+    finished, errors = [], []
+    # platform 은 baemin 으로 둔다 — coupang 이면 _refresh_reply_id 가 실제
+    # 쿠팡 크롤러를 부르려 해 이 테스트의 관심사(예외 처리 분기)와 무관한
+    # 네트워크 의존이 생긴다.
+    fake.get_review = lambda rid: {
+        "id": rid, "reply_status": "posted", "platform": "baemin",
+        "review_no": "1", "raw": None}
+    fake.finish_job = lambda jid, st, msg, n: finished.append((st, msg))
+    fake.worker_ping = lambda *a, **k: None
+    fake.log_error = lambda *a, **k: errors.append((a, k))
+    monkeypatch.setattr(ag, "ensure_chrome", lambda: None)
+
+    from crawler import review_reply as rr
+
+    class _Boom:
+        def __init__(self, *a, **k):
+            pass
+
+        def run(self, confirm=True):
+            raise rr.ReplyDeadlineError(
+                "쿠팡 답글 작성 기한이 지난 리뷰예요 — 등록할 수 없습니다.")
+
+    monkeypatch.setattr(rr, "ReplyToReviewAction", _Boom)
+
+    ag.run_post_edit_job({"id": 1, "message": "211"})
+
+    assert errors == [], "재시도해도 안 되는 기한 만료는 error_log 에 쌓지 않는다"
+    assert finished, "잡을 닫아야 한다"
+    st, msg = finished[0]
+    assert st == "error" and "211" in msg and "기한" in msg
