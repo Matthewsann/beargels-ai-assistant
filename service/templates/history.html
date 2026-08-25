@@ -146,6 +146,15 @@
             onclick="openEdit({{ r.id }})">✏️ 고치기</button>
     <div class="editbox" id="b{{ r.id }}">
       <textarea id="d{{ r.id }}" rows="5">{{ r.draft }}</textarea>
+      <div class="acts mini" style="display:flex;gap:6px;flex-wrap:wrap;">
+        {# 등록한 답글도 AI 로 다시 써 볼 수 있다(사장님 요청 2026-08-24).
+           새 초안은 여기 칸에만 들어오고, [수정 등록]을 눌러야 실제로 바뀐다. #}
+        <button class="btn" type="button" id="g{{ r.id }}"
+                title="지금 답글을 버리고 AI가 새로 씁니다 (등록은 따로 눌러야 해요)"
+                onclick="regenHere({{ r.id }}, '{{ url_for('regen', path_key=key, review_id=r.id) }}', '{{ url_for('draft_state', path_key=key, review_id=r.id) }}')">🔄 AI로 다시 쓰기</button>
+        <button class="btn" type="button" id="u{{ r.id }}" style="display:none;"
+                onclick="undoRegen({{ r.id }})">↩️ 되돌리기</button>
+      </div>
       <button class="btn primary" type="button" id="e{{ r.id }}"
               onclick="editIt({{ r.id }}, '{{ url_for('edit_post', path_key=key, review_id=r.id) }}', '{{ url_for('edit_state', path_key=key, review_id=r.id) }}')">
         ✏️ 수정 등록 — 실제 답글 바꾸기
@@ -245,6 +254,48 @@ document.querySelectorAll('textarea').forEach(t => {
   const fit = () => { t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; };
   t.addEventListener('input', fit); fit();
 });
+
+/* 등록한 답글을 AI 로 다시 쓰기 — 새 초안은 칸에만 들어온다.
+   실제 답글은 [수정 등록]을 눌러야 바뀐다(실고객에게 나가는 일이라 2단계). */
+const _before = {};
+function regenHere(id, regenUrl, stateUrl) {
+  const box = document.getElementById('d' + id);
+  const btn = document.getElementById('g' + id);
+  if (!box || !btn) return;
+  _before[id] = box.value;
+  btn.disabled = true; btn.textContent = 'AI가 쓰는 중…';
+  fetch(regenUrl, {method: 'POST', headers: {'X-Requested-With': 'fetch'}})
+    .then(r => r.json()).then(res => {
+      if (res && res.ok === false) throw new Error(res.error || '요청 실패');
+      let tries = 0;
+      const poll = setInterval(() => {
+        tries += 1;
+        fetch(stateUrl).then(r => r.json()).then(st => {
+          const now = (st.draft || '').trim();
+          if (now && now !== (_before[id] || '').trim()) {
+            clearInterval(poll);
+            box.value = now;
+            btn.disabled = false; btn.textContent = '🔄 AI로 다시 쓰기';
+            document.getElementById('u' + id).style.display = '';
+          } else if (tries > 40) {          // 2분 넘으면 포기
+            clearInterval(poll);
+            btn.disabled = false; btn.textContent = '🔄 AI로 다시 쓰기';
+            alert('아직 새 답글이 안 왔어요. 집 PC가 켜져 있는지 확인해 주세요.');
+          }
+        });
+      }, 3000);
+    })
+    .catch(e => {
+      btn.disabled = false; btn.textContent = '🔄 AI로 다시 쓰기';
+      alert('다시 쓰지 못했어요: ' + e.message);
+    });
+}
+
+function undoRegen(id) {
+  const box = document.getElementById('d' + id);
+  if (box && _before[id] !== undefined) box.value = _before[id];
+  document.getElementById('u' + id).style.display = 'none';
+}
 </script>
 </body>
 </html>

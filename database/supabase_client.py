@@ -453,16 +453,24 @@ def _update_review(review_id, payload):
         client.table("reviews").update(slim).eq("id", review_id).execute()
 
 
-def save_ai_draft(review_id, text, kind=None):
+def save_ai_draft(review_id, text, kind=None, keep_status=False):
     """일꾼이 만든 AI 초안을 저장한다 — 원본(ai_draft)과 편집본(reply_draft)에
-    같은 값을 넣고 시작한다. 이후 직원 수정은 reply_draft 만 바꾼다."""
-    _update_review(review_id, {
+    같은 값을 넣고 시작한다. 이후 직원 수정은 reply_draft 만 바꾼다.
+
+    keep_status: 이미 등록(posted)한 답글을 **고치려고** 다시 만든 경우에는
+        상태를 건드리지 않는다. 예전엔 무조건 'drafted' 로 되돌려서, 등록한
+        답글 화면에서 AI 재생성을 누르면 그 답글이 목록에서 사라졌다
+        (2026-08-24).
+    """
+    patch = {
         "ai_draft": text,
         "reply_draft": text,
         "kind": kind,
         "draft_updated_at": datetime.now().astimezone().isoformat(),
-        "reply_status": "drafted",
-    })
+    }
+    if not keep_status:
+        patch["reply_status"] = "drafted"
+    _update_review(review_id, patch)
 
 
 def mark_replied(review_id):

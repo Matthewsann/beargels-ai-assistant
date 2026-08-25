@@ -307,3 +307,20 @@ def test_owner_reply_is_not_mistaken_for_body():
             "주문메뉴 플레인 베이글 배달리뷰 좋아요 "
             "사장님 2026년 3월 3일 안녕하세요, 제리 고객님. 죄송합니다.")
     assert B._extract_body(card) == "배달이 늦었어요"
+
+
+# --- 등록한 답글을 AI로 다시 쓸 때 상태가 유지되는지 (2026-08-24) ----------
+# 예전엔 재생성이 무조건 reply_status 를 'drafted' 로 되돌려, '등록한 답글'
+# 화면에서 AI 재생성을 누르면 그 답글이 목록에서 사라졌다.
+
+def test_regen_keeps_posted_status(monkeypatch):
+    from database import supabase_client as db
+    seen = {}
+    monkeypatch.setattr(db, "_update_review", lambda rid, patch: seen.update(patch))
+    db.save_ai_draft(1, "새 답글", kind="praise_detail", keep_status=True)
+    assert "reply_status" not in seen          # 등록 상태를 건드리지 않는다
+    assert seen["reply_draft"] == "새 답글"
+
+    seen.clear()
+    db.save_ai_draft(1, "새 초안", kind="praise_detail")
+    assert seen["reply_status"] == "drafted"   # 평소(대기 중 초안)는 그대로

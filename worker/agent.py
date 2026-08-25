@@ -386,7 +386,10 @@ def run_regen_job(job) -> None:
             "order_count": order_count_of(row),
         }
         draft = generate_review_reply(review)
-        db.save_ai_draft(rid, draft, kind=classify_review(review))
+        # 이미 등록한 답글을 고치려는 재생성이면 상태를 유지한다 — 안 그러면
+        # '등록한 답글' 화면에서 그 답글이 사라진다(2026-08-24).
+        db.save_ai_draft(rid, draft, kind=classify_review(review),
+                         keep_status=(row.get("reply_status") == "posted"))
         db.finish_job(jid, "done", f"리뷰 {rid} 초안 재생성 완료", 1)
         logger.info("재생성 #%s 완료 (리뷰 %s)", jid, rid)
     except Exception as e:  # noqa: BLE001
