@@ -202,26 +202,19 @@ def test_fact_card_keeps_manufacturing_truth():
     assert "그릴 토스팅" in card
 
 
-def test_fact_card_menu_names_are_clean():
+def test_fact_card_does_not_carry_the_menu_list():
+    """메뉴 198개 나열이 프롬프트의 절반을 먹고 있었다(2026-08-25).
+
+    주문한 메뉴의 사실은 menu_facts_for() 가 건별로 넣으므로, 사실 카드에는
+    목록 대신 '지어내지 마라'는 규칙만 있으면 된다.
+    """
     import pathlib
-    import re
     card = (pathlib.Path(__file__).resolve().parent.parent
             / "reference" / "reply_context.md").read_text(encoding="utf-8")
-    section = card.split("## 판매 메뉴")
-    assert len(section) > 1, "판매 메뉴 절이 있어야 한다"
-    names = [l[2:].strip() for l in section[1].split("##")[0].split("\n")
-             if l.startswith("- ")]
-    assert names, "메뉴가 비면 AI 가 메뉴명을 지어낸다"
-    for n in names:
-        assert not re.search(r"\[[^\]]{1,12}\]", n), f"관리용 태그가 남음: {n}"
-        assert "대박맛집" not in n, f"배민 키워드칩이 붙음: {n}"
-        assert "반제품" not in n, f"손님이 주문할 수 없는 항목: {n}"
+    assert len(card) < 2000, "사실 카드가 다시 비대해졌다"
+    assert "주문한 메뉴 사실" in card          # 어디서 사실을 받는지 안내
+    assert "이벤트·서비스 증정" in card        # 확답 금지 규칙 유지
 
-
-# --- 분량 기준이 실제 사장님 답글에서 나왔는지 (2026-08-24) -----------------
-# 지침에 "짧고 산뜻하게 감사만"이라고 적혀 있었는데, 직원 최종본은 그 유형이
-# 오히려 가장 길었다(별점만 리뷰 249자·5문장). 지침과 실제가 반대라
-# AI 초안을 매번 다시 쓰게 만들었다 — 수정률이 안 떨어지던 큰 원인.
 
 def test_length_targets_exist_for_every_kind():
     from assistant.beargels import TARGET_BY_KIND, SENTENCES_BY_KIND
@@ -324,3 +317,34 @@ def test_regen_keeps_posted_status(monkeypatch):
     seen.clear()
     db.save_ai_draft(1, "새 초안", kind="praise_detail")
     assert seen["reply_status"] == "drafted"   # 평소(대기 중 초안)는 그대로
+
+
+# --- 근거 없는 정책 발언 차단 (2026-08-25 사장님 지적) ---------------------
+# 실제 사고: "러스크 이벤트는 현재는 따로 진행 중인 게 없어서 … 생기면 잘
+# 챙겨볼게요!" — 진행 중인 이벤트가 있는지 우리는 모른다. 지시문에 확답
+# 금지를 써 놨는데도 모델이 지어냈다 → 문장 단위로 걷어낸다.
+
+def test_unfounded_policy_sentences_are_removed():
+    from assistant.beargels import _drop_unfounded
+    out = _drop_unfounded(
+        "한입에와앙님, 네 번째 주문까지 감사해요! "
+        "카프레제에 폭립 풀드포크까지 매번 맛있게 드셔주시니 힘이 나네요 ㅎㅎ "
+        "러스크 이벤트는 현재는 따로 진행 중인 게 없어서 어렵지만, "
+        "이벤트 생기면 잘 챙겨볼게요! 다음에도 맛있게 구워서 보낼게요 🐻")
+    assert "이벤트" not in out
+    assert "카프레제" in out          # 멀쩡한 문장은 남는다
+    assert "구워서 보낼게요" in out
+
+
+def test_normal_reply_survives_the_filter():
+    from assistant.beargels import _drop_unfounded
+    for text in ("맛있게 드셨다니 기뻐요! 또 주문 주세요 🥯",
+                 "쫄깃한 식감 좋게 봐주셔서 감사해요 ㅎㅎ 다음에도 잘 챙길게요"):
+        assert _drop_unfounded(text) == text
+
+
+def test_korean_sentences_split_without_periods():
+    """'~요', 'ㅎㅎ', 이모지로 끝나는 문장을 하나로 붙이면 멀쩡한 문장까지 지운다."""
+    from assistant.beargels import _split_sentences
+    assert len(_split_sentences("맛있어요 또 올게요 ㅎㅎ 감사합니다")) >= 2
+    assert len(_split_sentences("죄송합니다 다시 확인하겠습니다")) == 2

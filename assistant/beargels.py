@@ -240,11 +240,52 @@ def _drop_compensation(text):
         if not para.strip():
             out.append(para)
             continue
-        kept = [t for t in re.split(r"(?<=[.!?…])\s+", para)
+        kept = [t for t in _split_sentences(para)
                 if not any(w in t for w in _COMPENSATION_WORDS)]
         out.append(" ".join(kept).strip())
     cleaned = chr(10).join(out)
     return re.sub(chr(10) + "{3,}", chr(10) * 2, cleaned).strip()
+
+
+# 우리가 알 수 없는 것(이벤트·증정·할인·가격·영업시간)을 답글에서 단정하면
+# 손님에게 거짓말이 된다. 실제 사고(2026-08-25 사장님 지적):
+#   "러스크 이벤트는 현재는 따로 진행 중인 게 없어서 … 생기면 잘 챙겨볼게요!"
+# 지시문에 '확답 금지'를 써 놨는데도 모델이 지어냈다 → 문장 단위로 걷어낸다.
+def _split_sentences(para):
+    """한국어 답글을 문장 단위로 나눈다.
+
+    마침표 없이 '~요', 'ㅎㅎ', 이모지로 끝나는 문장이 많아서 [.!?] 만 보면
+    두 문장이 하나로 붙는다. 실제로 그 탓에 근거 없는 문장을 걷어낼 때
+    멀쩡한 앞 문장까지 같이 지워졌다(2026-08-25).
+    """
+    pat = (r"(?<=[.!?~…])\s+"
+           r"|(?<=요)\s+(?=[가-힣A-Za-z])"
+           r"|(?<=니다)\s+(?=[가-힣])"
+           r"|(?<=ㅎㅎ)\s+|(?<=ㅋㅋ)\s+"
+           r"|(?<=[🌀-🫿])\s+")
+    return [t for t in re.split(pat, para) if t.strip()]
+
+
+_UNFOUNDED_WORDS = ("이벤트", "증정", "사은품", "쿠폰", "할인", "무료",
+                    "적립", "행사", "영업시간", "품절", "재입고")
+
+
+def _drop_unfounded(text):
+    """근거 없이 정책을 말한 문장만 통째로 뺀다(나머지는 그대로).
+
+    낱말만 지우면 "…는 현재 따로 진행 중인 게 없어서"처럼 뜻이 더 이상해진다.
+    """
+    if not any(w in (text or "") for w in _UNFOUNDED_WORDS):
+        return text
+    out = []
+    for para in (text or "").split(chr(10)):
+        if not para.strip():
+            out.append(para)
+            continue
+        kept = [t for t in _split_sentences(para)
+                if not any(w in t for w in _UNFOUNDED_WORDS)]
+        out.append(" ".join(kept).strip())
+    return re.sub(chr(10) + "{3,}", chr(10) * 2, chr(10).join(out)).strip()
 
 
 def _model_for(kind):
@@ -1059,7 +1100,7 @@ def generate_review_reply(review):
                         model=_model_for(typ)), max_len)
         # 마지막 방어선 — 어떤 모델을 쓰든 '[SET]' 같은 꼬리표가 손님에게
         # 나가지 않게 본문에서도 한 번 더 지운다.
-        draft = _clean_menu(draft)
+        draft = _drop_unfounded(_clean_menu(draft))
         if typ in _SENSITIVE_KINDS:
             draft = _drop_compensation(draft)
             if len(draft) < 40:          # 너무 많이 잘렸으면 안전한 템플릿으로

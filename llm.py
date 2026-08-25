@@ -31,7 +31,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 # 불만·민감 리뷰만은 더 큰 모델로 쓴다. 평범한 감사 답글은 작은 모델로 충분하지만
 # (예시를 그대로 따라 쓰면 되니까), 사과·해명이 필요한 글은 문장 하나가
 # 가게 평판을 좌우한다 — 여기서 아끼면 남는 게 없다.
