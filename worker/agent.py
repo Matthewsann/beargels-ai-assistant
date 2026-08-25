@@ -154,6 +154,21 @@ def restart_chrome(reason="") -> bool:
     return ok
 
 
+def _is_browser_gone(e) -> bool:
+    """브라우저/탭이 도중에 끊긴 오류인지 — 다시 붙으면 대개 그냥 된다.
+
+    실제 사례(2026-08-25): 답글 등록 #557 이
+    "Page.query_selector: Target page, context or browser has been closed" 로
+    실패했는데, 직원이 다시 누른 #558 은 4초 만에 성공했다. 붙었다 끊었다를
+    반복하는 CDP 연결 특성상 가끔 난다 — 사람에게 다시 누르게 하지 말고
+    코드가 한 번 더 시도한다.
+    """
+    m = str(e)
+    return ("has been closed" in m or "Target closed" in m
+            or "TargetClosedError" in type(e).__name__
+            or "browser has been closed" in m)
+
+
 def _is_attach_failure(e) -> bool:
     """크롬에 붙지 못해서 난 오류인지 — 재시작으로 고칠 수 있는 종류."""
     return "CDP attach 실패" in str(e) or "connect_over_cdp" in str(e)
@@ -193,7 +208,13 @@ def collect_reviews(full=False) -> tuple[int, list[str]]:
             revs = _baemin()
         except Exception as e:  # noqa: BLE001
             # 크롬이 먹통이라 못 붙은 거라면 껐다 켜고 한 번만 다시 해 본다.
-            if not (_is_attach_failure(e) and restart_chrome(str(e)[:60])):
+            # 브라우저가 도중에 끊긴 경우(탭/컨텍스트 종료)는 그냥 다시,
+            # 아예 못 붙는 경우는 크롬을 껐다 켜고 다시.
+            if _is_browser_gone(e):
+                logger.warning("수집 중 브라우저가 끊겨 다시 시도합니다")
+                time.sleep(3)
+                ensure_chrome()
+            elif not (_is_attach_failure(e) and restart_chrome(str(e)[:60])):
                 raise
             revs = _baemin()
         saved += db.save_reviews(revs)
@@ -215,7 +236,11 @@ def collect_reviews(full=False) -> tuple[int, list[str]]:
         try:
             revs = _coupang()
         except Exception as e:  # noqa: BLE001
-            if not (_is_attach_failure(e) and restart_chrome(str(e)[:60])):
+            if _is_browser_gone(e):
+                logger.warning("수집 중 브라우저가 끊겨 다시 시도합니다")
+                time.sleep(3)
+                ensure_chrome()
+            elif not (_is_attach_failure(e) and restart_chrome(str(e)[:60])):
                 raise
             revs = _coupang()
         saved += db.save_reviews(revs)
@@ -610,8 +635,21 @@ def run_post_job(job) -> None:
             "menus": row.get("menus") or [],
             "raw": row.get("raw"),  # 사진 유무 판별용(classify_review)
         }
-        res = ReplyToReviewAction(
-            review, reply_text=row.get("reply_draft")).run(confirm=True)
+        def _post():
+            return ReplyToReviewAction(
+                review, reply_text=row.get("reply_draft")).run(confirm=True)
+
+        try:
+            res = _post()
+        except Exception as e:  # noqa: BLE001
+            # 브라우저가 도중에 끊긴 경우만 한 번 더 — 다른 오류는 그대로 올린다.
+            if not _is_browser_gone(e):
+                raise
+            logger.warning("등록 중 브라우저가 끊겨 한 번 다시 시도합니다: %s",
+                           str(e)[:80])
+            time.sleep(3)
+            ensure_chrome()
+            res = _post()
         if res.get("applied"):
             db.mark_replied(rid)
             # 시간차로 이미 답글이 달려 있어 '수정'으로 맞춘 경우 — 조용히

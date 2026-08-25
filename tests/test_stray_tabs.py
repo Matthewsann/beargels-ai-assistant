@@ -100,3 +100,29 @@ def test_restart_chrome_only_kills_our_profile(monkeypatch):
     import inspect
     src = inspect.getsource(agent._profile_chrome_pids)
     assert ".browser_profile" in src        # 프로필 경로로 걸러서 고른다
+
+
+# --- 도중에 끊긴 브라우저는 코드가 한 번 더 시도한다 (2026-08-25) ----------
+# 실제: 답글 등록 #557 이 "Target page, context or browser has been closed"로
+# 실패했는데 직원이 다시 누른 #558 은 4초 만에 성공했다. 사람에게 다시
+# 누르게 하지 않는다.
+
+def test_browser_gone_is_recognized():
+    from worker import agent
+    for msg in ("Page.query_selector: Target page, context or browser has been closed",
+                "Target closed", "browser has been closed"):
+        assert agent._is_browser_gone(RuntimeError(msg)), msg
+
+
+def test_other_errors_are_not_retried_as_browser_gone():
+    from worker import agent
+    assert not agent._is_browser_gone(RuntimeError("로그인 세션이 만료되었습니다"))
+    assert not agent._is_browser_gone(RuntimeError("답글 기한이 지났습니다"))
+
+
+def test_post_job_retries_once_on_browser_gone():
+    """등록 경로에 재시도가 실제로 들어 있는지(코드 계약)."""
+    import inspect
+    from worker import agent
+    src = inspect.getsource(agent.run_post_job)
+    assert "_is_browser_gone" in src and "res = _post()" in src
