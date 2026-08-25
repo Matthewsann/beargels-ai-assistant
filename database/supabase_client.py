@@ -119,6 +119,18 @@ def save_reviews(reviews):
         rows.append(r)
     if not rows:
         return 0
+    # 우리가 '다시 쓰기'로 큐에 올려 둔 리뷰(drafted)는 크롤 결과로 큐에서
+    # 빼지 않는다. 플랫폼엔 (잘못된) 답글이 남아 있어 platform_replied=true 로
+    # 돌아오는데, 그러면 재작성 대상이 목록에서 사라진다(2026-08-24).
+    try:
+        keep = {(r["platform"], r["review_no"]) for r in
+                (get_client().table("reviews").select("platform,review_no")
+                 .eq("reply_status", "drafted").limit(500).execute().data or [])}
+        for r in rows:
+            if (r.get("platform"), r.get("review_no")) in keep:
+                r.pop("platform_replied", None)
+    except Exception:  # noqa: BLE001 — 보호막이 저장을 막으면 안 된다
+        logger.warning("drafted 보호 조회 실패(무시)")
     try:
         resp = (get_client().table("reviews")
                 .upsert(rows, on_conflict="platform,review_no").execute())

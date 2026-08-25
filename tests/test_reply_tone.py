@@ -276,3 +276,34 @@ def test_menu_tag_and_trailing_letter_are_stripped():
     from assistant.beargels import _clean_menu
     assert _clean_menu("[B]둘을 위한 커플 세트R") == "둘을 위한 커플 세트"
     assert _clean_menu("[SET] 베이글 샌드위치 + 음료 세트") == "베이글 샌드위치 + 음료 세트"
+
+
+# --- 배민 리뷰 본문 파싱 (2026-08-24 사장님 발견) ------------------------
+# '(최근 6개월 누적 주문)' 이라는 잎 하나가 정확히 일치해야만 본문을 잡던
+# 구조라, 배민 리뷰 115건의 본문이 통째로 유실됐다. AI 는 그 리뷰들을
+# "글 없이 별점만 남기셨네요"로 답했다.
+
+def test_baemin_body_is_extracted():
+    from crawler.baemin import BaeminCrawler as B
+    card = ("알뜰배달 한입에와앙 2026년 8월 22일 리뷰번호 2026082202038366 "
+            "6회 주문 고객 (최근 6개월 누적 주문) 맛있더요 포장이 좋아요 "
+            "주문메뉴 런던식 모짜렐라 베이글 배달리뷰 좋아요 사장님 댓글 등록하기")
+    assert B._extract_body(card) == "맛있더요 포장이 좋아요"
+
+
+def test_rating_only_card_has_no_body():
+    from crawler.baemin import BaeminCrawler as B
+    card = ("알뜰배달 오이 2026년 8월 22일 리뷰번호 2026082200000001 "
+            "1회 주문 고객 (최근 6개월 누적 주문) 주문메뉴 플레인 베이글 "
+            "배달리뷰 좋아요 사장님 댓글 등록하기")
+    assert B._extract_body(card) is None
+
+
+def test_owner_reply_is_not_mistaken_for_body():
+    """카드에 딸려 온 사장님 답글을 리뷰 본문으로 저장하면 안 된다."""
+    from crawler.baemin import BaeminCrawler as B
+    card = ("알뜰배달 제리 2026년 3월 3일 리뷰번호 2026030300000001 "
+            "2회 주문 고객 (최근 6개월 누적 주문) 배달이 늦었어요 "
+            "주문메뉴 플레인 베이글 배달리뷰 좋아요 "
+            "사장님 2026년 3월 3일 안녕하세요, 제리 고객님. 죄송합니다.")
+    assert B._extract_body(card) == "배달이 늦었어요"

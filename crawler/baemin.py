@@ -389,6 +389,29 @@ class BaeminCrawler:
                 reviews.append(cur)
         return reviews
 
+    # 머리말 표지 — 이 중 마지막 것 뒤부터가 리뷰 본문이다.
+    # 머리말 표지 — 이 중 **마지막** 것 뒤부터가 리뷰 본문이다.
+    _HEAD_MARK = re.compile(r"\(최근[^)]*\)|\d+\s*회\s*주문\s*고객|리뷰번호\s*\d+")
+    # 본문이 끝나는 지점. '사장님'은 카드 안에 딸려 오는 답글 영역의 시작이다.
+    _BODY_END = re.compile(r"주문메뉴|배달리뷰|사장님")
+
+    @staticmethod
+    def _extract_body(raw, parts=None):
+        """카드 텍스트에서 리뷰 본문만 뽑는다(없으면 None).
+
+        ⚠️ 머리말 표지를 카드 **전체**에서 찾으면, 카드에 딸려 온 사장님 답글
+           속 표지까지 잡혀 답글이 리뷰 본문으로 저장된다(실측에서 확인).
+           그래서 표지는 '본문 끝 표시' 이전 구간에서만 찾는다.
+        """
+        text = " ".join((raw or "").split())
+        e = BaeminCrawler._BODY_END.search(text)
+        zone_end = e.start() if e else len(text)
+        marks = list(BaeminCrawler._HEAD_MARK.finditer(text, 0, zone_end))
+        start = marks[-1].end() if marks else 0
+        body = text[start:zone_end].strip()
+        # 머리말만 있고 본문이 없는 카드(별점만 남긴 리뷰)는 빈 값이 된다.
+        return body or None
+
     @staticmethod
     def _parse_review_item(item):
         """리뷰 카드 하나를 dict 로 정규화한다. 파싱 불가 시 None.
@@ -459,14 +482,14 @@ class BaeminCrawler:
                     menus.append(t)
             break
 
-        # 리뷰 본문: 누적주문 안내 라벨 이후 ~ 주문메뉴 라벨 이전 텍스트
-        content = None
-        marker = "(최근 6개월 누적 주문)"
-        if marker in parts:
-            i = parts.index(marker) + 1
-            end = parts.index("주문메뉴") if "주문메뉴" in parts else len(parts)
-            body = [p for p in parts[i:end] if p]
-            content = " ".join(body).strip() or None
+        # 리뷰 본문: 머리말(닉네임·날짜·리뷰번호·주문횟수) 뒤 ~ '주문메뉴' 앞.
+        #
+        # ⚠️ 예전엔 '(최근 6개월 누적 주문)' 이라는 **잎 하나가 정확히 일치**해야만
+        #    본문을 잡았다. 그 라벨이 다른 잎과 합쳐져 렌더되면 본문을 통째로
+        #    놓쳤고, 실제로 배민 리뷰 84건이 '글 없음'으로 저장돼 AI 가
+        #    "글 없이 별점만 남기셨네요"라고 답할 뻔했다(2026-08-24 사장님 발견).
+        #    이제 카드 전체 텍스트에서 머리말 **마지막 표지** 뒤를 본문으로 본다.
+        content = BaeminCrawler._extract_body(raw, parts)
 
         # 답글 여부: 미답변 카드에만 '사장님 댓글 등록하기' 버튼이 있다
         # (review_reply.py 의 실게시 경로에서 검증된 문구, 2026-07-24).
