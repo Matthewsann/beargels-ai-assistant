@@ -216,13 +216,20 @@ def test_fact_card_does_not_carry_the_menu_list():
     assert "이벤트·서비스 증정" in card        # 확답 금지 규칙 유지
 
 
-def test_length_targets_exist_for_every_kind():
-    from assistant.beargels import TARGET_BY_KIND, SENTENCES_BY_KIND
-    for kind in ("rating_only", "praise_detail", "neutral", "complaint"):
-        assert kind in TARGET_BY_KIND, f"{kind} 목표 길이 없음"
-        assert kind in SENTENCES_BY_KIND, f"{kind} 문장 수 없음"
-        lo, hi = SENTENCES_BY_KIND[kind]
-        assert 2 <= lo < hi <= 8
+def test_length_targets_fill_the_platform_limit():
+    """분량 = 정성 (사장님 지시 2026-08-26) — 플랫폼 허용치를 채운다.
+
+    예전엔 직원 최종본 중앙값(146~250자)에 맞췄는데, 사장님 기준은
+    "최대 글자수를 채우는 게 더 정성스럽다"이다.
+    """
+    from assistant.beargels import (PLATFORM_REPLY, SENTENCES_BY_KIND,
+                                    target_len_for)
+    for plat in ("baemin", "coupang"):
+        target = target_len_for("rating_only", plat, 0)
+        limit = PLATFORM_REPLY[plat]["max_len"]
+        assert 0.85 * limit <= target < limit, f"{plat}: {target}/{limit}"
+        lo, hi = SENTENCES_BY_KIND["_" + plat]
+        assert 4 <= lo < hi <= 12
 
 
 def test_rating_only_guide_is_not_curt():
@@ -348,3 +355,26 @@ def test_korean_sentences_split_without_periods():
     from assistant.beargels import _split_sentences
     assert len(_split_sentences("맛있어요 또 올게요 ㅎㅎ 감사합니다")) >= 2
     assert len(_split_sentences("죄송합니다 다시 확인하겠습니다")) == 2
+
+
+# --- 사장님 지시 2026-08-26: 따라 말하기·상품명 복사 금지 -------------------
+
+def test_echo_of_customer_words_is_detected():
+    from assistant.beargels import echoed_phrases
+    rv = "빵이 쫄깃한게 맛있어요. 제가 베이글을 첨봐서 생각보다 작았던 거 같아요"
+    assert echoed_phrases(rv, "재윤님, 제가 베이글을 첨봐서 생각보다 작았던 거 같다고 하셨네요")
+    assert not echoed_phrases(rv, "재윤님, 처음 드셔보셨다니 반가워요. 손에 쥐면 아담해도 속이 알차요")
+
+
+def test_product_name_copy_is_detected():
+    from assistant.beargels import copied_menu_names
+    menus = ["[SET] 베이글 샌드위치 + 음료 세트"]
+    assert copied_menu_names(menus, "베이글 샌드위치 + 음료 세트를 주문해주셨네요")
+    assert not copied_menu_names(menus, "샌드위치에 음료까지 곁들이셨네요")
+
+
+def test_boilerplate_opener_removed():
+    from assistant.beargels import _strip_boilerplate
+    out = _strip_boilerplate("한입에와앙님, 소중한 주문 감사합니다.\n\n네 번째 주문까지")
+    assert "소중한 주문 감사합니다" not in out
+    assert "네 번째 주문까지" in out
