@@ -36,13 +36,6 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-# menu_intro 는 service/ 안에서만 찾을 수 있는 모듈이다. 운영(service/wsgi.py)은
-# service/ 를 sys.path 에 직접 넣어 두지만, `import service.app` 으로 불러오는
-# 테스트에서는 그게 안 되어 있어 ModuleNotFoundError 로 죽었다.
-_SERVICE_DIR = pathlib.Path(__file__).resolve().parent
-if str(_SERVICE_DIR) not in sys.path:
-    sys.path.insert(0, str(_SERVICE_DIR))
-
 from urllib.parse import parse_qsl  # noqa: E402
 
 from dotenv import load_dotenv  # noqa: E402
@@ -59,7 +52,6 @@ load_dotenv(pathlib.Path(__file__).resolve().parent / ".env")
 load_dotenv(ROOT / ".env")
 
 from database import supabase_client as db  # noqa: E402
-from menu_intro import draft as intro_draft  # noqa: E402
 
 class _SafeRequest(Request):
     """query string 에 UTF-8 로 못 읽는 원문 바이트가 섞여 있어도 안 죽는다.
@@ -1315,17 +1307,9 @@ def menu_item_new(path_key):
     """새 메뉴 추가 — 이름·분류만 있으면 SKU 는 분류에서 자동으로 만든다."""
     check(path_key)
     body = request.get_json(force=True) or {}
-    # 소개글을 손으로만 쓰게 두면 결국 비고, 그러면 채널마다 문구가 또 갈린다.
-    # 이름·분류로 초안을 만들어 넣어 둔다(사장님이 다듬는 걸 전제로 한 초안).
-    if not (body.get("intro_ko") or "").strip():
-        try:
-            from intro_ai import draft as ai_draft
-            ko, en, name_en = ai_draft(body.get("name", ""), body.get("category", ""))
-        except Exception:  # noqa: BLE001 — AI 를 못 쓰면 규칙 초안이라도
-            ko, en, name_en = intro_draft(body.get("name", ""), body.get("category", ""))
-        body["intro_ko"], body["intro_en"] = ko, en
-        if name_en and not (body.get("name_en") or "").strip():
-            body["name_en"] = name_en
+    # 소개글은 자동으로 채우지 않는다 — 이름만 보고 지어낸 문장에 사실과 다른
+    # 내용이 섞여 그대로 채널에 나갈 뻔했다(사장님 지시 2026-08-26). 빈 칸으로
+    # 만들고 상세 창에서 직접 적는다.
     try:
         out = db.menu_create(body)
         out["intro_ko"] = body.get("intro_ko")
@@ -1338,28 +1322,6 @@ def menu_item_new(path_key):
         db.log_error("service", f"메뉴 추가 실패: {e}", kind=type(e).__name__,
                      path=request.path, detail=traceback.format_exc())
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
-
-
-@app.route("/<path_key>/menu/item/<sku>/intro/draft", methods=["POST"])
-def menu_intro_draft(path_key, sku):
-    """이미 있는 메뉴의 소개글 초안 — 비어 있는 걸 채울 때 쓴다."""
-    check(path_key)
-    it = next((m for m in db.menu_all() if m["sku"] == sku), None)
-    if not it:
-        abort(404)
-    # AI(무료 제미나이)로 쓰는 게 규칙 생성기보다 훨씬 낫다. 키가 없거나
-    # 할당량이 걸리면 규칙 초안으로 떨어뜨린다 — 버튼이 먹통이 되는 것보다 낫다.
-    try:
-        from intro_ai import draft as ai_draft
-        ko, en, name_en = ai_draft(it.get("name", ""), it.get("category", ""),
-                                   it.get("composition"), it.get("description"))
-        return jsonify({"ok": True, "intro_ko": ko, "intro_en": en,
-                        "name_en": name_en, "by": "ai"})
-    except Exception as e:  # noqa: BLE001
-        ko, en, name_en = intro_draft(it.get("name", ""), it.get("category", ""))
-        return jsonify({"ok": True, "intro_ko": ko, "intro_en": en,
-                        "name_en": name_en, "by": "rule",
-                        "note": f"AI를 못 써서 기본 초안입니다 ({str(e)[:60]})"})
 
 
 @app.route("/<path_key>/menu/category/rename", methods=["POST"])
