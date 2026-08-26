@@ -1746,6 +1746,125 @@ def menu_settings_save(path_key, key):
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
+# ---------------------------------------------------------------------------
+# 마케팅 캘린더 (/mkt) — 설계: 2026-08-26 사장님 확정 (목업 v3)
+# 매출 원천: 드라이브 장부관리 폴더의 TOS/IMU 포스 엑셀(집 PC 일꾼이 자동 반영)
+# ---------------------------------------------------------------------------
+
+from database import mkt_store  # noqa: E402
+from service import mkt_page  # noqa: E402
+
+
+@app.route("/<path_key>/mkt")
+def mkt_home(path_key):
+    check(path_key)
+    today = datetime.now().date()
+    try:
+        y = int(request.args.get("y", today.year))
+        m = int(request.args.get("m", today.month))
+        assert 1 <= m <= 12 and 2024 <= y <= 2100
+    except (ValueError, AssertionError):
+        y, m = today.year, today.month
+    view = mkt_page.build_month_view(y, m, today)
+    return render_template("mkt.html", key=path_key, v=view)
+
+
+@app.route("/<path_key>/mkt/guide")
+def mkt_guide(path_key):
+    check(path_key)
+    return render_template("mkt_guide.html", key=path_key)
+
+
+@app.route("/<path_key>/mkt/campaign", methods=["POST"])
+def mkt_campaign_new(path_key):
+    check(path_key)
+    f = request.get_json(force=True) or {}
+    title = (f.get("title") or "").strip()
+    start = (f.get("start") or "").strip()
+    if not title or not start:
+        return jsonify({"ok": False, "error": "제목과 시작일은 필수예요."}), 400
+    category = f.get("category") or "store"
+    end = (f.get("end") or "").strip() or None
+    if category == "var" and not end:
+        end = start                       # 변수는 당일 단발
+    targets = [t.strip() for t in (f.get("targets") or []) if t.strip()]
+    if not targets:
+        try:
+            targets = mkt_store.extract_targets(
+                title, mkt_store.distinct_products(days=120))
+        except Exception:  # noqa: BLE001
+            targets = []
+    cost = f.get("cost")
+    try:
+        cost = int(str(cost).replace(",", "")) if cost not in (None, "") else None
+    except ValueError:
+        cost = None
+    try:
+        cid = mkt_store.create_campaign(
+            title, category, start, end, targets or None, cost,
+            (f.get("memo") or "").strip() or None)
+        return jsonify({"ok": True, "id": cid, "targets": targets})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"캠페인 저장 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/mkt/campaign/<int:cid>/update", methods=["POST"])
+def mkt_campaign_update(path_key, cid):
+    check(path_key)
+    f = request.get_json(force=True) or {}
+    try:
+        if f.get("action") == "end":
+            mkt_store.update_campaign(
+                cid, end_date=f.get("end") or str(datetime.now().date()),
+                status="done")
+        elif f.get("action") == "delete":
+            mkt_store.delete_campaign(cid)
+        else:
+            patch = {k: f[k] for k in
+                     ("title", "category", "start_date", "end_date",
+                      "target_products", "cost", "memo") if k in f}
+            mkt_store.update_campaign(cid, **patch)
+        return jsonify({"ok": True})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"캠페인 수정 실패(#{cid}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/mkt/campaign/<int:cid>/effect")
+def mkt_campaign_effect(path_key, cid):
+    check(path_key)
+    try:
+        return jsonify(mkt_page.campaign_effect(cid))
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": str(e)[:200]}), 200
+
+
+@app.route("/<path_key>/mkt/day/<day>")
+def mkt_day(path_key, day):
+    check(path_key)
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        abort(400)
+    try:
+        return jsonify(mkt_page.day_detail(day))
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": str(e)[:200]}), 200
+
+
+@app.route("/<path_key>/mkt/import", methods=["POST"])
+def mkt_import(path_key):
+    """'장부 지금 반영' — 집 PC 일꾼에게 폴더 스캔 요청."""
+    check(path_key)
+    try:
+        mkt_store.request_pos_import(by="mkt")
+        return jsonify({"ok": True})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
 if __name__ == "__main__":
     if not SERVICE_PATH:
         print("[!] SERVICE_PATH 가 없습니다. .env 에 비밀 주소 조각을 넣어주세요.")

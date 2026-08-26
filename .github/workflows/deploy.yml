@@ -81,9 +81,13 @@ jobs:
           upload service/templates/menu.html
           upload service/templates/menu_tasks.html
           upload service/templates/menu_ingredients.html
+          upload service/templates/mkt.html
+          upload service/templates/mkt_guide.html
+          upload service/mkt_page.py
           upload data/ingredients_seed.json
           upload database/supabase_client.py
           upload database/blog_store.py
+          upload database/mkt_store.py
 
       - name: 웹앱 재시작
         run: |

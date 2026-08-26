@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>마케팅 기록 가이드 — 베어글스</title>
+<style>
+:root{
+  --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+  --accent:#185fa5; --accent-bg:#e6f1fb;
+  --ok:#3b6d11; --warn:#854f0b; --warn-bg:#faeeda; --chip-bg:#f1efe9;
+}
+*{box-sizing:border-box}
+body{margin:0; background:var(--bg); color:var(--ink);
+  font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif;
+  font-size:15px; line-height:1.6;}
+.wrap{max-width:640px; margin:0 auto; padding:22px 16px 56px}
+h1{font-size:19px; margin:0 0 4px}
+h1 a{font-size:12.5px; font-weight:400; color:var(--accent); text-decoration:none; margin-left:8px}
+.lede{color:var(--muted); font-size:13.5px; margin:0 0 18px}
+.card{background:var(--card); border:1px solid var(--line); border-radius:14px;
+  padding:15px 17px; margin-bottom:12px}
+.card h2{font-size:14.5px; margin:0 0 8px; display:flex; align-items:center; gap:8px}
+.card h2 .n{width:21px; height:21px; border-radius:50%; background:var(--accent-bg);
+  color:var(--accent); font-size:12px; font-weight:800; display:inline-flex;
+  align-items:center; justify-content:center; flex:none}
+.big{background:var(--accent-bg); border:none; text-align:center; padding:20px 16px}
+.big .rule{font-size:17.5px; font-weight:800; margin:0}
+.big .rule b{color:var(--accent)}
+.big .sub{font-size:12.5px; color:var(--muted); margin:6px 0 0}
+ul{margin:4px 0 0; padding-left:2px; list-style:none}
+li{margin:5px 0; padding-left:23px; position:relative; font-size:13.5px}
+li::before{content:"○"; position:absolute; left:2px; color:var(--muted); font-size:12px; top:2px}
+li.yes::before{content:"✓"; color:var(--ok); font-weight:800}
+li.no::before{content:"—"; color:var(--muted); font-weight:800}
+li .q{color:var(--muted); font-size:12px}
+.auto li::before{content:"🔔"; font-size:11px; left:0}
+.note{font-size:12px; color:var(--muted); margin-top:8px}
+.pill{display:inline-block; font-size:11.5px; font-weight:700; border-radius:6px;
+  padding:0 7px; background:var(--warn-bg); color:var(--warn); vertical-align:1px}
+.routine{display:flex; gap:10px; margin-top:8px; flex-wrap:wrap}
+.routine .step{flex:1; min-width:150px; border:1px solid var(--line);
+  border-radius:10px; padding:9px 11px; font-size:13px}
+.routine .step .t{font-size:11px; color:var(--muted); letter-spacing:.04em; margin-bottom:2px}
+</style>
+</head>
+<body>
+{% include "_sidebar.html" %}
+<div class="wrap">
+  <h1>📣 마케팅 기록 가이드<a href="/{{ key }}/mkt">← 캘린더로</a></h1>
+  <p class="lede">이 페이지는 기록이 쌓여야만 값어치가 생겨요. 그래서 규칙은 하나뿐입니다.</p>
+
+  <div class="card big">
+    <p class="rule">마케팅을 <b>시작한 그 자리에서, 10초</b> 안에 적는다</p>
+    <p class="sub">제목 + 기간 + 카테고리 끝. 비용·메모는 나중에 채워도 됩니다.</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">1</span>적는 것 — "매출을 움직이려고 한 행동"만</h2>
+    <ul>
+      <li class="yes">홍보 릴스·이벤트 게시물을 올린 날 <span class="q">— 일상 스토리는 ✗</span></li>
+      <li class="yes">쿠폰·할인을 시작하거나 끝낸 날</li>
+      <li class="yes">매장 이벤트 (1+1, 시식 등)</li>
+      <li class="yes">광고 조건을 바꾼 날 <span class="q">— 입찰가 변경, 껐다 켬 → ◆ 변수로</span></li>
+      <li class="yes">신메뉴 출시 <span class="q">— 마케팅은 아니지만 매출 변수라서 ◆ 변수로</span></li>
+      <li class="no">상시 돌아가는 광고(쿠팡 CPS·배민 클릭) — 조건을 바꿀 때만 ◆ 변수로</li>
+      <li class="no">평범한 일상 게시물, 리뷰 답글 — 측정 대상이 아니에요</li>
+    </ul>
+    <p class="note">헷갈리면: "이게 잘 되면 매출이 올라야 하나?" → 그렇다면 적는다.</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">2</span>깜빡해도 괜찮아요 — 시스템이 되물어요</h2>
+    <ul class="auto">
+      <li>매출이 평소보다 크게 튀거나 꺼진 날, 기록이 없으면 → <b>"그날 뭐 하셨어요?"</b> 배너가 떠요. 그때 과거 날짜로 적으면 됩니다</li>
+      <li>진행중 캠페인이 2주 넘게 열려 있으면 → <b>"아직 진행 중인가요?"</b> 끝났으면 종료만 눌러주세요</li>
+      <li>새 달이 됐는데 지난달 장부가 없으면 → <b>"장부를 올려주세요"</b> 리마인드</li>
+    </ul>
+    <p class="note">기록은 완벽할 필요 없어요. 빠진 건 매출 데이터가 찾아내고, 되물었을 때 채우면 충분합니다.</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">3</span>월초 5분 루틴</h2>
+    <div class="routine">
+      <div class="step"><div class="t">STEP 1</div>
+        토스 매출리포트에서 지난달 엑셀을 받아 드라이브 <b>장부관리 &gt; 그 달 폴더</b>에 넣기
+        (파일명: TOS_2026.08.xlsx) → 자동 반영</div>
+      <div class="step"><div class="t">STEP 2</div>
+        캘린더에서 지난달 한 번 훑기 — 끝난 캠페인 종료 처리, 빠진 기록 보충</div>
+    </div>
+    <p class="note"><span class="pill">팁</span> 캠페인 끝난 직후 결과가 궁금하면, 그 기간만
+      내보내서 폴더에 올리고 [📂 장부 지금 반영]을 누르면 바로 분석돼요.</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">4</span>숫자를 읽을 때 한 가지만 기억</h2>
+    <ul>
+      <li><b>"참고용" 뱃지</b>가 붙은 효과는 기간이 짧아 운일 수 있어요 — 다음에 한 번 더 해보고 판단</li>
+      <li><b>"겹침" 경고</b>가 있으면 그 상승이 누구 덕인지 나눠 읽을 수 없어요 — 다음엔 기간을 떨어뜨려 보세요</li>
+    </ul>
+    <p class="note">이 페이지의 목적은 "증명"이 아니라, 같은 마케팅을 반복할지 말지 <b>덜 틀리게 결정</b>하는 것.</p>
+  </div>
+</div>
+</body>
+</html>

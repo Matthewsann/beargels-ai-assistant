@@ -861,6 +861,58 @@ def maybe_complaint_report() -> None:
         logger.warning("문제 리뷰 보고 실패: %s", e)
 
 
+# ---------------------------------------------------------------------------
+# 포스 장부 자동 반영 — 드라이브 동기화 폴더에서 새 TOS/IMU 엑셀을 찾아
+# 마케팅 캘린더용 매출 테이블(sales_daily 등)에 넣는다. (worker/pos_import.py)
+# ---------------------------------------------------------------------------
+
+POS_IMPORT_TIMES = os.getenv("WORKER_POS_IMPORT_TIMES", "10:20,21:20")
+_last_pos_slot = None
+
+
+def run_pos_import_job(job) -> None:
+    """웹 '장부 지금 반영' 버튼 요청 처리."""
+    from worker import pos_import
+    jid = job["id"]
+    db.worker_ping("working", "장부 파일 반영 중")
+    try:
+        res = pos_import.scan_ledger()
+        if not res.get("ok") and res.get("error"):
+            db.finish_job(jid, "error", res["error"][:400], 0)
+            return
+        n = len(res.get("imported") or [])
+        msg = (f"새 장부 {n}건 반영" if n else "새 장부 파일 없음")
+        if res.get("errors"):
+            msg += " / 실패: " + " · ".join(res["errors"])[:200]
+        db.finish_job(jid, "error" if res.get("errors") and not n else "done",
+                      msg, n)
+    except Exception as e:  # noqa: BLE001
+        db.log_error("worker", f"장부 반영 실패: {e}", kind=type(e).__name__,
+                     path="run_pos_import_job")
+        db.finish_job(jid, "error", str(e)[:400], 0)
+    finally:
+        db.worker_ping("idle", "대기 중")
+
+
+def maybe_pos_import() -> None:
+    """하루 두 번(기본 10:20/21:20) 장부 폴더를 스스로 훑는다."""
+    global _last_pos_slot
+    try:
+        slot = slot_due(POS_IMPORT_TIMES, datetime.now(), _last_pos_slot)
+        if slot:
+            _last_pos_slot = slot
+            from worker import pos_import
+            res = pos_import.scan_ledger()
+            if res.get("imported"):
+                logger.info("장부 자동 반영: %s", " · ".join(res["imported"]))
+            if res.get("errors"):
+                db.log_error("worker",
+                             "장부 파일 반영 실패: " + " · ".join(res["errors"])[:300],
+                             kind="PosImportError", path="maybe_pos_import")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("장부 자동 반영 실패: %s", e)
+
+
 # 방치된 approved 를 다시 줄 세우는 주기(초) — 매 루프(15초)마다 DB 를
 # 훑을 필요는 없다.
 RESCUE_EVERY_SECONDS = int(os.getenv("WORKER_RESCUE_SECONDS", "300"))
@@ -926,6 +978,8 @@ def run_job(job) -> None:
         return run_post_edit_job(job)
     if job.get("kind") == "menu_collect":
         return run_menu_job(job)
+    if job.get("kind") == "pos_import":
+        return run_pos_import_job(job)
     if job.get("kind") not in (None, "", "collect", "collect_all"):
         # 모르는 종류를 수집으로 오처리하지 않는다 — 구버전 일꾼이 새 종류의
         # 잡(post_edit)을 수집으로 돌려버린 사고(2026-08-12).
@@ -998,6 +1052,7 @@ def main() -> int:
                 maybe_auto_collect()
                 maybe_auto_post()
                 maybe_complaint_report()
+                maybe_pos_import()
                 maybe_rescue_stuck()
                 db.worker_ping("idle", "대기 중")
         except KeyboardInterrupt:

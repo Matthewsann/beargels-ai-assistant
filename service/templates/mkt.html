@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>마케팅 — 베어글스</title>
+<style>
+:root{
+  --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+  --accent:#185fa5; --accent-bg:#e6f1fb;
+  --ok:#3b6d11; --ok-bg:#eaf3de; --bad:#a3271f; --bad-bg:#fbe9e7;
+  --warn:#854f0b; --warn-bg:#faeeda; --chip-bg:#f1efe9;
+  --c1:#185fa5; --c1-bg:#e6f1fb;   /* 배달앱 */
+  --c2:#a34d78; --c2-bg:#f7e4ee;   /* SNS·콘텐츠 */
+  --c3:#3b6d11; --c3-bg:#e4efd6;   /* 플레이스 */
+  --c4:#8a5a17; --c4-bg:#f3e7d2;   /* 매장 이벤트 */
+}
+html[data-theme="dark"]{
+  --c1:#7fb3e8; --c1-bg:#1d2f42; --c2:#d98ab5; --c2-bg:#3c2231;
+  --c3:#a3ce7e; --c3-bg:#28361a; --c4:#d8ac6a; --c4-bg:#382c19;
+  --chip-bg:#2b2b27;
+}
+*{box-sizing:border-box}
+body{margin:0; background:var(--bg); color:var(--ink);
+  font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif;
+  font-size:15px; line-height:1.5;}
+.wrap{max-width:1000px; margin:0 auto; padding:18px 14px 60px}
+header.page{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:8px}
+h1{font-size:20px; margin:0}
+h1 a{color:var(--muted); font-size:12.5px; font-weight:400; text-decoration:none; margin-left:8px}
+.month-nav{display:flex; align-items:center; gap:2px}
+.month-nav a{border:1px solid var(--line); background:var(--card); color:var(--muted);
+  width:28px; height:28px; border-radius:8px; text-decoration:none; font-size:14px;
+  display:flex; align-items:center; justify-content:center;}
+.month-nav .cur{font-weight:700; font-size:16px; padding:0 8px; font-variant-numeric:tabular-nums}
+.btn-new{margin-left:auto; background:var(--accent); color:#fff; border:none;
+  padding:8px 15px; border-radius:9px; font-size:14px; font-weight:700; cursor:pointer;}
+.btn2{background:var(--card); border:1px solid var(--line); color:var(--muted);
+  padding:7px 11px; border-radius:9px; font-size:12.5px; cursor:pointer;}
+.remind{background:var(--warn-bg); color:var(--warn); border-radius:10px;
+  padding:8px 13px; font-size:13px; margin-bottom:8px; display:flex; gap:8px; align-items:center;}
+.remind button{margin-left:auto; flex:none}
+.src-line{font-size:12px; color:var(--muted); margin:2px 0 10px; display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+
+.cal{background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden}
+.dow{display:grid; grid-template-columns:repeat(7,1fr); border-bottom:1px solid var(--line)}
+.dow div{padding:6px 0 5px; text-align:center; font-size:12px; color:var(--muted)}
+.dow .su{color:var(--bad)} .dow .sa{color:var(--accent)}
+.week{display:grid; grid-template-columns:repeat(7,1fr); border-bottom:1px solid var(--line)}
+.week:last-child{border-bottom:none}
+.day{grid-row:1; min-height:56px; padding:4px 6px 2px; border-right:1px solid var(--line);
+  font-variant-numeric:tabular-nums; cursor:pointer;}
+.day:hover{background:var(--chip-bg)}
+.day:nth-child(7n){border-right:none}
+.day .d{font-size:12.5px; color:var(--muted)}
+.day.today .d{background:var(--accent); color:#fff; border-radius:6px; padding:0 5px; font-weight:700}
+.day.out{cursor:default} .day.out .d{opacity:.3}
+.day .sig{display:inline-block; width:7px; height:7px; border-radius:50%; margin-left:4px; vertical-align:1px}
+.day .sig.hi{background:var(--ok)} .day .sig.lo{background:var(--bad)}
+.day .closed{font-size:11px; color:var(--muted)}
+.bar{align-self:center; height:16px; margin:1px 3px; padding:0 7px; font-size:11px;
+  font-weight:700; line-height:16px; white-space:nowrap; overflow:hidden;
+  border-radius:8px; cursor:pointer;}
+.bar.cl{border-top-left-radius:0; border-bottom-left-radius:0; margin-left:0}
+.bar.cr{border-top-right-radius:0; border-bottom-right-radius:0; margin-right:0}
+.bar.c1{background:var(--c1-bg); color:var(--c1)} .bar.c2{background:var(--c2-bg); color:var(--c2)}
+.bar.c3{background:var(--c3-bg); color:var(--c3)} .bar.c4{background:var(--c4-bg); color:var(--c4)}
+.marker{align-self:center; justify-self:start; margin:1px 3px; font-size:11px;
+  color:var(--warn); background:var(--warn-bg); border-radius:5px; padding:0 6px;
+  white-space:nowrap; overflow:hidden; max-width:96%; cursor:pointer;}
+.legend{display:flex; flex-wrap:wrap; gap:5px 14px; font-size:12px; color:var(--muted);
+  margin:8px 2px 0; align-items:center}
+.legend .sw{display:inline-block; width:10px; height:10px; border-radius:3px;
+  vertical-align:-1px; margin-right:4px}
+.legend b.hi{color:var(--ok)} .legend b.lo{color:var(--bad)}
+
+.list-head{display:flex; align-items:baseline; gap:10px; margin:24px 2px 8px}
+.list-head h2{font-size:16px; margin:0}
+.list-head .sub{font-size:12px; color:var(--muted)}
+.cat{background:var(--card); border:1px solid var(--line); border-radius:12px;
+  margin-bottom:10px; overflow:hidden}
+.cat-h{display:flex; align-items:center; gap:8px; padding:8px 14px; font-size:13.5px;
+  font-weight:700; border-bottom:1px solid var(--line)}
+.cat-h .sw{width:10px; height:10px; border-radius:3px}
+.row{padding:9px 14px; border-bottom:1px solid var(--line); font-size:13.5px; cursor:pointer}
+.row:last-child{border-bottom:none}
+.row:hover{background:var(--chip-bg)}
+.row .top{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+.row .name{font-weight:600}
+.row .period{color:var(--muted); font-size:12.5px; font-variant-numeric:tabular-nums; margin-left:auto}
+.st{display:inline-block; font-size:11px; font-weight:700; border-radius:5px; padding:0 6px}
+.st.live{background:var(--accent-bg); color:var(--accent)}
+.st.done{background:var(--chip-bg); color:var(--muted)}
+.st.ref{background:var(--warn-bg); color:var(--warn)}
+.eff-box{display:none; margin-top:8px; border-top:1px dashed var(--line); padding-top:9px;
+  font-size:13px; cursor:default}
+.row.open .eff-box{display:block}
+.eff-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:7px; margin:6px 0}
+.eff-grid .st1{border:1px solid var(--line); border-radius:9px; padding:6px 10px}
+.eff-grid .st1.hero{background:var(--accent-bg); border-color:transparent}
+.eff-grid .k{font-size:11.5px; color:var(--muted)}
+.eff-grid .v{font-size:14.5px; font-weight:800; font-variant-numeric:tabular-nums}
+.eff-grid .v small{font-size:11.5px; font-weight:600}
+.up{color:var(--ok)} .dn{color:var(--bad)}
+.eff-note{font-size:12px; color:var(--muted); margin-top:5px}
+.eff-warn{font-size:12px; color:var(--warn); margin-top:5px}
+.row-actions{margin-top:7px; display:flex; gap:6px}
+.empty{padding:14px; font-size:13px; color:var(--muted); text-align:center}
+
+/* 모달 */
+.modal-bg{display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:80}
+.modal-bg.on{display:flex; align-items:flex-start; justify-content:center; padding:40px 12px}
+.modal{background:var(--card); border-radius:14px; padding:18px; width:100%; max-width:440px;
+  box-shadow:0 8px 30px rgba(0,0,0,.2)}
+.modal h3{margin:0 0 12px; font-size:15.5px}
+.f-in{border:1px solid var(--line); border-radius:9px; padding:9px 12px; font-size:14px;
+  background:var(--bg); color:var(--ink); width:100%; margin-bottom:8px; font-family:inherit}
+.f-row{display:flex; gap:8px} .f-row .f-in{flex:1}
+.f-cats{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px}
+.f-cat{font-size:12.5px; font-weight:700; border-radius:999px; padding:5px 12px; cursor:pointer;
+  border:1px solid var(--line); background:var(--card); color:var(--muted)}
+.f-cat.on.k-delivery{background:var(--c1-bg); color:var(--c1); border-color:var(--c1)}
+.f-cat.on.k-sns{background:var(--c2-bg); color:var(--c2); border-color:var(--c2)}
+.f-cat.on.k-place{background:var(--c3-bg); color:var(--c3); border-color:var(--c3)}
+.f-cat.on.k-store{background:var(--c4-bg); color:var(--c4); border-color:var(--c4)}
+.f-cat.on.k-var{background:var(--warn-bg); color:var(--warn); border-color:var(--warn)}
+.f-more{font-size:12.5px; color:var(--accent); cursor:pointer; margin:2px 0 8px; display:inline-block}
+.f-detail{display:none} .f-detail.on{display:block}
+.f-note{font-size:12px; color:var(--muted); margin:2px 0 10px}
+.modal .acts{display:flex; gap:8px; justify-content:flex-end}
+.day-title{font-weight:700; margin-bottom:6px}
+table{width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums}
+td{padding:3px 0; border-top:1px solid var(--line)} td:last-child{text-align:right}
+@media (max-width:600px){
+  .day{min-height:40px; padding:3px 4px 2px}
+  .day .d{font-size:11px} .day .closed{font-size:0}
+  .bar{height:5px; font-size:0; padding:0; margin:1px 2px; border-radius:3px}
+  .marker{font-size:0; height:5px; width:5px; padding:0; border-radius:50%}
+}
+</style>
+</head>
+<body>
+{% include "_sidebar.html" %}
+<div class="wrap">
+  <header class="page">
+    <h1>📣 마케팅<a href="/{{ key }}/mkt/guide">사용 가이드</a></h1>
+    <nav class="month-nav">
+      <a href="/{{ key }}/mkt?y={{ v.prev[0] }}&m={{ v.prev[1] }}">‹</a>
+      <span class="cur">{{ v.y }}년 {{ v.m }}월</span>
+      <a href="/{{ key }}/mkt?y={{ v.next[0] }}&m={{ v.next[1] }}">›</a>
+    </nav>
+    <button type="button" class="btn2" onclick="mkImport(this)">📂 장부 지금 반영</button>
+    <button type="button" class="btn-new" onclick="mkOpenForm()">＋ 기록</button>
+  </header>
+
+  {% if not v.db_ready %}
+  <div class="remind">⚠️ 매출 테이블이 아직 없어요 — 사장님이 Supabase SQL Editor 에서
+    <b>database/schema_v7.sql</b> 을 실행하면 활성화됩니다.</div>
+  {% endif %}
+  {% for r in v.reminders %}
+  <div class="remind">{{ r.text }}
+    {% if r.kind == 'unexplained' %}
+    <button type="button" class="btn2" onclick="mkOpenForm('{{ r.date }}')">기록하기</button>
+    {% elif r.kind == 'stale' %}
+    <button type="button" class="btn2" onclick="mkEnd({{ r.id }})">종료 처리</button>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <p class="src-line">
+    {% if v.last_pos %}<span>장부 반영: ~{{ v.last_pos }}</span>{% endif %}
+    {% if v.prov_from %}<span>{{ v.prov_from[5:7]|int }}/{{ v.prov_from[8:10]|int }}부터는 배달(배민·쿠팡) 잠정치</span>{% endif %}
+  </p>
+
+  <div class="cal">
+    <div class="dow"><div class="su">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div class="sa">토</div></div>
+    {% for w in v.weeks %}
+    <div class="week">
+      {% for d in w.days %}
+      <div class="day {{ 'out' if not d.in_month }} {{ 'today' if d.today }}"
+           {% if d.in_month %}onclick="mkDay('{{ d.date }}')"{% endif %}>
+        <span class="d">{{ d.num }}</span>{% if d.sig > 0 %}<span class="sig hi"></span>{% elif d.sig < 0 %}<span class="sig lo"></span>{% endif %}
+        {% if d.closed %}<div class="closed">휴무</div>{% endif %}
+      </div>
+      {% endfor %}
+      {% for b in w.bars %}
+      <div class="bar {{ b.cls }} {{ 'cl' if b.cont_l }} {{ 'cr' if b.cont_r }}"
+           style="grid-row:{{ b.row }}; grid-column:{{ b.col_a }}/{{ b.col_b }}"
+           onclick="mkToggleEffect({{ b.id }})">{{ b.title }}</div>
+      {% endfor %}
+      {% for mk in w.markers %}
+      <div class="marker" style="grid-row:{{ mk.row }}; grid-column:{{ mk.col }}/8"
+           title="{{ mk.title }}">◆ {{ mk.title }}</div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="legend">
+    {% for k, label, cls in v.categories %}
+    <span><span class="sw" style="background:var(--{{ cls }})"></span>{{ label }}</span>
+    {% endfor %}
+    <span>◆ 변수(신메뉴·상시 변경)</span>
+    <span><b class="hi">●</b>/<b class="lo">●</b> 같은 요일 평균 ±10% 이상 (날짜를 누르면 상세)</span>
+  </div>
+
+  <div class="list-head">
+    <h2>이달의 마케팅</h2>
+    <span class="sub">캠페인을 누르면 효과 분석이 열려요</span>
+  </div>
+
+  {% if not v.by_cat and not v.var_items %}
+  <div class="cat"><div class="empty">이달 기록이 아직 없어요 — 마케팅을 시작한 날 [＋ 기록]을 눌러주세요.</div></div>
+  {% endif %}
+
+  {% for cat in v.by_cat %}
+  <section class="cat">
+    <div class="cat-h"><span class="sw" style="background:var(--{{ cat.cls }})"></span>{{ cat.label }}</div>
+    {% for c in cat['items'] %}
+    <div class="row" id="camp-{{ c.id }}" onclick="mkToggleEffect({{ c.id }})">
+      <div class="top">
+        <span class="name">{{ c.title }}</span>
+        {% if c.status == 'live' %}<span class="st live">진행중</span>
+        {% else %}<span class="st done">종료</span>{% endif %}
+        <span class="period">{{ c.start_date[5:] }} ~ {{ c.end_date[5:] if c.end_date else '' }}</span>
+      </div>
+      <div class="eff-box" onclick="event.stopPropagation()">불러오는 중…</div>
+    </div>
+    {% endfor %}
+  </section>
+  {% endfor %}
+
+  {% if v.var_items %}
+  <section class="cat">
+    <div class="cat-h"><span class="sw" style="background:var(--warn)"></span>변수 기록</div>
+    {% for c in v.var_items %}
+    <div class="row" id="camp-{{ c.id }}" onclick="mkToggleEffect({{ c.id }})">
+      <div class="top"><span class="name">◆ {{ c.title }}</span>
+        <span class="period">{{ c.start_date[5:] }}</span></div>
+      <div class="eff-box" onclick="event.stopPropagation()">불러오는 중…</div>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+</div>
+
+<!-- ＋ 기록 모달 -->
+<div class="modal-bg" id="mkFormBg" onclick="if(event.target===this)this.classList.remove('on')">
+  <div class="modal">
+    <h3>마케팅 기록</h3>
+    <input class="f-in" id="mkTitle" type="text" placeholder="무엇을 했나요? (예: 버터떡 인스타 릴스)">
+    <div class="f-row">
+      <input class="f-in" id="mkStart" type="date">
+      <input class="f-in" id="mkEndD" type="date" title="종료일 — 비우면 진행중">
+    </div>
+    <div class="f-cats" id="mkCats">
+      <span class="f-cat k-delivery" data-k="delivery">배달앱</span>
+      <span class="f-cat k-sns" data-k="sns">SNS·콘텐츠</span>
+      <span class="f-cat k-place" data-k="place">플레이스</span>
+      <span class="f-cat k-store on" data-k="store">매장 이벤트</span>
+      <span class="f-cat k-var" data-k="var">◆ 변수</span>
+    </div>
+    <p class="f-note">종료일을 비우면 '진행중'으로 남아요. 제목 속 메뉴 이름은 타겟 상품으로 자동 인식됩니다.</p>
+    <span class="f-more" onclick="document.getElementById('mkDetail').classList.toggle('on')">자세히 (비용·타겟·메모) ▾</span>
+    <div class="f-detail" id="mkDetail">
+      <input class="f-in" id="mkCost" type="text" inputmode="numeric" placeholder="비용(원) — 비워도 됨">
+      <input class="f-in" id="mkTargets" type="text" placeholder="타겟 상품 직접 지정 (쉼표로 구분)" list="mkProducts">
+      <datalist id="mkProducts">
+        {% for p in v.products %}<option value="{{ p }}">{% endfor %}
+      </datalist>
+      <input class="f-in" id="mkMemo" type="text" placeholder="메모">
+    </div>
+    <div class="acts">
+      <button type="button" class="btn2" onclick="document.getElementById('mkFormBg').classList.remove('on')">닫기</button>
+      <button type="button" class="btn-new" style="margin:0" onclick="mkSave(this)">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 날짜 상세 모달 -->
+<div class="modal-bg" id="mkDayBg" onclick="if(event.target===this)this.classList.remove('on')">
+  <div class="modal" id="mkDayBox">불러오는 중…</div>
+</div>
+
+<script>
+const KEY = {{ key|tojson }};
+const CAT_DEFAULT = 'store';
+let mkCat = CAT_DEFAULT;
+
+document.getElementById('mkCats').addEventListener('click', e => {
+  const el = e.target.closest('.f-cat'); if (!el) return;
+  document.querySelectorAll('#mkCats .f-cat').forEach(x => x.classList.remove('on'));
+  el.classList.add('on'); mkCat = el.dataset.k;
+});
+
+function mkOpenForm(dateStr) {
+  const bg = document.getElementById('mkFormBg');
+  document.getElementById('mkStart').value = dateStr || {{ v.today|tojson }};
+  document.getElementById('mkEndD').value = '';
+  bg.classList.add('on');
+  document.getElementById('mkTitle').focus();
+}
+
+async function mkSave(btn) {
+  const title = document.getElementById('mkTitle').value.trim();
+  const start = document.getElementById('mkStart').value;
+  if (!title || !start) { alert('제목과 시작일을 입력해주세요.'); return; }
+  btn.disabled = true;
+  const targets = document.getElementById('mkTargets').value
+      .split(',').map(s => s.trim()).filter(Boolean);
+  try {
+    const r = await fetch(`/${KEY}/mkt/campaign`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        title, start, end: document.getElementById('mkEndD').value,
+        category: mkCat, targets,
+        cost: document.getElementById('mkCost').value,
+        memo: document.getElementById('mkMemo').value,
+      })});
+    const j = await r.json();
+    if (!j.ok) { alert(j.error || '저장 실패'); btn.disabled = false; return; }
+    location.reload();
+  } catch (e) { alert('저장 실패: ' + e); btn.disabled = false; }
+}
+
+async function mkEnd(id) {
+  if (!confirm('이 캠페인을 오늘 날짜로 종료할까요?')) return;
+  await fetch(`/${KEY}/mkt/campaign/${id}/update`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: 'end'})});
+  location.reload();
+}
+
+async function mkDelete(id) {
+  if (!confirm('이 기록을 삭제할까요? (되돌릴 수 없어요)')) return;
+  await fetch(`/${KEY}/mkt/campaign/${id}/update`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: 'delete'})});
+  location.reload();
+}
+
+const won = n => (n == null) ? '—' : Math.round(n).toLocaleString('ko-KR') + '원';
+const pctTxt = p => (p == null) ? '' :
+  `<small class="${p >= 0 ? 'up' : 'dn'}">${p >= 0 ? '▲' : '▼'}${Math.abs(p * 100).toFixed(1)}%</small>`;
+
+async function mkToggleEffect(id) {
+  const row = document.getElementById('camp-' + id);
+  if (!row) return;
+  const box = row.querySelector('.eff-box');
+  if (row.classList.contains('open')) { row.classList.remove('open'); return; }
+  row.classList.add('open');
+  try {
+    const r = await fetch(`/${KEY}/mkt/campaign/${id}/effect`);
+    const e = await r.json();
+    if (e.error) { box.textContent = '분석 실패: ' + e.error; return; }
+    let h = '';
+    if (e.short) h += `<span class="st ref">참고용</span> <span class="eff-note">기간 ${e.days}일 — 표본이 짧아 운일 수 있어요</span><br>`;
+    h += '<div class="eff-grid">';
+    for (const t of (e.targets || [])) {
+      h += `<div class="st1 hero"><div class="k">🎯 ${t.product} 판매</div>
+        <div class="v">일 ${t.pre_qty_per_day} → ${t.qty_per_day}개 ${pctTxt(t.qty_pct)}</div></div>`;
+    }
+    h += `<div class="st1"><div class="k">기간 총매출</div><div class="v">${won(e.total.actual)} ${pctTxt(e.total.pct)}</div></div>`;
+    h += `<div class="st1"><div class="k">매장</div><div class="v">${won(e.store.actual)} ${pctTxt(e.store.pct)}</div></div>`;
+    h += `<div class="st1"><div class="k">배달</div><div class="v">${won(e.delivery.actual)} ${pctTxt(e.delivery.pct)}</div></div>`;
+    if (e.cost) h += `<div class="st1"><div class="k">증분 ROAS (비용 ${won(e.cost)})</div>
+      <div class="v">${e.roas == null ? '—' : e.roas}</div></div>`;
+    h += '</div>';
+    h += `<div class="eff-note">비교: 같은 요일 최근 4주 평균(휴무 제외) 대비 · 기대치 ${won(e.total.expected)}</div>`;
+    if (e.overlap && e.overlap.length)
+      h += `<div class="eff-warn">⚠ 이 기간에 ${e.overlap.map(o => `'${o.title}'`).join(', ')} 도 진행 — 효과가 섞여 있을 수 있어요.</div>`;
+    if (e.memo) h += `<div class="eff-note">메모: ${e.memo}</div>`;
+    h += `<div class="row-actions">
+      <button type="button" class="btn2" onclick="mkEnd(${id})">종료</button>
+      <button type="button" class="btn2" onclick="mkDelete(${id})">삭제</button></div>`;
+    box.innerHTML = h;
+  } catch (err) { box.textContent = '분석 실패: ' + err; }
+}
+
+async function mkDay(dateStr) {
+  const bg = document.getElementById('mkDayBg');
+  const box = document.getElementById('mkDayBox');
+  box.textContent = '불러오는 중…';
+  bg.classList.add('on');
+  try {
+    const r = await fetch(`/${KEY}/mkt/day/${dateStr}`);
+    const d = await r.json();
+    if (d.error) { box.textContent = d.error; return; }
+    const chName = {store: '매장', baemin: '배민', coupang: '쿠팡이츠',
+                    yogiyo: '요기요', ddangyo: '땡겨요'};
+    let h = `<div class="day-title">${dateStr} 매출
+      ${d.pct != null ? pctTxt(d.pct) + ' <small style="color:var(--muted);font-weight:400">(요일 평균 대비)</small>' : ''}</div>`;
+    h += `<div style="font-size:19px;font-weight:800;margin-bottom:8px">${won(d.total)}</div>`;
+    if (d.channels.length) {
+      h += '<table>';
+      for (const c of d.channels)
+        h += `<tr><td>${chName[c.channel] || c.channel}</td><td>${won(c.amount)}</td></tr>`;
+      h += '</table>';
+    }
+    if (d.top.length) {
+      h += '<div class="day-title" style="margin-top:12px">많이 팔린 상품</div><table>';
+      for (const t of d.top)
+        h += `<tr><td>${t.product}</td><td>${t.qty}개 · ${won(t.amount)}</td></tr>`;
+      h += '</table>';
+    } else {
+      h += '<p class="eff-note">이날 상품별 데이터가 없어요 (장부 반영 전이거나 휴무).</p>';
+    }
+    h += `<div class="acts" style="margin-top:12px">
+      <button type="button" class="btn2" onclick="mkOpenForm('${dateStr}');document.getElementById('mkDayBg').classList.remove('on')">이날 기록 추가</button>
+      <button type="button" class="btn2" onclick="document.getElementById('mkDayBg').classList.remove('on')">닫기</button></div>`;
+    box.innerHTML = h;
+  } catch (e) { box.textContent = '불러오기 실패: ' + e; }
+}
+
+async function mkImport(btn) {
+  btn.disabled = true; btn.textContent = '요청됨…';
+  try {
+    const r = await fetch(`/${KEY}/mkt/import`, {method: 'POST'});
+    const j = await r.json();
+    btn.textContent = j.ok ? '📂 반영 요청됨 (1~2분 뒤 새로고침)' : '실패: ' + (j.error || '');
+  } catch (e) { btn.textContent = '실패'; }
+}
+</script>
+</body>
+</html>
