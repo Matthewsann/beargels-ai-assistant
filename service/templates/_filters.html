@@ -100,10 +100,14 @@
      class="{{ 'on' if source == 'app' }}">📱 앱에서 직접</a>
 </div>
 {% elif screen == 'care' %}
+{# ⚠️ 기본(파라미터 없음)이 이제 '아직 안 함' 이다(🚨 문제 탭, 2026-08-27) —
+   급한 것부터 보여야 하니까. '전체'를 url_with(replied=None) 으로 만들면
+   파라미터가 사라져 기본값과 똑같아 보여서 눌러도 안 바뀌는 것처럼 느껴진다
+   → 'any' 를 써서 명시적으로 다른 값을 남긴다(url_with 는 None/빈값/'all'만 지운다). #}
 <div class="filters">
   <span class="lbl" style="align-self:center;min-width:44px;">답글</span>
-  <a href="{{ url_with(replied=None) }}" class="{{ 'on' if not rep }}">전체</a>
-  <a href="{{ url_with(replied='n') }}" class="{{ 'on' if rep == 'n' }}">⬜ 아직 안 함</a>
+  <a href="{{ url_with(replied='n') }}" class="{{ 'on' if not rep or rep == 'n' }}">⬜ 아직 안 함</a>
+  <a href="{{ url_with(replied='any') }}" class="{{ 'on' if rep == 'any' }}">전체</a>
   <a href="{{ url_with(replied='y') }}" class="{{ 'on' if rep == 'y' }}">✅ 답글 있음</a>
 </div>
 {% endif %}

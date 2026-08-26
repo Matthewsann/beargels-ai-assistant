@@ -690,15 +690,16 @@ CS_KINDS = ("complaint", "escalate")
 
 
 def get_attention_reviews(platform=None, mode="all", limit=30, offset=0,
-                          sort="new", days=None, replied=None):
+                          sort="new", days=None, replied=None, select="*"):
     """별점 5점 미만 + CS(불만·민감) 리뷰만 모아 본다 — 관리 필요 화면용.
 
     Args:
         mode: 'all'(둘 다) | 'low'(별점 5점 미만만) | 'cs'(CS 유형만)
+        select: 배지에서 건수만 셀 때는 "id" 로 좁혀 payload 를 줄인다.
     Returns: (행 목록, 조건에 맞는 전체 건수)
     """
     try:
-        q = get_client().table("reviews").select("*", count="exact")
+        q = get_client().table("reviews").select(select, count="exact")
         if platform:
             q = q.eq("platform", platform)
         kinds = ",".join(CS_KINDS)

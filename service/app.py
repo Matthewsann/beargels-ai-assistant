@@ -224,6 +224,23 @@ def _latest_job_cached():
     return db.latest_job()
 
 
+@cached(15)
+def _tab_counts() -> dict:
+    """리뷰 답글 탭 바(할 일·문제·등록함·전체)의 배지 숫자.
+
+    화면 4개(todo/care/history/reviews)가 이제 같은 탭 바를 공유한다
+    (사장님 지시 2026-08-27 — "4개 화면이 실무적으로 효과적인가?"). 어느
+    탭에 있든 다른 탭에 뭐가 쌓였는지 보여야 해서, 페이지마다 두 건수를
+    함께 센다. id 만 받아 가볍게 — 배지는 카드 본문이 필요 없다.
+    """
+    g = gather(
+        todo=lambda: db.count_pending(with_draft=True),
+        prob=lambda: db.get_attention_reviews(replied=False, limit=1,
+                                              select="id")[1],
+    )
+    return {"todo": g["todo"] or 0, "prob": g["prob"] or 0}
+
+
 @cached(4)
 def _worker_view() -> dict:
     """집 PC 일꾼 상태를 화면용으로 정리."""
@@ -674,6 +691,7 @@ def todo(path_key):
         plat=plat, sort=sort, q=q or "", rating=rating, rating_max=rating_max,
         kind=kind, days=days, total=len(reviews),
         alerts=g.get("alerts") or [],
+        active_tab="todo", tab_counts=_tab_counts(),
     )
 
 
@@ -976,7 +994,8 @@ def history(path_key):
                            q=q or "", rating=rating, rating_max=rating_max,
                            kind=kind, days=days, expired=show_expired,
                            edit_days=REPLY_EDIT_DAYS,
-                           page=min(page, pages), pages=pages)
+                           page=min(page, pages), pages=pages,
+                           active_tab="done", tab_counts=_tab_counts())
 
 
 def _summarize_ratings(rows):
@@ -1051,6 +1070,7 @@ def reviews_all(path_key):
         plat=plat, sort=sort, q=q or "", rating=rating, rep=rep or "",
         page=page, pages=max(1, -(-total // PAGE_SIZE)),
         worker=_worker_view(), job=_job_view(db.latest_job()),
+        active_tab="all", tab_counts=_tab_counts(),
     )
 
 
@@ -1067,7 +1087,10 @@ def care_reviews(path_key):
     sort = request.args.get("sort") or "new"
     days = request.args.get("days", type=int)
     rep = request.args.get("replied")
-    replied = True if rep == "y" else False if rep == "n" else None
+    # 기본(파라미터 없음)은 이제 '아직 답 안 한 것만' — 이 화면이 탭 바에서
+    # 🚨 문제 탭이 됐고, 급한 것부터 보여야 한다(사장님 지시 2026-08-27).
+    # '전체'는 명시적으로 replied=any 를 보낸다(_filters.html 참고).
+    replied = True if rep == "y" else False if rep in (None, "", "n") else None
     page = max(1, request.args.get("page", default=1, type=int))
 
     error, rows, total = None, [], 0
@@ -1091,6 +1114,7 @@ def care_reviews(path_key):
         "care.html", key=path_key, rows=rows, error=error, total=total,
         mode=mode, plat=plat, sort=sort, page=page, days=days, rep=rep or "",
         pages=max(1, -(-total // PAGE_SIZE)), alerts=_owner_alerts(),
+        active_tab="prob", tab_counts=_tab_counts(),
     )
 
 
