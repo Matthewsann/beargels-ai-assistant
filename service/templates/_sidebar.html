@@ -8,7 +8,10 @@
   .sbar { position:fixed; left:0; top:0; bottom:0; width:198px; background:#fff;
           border-right:1px solid #e7e5de; padding:16px 10px; overflow-y:auto; z-index:50;
           font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
-  .sbar .bhead { display:flex; align-items:center; gap:8px; padding:2px 8px 14px; }
+  /* 머리(로고+이름)가 홈 버튼 — 별도 '홈' 메뉴 항목은 없앴다(사장님 지시 2026-08-27) */
+  .sbar a.bhead { display:flex; align-items:center; gap:8px; padding:2px 8px 14px;
+                  text-decoration:none; border-radius:9px; }
+  .sbar a.bhead:hover { background:#f4f2ec; }
   .sbar .bhead .blogo { width:32px; height:32px; border-radius:9px; background:#e6f1fb;
           color:#185fa5; display:flex; align-items:center; justify-content:center; font-size:17px; }
   .sbar .bhead b { font-size:13px; color:#232320; } .sbar .bhead small { display:block; font-size:11px; color:#8a897f; }
@@ -40,21 +43,20 @@
   }
 </style>
 <nav class="sbar">
-  <div class="bhead">
+  <a class="bhead" href="/{{ key }}/" title="홈으로">
     <div class="blogo">🐻</div>
     <div><b>베어글스 AI 비서</b><small>송도타임스페이스점</small></div>
-  </div>
-
-  <a class="sm {{ 'on' if _sec == 'home' else '' }}" href="/{{ key }}/">🏠 홈</a>
+  </a>
 
   <a class="sm {{ 'on' if _sec == 'review' else '' }}" href="/{{ key }}/review">💬 리뷰 답글</a>
   {% if _sec == 'review' %}
+  {# 답글 화면 4개(할 일·등록한 답글·전체 리뷰·관리 필요)는 이제 그 안의
+     탭 바(_tabs.html)로 오간다 — 사이드바에서 4줄을 다 나열할 필요가 없다
+     (사장님 지시 2026-08-27, "4개 화면이 실무적으로 효과적인가"). #}
   <div class="ssub">
     <a class="{{ 'on' if _p.endswith('/review') else '' }}" href="/{{ key }}/review">📊 리뷰 현황</a>
-    <a class="{{ 'on' if _p.endswith('/todo') else '' }}" href="/{{ key }}/todo">✍️ 등록해야 할 답글</a>
-    <a class="{{ 'on' if _p.endswith('/history') else '' }}" href="/{{ key }}/history">📜 등록한 답글</a>
-    <a class="{{ 'on' if _p.endswith('/reviews') else '' }}" href="/{{ key }}/reviews">🗂️ 전체 리뷰</a>
-    <a class="{{ 'on' if _p.endswith('/care') else '' }}" href="/{{ key }}/care">⚠️ 관리 필요</a>
+    <a class="{{ 'on' if _p.endswith('/todo') or _p.endswith('/history') or _p.endswith('/reviews') or _p.endswith('/care') else '' }}"
+       href="/{{ key }}/todo">✍️ 답글 처리</a>
   </div>
   {% endif %}
 
