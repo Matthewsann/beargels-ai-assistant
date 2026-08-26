@@ -488,10 +488,96 @@ def _visit_class(n):
 # 화면
 # ---------------------------------------------------------------------------
 
+# 홈 바로가기 카드에 담당자를 달 수 있는 프로그램들(사장님 요청 2026-08-26).
+HOME_PROGRAMS = ("review", "blog", "menu", "insta", "place")
+
+KST = timezone(timedelta(hours=9))
+
+
 @app.route("/<path_key>/")
 def home(path_key):
+    """홈 — 비서 전체의 현관(리뉴얼 2026-08-26).
+
+    프로그램 바로가기가 주인공. 리뷰 현황 대시보드는 /review 로 옮겼고
+    (없어진 기능 없음), 집 PC 상태·수집 버튼도 그 화면에 있다.
+    """
+    check(path_key)
+    error = None
+    # 서버는 UTC(PythonAnywhere) — 인사말·날짜는 매장 시간(KST)으로.
+    now = datetime.now(KST)
+    if 5 <= now.hour < 11:
+        greet = "좋은 아침이에요 ☀️"
+    elif 11 <= now.hour < 17:
+        greet = "좋은 오후예요 🥯"
+    elif 17 <= now.hour < 22:
+        greet = "오늘도 수고 많았어요 🌙"
+    else:
+        greet = "늦은 시간까지 고생 많아요 🌙"
+    today = f"{now.month}월 {now.day}일 {'월화수목금토일'[now.weekday()]}요일"
+
+    stat, owners, blog_ready = {}, {}, 0
+    try:
+        g = gather(
+            todo_baemin=lambda: db.count_pending(with_draft=True, platform="baemin"),
+            todo_coupang=lambda: db.count_pending(with_draft=True, platform="coupang"),
+            escalate=lambda: db.count_pending(with_draft=True, escalate=True),
+            oldest=db.oldest_pending_date,
+            blog_ready=lambda: blog.count_posts("ready"),
+            learning=_learning_cached,
+            alerts=_owner_alerts,
+            owners=lambda: db.get_setting("home_owners", {}) or {},
+        )
+        stat = {
+            "todo": (g["todo_baemin"] or 0) + (g["todo_coupang"] or 0),
+            "todo_baemin": g["todo_baemin"] or 0,
+            "todo_coupang": g["todo_coupang"] or 0,
+            "escalate": g["escalate"] or 0,
+        }
+        oldest = g["oldest"]
+        stat["oldest_days"] = (
+            (now.date() - datetime.fromisoformat(oldest).date()).days
+            if oldest else None)
+        blog_ready = g["blog_ready"] or 0
+        owners = g["owners"] or {}
+    except Exception as e:  # noqa: BLE001
+        error = f"현황을 불러오지 못했어요: {str(e)[:150]}"
+        g = {}
+    return render_template(
+        "home.html", key=path_key, stat=stat, greet=greet, today=today,
+        blog_ready=blog_ready, owners=owners,
+        learning=g.get("learning"), error=error, alerts=g.get("alerts") or [],
+    )
+
+
+@app.route("/<path_key>/home/owner", methods=["POST"])
+def home_owner_save(path_key):
+    """홈 바로가기 카드의 담당자 태그 저장 — 빈 이름이면 태그 제거."""
+    check(path_key)
+    data = request.get_json(force=True, silent=True) or {}
+    program = data.get("program")
+    name = (data.get("name") or "").strip()[:20]
+    if program not in HOME_PROGRAMS:
+        abort(400)
+    try:
+        owners = db.get_setting("home_owners", {}) or {}
+        if name:
+            owners[program] = name
+        else:
+            owners.pop(program, None)
+        db.menu_set_setting("home_owners", owners)
+        return jsonify({"ok": True, "name": name})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"담당자 저장 실패({program}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/review")
+def review_home(path_key):
     """리뷰 현황 대시보드 — 지금 상태를 한눈에(사장님 요청 2026-08-16).
 
+    2026-08-26 홈 리뉴얼로 첫 화면(/)에서 여기로 이사. 내용은 그대로다.
     실제 작업은 하위 화면에서: ①등록해야 할 답글(/todo) ②등록한 답글(/history).
     """
     check(path_key)

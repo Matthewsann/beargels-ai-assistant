@@ -3,7 +3,7 @@
    넓은 화면: 왼쪽 고정 세로 메뉴 / 좁은 화면(≤900px): 상단 가로 스크롤 메뉴 #}
 {% include "_theme.html" %}{# 나이트모드 — 모든 화면이 사이드바를 거치므로 여기서 적용 #}
 {% set _p = request.path %}
-{% set _sec = 'menu' if '/menu' in _p else ('blog' if '/blog' in _p else ('place' if '/place' in _p else ('insta' if '/instagram' in _p else 'review'))) %}
+{% set _sec = 'home' if _p == '/' ~ key ~ '/' else ('menu' if '/menu' in _p else ('blog' if '/blog' in _p else ('place' if '/place' in _p else ('insta' if '/instagram' in _p else 'review')))) %}
 <style>
   .sbar { position:fixed; left:0; top:0; bottom:0; width:198px; background:#fff;
           border-right:1px solid #e7e5de; padding:16px 10px; overflow-y:auto; z-index:50;
@@ -45,9 +45,12 @@
     <div><b>베어글스 AI 비서</b><small>송도타임스페이스점</small></div>
   </div>
 
-  <a class="sm {{ 'on' if _sec == 'review' else '' }}" href="/{{ key }}/">💬 리뷰 답글</a>
+  <a class="sm {{ 'on' if _sec == 'home' else '' }}" href="/{{ key }}/">🏠 홈</a>
+
+  <a class="sm {{ 'on' if _sec == 'review' else '' }}" href="/{{ key }}/review">💬 리뷰 답글</a>
   {% if _sec == 'review' %}
   <div class="ssub">
+    <a class="{{ 'on' if _p.endswith('/review') else '' }}" href="/{{ key }}/review">📊 리뷰 현황</a>
     <a class="{{ 'on' if _p.endswith('/todo') else '' }}" href="/{{ key }}/todo">✍️ 등록해야 할 답글</a>
     <a class="{{ 'on' if _p.endswith('/history') else '' }}" href="/{{ key }}/history">📜 등록한 답글</a>
     <a class="{{ 'on' if _p.endswith('/reviews') else '' }}" href="/{{ key }}/reviews">🗂️ 전체 리뷰</a>

@@ -55,6 +55,13 @@ def list_posts(status=None, limit=100):
     return res.data or []
 
 
+def count_posts(status) -> int:
+    """그 상태인 글 개수 — 홈 화면 배지용(본문까지 받아오면 무겁다)."""
+    res = (get_client().table(POSTS).select("id", count="exact")
+           .eq("status", status).execute())
+    return res.count or 0
+
+
 def get_post(post_id):
     res = get_client().table(POSTS).select("*").eq("id", post_id).limit(1).execute()
     return res.data[0] if res.data else None

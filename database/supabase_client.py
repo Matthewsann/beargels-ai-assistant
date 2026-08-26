@@ -965,6 +965,18 @@ def menu_settings_all():
     return {r["key"]: r["value"] for r in rows}
 
 
+def get_setting(key, default=None):
+    """menu_settings 에서 값 하나만 읽는다.
+
+    이름과 달리 메뉴 전용 표가 아니라 범용 key-value 창고로 쓴다
+    (예: 홈 화면 담당자 'home_owners'). 새 표를 만들려면 사장님이
+    SQL 을 직접 실행해야 해서, 있는 표를 재사용한다.
+    """
+    rows = (get_client().table("menu_settings").select("value")
+            .eq("key", key).limit(1).execute().data)
+    return rows[0]["value"] if rows else default
+
+
 def menu_update_item(sku, fields: dict):
     payload = {k: v for k, v in fields.items() if k in _MENU_ITEM_COLS}
     if not payload:

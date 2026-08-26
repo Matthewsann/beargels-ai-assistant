@@ -107,7 +107,8 @@
       <div class="lbl">우리 답글</div>
       <div class="reply">{{ r.reply_text }}</div>
     {% elif not r.replied %}
-      <a class="go" href="{{ url_for('home', path_key=key) }}#r{{ r.id }}">
+      {# 답글 카드는 /todo 화면에 있다 — 예전엔 홈이 그 화면이었다(2026-08-26 홈 분리) #}
+      <a class="go" href="{{ url_for('todo', path_key=key) }}#r{{ r.id }}">
         💬 답글 화면에서 처리하기
       </a>
     {% endif %}
