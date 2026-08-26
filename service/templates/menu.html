@@ -42,6 +42,13 @@ padding:0 11px;background:var(--card);color:var(--ink);font-size:13px;cursor:poi
 .seg button.on{background:var(--brown);color:#fff;font-weight:700}
 html.dk .seg button.on{color:#1c1a17}
 
+/* 채널 노출 점 — 기본 보기의 매장/배달/네이버 토글 */
+td.chdot{text-align:center}
+.dot{width:30px;height:30px;border:none;background:none;cursor:pointer;
+display:inline-flex;align-items:center;justify-content:center;padding:0}
+.dot i{display:block;width:13px;height:13px;border-radius:50%;
+border:2px solid var(--line);background:transparent;transition:all .12s}
+.dot.on i{background:var(--green);border-color:var(--green)}
 /* ── 칩 두 줄: 분류 / 문제(=탭 필터) ─────────────────────────────── */
 .chips{display:flex;gap:6px;overflow-x:auto;padding:6px 0 2px;align-items:center;
 -webkit-overflow-scrolling:touch;scrollbar-width:none}
@@ -268,7 +275,7 @@ z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
       <button data-mode="bulk">✏️ 수정</button>
       <button data-mode="order">↕ 순서</button>
     </span>
-    <button id="colBtn" onclick="toggleCols()">📊 분석 열</button>
+    <button id="colBtn" onclick="toggleCols()">📊 원가·분석</button>
     <button onclick="dlgTools.showModal()">⚙ 도구</button>
   </div>
   <div class="chips" id="chips"></div>
@@ -345,6 +352,10 @@ z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
   감당하는 최소 주문금액(쿠팡 기준, 최소주문 <span id="noteMin">12,500</span>원).
   최소주문금액보다 낮으면 정상 주문은 흑자, 넘으면 <span class="over" style="padding:0 4px">빨강</span>.<br><br>
   · 광고비·즉시할인·인건비·임대료는 미포함.
+  · <b>노출 점</b>(기본 보기): 매장·키오스크/배달(배민·쿠팡 공통)/네이버.
+  점을 탭하면 켜고 끕니다. <b>네이버는 수동 표시</b>입니다 — 배민·쿠팡과 달리
+  자동으로 읽어 오지 못해, '네이버에 올려 뒀다'를 직접 기록하는 체크입니다.
+  원가·원가율·추천가는 <b>📊 원가·분석</b>을 켜면 보입니다.<br><br>
   · 표의 값은 셀을 탭해서 바로 수정하며 자동 저장됩니다.</p>
   <div style="text-align:right"><button onclick="dlgHelp.close()">닫기</button></div>
 </dialog>
@@ -878,12 +889,15 @@ function render(){
     : `<tr><th class="name">메뉴 <span style="font-weight:400">(탭=상세)</span></th>
          <th data-sort="store_price">매장가${arr("store_price")}</th>
          <th data-sort="delivery_price">배달가${arr("delivery_price")}</th>
-         <th data-sort="ingredient_cost">재료원가${arr("ingredient_cost")}</th>
-         ${COLS?`<th title="재료원가 ÷ 목표원가율, 100원 올림">추천가<br>매장</th>
-                 <th title="매장가 × 1.13 (수수료 차이), 100원 반올림">추천가<br>배달</th>`:""}
-         <th data-sort="rate" title="재료원가 ÷ 판매가 (매장/배달)">원가율${arr("rate")}</th>
-         ${COLS?`<th title="이 원가율로 주문이 채워질 때 배달비를 감당하는 최소 주문금액 (쿠팡 기준)">배달<br>손익분기</th>`:""}
-         <th>판매</th></tr>`;
+         ${COLS?`<th data-sort="ingredient_cost">재료원가${arr("ingredient_cost")}</th>
+                 <th title="재료원가 ÷ 목표원가율, 100원 올림">추천가<br>매장</th>
+                 <th title="매장가 × 1.13 (수수료 차이), 100원 반올림">추천가<br>배달</th>
+                 <th data-sort="rate" title="재료원가 ÷ 판매가 (매장/배달)">원가율${arr("rate")}</th>
+                 <th title="이 원가율로 주문이 채워질 때 배달비를 감당하는 최소 주문금액 (쿠팡 기준)">배달<br>손익분기</th>
+                 <th>판매</th>`
+              :`<th title="포스·키오스크 노출 (store_active)">매장<br>키오스크</th>
+                <th title="배민·쿠팡 공통 (delivery_active) — 두 앱은 같은 값을 쓴다">배달</th>
+                <th title="네이버 스마트플레이스 등록 여부 — 자동 감지가 아니라 직접 표시하는 체크입니다">네이버</th>`}</tr>`;
   const span = BULK ? 6 : (COLS ? 9 : 6);
   document.getElementById("tbl").style.minWidth = BULK ? "760px" : (COLS ? "900px" : (isMobile()?"560px":"700px"));
   document.getElementById("tbl").className = BULK ? "fixed" : "";
@@ -948,26 +962,32 @@ function render(){
         <span class="chev">▶</span></td>
       <td class="ed" onclick="editCell(this,'${it.sku}','store_price')">${won(it.store_price)}</td>
       <td class="ed" onclick="editCell(this,'${it.sku}','delivery_price')">${won(it.delivery_price)}</td>
-      <td class="lnk ${it.ingredient_cost==null?"nocost":""}" onclick="gotoRecipe('${it.sku}')"
+      ${COLS?`<td class="lnk ${it.ingredient_cost==null?"nocost":""}" onclick="gotoRecipe('${it.sku}')"
         title="${esc(it.cost_source||"레시피에서 자동 계산됩니다")} — 탭하면 레시피 편집">
         ${it.ingredient_cost==null?"레시피 →":won(it.ingredient_cost)}</td>
-      ${COLS?(()=>{const sp=suggestPrice(it,"store"), cur=it.store_price;
+      ${(()=>{const sp=suggestPrice(it,"store"), cur=it.store_price;
         const low = sp!=null && cur!=null && cur < sp;
-        return `<td class="${low?"warn":""}">${won(sp)}</td>`;})():""}
-      ${COLS?(()=>{const sp=suggestPrice(it,"baemin"), cur=it.delivery_price??it.store_price;
+        return `<td class="${low?"warn":""}">${won(sp)}</td>`;})()}
+      ${(()=>{const sp=suggestPrice(it,"baemin"), cur=it.delivery_price??it.store_price;
         const low = sp!=null && cur!=null && cur < sp;
-        return `<td class="${low?"warn":""}">${won(sp)}</td>`;})():""}
+        return `<td class="${low?"warn":""}">${won(sp)}</td>`;})()}
       <td class="rates"><span class="rt ${rs!=null&&rs>tg?"bad":""}"><small>매장</small>${pct(rs)}</span>
         <span class="rt ${rd!=null&&rd>tg?"bad":""}"><small>배달</small>${pct(rd)}</span></td>
-      ${COLS?(()=>{const b=breakeven(it,"coupang"), lim=+om().min_order||12500;
+      ${(()=>{const b=breakeven(it,"coupang"), lim=+om().min_order||12500;
         if(b==null) return `<td>–</td>`;
         if(b===Infinity) return `<td class="over">불가</td>`;
-        return `<td class="${b>lim?"over":""}" title="쿠팡 기준">${won(b)}</td>`;})():""}
+        return `<td class="${b>lim?"over":""}" title="쿠팡 기준">${won(b)}</td>`;})()}
       <td class="stat">
         <label class="sw"><input type="checkbox" ${it.store_active?"checked":""}
           onchange="toggleActive('${it.sku}','store_active',this.checked)">매장</label>
         <label class="sw"><input type="checkbox" ${it.delivery_active?"checked":""}
-          onchange="toggleActive('${it.sku}','delivery_active',this.checked)">배달</label></td>
+          onchange="toggleActive('${it.sku}','delivery_active',this.checked)">배달</label></td>`
+      :`<td class="chdot"><button class="dot ${it.store_active?"on":""}" title="매장·키오스크 노출"
+          onclick="toggleActive('${it.sku}','store_active',${!it.store_active})"><i></i></button></td>
+       <td class="chdot"><button class="dot ${it.delivery_active?"on":""}" title="배민·쿠팡 노출"
+          onclick="toggleActive('${it.sku}','delivery_active',${!it.delivery_active})"><i></i></button></td>
+       <td class="chdot"><button class="dot ${naverOn(it.sku)?"on":""}" title="네이버 등록 표시(수동)"
+          onclick="toggleNaver('${it.sku}',${!naverOn(it.sku)})"><i></i></button></td>`}
     </tr>
     <tr class="detail" id="d-${it.sku}" style="display:none"><td colspan="${span}"></td></tr>`;
   }
@@ -1042,6 +1062,19 @@ function editCell(td, sku, field){
 }
 
 // 노출 토글 — 실수 비용이 가장 큰 액션이라 되돌리기를 꼭 붙인다.
+// 네이버 등록 표시 — 배민·쿠팡과 달리 크롤러가 없어 자동 감지를 못 한다.
+// menu_channels(naver).active 를 수동 체크로 쓴다: 켜 두면 '네이버에 올라가
+// 있다'는 직원의 표시일 뿐, 실제 네이버를 읽어 온 것이 아니다.
+const naverOn = sku => { const o = chOverride(sku, "naver");
+  return !!o && o.active !== false; };
+async function toggleNaver(sku, val){
+  const ok = await diffOverride(sku, "naver", {active: val});
+  if(!ok) return;
+  const it = DATA.items.find(i=>i.sku===sku);
+  toast(`${it?it.name:sku} — 네이버 ${val?"등록 표시 ✓":"표시 해제"}`);
+  render();
+}
+
 async function toggleActive(sku, field, val){
   const it = DATA.items.find(i=>i.sku===sku);
   const old = it[field];
