@@ -1,7 +1,17 @@
-"""직원용 웹(PythonAnywhere)에 코드를 반영한다 — git pull + Reload.
+"""직원용 웹(PythonAnywhere)에 코드를 반영한다 — 파일 업로드 + Reload.
 
 그동안은 사장님이 PA 에 로그인해 Bash 창에서 pull 하고 Web 탭에서 Reload 를
 눌러야 했다. API 토큰만 있으면 그 두 단계를 여기서 대신 한다.
+
+왜 git pull 이 아니라 파일 업로드인가 (2026-08-27 전환):
+    처음엔 콘솔 API(send_input)로 git pull 을 보냈는데, 콘솔이 브라우저로
+    한 번 열려 '시작된' 상태가 아니면 412 로 실패했다. GitHub Actions 배포
+    (deploy.yml)와 똑같이, 콘솔 상태에 의존하지 않는 Files API 로 파일을
+    직접 올린다. **올릴 파일 목록은 deploy.yml 의 upload 줄에서 읽는다** —
+    목록이 두 곳으로 갈라지면 반드시 한쪽이 늦는다.
+
+⚠️ 업로드는 로컬 파일 기준이다. 커밋 안 한 수정분도 그대로 올라가니,
+   배포 전에 commit+push 를 먼저 해서 GitHub 과 서버를 맞춰 둘 것.
 
 준비 (한 번만):
     1. https://www.pythonanywhere.com/user/beargels/account/#api_token
@@ -11,12 +21,8 @@
        (.env 는 .gitignore 라 GitHub 에 안 올라간다)
 
 쓰는 법:
-    python scripts/deploy_pa.py              # push 된 최신 코드를 반영
-    python scripts/deploy_pa.py --no-pull    # Reload 만
-
-콘솔에 대해: PA API 로 새로 만든 콘솔은 브라우저에서 한 번 열어줘야 깨어난다.
-그래서 **이미 만들어 둔 Bash 콘솔**을 찾아 재사용한다. 하나도 없으면 만들되,
-사장님께 한 번 열어달라고 안내한다.
+    python scripts/deploy_pa.py              # 파일 올리고 Reload + 확인
+    python scripts/deploy_pa.py --reload-only    # Reload 만
 """
 from __future__ import annotations
 
@@ -29,6 +35,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -49,76 +56,87 @@ USER = os.getenv("PA_USER", "beargels")
 DOMAIN = os.getenv("PA_DOMAIN", f"{USER}.pythonanywhere.com")
 TOKEN = (os.getenv("PA_API_TOKEN") or "").strip()
 REPO = os.getenv("PA_REPO", f"/home/{USER}/beargels-ai-assistant")
+SERVICE_PATH = (os.getenv("SERVICE_PATH") or "").strip().strip("/")
 
-PULL_CMD = f"cd {REPO} && git fetch origin && git reset --hard origin/main && git log --oneline -1"
+WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
 
 
-def api(method: str, path: str, body: dict | None = None):
+def deploy_files() -> list[str]:
+    """deploy.yml 의 `upload 경로` 줄들 — 배포 파일 목록의 단일 원천."""
+    text = WORKFLOW.read_text(encoding="utf-8")
+    files = re.findall(r"^\s*upload (\S+)$", text, re.MULTILINE)
+    if not files:
+        raise SystemExit("deploy.yml 에서 upload 목록을 못 찾았습니다.")
+    return files
+
+
+def request(method: str, path: str, data: bytes | None = None,
+            content_type: str | None = None, tries: int = 3):
+    """PA API 호출. 일시 오류(타임아웃·5xx)는 몇 번 더 시도한다."""
     url = f"{HOST}/api/v0/user/{USER}{path}"
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(
-        url, data=data, method=method,
-        headers={"Authorization": f"Token {TOKEN}",
-                 "Content-Type": "application/json"})
-    # PA API 가 가끔 느리다(특히 Reload). 한 번 늦었다고 배포가 죽으면
-    # 실제로는 반영됐는데 실패로 보여 사람을 헷갈리게 한다 — 두어 번 더 기다린다.
+    headers = {"Authorization": f"Token {TOKEN}"}
+    if content_type:
+        headers["Content-Type"] = content_type
     last = None
-    for attempt in range(3):
+    for attempt in range(tries):
+        req = urllib.request.Request(url, data=data, method=method, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=90) as r:
-                raw = r.read().decode("utf-8", "replace")
-                return json.loads(raw) if raw.strip() else {}
+                return r.status, r.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", "replace")[:300]
-            raise SystemExit(f"API 실패 {e.code} {method} {path}\n  {detail}") from None
+            body = e.read().decode("utf-8", "replace")[:300]
+            if e.code >= 500 and attempt < tries - 1:
+                last = f"HTTP {e.code} {body}"
+                time.sleep(5)
+                continue
+            raise SystemExit(f"API 실패 {e.code} {method} {path}\n  {body}") from None
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             last = e
-            if attempt < 2:
+            if attempt < tries - 1:
                 time.sleep(5)
     raise SystemExit(f"API 응답 없음 {method} {path} — {last}")
 
 
-def pick_console() -> dict | None:
-    """살아 있는 Bash 콘솔 하나. 없으면 None."""
-    consoles = api("GET", "/consoles/")
-    bash = [c for c in consoles if (c.get("executable") or "").endswith("bash")]
-    return bash[0] if bash else None
+def upload(rel: str) -> None:
+    """파일 하나를 서버의 같은 경로에 올린다 (multipart/form-data)."""
+    local = ROOT / rel
+    if not local.exists():
+        raise SystemExit(f"로컬에 없는 파일: {rel}")
+    boundary = uuid.uuid4().hex
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="content"; filename="{local.name}"\r\n'
+        "Content-Type: application/octet-stream\r\n\r\n"
+    ).encode() + local.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
+    request("POST", f"/files/path{REPO}/{rel}", data=body,
+            content_type=f"multipart/form-data; boundary={boundary}")
+    print(f"  올림: {rel}")
 
 
-ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
-DONE = "___DEPLOY_DONE___"
-
-
-def run_pull(console: dict) -> tuple[str, bool]:
-    """콘솔에서 pull 을 돌리고 (내 명령의 출력, 성공여부) 를 준다.
-
-    get_latest_output 은 콘솔에 남아 있던 **이전 출력까지 통째로** 준다.
-    그래서 거기서 'error' 를 찾으면 지난번 실패가 이번 실패로 둔갑한다
-    (실제로 그랬다). 끝에 표시를 찍고 그 앞뒤로만 잘라서 본다.
-    """
-    cid = console["id"]
-    api("POST", f"/consoles/{cid}/send_input/",
-        {"input": f"{PULL_CMD}; echo {DONE}$?\n"})
-    out = ""
-    for _ in range(12):
-        time.sleep(3)
-        raw = api("GET", f"/consoles/{cid}/get_latest_output/").get("output", "")
-        out = ANSI.sub("", raw)
-        # 표시가 '명령을 되울린 줄'이 아니라 '실행 결과'로 찍혔는지 본다.
-        if len(re.findall(rf"{DONE}(\d+)", out)) >= 1:
-            break
-    codes = re.findall(rf"{DONE}(\d+)", out)
-    if not codes:
-        return out[-800:], False
-    mine = out.rsplit(DONE, 1)[0]           # 마지막 표시 앞까지가 이번 실행분
-    start = mine.rfind("git fetch origin")   # 내가 보낸 명령이 되울린 자리
-    body = mine[start:] if start >= 0 else mine[-800:]
-    return body.strip(), codes[-1] == "0"
+def health_check() -> bool:
+    """배포 뒤 직원 화면이 실제로 뜨는지(200) 확인."""
+    if not SERVICE_PATH:
+        print("(SERVICE_PATH 가 없어 화면 확인은 건너뜁니다)")
+        return True
+    url = f"https://{DOMAIN}/{SERVICE_PATH}/"
+    time.sleep(8)   # Reload 직후엔 앱이 아직 뜨는 중일 수 있다
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(url, timeout=30) as r:
+                print(f"직원 화면 응답: {r.status}")
+                return r.status == 200
+        except Exception as e:  # noqa: BLE001
+            if attempt < 2:
+                time.sleep(8)
+                continue
+            print(f"⚠ 화면 확인 실패: {e}")
+    return False
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="PythonAnywhere 배포")
-    ap.add_argument("--no-pull", action="store_true", help="Reload 만 한다")
+    ap.add_argument("--reload-only", "--no-pull", dest="reload_only",
+                    action="store_true", help="파일은 안 올리고 Reload 만")
     args = ap.parse_args()
 
     if not TOKEN:
@@ -128,25 +146,21 @@ def main() -> int:
               "     (채팅에 붙여넣지 마세요 — .env 는 GitHub 에 안 올라갑니다)")
         return 1
 
-    if not args.no_pull:
-        console = pick_console()
-        if console is None:
-            made = api("POST", "/consoles/",
-                       {"executable": "bash", "arguments": "", "working_directory": REPO})
-            print("Bash 콘솔을 새로 만들었습니다. PA 웹에서 한 번 열어 깨운 뒤 "
-                  f"다시 실행해 주세요:\n  {HOST}/user/{USER}/consoles/{made.get('id')}/")
-            return 1
-        print(f"콘솔 {console['id']} 에서 최신 코드 받는 중…")
-        out, ok = run_pull(console)
-        print("\n".join(out.splitlines()[-6:]) or "(출력 없음)")
-        if not ok:
-            print("\n⚠ pull 이 실패했습니다 — Reload 하지 않고 멈춥니다.")
-            return 1
+    if not args.reload_only:
+        files = deploy_files()
+        print(f"파일 {len(files)}개 올리는 중… (목록: deploy.yml)")
+        for rel in files:
+            upload(rel)
 
     print("웹앱 Reload 중…")
-    r = api("POST", f"/webapps/{DOMAIN}/reload/")
-    print(f"Reload {r.get('status', 'OK')} → https://{DOMAIN}/")
-    return 0
+    status, raw = request("POST", f"/webapps/{DOMAIN}/reload/")
+    try:
+        msg = json.loads(raw).get("status", status)
+    except ValueError:
+        msg = status
+    print(f"Reload {msg} → https://{DOMAIN}/")
+
+    return 0 if health_check() else 1
 
 
 if __name__ == "__main__":
