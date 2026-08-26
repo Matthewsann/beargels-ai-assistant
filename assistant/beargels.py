@@ -105,8 +105,10 @@ REPLY_PERSONA = """너는 인천 송도 베이글카페 '베어글스' 사장님
 
 ■ 반드시 지킬 것
 - 첫 줄은 "{닉네임}님," 으로 시작하고 줄바꿈 후 본문. '고객님'으로 부르지 않는다.
-- 🚫 "소중한 주문 감사합니다", "안녕하세요 베어글스입니다" 같은 **정형구로 시작하지
-  않는다.** 접수 문자처럼 읽힌다. 바로 손님 이야기로 들어간다.
+- 첫 인사는 "소중한 주문 감사합니다." 처럼 정중한 감사로 열어도 좋다
+  (사장님 확정 2026-08-26 — 올바른 인사다). 다만 인사에서 멈추지 말고
+  **바로 이 손님 이야기로** 들어간다. 인사만 하고 끝나면 접수 문자가 된다.
+- 🚫 "안녕하세요, 베어글스입니다" 같은 **공지·안내문 투로는 시작하지 않는다.**
 - 끝까지 편한 **해요체**. 격식체('~입니다/~습니다')나 반말을 섞지 않는다.
   (불만·민감 리뷰만 예외 — 그때는 정중한 격식체로 통일한다.)
 - 배달 리뷰다. '방문/오세요/들러주세요'가 아니라 '주문 주세요'로.
@@ -148,21 +150,37 @@ PLATFORM_REPLY = {
 # 문장 수 — 글자수보다 모델이 잘 지킨다. 분량을 채우려면 문장이 여러 개
 # 필요하다(배민 470자면 7~9문장). 억지로 늘리지 말라는 지시는 지시문에 있다.
 SENTENCES_BY_KIND = {
-    "_baemin": (9, 11), "_coupang": (5, 7),
+    "_baemin": (5, 8), "_coupang": (4, 6),
 }
 
 # 분량 = 정성 (사장님 지시 2026-08-26): 플랫폼이 허용하는 글자수를 채운다.
 # 짧게 끝내면 성의 없어 보인다는 판단. 상한은 플랫폼 하드 제한(쿠팡 300)이라
 # 넘기면 잘리므로 살짝 아래를 목표로 둔다.
+# 분량 방침 (사장님 확정 2026-08-26): "내용이 있는 만큼만" —
+# 짧은 리뷰엔 300자 내외, 리뷰가 길면 자연히 400자 이상. 플랫폼 상한을 억지로
+# 채우면 "다음에 또 도전해보세요" 같은 빈 문장이 붙어 오히려 성의 없어 보인다.
 TARGET_BY_KIND = {
-    "_default": {"baemin": 470, "coupang": 285},
+    # 리뷰 본문 길이 → 목표 글자수 (플랫폼별)
+    "_baemin":  ((0, 300), (20, 360), (80, 450)),
+    "_coupang": ((0, 240), (20, 270), (80, 290)),
 }
 
 
-def target_len_for(kind, platform, fallback):
-    """이 유형·플랫폼의 목표 글자수. 유형별 예외가 없으면 플랫폼 기본값."""
-    row = TARGET_BY_KIND.get(kind) or TARGET_BY_KIND["_default"]
-    return row.get(platform, fallback)
+def target_len_for(kind, platform, fallback, content=""):
+    """이 답글의 목표 글자수 — 손님이 쓴 만큼 우리도 이야기한다.
+
+    kind 는 더 이상 길이를 좌우하지 않는다(유형보다 '할 이야기가 얼마나
+    있느냐'가 분량을 정한다).
+    """
+    steps = TARGET_BY_KIND.get("_" + (platform or ""), None)
+    if not steps:
+        return fallback
+    n = len((content or "").strip())
+    target = steps[0][1]
+    for lo, val in steps:
+        if n >= lo:
+            target = val
+    return target
 
 
 
@@ -275,10 +293,11 @@ _UNFOUNDED_WORDS = ("이벤트", "증정", "사은품", "쿠폰", "할인", "무
                     "적립", "행사", "영업시간", "품절", "재입고")
 
 
+# ⚠️ "소중한 주문 감사합니다."는 **지우지 않는다** — 사장님이 올바른 인사라고
+#    확정했다(2026-08-26). 공지·안내문 투로 여는 것만 걷어낸다.
 _BOILERPLATE_OPENERS = (
-    "소중한 주문 감사합니다.", "소중한 주문 감사드립니다.",
     "안녕하세요, 베어글스입니다.", "안녕하세요 베어글스입니다.",
-    "안녕하세요. 베어글스입니다.",
+    "안녕하세요. 베어글스입니다.", "안녕하세요! 베어글스입니다",
 )
 
 
@@ -1108,7 +1127,8 @@ def generate_review_reply(review):
     cfg = PLATFORM_REPLY.get(review.get("platform"),
                              {"label": "", "max_len": 300, "target_len": 290})
     max_len = cfg["max_len"]
-    target = target_len_for(typ, review.get("platform"), cfg.get("target_len", max_len))
+    target = target_len_for(typ, review.get("platform"),
+                            cfg.get("target_len", max_len), content)
     # 모델은 "N자 내외"보다 **범위**를 훨씬 잘 지킨다(실측: 내외로 주면 최대
     # 43% 짧게 나왔다). 실제 최종본 길이를 중심으로 위아래를 명시한다.
     smin, smax = SENTENCES_BY_KIND.get(typ, (3, 5))
@@ -1200,7 +1220,7 @@ def generate_review_reply(review):
         # 분량이 모자라면 '다시 쓰기'보다 **넓히기**가 잘 듣는다. 처음부터
         # 길게 쓰라고 하면 모델이 미사여구로 늘리는데, 쓴 답글을 두고
         # "무엇을 더 얘기할 수 있나"를 물으면 진짜 내용이 붙는다(2026-08-26).
-        for _grow in range(2):
+        for _grow in range(1):
             if len(draft) >= target * 0.85:
                 break
             grown = _truncate_at_sentence(_ask_claude(

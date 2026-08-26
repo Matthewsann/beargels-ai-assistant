@@ -216,20 +216,20 @@ def test_fact_card_does_not_carry_the_menu_list():
     assert "이벤트·서비스 증정" in card        # 확답 금지 규칙 유지
 
 
-def test_length_targets_fill_the_platform_limit():
-    """분량 = 정성 (사장님 지시 2026-08-26) — 플랫폼 허용치를 채운다.
+def test_length_follows_review_content():
+    """분량은 '내용이 있는 만큼' (사장님 확정 2026-08-26).
 
-    예전엔 직원 최종본 중앙값(146~250자)에 맞췄는데, 사장님 기준은
-    "최대 글자수를 채우는 게 더 정성스럽다"이다.
+    짧은 리뷰엔 300자 내외, 리뷰가 길면 400자 이상. 플랫폼 상한을 억지로
+    채우면 빈 문장이 붙어 오히려 성의 없어 보인다.
     """
-    from assistant.beargels import (PLATFORM_REPLY, SENTENCES_BY_KIND,
-                                    target_len_for)
-    for plat in ("baemin", "coupang"):
-        target = target_len_for("rating_only", plat, 0)
-        limit = PLATFORM_REPLY[plat]["max_len"]
-        assert 0.85 * limit <= target < limit, f"{plat}: {target}/{limit}"
-        lo, hi = SENTENCES_BY_KIND["_" + plat]
-        assert 4 <= lo < hi <= 12
+    from assistant.beargels import PLATFORM_REPLY, target_len_for
+    short = target_len_for("rating_only", "baemin", 0, "맛있어요")
+    long = target_len_for("praise_detail", "baemin", 0, "가" * 150)
+    assert 280 <= short <= 330
+    assert long >= 430
+    assert long < PLATFORM_REPLY["baemin"]["max_len"]      # 상한은 넘지 않는다
+    # 쿠팡은 300자가 하드 제한이라 여유를 둔다
+    assert target_len_for("x", "coupang", 0, "가" * 150) <= 295
 
 
 def test_rating_only_guide_is_not_curt():
@@ -373,8 +373,16 @@ def test_product_name_copy_is_detected():
     assert not copied_menu_names(menus, "샌드위치에 음료까지 곁들이셨네요")
 
 
-def test_boilerplate_opener_removed():
+def test_thankyou_opener_is_kept():
+    """"소중한 주문 감사합니다."는 사장님이 확정한 올바른 인사다(2026-08-26).
+
+    한때 '정형구'로 보고 코드가 지웠는데, 사장님 판단은 반대였다.
+    공지·안내문 투('안녕하세요, 베어글스입니다')만 걷어낸다.
+    """
     from assistant.beargels import _strip_boilerplate
-    out = _strip_boilerplate("한입에와앙님, 소중한 주문 감사합니다.\n\n네 번째 주문까지")
-    assert "소중한 주문 감사합니다" not in out
-    assert "네 번째 주문까지" in out
+    keep = "한입에와앙님, 소중한 주문 감사합니다. 네 번째 주문까지 반가워요"
+    assert _strip_boilerplate(keep) == keep
+
+    out = _strip_boilerplate("안녕하세요, 베어글스입니다. 오늘도 감사해요")
+    assert "베어글스입니다" not in out
+    assert "오늘도 감사해요" in out
