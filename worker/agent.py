@@ -984,9 +984,15 @@ def main() -> int:
         return 1
 
     while True:
+        busy = False
         try:
             job = db.claim_next_job()
             if job:
+                # 일감이 있으면 쉬지 않고 바로 다음 것을 집는다. 예전엔 한 건
+                # 끝낼 때마다 15초를 그냥 쉬어서, 27건 재생성에 생성 시간
+                # (건당 20초)만큼의 대기가 더 붙었다 — 전체의 43%가 낭비였다
+                # (사장님 "왤케 오래 걸려?" 2026-08-26).
+                busy = True
                 run_job(job)
             else:
                 maybe_auto_collect()
@@ -999,7 +1005,8 @@ def main() -> int:
         except Exception as e:  # noqa: BLE001 — 일시적 네트워크 오류로 멈추지 않게
             logger.warning("확인 실패(무시하고 계속): %s", str(e)[:150])
         try:
-            time.sleep(POLL_SECONDS)
+            if not busy:                 # 할 일이 없을 때만 쉰다
+                time.sleep(POLL_SECONDS)
         except KeyboardInterrupt:
             raise
 

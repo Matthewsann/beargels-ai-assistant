@@ -126,3 +126,15 @@ def test_post_job_retries_once_on_browser_gone():
     from worker import agent
     src = inspect.getsource(agent.run_post_job)
     assert "_is_browser_gone" in src and "res = _post()" in src
+
+
+def test_worker_does_not_idle_between_jobs():
+    """큐에 일이 남아 있으면 쉬지 않고 바로 다음 건을 집는다.
+
+    예전엔 한 건 끝낼 때마다 15초를 쉬어서, 27건 재생성에서 전체 시간의
+    43%가 대기였다(2026-08-26).
+    """
+    import inspect
+    from worker import agent
+    src = inspect.getsource(agent.main)
+    assert "if not busy:" in src and "time.sleep(POLL_SECONDS)" in src
