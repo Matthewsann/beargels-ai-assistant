@@ -152,7 +152,8 @@
       <div class="meta">
         {% if p.status == 'ready' %}<span class="tag c">발행 대기</span>
         {% elif p.status == 'scheduled' %}<span class="tag b">예약됨</span>
-        {% elif p.status == 'published' %}<span class="tag g">발행 완료</span>{% endif %}
+        {% elif p.status == 'published' %}<span class="tag g">발행 완료</span>
+          {% if p.naver_url %}<span style="color:var(--accent);">🔗</span>{% endif %}{% endif %}
         {% if p.post_type %}<span>{{ p.post_type }}</span>{% endif %}
         {% if p.main_keyword %}<span>· {{ p.main_keyword }}</span>{% endif %}
       </div>

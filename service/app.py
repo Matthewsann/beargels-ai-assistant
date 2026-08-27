@@ -52,6 +52,7 @@ load_dotenv(pathlib.Path(__file__).resolve().parent / ".env")
 load_dotenv(ROOT / ".env")
 
 from database import supabase_client as db  # noqa: E402
+from assistant import customer_requests as cr  # noqa: E402
 
 class _SafeRequest(Request):
     """query string 에 UTF-8 로 못 읽는 원문 바이트가 섞여 있어도 안 죽는다.
@@ -439,6 +440,32 @@ def scheduled_post_when() -> str:
     return f"{day} 아침 {hh}시" + (f" {mm}분" if mm else "")
 
 
+# 고객 요청사항을 훑는 기간. 매장에서 "요즘 이런 얘기가 나온다"를 보는
+# 용도라 너무 길면 이미 고친 이야기가 계속 남는다.
+REQUEST_DAYS = int(os.getenv("REQUEST_DAYS", "60"))
+
+
+def _today_label() -> str:
+    """단톡방 글 머리에 넣을 날짜 — 매장 시간(KST) 기준 'M/D'."""
+    now = datetime.now(KST)
+    return f"{now.month}/{now.day}"
+
+
+@cached(120)
+def _customer_requests(limit=20):
+    """최근 리뷰에서 고객 요청사항만 골라낸다(AI 없이 규칙으로).
+
+    화면을 열 때마다 리뷰를 훑으므로 캐시를 둔다 — 규칙 계산 자체는 순간이지만
+    Supabase 왕복이 화면당 0.3~1.3초라 그게 아깝다(2026-08-21 서버 실측).
+    """
+    try:
+        rows, _ = db.search_reviews(days=REQUEST_DAYS, limit=300, sort="new")
+        return cr.find_requests(rows, limit=limit)
+    except Exception:  # noqa: BLE001 — 이 칸 때문에 현황 화면이 죽으면 안 된다
+        logger.exception("고객 요청사항 추출 실패")
+        return []
+
+
 PLATFORM_REVIEW_URL = {
     "baemin": "https://self.baemin.com/shops/reviews",
     "coupang": "https://store.coupangeats.com/merchant/management/reviews",
@@ -662,6 +689,7 @@ def review_home(path_key):
             learning=_learning_cached,
             worker=_worker_view,
             alerts=_owner_alerts,
+            requests=_customer_requests,
         )
         stat = {
             "todo": (g["todo_baemin"] or 0) + (g["todo_coupang"] or 0),
@@ -683,11 +711,17 @@ def review_home(path_key):
     except Exception as e:  # noqa: BLE001
         error = f"현황을 불러오지 못했어요: {str(e)[:150]}"
         job, g = None, {}
+    reqs = g.get("requests") or []
     return render_template(
         "dashboard.html", key=path_key, stat=stat,
         learning=g.get("learning"),
         worker=g.get("worker") or _worker_view(),
         job=job, error=error, alerts=g.get("alerts") or [],
+        requests=reqs,
+        # 단톡방에 붙여 넣을 글은 서버에서 미리 만들어 둔다 — 화면 JS 가
+        # 다시 조립하면 두 곳이 어긋난다.
+        requests_text=cr.format_for_kakao(reqs, today=_today_label()),
+        requests_days=REQUEST_DAYS,
     )
 
 
@@ -1448,15 +1482,25 @@ def blog_post_save(path_key, post_id):
     check(path_key)
     try:
         new_body = request.form.get("body", "")
-        old_body = ""
+        new_title = (request.form.get("title") or "").strip()
+        old_body = old_title = ""
         try:
-            old_body = (blog.get_post(post_id) or {}).get("body") or ""
+            prev = blog.get_post(post_id) or {}
+            old_body = prev.get("body") or ""
+            old_title = prev.get("title") or ""
         except Exception:  # noqa: BLE001 — 학습은 덤, 저장이 우선
             pass
-        blog.update_post(post_id, body=new_body)
-        if old_body and old_body.strip() != new_body.strip():
+        fields = {"body": new_body}
+        if new_title:
+            fields["title"] = new_title
+        blog.update_post(post_id, **fields)
+        changed = (old_body and old_body.strip() != new_body.strip()) or \
+                  (new_title and old_title and new_title != old_title)
+        if changed:
             blog.request_blog_job("blog_learn", {
-                "post_id": post_id, "before": old_body, "after": new_body,
+                "post_id": post_id,
+                "before": f"[제목] {old_title}\n\n{old_body}",
+                "after": f"[제목] {new_title or old_title}\n\n{new_body}",
             }, by="web")
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"블로그 글 저장 실패(post {post_id}): {e}",

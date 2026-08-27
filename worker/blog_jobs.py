@@ -142,12 +142,30 @@ def build_blocks(body: str) -> tuple[list[dict], int]:
     blocks, n = [], 0
     for b in raw:
         if b.get("type") == "text":
-            # 마크다운 표시는 네이버 에디터에서 글자 그대로 보인다 → 뗀다.
-            # 소제목(##)은 ◆ 로 바꿔 문단 구분이 눈에 띄게만 한다.
-            text = re.sub(r"^#{1,4}\s*(.+)$", r"◆ \1", b.get("text", ""),
-                          flags=re.MULTILINE)
-            text = re.sub(r"^-{3,}\s*$", "", text, flags=re.MULTILINE)
-            blocks.append({"type": "text", "text": text})
+            # 마크다운을 베어글스 서식 블록으로 푼다:
+            #   "## 소제목"  → heading 블록(에디터에서 19크기+굵게)
+            #   "---"       → divider 블록(구분선)
+            #   나머지 문단  → 일반 텍스트(가운데 정렬은 에디터에서 일괄)
+            for chunk in re.split(r"\n(?=#{1,4}\s|-{3,}\s*$)",
+                                  b.get("text", ""), flags=re.MULTILINE):
+                chunk = chunk.strip("\n")
+                if not chunk.strip():
+                    continue
+                m = re.match(r"^#{1,4}\s*(.+)$", chunk.split("\n")[0])
+                if m:
+                    blocks.append({"type": "text", "style": "heading",
+                                   "text": m.group(1).strip()})
+                    rest = "\n".join(chunk.split("\n")[1:]).strip("\n")
+                    if rest.strip():
+                        blocks.append({"type": "text", "text": rest})
+                    continue
+                if re.match(r"^-{3,}\s*$", chunk.split("\n")[0]):
+                    blocks.append({"type": "divider"})
+                    rest = "\n".join(chunk.split("\n")[1:]).strip("\n")
+                    if rest.strip():
+                        blocks.append({"type": "text", "text": rest})
+                    continue
+                blocks.append({"type": "text", "text": chunk})
             continue
         try:
             path = blog_media.prepare(b["rel"]) if b["type"] == "photo" \
@@ -175,15 +193,28 @@ def do_publish(payload: dict) -> tuple[int, str]:
     body = post.get("body") or ""
     blocks, n_media = build_blocks(body)
 
+    reserve_at = payload.get("reserve_at")
+    when = None
+    if reserve_at:
+        from datetime import datetime, timedelta
+        when = datetime.fromisoformat(str(reserve_at).replace("Z", "+00:00"))
+        when = when.astimezone()          # 네이버 UI 는 한국 시간
+        floor = datetime.now().astimezone() + timedelta(minutes=15)
+        if when < floor:                   # 과거/임박이면 15분 뒤로 밀어 예약
+            when = floor
+
     cfg = na.load_config()
     headful = bool(cfg.get("naver", {}).get("headful", True))
     pw, ctx, page = na.launch(cfg, headful=headful)
+    reserve_note = ""
     try:
-        ok = na.draft_one(page, cfg, {
-            "title": post.get("title"),
-            "body": body,
-            "blocks": blocks or None,
-        })
+        doc = {"title": post.get("title"), "body": body, "blocks": blocks or None}
+        if when is not None:
+            ok, msg = na.reserve_one(page, cfg, doc, when)
+            reserve_note = f" · {msg}" if ok else f" · 예약 실패({msg}) — 임시저장됨"
+            ok = True                      # 폴백 임시저장까지 됐으면 잡은 성공으로
+        else:
+            ok = na.draft_one(page, cfg, doc)
     finally:
         try:
             ctx.close()
@@ -209,14 +240,26 @@ def do_publish(payload: dict) -> tuple[int, str]:
 
     with_photo = f" (사진 {n_media}장 포함)" if n_media else ""
     used_note = f" · 사진 {moved}개 사용완료 처리" if moved else ""
-    return 1, f"네이버 임시저장 완료{with_photo}{used_note} — {post.get('title', '')[:40]}"
+    head = "네이버 예약 처리" if when is not None else "네이버 임시저장 완료"
+    return 1, (f"{head}{with_photo}{reserve_note}{used_note}"
+               f" — {post.get('title', '')[:40]}")
 
 
 LEARN_FILE = ROOT / "knowledge" / "블로그-배운점.md"
 
-LEARN_PROMPT = """너는 베어글스 송도점 블로그의 편집 코치다.
-AI 가 쓴 블로그 초안을 사장님이 직접 고쳤다. 아래에 '고치기 전'과 '고친 후'가 있다.
-사장님이 왜 고쳤는지를 읽어내서, 다음 글부터 지킬 교훈을 뽑아라.
+LEARN_PROMPT = """너는 베어글스 송도점 블로그의 SEO·브랜드 편집장이다.
+AI 가 쓴 블로그 글을 사장님이 직접 고쳤다. 아래에 '고치기 전'과 '고친 후'가 있다.
+
+⚠️ 사장님의 수정이 항상 정답은 아니다(사장님 본인이 확인해 준 사실이다).
+너는 편집장으로서 **비판적으로** 골라내라:
+- **사실 교정(메뉴 이름·재료·가격·주소·영업 정보)** → 사장님이 가게의 사실을
+  제일 잘 안다. 무조건 채택(type "사실").
+- **말투·표현·구성 수정** → SEO(키워드·분량·구조)와 브랜드 톤 기준으로 판단해서
+  ①따를 가치가 있으면 type "표현"으로 채택
+  ②오히려 상위노출·가독성을 해치면(키워드 삭제, 분량 대폭 축소, 정보 삭제 등)
+    type "주의"로 기록 — 다음 글에 따라하지 말고, 사장님과 상의할 거리다.
+- 사진 표시([📷 …], [🎬 …]) 이동/삭제와 오탈자 수준은 무시.
+- 교훈이 없으면 빈 배열.
 
 [고치기 전]
 {before}
@@ -224,16 +267,8 @@ AI 가 쓴 블로그 초안을 사장님이 직접 고쳤다. 아래에 '고치�
 [고친 후]
 {after}
 
-규칙:
-- 사진 표시([📷 …], [🎬 …])의 이동/삭제는 교훈이 아니다. 무시하라.
-- 오탈자 수준의 사소한 것도 무시하라.
-- 가장 중요한 것은 **잘못된 정보**다: 메뉴 이름·재료·가격·영업 정보처럼
-  사실이 틀려서 고친 흔적이 보이면 type 을 "사실"로, 틀린 내용과 맞는 내용을 적어라.
-- 말투·표현·구성 취향이 보이면 type 을 "표현"으로.
-- 교훈이 없으면 빈 배열.
-
 JSON 배열만 출력(설명·코드블록 금지):
-[{{"type":"사실","wrong":"틀리게 쓴 것","right":"맞는 것","lesson":"다음부터 이렇게"}}]"""
+[{{"type":"사실|표현|주의","wrong":"","right":"","lesson":"다음부터 이렇게 (주의면: 왜 따르면 안 되는지)"}}]"""
 
 
 def do_learn(payload: dict) -> tuple[int, str]:
@@ -273,10 +308,15 @@ def do_learn(payload: dict) -> tuple[int, str]:
     post_id = payload.get("post_id")
     lines = []
     for l in lessons:
-        if l.get("type") == "사실":
+        t = l.get("type")
+        if t == "사실":
             lines.append(f"- ❗사실({today}, 글#{post_id}): "
                          f"'{l.get('wrong', '')}' 는 틀림 → **{l.get('right', '')}**. "
                          f"{l.get('lesson', '')}")
+        elif t == "주의":
+            # 사장님 수정이지만 SEO·가독성엔 손해 — 따라하지 말고 상의 거리로 남긴다
+            lines.append(f"- ⚠️주의({today}, 글#{post_id}): {l.get('lesson', '')} "
+                         f"(사장님 수정이지만 다음 글에 그대로 따르지 말 것)")
         else:
             lines.append(f"- 표현({today}, 글#{post_id}): {l.get('lesson', '')}")
     with LEARN_FILE.open("a", encoding="utf-8") as f:
@@ -369,12 +409,19 @@ def do_plan(payload: dict) -> tuple[int, str]:
 
 
 def do_react() -> tuple[int, str]:
-    """발행 감지(RSS→URL 연결) + 공감·댓글 수집. 결과는 다음 기획에 반영된다."""
+    """발행 감지(RSS→URL 연결) + 공감·댓글 수집 + 발행본에서 배우기."""
     import blog_perf
     linked = blog_perf.sync_published()
     n, likes, comments = blog_perf.collect()
+    learned = 0
+    try:
+        learned = blog_perf.learn_from_published()
+    except Exception as e:  # noqa: BLE001 — 학습 실패가 수집을 막으면 안 된다
+        logger.warning("발행본 학습 실패: %s", str(e)[:120])
     link_note = f"새 발행 연결 {linked}건 · " if linked else ""
-    return n, f"{link_note}글 {n}개 반응 수집 (공감 {likes} · 댓글 {comments})"
+    learn_note = f" · 발행본 학습 {learned}건" if learned else ""
+    return n, (f"{link_note}글 {n}개 반응 수집 "
+               f"(공감 {likes} · 댓글 {comments}){learn_note}")
 
 
 def do_rank(payload: dict) -> tuple[int, str]:

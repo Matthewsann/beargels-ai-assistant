@@ -217,3 +217,61 @@ def perf_context(max_posts: int = 10) -> str:
     return ("지금까지 발행한 글들의 실제 반응이다(공감 많은 순). 반응이 좋은 글의 "
             "주제·구성·제목 패턴은 따라가고, 반응 없는 패턴은 피하라:\n"
             + "\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
+# 발행본에서 배우기 — 사장님이 네이버 에디터에서 직접 고친 것도 놓치지 않는다
+# ---------------------------------------------------------------------------
+
+def fetch_published_text(log_no: str) -> str:
+    """발행된 글의 본문 텍스트(모바일 페이지에서 추출, 태그 제거)."""
+    r = requests.get(f"https://m.blog.naver.com/{BLOG_ID}/{log_no}",
+                     headers={"User-Agent": UA}, timeout=15)
+    m = re.search(r'<div[^>]*class="[^"]*se-main-container[^"]*"[^>]*>(.*?)</div>\s*<div[^>]*class="[^"]*post_btn', r.text, re.DOTALL)
+    html = m.group(1) if m else r.text
+    text = re.sub(r"<script.*?</script>", " ", html, flags=re.DOTALL)
+    text = re.sub(r"<[^>]+>", "\n", text)
+    text = re.sub(r"&nbsp;?", " ", text)
+    text = re.sub(r"\n{2,}", "\n", text)
+    return text.strip()
+
+
+def learn_from_published() -> int:
+    """창고 본문 vs 실제 발행본을 비교해 blog_learn 잡을 넣는다(글당 1회).
+
+    웹에서 고친 건 저장 버튼이 잡지만, **네이버 에디터에서 직접 고쳐 발행**한
+    수정은 여기서만 잡힌다. 학습 프롬프트가 비판적으로 취사선택한다
+    (사장님 수정이 항상 정답은 아니다 — 사장님 본인 확인).
+    """
+    from database import blog_store as store
+    import blog_media
+
+    data = _load()
+    learned = 0
+    for p in store.list_posts(limit=50):
+        url = p.get("naver_url") or ""
+        m = re.search(r"/(\d+)$", url)
+        if not m:
+            continue
+        rec = data.get(m.group(1))
+        if rec is None or rec.get("learned"):
+            continue
+        try:
+            published = fetch_published_text(m.group(1))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("발행본 읽기 실패(%s): %s", m.group(1), str(e)[:80])
+            continue
+        draft_plain = blog_media.strip_marks(p.get("body") or "")
+        if not published or len(published) < 200:
+            continue
+        # 뼈대가 크게 다르면(사장님이 고침) 학습 잡으로 보낸다
+        store.request_blog_job("blog_learn", {
+            "post_id": p["id"],
+            "before": f"[제목] {p.get('title', '')}\n\n{draft_plain[:6000]}",
+            "after": f"[제목] {rec.get('title', '')}\n\n{published[:6000]}",
+        }, by="발행본비교")
+        rec["learned"] = True
+        learned += 1
+    if learned:
+        _save(data)
+    return learned

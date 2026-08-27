@@ -80,6 +80,27 @@ DEFAULT_SELECTORS = {
         "button[title='동영상']",
         "button:has-text('동영상')",
     ],
+    # 속성 툴바(본문 위 두 번째 줄) — 2026-08-28 에디터 DOM 실측 선택자
+    "align_button": [
+        "button[data-name='align-drop-down-with-justify']",
+    ],
+    "align_center": [
+        "button.se-toolbar-option-align-center-button",
+    ],
+    "align_left": [
+        "button.se-toolbar-option-align-left-button",
+    ],
+    # 글자 크기 버튼 → 옵션은 se-toolbar-option-font-size-code-fs{크기}-button
+    "size_button": [
+        "button[data-name='font-size']",
+    ],
+    # 본문 첫 줄 위 툴바의 '구분선' 버튼
+    "divider_button": [
+        "button[data-name='horizontal-line']",
+        "button[data-name='horizontalLine']",
+        "button[title='구분선']",
+        "button:has-text('구분선')",
+    ],
     # 업로드 오류·안내 팝업의 확인/완료 버튼 — 안 닫으면 dim 막이 저장 클릭을 가로챈다
     "popup_ok": [
         ".se-popup button:has-text('확인')",
@@ -215,6 +236,15 @@ def clear_popups(page: Page, frame: Frame, selectors: dict) -> bool:
 
 
 def _refocus_body(page: Page, frame: Frame) -> None:
+    """(아래 본문) 커서를 본문 맨 끝 문단으로 되돌린다."""
+    _refocus_body_inner(page, frame)
+    try:
+        clear_text_toggles(page, frame)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _refocus_body_inner(page: Page, frame: Frame) -> None:
     """커서를 본문 맨 끝 문단으로 되돌린다(사진 설명 칸에 글이 새는 것 방지)."""
     page.keyboard.press("Escape")
     page.wait_for_timeout(300)
@@ -404,6 +434,93 @@ def insert_media(page: Page, frame: Frame, selectors: dict, path: str,
     return True
 
 
+# ---------------------------------------------------------------------------
+# 베어글스 고정 서식 (사장님 확정 2026-08-28)
+#   · 본문 전체 가운데 정렬(따뜻한 카페 감성의 표준)
+#   · 소제목: 19 크기 + 굵게
+#   · 구분선으로 문단 매듭(매장정보 블록 앞)
+# 선택자가 화면과 안 맞으면 그 서식만 조용히 건너뛴다 — 글·사진 입력은 계속.
+# ---------------------------------------------------------------------------
+
+def _pick_option(frame: Frame, opener_candidates, option_candidates,
+                 page: Page) -> bool:
+    """툴바 버튼을 눌러 목록을 열고 항목 하나를 고른다. 성공 여부 반환."""
+    opener = first_working(frame, opener_candidates)
+    if opener is None:
+        return False
+    try:
+        opener.click(timeout=3000)
+        page.wait_for_timeout(300)
+        opt = first_working(frame, option_candidates)
+        if opt is None:
+            page.keyboard.press("Escape")     # 목록을 열어둔 채 두지 않는다
+            return False
+        opt.click(timeout=3000)
+        page.wait_for_timeout(250)
+        return True
+    except Exception:  # noqa: BLE001
+        try:
+            page.keyboard.press("Escape")
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+
+
+# 굵게/기울임/밑줄/취소선 토글. 에디터가 **이전 문서의 서식이 켜진 채** 열리는
+# 일이 실제로 있었다(취소선 se-is-selected — 2026-08-28 테스트에서 본문 전체에
+# 취소선이 그였다). 글을 쓰기 전에 켜져 있는 토글을 전부 끈다.
+_TOGGLE_NAMES = ("bold", "italic", "underline", "strikethrough")
+
+
+def clear_text_toggles(page: Page, frame: Frame) -> None:
+    for name in _TOGGLE_NAMES:
+        try:
+            btn = frame.locator(f"button[data-name='{name}']").first
+            if btn.count() and "se-is-selected" in (btn.get_attribute("class") or ""):
+                btn.click(timeout=2000)
+                page.wait_for_timeout(150)
+        except Exception:  # noqa: BLE001
+            continue
+
+
+def set_bold(page: Page, frame: Frame, on: bool) -> None:
+    """굵게 토글을 원하는 상태로. (Ctrl+B 대신 버튼 상태를 보고 누른다)"""
+    try:
+        btn = frame.locator("button[data-name='bold']").first
+        if not btn.count():
+            return
+        selected = "se-is-selected" in (btn.get_attribute("class") or "")
+        if selected != on:
+            btn.click(timeout=2000)
+            page.wait_for_timeout(150)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def set_align_center(page: Page, frame: Frame, selectors: dict) -> bool:
+    return _pick_option(frame, selectors["align_button"],
+                        selectors["align_center"], page)
+
+
+def set_font_size(page: Page, frame: Frame, selectors: dict, size: int) -> bool:
+    """글자 크기 선택. 목록 항목은 크기 숫자로 찾는다(예: 19)."""
+    options = [f"button.se-toolbar-option-font-size-code-fs{size}-button"]
+    return _pick_option(frame, selectors["size_button"], options, page)
+
+
+def insert_divider(page: Page, frame: Frame, selectors: dict) -> bool:
+    btn = first_working(frame, selectors["divider_button"])
+    if btn is None:
+        return False
+    try:
+        btn.click(timeout=3000)
+        page.wait_for_timeout(500)
+        _refocus_body(page, frame)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def type_blocks(page: Page, frame: Frame, selectors: dict, body_loc,
                 blocks: list) -> None:
     """글 토막과 사진을 순서대로 넣는다.
@@ -413,20 +530,51 @@ def type_blocks(page: Page, frame: Frame, selectors: dict, body_loc,
     """
     body_loc.click()
     frame.wait_for_timeout(300)
+    # 이전 문서에서 넘어온 굵게/취소선 등이 켜져 있으면 끈다(실제로 당한 문제)
+    clear_text_toggles(page, frame)
     first_text = True
     for i, b in enumerate(blocks):
-        if b.get("type") == "text":
+        btype = b.get("type")
+        if btype == "divider":
+            if not first_text:
+                page.keyboard.press("Enter")
+            if insert_divider(page, frame, selectors):
+                # 구분선 삽입 직후엔 에디터가 재정렬 중이라 바로 치면 글자가
+                # 엉뚱한 곳에 박힌다(2차 테스트에서 '베어글' 이 찢어졌다)
+                page.wait_for_timeout(1000)
+                first_text = False
+            continue
+        if btype == "text":
             text = b.get("text", "")
             if not text.strip():
                 continue
             if not first_text:
                 page.keyboard.press("Enter")
+                page.wait_for_timeout(150)
+            heading = b.get("style") == "heading"
             lines = text.replace("\r\n", "\n").split("\n")
             for j, line in enumerate(lines):
                 if line:
                     page.keyboard.type(line, delay=8)
                 if j < len(lines) - 1:
                     page.keyboard.press("Enter")
+            if heading:
+                # 사람처럼: 쓴 줄을 선택한 뒤 서식을 입힌다.
+                # (툴바를 먼저 누르면 선택이 풀려 서식이 허공에 적용된다 — 실측)
+                page.keyboard.press("Home")
+                page.keyboard.press("Shift+End")
+                page.wait_for_timeout(200)
+                set_font_size(page, frame, selectors, 19)
+                set_bold(page, frame, True)
+                page.keyboard.press("End")
+                page.wait_for_timeout(150)
+                page.keyboard.press("Enter")
+                page.wait_for_timeout(150)
+                # 다음 문단이 19·굵게를 물려받지 않게 되돌린다
+                set_bold(page, frame, False)
+                set_font_size(page, frame, selectors, 15)
+                first_text = True
+                continue
             first_text = False
         else:
             path = b.get("path")
@@ -443,7 +591,22 @@ def type_blocks(page: Page, frame: Frame, selectors: dict, body_loc,
                 ok = insert_media(page, frame, selectors, path)
             b["inserted"] = ok           # 호출자(worker)가 사용완료 판단에 쓴다
             if ok:
+                page.wait_for_timeout(400)
                 first_text = False
+
+    # 베어글스 고정 서식: 다 쓰고 나서 전체 선택 → 가운데 정렬 한 번에.
+    # (단락마다 정렬 버튼을 누르면 선택이 풀리는 문제를 피한다)
+    try:
+        page.keyboard.press("Control+a")
+        page.wait_for_timeout(300)
+        if set_align_center(page, frame, selectors):
+            print("    · 가운데 정렬 적용")
+        else:
+            print("    · 가운데 정렬 버튼을 못 찾았습니다(기본 정렬 유지)")
+        page.keyboard.press("ArrowRight")     # 선택 해제
+        page.wait_for_timeout(200)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def save_debug(page: Page, tag: str) -> None:
@@ -495,7 +658,7 @@ def fill_editor(page: Page, cfg: dict, post: dict) -> Frame | None:
         print("    ✗ 본문 입력 영역을 찾지 못했습니다.")
         return None
     if blocks:
-        n_photo = sum(1 for b in blocks if b.get("type") != "text")
+        n_photo = sum(1 for b in blocks if b.get("path"))
         print(f"    · 글 {len(blocks) - n_photo}토막 + 사진 {n_photo}장")
         type_blocks(page, frame, selectors, body_loc, blocks)
     else:
@@ -529,6 +692,84 @@ def draft_one(page: Page, cfg: dict, post: dict) -> bool:
         save_debug(page, "save_fail")
         print(f"    ✗ 임시저장 클릭 실패: {e}")
         return False
+
+
+def reserve_one(page: Page, cfg: dict, post: dict, when) -> tuple[bool, str]:
+    """글 하나를 입력하고 네이버 '예약 발행'까지 설정한다.
+
+    when: datetime — 예약 시각(분은 네이버가 10분 단위만 받으므로 내림).
+    실패하면 임시저장으로 폴백하고 (False, 사유) 를 돌려준다.
+    """
+    selectors = cfg["_selectors"]
+    frame = fill_editor(page, cfg, post)
+    if frame is None:
+        return False, "에디터 입력 실패"
+    clear_popups(page, frame, selectors)
+
+    def fallback(reason: str) -> tuple[bool, str]:
+        print(f"    · 예약 설정 실패({reason}) → 임시저장으로 폴백")
+        save_debug(page, "reserve_fail")
+        clear_popups(page, frame, selectors)
+        loc = first_working(frame, selectors["save"])
+        if loc is not None:
+            try:
+                loc.click(timeout=5000)
+                frame.wait_for_timeout(1500)
+            except Exception:  # noqa: BLE001
+                pass
+        return False, reason
+
+    # ① 발행 설정 레이어 열기
+    open_btn = first_working(frame, selectors["publish_open"])
+    if open_btn is None:
+        return fallback("발행 버튼 없음")
+    try:
+        open_btn.click(timeout=5000)
+        frame.wait_for_timeout(1200)
+    except Exception as e:  # noqa: BLE001
+        return fallback(f"발행 버튼 클릭 실패 {str(e)[:40]}")
+
+    # ② '예약' 선택
+    radio = first_working(frame, selectors["reserve_radio"])
+    if radio is None:
+        return fallback("예약 옵션 없음")
+    try:
+        radio.click(timeout=4000)
+        frame.wait_for_timeout(800)
+    except Exception as e:  # noqa: BLE001
+        return fallback(f"예약 선택 실패 {str(e)[:40]}")
+
+    # ③ 날짜·시각 — 날짜 입력칸 + 시/분 select (네이버는 분이 10분 단위)
+    try:
+        date_loc = first_working(frame, selectors["reserve_date"])
+        if date_loc is not None:
+            date_loc.click(timeout=3000)
+            date_loc.fill(when.strftime("%Y-%m-%d"))
+            page.keyboard.press("Enter")
+            frame.wait_for_timeout(400)
+        hour = f"{when.hour:02d}"
+        minute = f"{(when.minute // 10) * 10:02d}"
+        sels = frame.locator(".se-popup select, [class*='publish'] select")
+        if sels.count() >= 2:
+            sels.nth(0).select_option(value=hour)
+            sels.nth(1).select_option(value=minute)
+        elif sels.count() == 1:
+            sels.nth(0).select_option(label=f"{hour}:{minute}")
+        frame.wait_for_timeout(400)
+    except Exception as e:  # noqa: BLE001
+        return fallback(f"시각 설정 실패 {str(e)[:50]}")
+
+    # ④ 최종 '예약 발행' 클릭
+    confirm = first_working(frame, selectors["reserve_confirm"])
+    if confirm is None:
+        return fallback("예약 발행 버튼 없음")
+    try:
+        confirm.click(timeout=5000)
+        frame.wait_for_timeout(2500)
+    except Exception as e:  # noqa: BLE001
+        return fallback(f"예약 발행 클릭 실패 {str(e)[:40]}")
+    print(f"    ✓ 예약 발행 설정 완료 — {when.strftime('%m/%d %H:%M')}")
+    return True, f"{when.strftime('%Y-%m-%d %H:%M')} 예약 발행 설정"
 
 
 def launch(cfg: dict, headful: bool):
