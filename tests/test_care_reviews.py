@@ -32,6 +32,22 @@ class _Q:
         self.calls.append(("lte", col, val))
         return self
 
+    def neq(self, col, val):
+        self.calls.append(("neq", col, val))
+        return self
+
+    def gte(self, col, val):
+        self.calls.append(("gte", col, val))
+        return self
+
+    def is_(self, col, val):
+        self.calls.append(("not_is", col, val))
+        return self
+
+    @property
+    def not_(self):
+        return self
+
     def in_(self, col, vals):
         self.calls.append(("in", col, tuple(vals)))
         return self
@@ -69,15 +85,23 @@ def _call(monkeypatch, **kw):
 
 
 def test_default_is_low_rating_or_cs(monkeypatch):
+    """★4 는 '문제'가 아니다 — 기준은 ★3 이하 + 불만·민감(2026-08-27 확정).
+
+    ★4 를 포함했더니 "포장 깔끔, 양도 적절, 맛있게 잘 먹었습니다" 같은 칭찬
+    글이 문제 배지에 잡혀 숫자가 부풀었다.
+    """
+    from database.supabase_client import ATTENTION_MAX_RATING
+    assert ATTENTION_MAX_RATING == 3
     _, _, calls = _call(monkeypatch)
     expr = next(c[1] for c in calls if c[0] == "or")
-    assert "rating.lte.4" in expr
+    assert f"rating.lte.{ATTENTION_MAX_RATING}" in expr
     assert "complaint" in expr and "escalate" in expr
 
 
 def test_low_mode_is_rating_only(monkeypatch):
+    from database.supabase_client import ATTENTION_MAX_RATING
     _, _, calls = _call(monkeypatch, mode="low")
-    assert ("lte", "rating", 4) in calls
+    assert ("lte", "rating", ATTENTION_MAX_RATING) in calls
     assert not [c for c in calls if c[0] == "or"]
 
 
@@ -106,3 +130,15 @@ def test_db_failure_returns_empty(monkeypatch):
 
     monkeypatch.setattr(db, "get_client", boom)
     assert db.get_attention_reviews() == ([], 0)
+
+
+# --- '지금 손댈 수 있는 것'만 남긴다 (사장님 지적 2026-08-27) ----------------
+# 문제 배지에 3건이 떠 있었는데, 두 건은 이미 '넘김' 처리했고 기한도
+# 113일·320일 지난 리뷰였다. 눌러도 등록이 안 되는 것을 할 일처럼 보여준 것.
+
+def test_unanswered_excludes_skipped_and_expired(monkeypatch):
+    _, _, calls = _call(monkeypatch, replied=False)
+    assert ("neq", "reply_status", "posted") in calls
+    assert ("neq", "reply_status", "skipped") in calls, "넘김 처리한 건 빼야 한다"
+    assert [c for c in calls if c[0] == "gte" and c[1] == "written_date"], \
+        "답글 기한이 지난 리뷰는 빼야 한다"

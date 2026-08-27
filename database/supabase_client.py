@@ -688,6 +688,16 @@ def _order_reviews(q, sort="new"):
 # kind 는 초안 생성 때 붙는다(없는 옛 리뷰는 별점으로만 걸린다).
 CS_KINDS = ("complaint", "escalate")
 
+# '문제 리뷰'의 기준 별점 (사장님 확정 2026-08-27).
+# 예전엔 5점 미만(=★4 포함)이었는데, ★4 는 대부분 만족 리뷰다 — "포장 깔끔,
+# 양도 적절, 맛있게 잘 먹었습니다" 같은 칭찬 글이 '문제'로 잡혀 배지 숫자가
+# 부풀었다. 진짜 손봐야 하는 건 ★3 이하이거나 불만·민감 유형이다.
+# ★4 만 따로 보고 싶으면 전체 리뷰 화면의 '★4 이하' 필터를 쓴다.
+ATTENTION_MAX_RATING = int(os.getenv("ATTENTION_MAX_RATING", "3"))
+# 답글 기한(플랫폼 30일)이 지난 리뷰는 눌러도 등록이 안 된다 — 큐에 남겨
+# 두면 '할 일'처럼 보이기만 한다.
+ATTENTION_WINDOW_DAYS = int(os.getenv("REPLY_EDIT_DAYS", "30"))
+
 
 def get_attention_reviews(platform=None, mode="all", limit=30, offset=0,
                           sort="new", days=None, replied=None, select="*"):
@@ -704,19 +714,27 @@ def get_attention_reviews(platform=None, mode="all", limit=30, offset=0,
             q = q.eq("platform", platform)
         kinds = ",".join(CS_KINDS)
         if mode == "low":
-            q = q.lte("rating", 4)
+            q = q.lte("rating", ATTENTION_MAX_RATING)
         elif mode == "cs":
             q = q.in_("kind", list(CS_KINDS))
         else:
-            q = q.or_(f"rating.lte.4,kind.in.({kinds})")
+            q = q.or_(f"rating.lte.{ATTENTION_MAX_RATING},kind.in.({kinds})")
         if days:                          # 최근 N일만 (요즘 흐름 보기)
             since = (datetime.now().date() - timedelta(days=int(days))).isoformat()
             q = q.gte("written_date", since)
         if replied is True:
             q = q.or_("reply_status.eq.posted,platform_replied.is.true")
         elif replied is False:            # 아직 답글 안 단 문제 리뷰 = 제일 급함
+            # ⚠️ '지금 손댈 수 있는 것'만 남긴다(사장님 지적 2026-08-27:
+            #    넘김 처리했고 기한도 320일 지난 리뷰가 '문제 3건'에 껴 있었다).
+            #    · 넘김(skipped) = 직원이 판단을 끝낸 건 — 다시 올리지 않는다
+            #    · 기한 지난 것  = 눌러도 등록이 안 된다
+            since = (datetime.now().date()
+                     - timedelta(days=ATTENTION_WINDOW_DAYS)).isoformat()
             q = (q.neq("reply_status", "posted")
-                  .not_.is_("platform_replied", "true"))
+                  .neq("reply_status", "skipped")
+                  .not_.is_("platform_replied", "true")
+                  .gte("written_date", since))
         resp = (_order_reviews(q, sort)
                 .range(offset, offset + limit - 1).execute())
     except Exception:  # noqa: BLE001 — 조회 실패가 화면을 막지 않게

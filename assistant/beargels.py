@@ -853,6 +853,72 @@ def _menu_key(name):
     return re.sub(r"[\s'\"()\[\]·,./]+", "", (name or "")).lower()
 
 
+# 답글에서 '다음에 이런 것도' 하고 권할 수 있는 실제 메뉴 이름.
+# ⚠️ 2026-08-26 에 프롬프트를 줄이려고 메뉴 목록을 통째로 뺐더니, 추천할
+#    이름이 없어진 모델이 **없는 메뉴를 지어냈다** — "두부 크림치즈 조합도
+#    잘 어울리니" (사장님 제보 2026-08-27). 전체 198종을 다시 넣으면 프롬프트가
+#    도로 비대해지므로, 권하기 좋은 분류만 골라 이름만 준다.
+_RECO_CATEGORIES = ("크림치즈", "베이커리", "샌드위치")
+_RECO_CACHE = None
+
+
+def recommendable_menus(per_category=6):
+    """추천용 실제 메뉴 이름 목록(분류별 몇 개씩)."""
+    global _RECO_CACHE
+    if _RECO_CACHE is not None:
+        return _RECO_CACHE
+    picked = []
+    try:
+        from database import supabase_client as _db
+        by_cat = {}
+        for r in _db.menu_all():
+            if (r.get("menu_type") or "") == "반제품":
+                continue
+            cat = (r.get("category") or "").strip()
+            if cat not in _RECO_CATEGORIES:
+                continue
+            name = _clean_menu(r.get("name"))
+            # 대용량(L, 200g) 같은 변형은 권하기에 적절치 않다.
+            if not name or "(" in name or name.endswith(" L"):
+                continue
+            box = by_cat.setdefault(cat, [])
+            if len(box) < per_category and name not in box:
+                box.append(name)
+        for cat in _RECO_CATEGORIES:
+            picked += by_cat.get(cat, [])
+    except Exception:  # noqa: BLE001 — 못 읽어도 답글은 만들어야 한다
+        logger.warning("추천용 메뉴 목록을 못 읽었습니다")
+    _RECO_CACHE = picked
+    return picked
+
+
+# 답글이 '없는 메뉴'를 말했는지 잡아내는 데 쓰는 꼬리말.
+_MENU_TAILS = ("크림치즈", "베이글", "샌드위치", "치아바타", "샐러드")
+
+
+def unknown_menu_mentions(draft):
+    """답글에 나온 메뉴 이름 중 **정본에 없는 것**을 찾는다(없으면 빈 목록).
+
+    '두부 크림치즈'처럼 그럴듯하지만 없는 이름을 잡는다. '베이글', '샌드위치'
+    처럼 꼬리말 단독으로 쓴 일반 표현은 메뉴 지칭이 아니므로 넘어간다.
+    """
+    table = _menu_facts_table()
+    known = set(table.keys()) | {_menu_key(n) for n in recommendable_menus()}
+    out = []
+    for tail in _MENU_TAILS:
+        for m in re.finditer(r"([가-힣A-Za-z][가-힣A-Za-z0-9 ]{0,14})\s*" + tail,
+                             draft or ""):
+            phrase = (m.group(1) + tail).strip()
+            if phrase == tail or len(m.group(1).strip()) < 2:
+                continue        # '베이글' 단독 등 일반 표현
+            key = _menu_key(phrase)
+            if any(key in k or k in key for k in known):
+                continue        # 정본에 있는(또는 부분 일치하는) 이름
+            if phrase not in out:
+                out.append(phrase)
+    return out
+
+
 def menu_facts_for(menus, limit=4):
     """주문한 메뉴의 **실제 구성·소개**를 프롬프트용 문장으로 만든다.
 

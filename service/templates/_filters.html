@@ -31,8 +31,8 @@
 {% if screen == 'care' %}
 <div class="filters">
   <span class="lbl" style="align-self:center;min-width:44px;">범위</span>
-  <a href="{{ url_with(mode=None) }}" class="{{ 'on' if mode in ('all', None, '') }}">전체(저평점+CS)</a>
-  <a href="{{ url_with(mode='low') }}" class="{{ 'on' if mode == 'low' }}">⭐ 별점 5점 미만</a>
+  <a href="{{ url_with(mode=None) }}" class="{{ 'on' if mode in ('all', None, '') }}">전체(저평점+불만)</a>
+  <a href="{{ url_with(mode='low') }}" class="{{ 'on' if mode == 'low' }}">⭐ ★3 이하</a>
   <a href="{{ url_with(mode='cs') }}" class="{{ 'on' if mode == 'cs' }}">🚨 CS 리뷰</a>
 </div>
 {% endif %}

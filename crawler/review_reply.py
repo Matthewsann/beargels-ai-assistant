@@ -624,6 +624,19 @@ class ReplyToReviewAction(WriteAction):
         if content and content[:15] not in card_txt:
             raise ReplyPostError("대상 리뷰 본문이 일치하지 않습니다 — 게시 중단.")
 
+        # ⚠️ 이미 답글이 달린 리뷰에 **말없이 하나 더** 붙이지 않는다.
+        #    배민이 '사장님 댓글 추가하기' 를 주기 시작하면서, 답글이 있어도
+        #    등록 버튼이 보인다 — 예전 로직('버튼 없음 = 이미 답글 있음')이
+        #    무력화돼 손님 리뷰에 답글이 두 개 달렸다(2026-08-27 실측:
+        #    재윤님 리뷰에 8/16·8/27 답글 2개).
+        #    답글을 지우는 건 사람이 판단할 일이라, 여기서는 멈추고 알린다.
+        existing = card.locator('[class*="ReviewCommentBox-module__"]')
+        if not self.allow_edit and existing.count() > 0:
+            raise ReplyPostError(
+                "이 리뷰엔 이미 사장님 답글이 달려 있어요. 그대로 등록하면 "
+                "답글이 두 개가 됩니다 — 배민 앱에서 기존 답글을 지운 뒤 "
+                "다시 등록하시거나, 그냥 두시려면 [넘김]을 눌러주세요.")
+
         # 작성기 열기 — 미답변이면 '사장님 댓글 등록하기', 이미 답글이 있고
         # 수정 모드면 답글박스(형제)의 '수정' 버튼.
         open_btn = card.get_by_text(BAEMIN_REPLY_BTN_RE)

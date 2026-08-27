@@ -96,3 +96,18 @@ def test_coupang_without_reply_id_explains_recollect(monkeypatch):
         raise AssertionError("에러가 나야 한다")
     except rr.ReplyPostError as e:
         assert "이미 답글" in str(e) and "수집" in str(e)
+
+
+# --- 배민: 이미 답글이 있으면 하나 더 붙이지 않는다 (2026-08-27) -----------
+# 배민이 '사장님 댓글 추가하기'를 주기 시작하면서, 답글이 있어도 등록 버튼이
+# 보인다. 예전 로직('버튼 없음 = 이미 답글 있음')이 무력화돼 손님 리뷰에
+# 답글이 두 개 달렸다(재윤님 리뷰: 8/16·8/27).
+
+def test_baemin_refuses_to_add_second_reply():
+    import inspect
+    from crawler import review_reply as rr
+    src = inspect.getsource(rr.ReplyToReviewAction._apply_baemin)
+    assert "ReviewCommentBox-module__" in src
+    assert "답글이 두 개" in src, "중복 등록을 막는 안내가 있어야 한다"
+    # allow_edit(=수정 등록) 일 때는 막지 않아야 한다
+    assert "not self.allow_edit and existing.count()" in src
