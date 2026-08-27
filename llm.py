@@ -70,17 +70,40 @@ def _key(name: str) -> str:
 
 
 def available_providers() -> list[str]:
+    """쓸 수 있는 공급자를 **우선순위 순으로**.
+
+    ⚠️ 제미나이가 먼저다 — 무료이기 때문이다(사장님 지시 2026-08-27).
+       클로드는 무료 한도가 떨어졌을 때만 쓴다.
+    """
     forced = (os.getenv("LLM_PROVIDER") or "").strip().lower()
     if forced in ("claude", "anthropic"):
         return ["claude"] if _key("ANTHROPIC_API_KEY") else []
     if forced == "gemini":
         return ["gemini"] if _key("GEMINI_API_KEY") else []
     out = []
-    if _key("ANTHROPIC_API_KEY"):
-        out.append("claude")
     if _key("GEMINI_API_KEY"):
         out.append("gemini")
+    if _key("ANTHROPIC_API_KEY"):
+        out.append("claude")
     return out
+
+
+def available_steps() -> list[tuple[str, str | None]]:
+    """실제로 두드릴 순서 — (공급자, 모델). 모델이 None 이면 그쪽 기본 모델.
+
+    제미나이는 **두 번** 나온다. 상위 모델(gemini-flash-latest)은 품질이 좋은
+    대신 무료 한도가 하루 20건 남짓이라 금방 마르고, 하위 모델(flash-lite)은
+    한도가 넉넉한 대신 글이 무디다. 그래서 상위가 마르면 곧바로 하위로
+    떨어지지 않고 **그 사이에 유료 클로드를 넣는다**(사장님 지시 2026-08-27):
+        제미나이 상위(무료) → 클로드(유료) → 제미나이 하위(무료)
+    """
+    names = available_providers()
+    steps: list[tuple[str, str | None]] = [
+        ("gemini", GEMINI_MODEL) if n == "gemini" else (n, None) for n in names
+    ]
+    if "gemini" in names and GEMINI_FALLBACK_MODEL != GEMINI_MODEL:
+        steps.append(("gemini", GEMINI_FALLBACK_MODEL))     # 마지막 보루
+    return steps
 
 
 def provider_name() -> str | None:
@@ -165,16 +188,18 @@ def _call_gemini(system: str, user: str, max_tokens: int, model: str | None = No
         )
         if resp.status_code != 400:
             break                      # 400(필드 미지원)일 때만 다음 설정 시도
-    if resp.status_code in (404, 429) and model != GEMINI_FALLBACK_MODEL:
+    if resp.status_code in (404, 429):
         # 404 = 모델 이름이 바뀜(구글이 자주 교체한다).
         # 429 = 그 모델의 무료 한도 소진. 한도는 **모델마다 다르다** — 기본
         #       gemini-flash-latest 는 3.7-flash 로 풀려 하루 20건뿐이라
         #       리뷰가 하루 60건씩 들어오면 답글이 곧 멈춘다(2026-08-17 실측).
-        #       flash-lite 는 한도가 넉넉해 거기로 넘긴다.
-        why = "없음" if resp.status_code == 404 else "무료 한도 소진"
-        logger.warning("Gemini 모델 %s %s → %s 로 재시도",
-                       model, why, GEMINI_FALLBACK_MODEL)
-        return _call_gemini(system, user, max_tokens, GEMINI_FALLBACK_MODEL, images)
+        #
+        # ⚠️ 여기서 바로 flash-lite 로 떨어지지 않는다. 그렇게 하면 상위 무료가
+        #    마르는 순간 **유료 클로드를 건너뛰고** 제일 무딘 모델로 가버린다
+        #    (사장님 지시 2026-08-27: 좋은 무료 → 클로드 → 낮은 무료).
+        #    올려 보내면 complete() 의 사다리가 다음 단으로 넘긴다.
+        why = "모델 없음(404)" if resp.status_code == 404 else "무료 한도 소진(429)"
+        raise RuntimeError(f"Gemini {model} {why}: {resp.text[:200]}")
     if resp.status_code != 200:
         raise RuntimeError(f"Gemini 오류 {resp.status_code}: {resp.text[:300]}")
     data = resp.json()
@@ -190,8 +215,14 @@ def _call_gemini(system: str, user: str, max_tokens: int, model: str | None = No
 
 
 def _call_gemini_any(system, user, max_tokens, model=None, images=None):
-    """gemini 는 claude 쪽 모델 이름을 받지 않는다 — 인자만 맞춘다."""
-    return _call_gemini(system, user, max_tokens, None, images)
+    """gemini 는 claude 쪽 모델 이름을 받지 않는다 — 그런 이름은 무시한다.
+
+    사다리(available_steps)가 넘겨주는 'gemini-…' 이름은 그대로 쓴다 —
+    상위/하위 무료 모델을 가르는 게 그 이름이다.
+    """
+    if model and not str(model).startswith("gemini"):
+        model = None
+    return _call_gemini(system, user, max_tokens, model, images)
 
 
 _CALLERS = {"claude": _call_claude, "gemini": _call_gemini_any}
@@ -223,6 +254,23 @@ def _is_transient_error(e: Exception) -> bool:
 _AUTH_DEAD: set = set()
 
 
+# 한도·크레딧으로 막힌 단계는 잠시 건너뛴다. 안 그러면 답글 한 건마다 죽은
+# 단계를 먼저 두드려(429 한 번, 402 한 번) 매번 느려진다. 무료 한도는 하루가
+# 지나면 풀리고 크레딧은 충전하면 풀리므로 **영구 차단은 하지 않는다** —
+# 잠깐 쉬었다 다시 올라가 본다(기본 20분).
+_COOLDOWN_SEC = int(os.getenv("LLM_COOLDOWN_SEC", "1200"))
+_COOLDOWN: dict = {}
+
+
+def _cooling(name: str, model: str | None) -> bool:
+    until = _COOLDOWN.get((name, model))
+    return bool(until and time.time() < until)
+
+
+def _cool_down(name: str, model: str | None) -> None:
+    _COOLDOWN[(name, model)] = time.time() + _COOLDOWN_SEC
+
+
 # ---------------------------------------------------------------------------
 # 공개 함수
 # ---------------------------------------------------------------------------
@@ -242,23 +290,27 @@ def complete(system: str = "", user: str = "", max_tokens: int = 1500,
             그 공급자가 없거나 실패하면 평소 순서로 넘어간다(사장님 확정 2026-08-27:
             크레딧 사용 최소화).
     """
-    providers = available_providers()
-    if prefer and prefer in providers:
-        providers = [prefer] + [p for p in providers if p != prefer]
-    if not providers:
+    steps = available_steps()
+    if prefer:
+        steps = ([s for s in steps if s[0] == prefer]
+                 + [s for s in steps if s[0] != prefer])
+    if not steps:
         raise NoProviderError(
             "쓸 수 있는 AI 가 없어요. .env 에 ANTHROPIC_API_KEY 또는 GEMINI_API_KEY 를 넣어주세요. "
             "(Gemini 무료 키: https://aistudio.google.com/apikey)"
         )
     last = None
-    for name in providers:
+    for name, step_model in steps:
         if name in _AUTH_DEAD:
             continue                    # 무효 키 — 두드리지 않는다(로그 도배 방지)
+        if _cooling(name, step_model):
+            continue                    # 한도/크레딧으로 막힌 단계 — 잠시 쉰다
+        use_model = step_model or model
         # 일시 장애(503·타임아웃)는 잠깐 쉬고 한 번 더 — 바로 템플릿 폴백으로
         # 떨어지면 멀쩡한 리뷰가 저품질 초안을 받는다(2026-08-16 점검).
         for attempt in range(2):
             try:
-                return _CALLERS[name](system, user, max_tokens, model, images)
+                return _CALLERS[name](system, user, max_tokens, use_model, images)
             except Exception as e:  # noqa: BLE001
                 last = e
                 if _is_auth_error(e):
@@ -272,7 +324,9 @@ def complete(system: str = "", user: str = "", max_tokens: int = 1500,
                     time.sleep(5)
                     continue
                 if _is_credit_error(e):
-                    logger.warning("%s 사용 불가(크레딧/한도) → 다음 공급자로", name)
+                    _cool_down(name, step_model)
+                    logger.warning("%s(%s) 사용 불가(크레딧/한도) → 다음 단계로",
+                                   name, step_model or "기본")
                 break
     if last:
         raise last
