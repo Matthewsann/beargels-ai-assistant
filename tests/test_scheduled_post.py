@@ -118,3 +118,34 @@ def test_night_hours_default_to_scheduling(monkeypatch, hour, night):
 
     monkeypatch.setattr(app, "datetime", _Now)
     assert app._is_night() is night
+
+
+def test_morning_window_is_wide_enough_to_survive_a_busy_worker():
+    """9시에 일꾼이 바쁘면 좁은 창은 그냥 지나가고, 예약분이 하루 밀린다."""
+    from worker.agent import SCHEDULED_POST_WINDOW_MIN, slot_due
+    assert SCHEDULED_POST_WINDOW_MIN >= 120, "아침 내내 열려 있어야 한다"
+    # 9시에 바빠서 10시 반에야 한가해져도 그날 안에 올라간다
+    late = datetime(2026, 8, 28, 10, 30)
+    assert slot_due("09:00", late, None, SCHEDULED_POST_WINDOW_MIN) \
+        == "2026-08-28 09:00"
+    # 하루 한 번만 — 이미 돈 슬롯은 다시 안 연다
+    assert slot_due("09:00", late, "2026-08-28 09:00",
+                    SCHEDULED_POST_WINDOW_MIN) is None
+    # 오후엔 안 열린다. 낮에 일꾼이 재시작돼(기억이 비어) 아침 예약이
+    # 엉뚱한 시간에 쏟아지면 안 된다.
+    for h in (12, 15, 21):
+        assert slot_due("09:00", datetime(2026, 8, 28, h, 5), None,
+                        SCHEDULED_POST_WINDOW_MIN) is None
+
+
+def test_other_slots_keep_the_narrow_window():
+    """문제리뷰 보고 같은 기존 슬롯의 10분 창은 그대로다(기본값 유지)."""
+    from worker.agent import slot_due
+    assert slot_due("14:00", datetime(2026, 8, 28, 14, 5), None) is not None
+    assert slot_due("14:00", datetime(2026, 8, 28, 14, 30), None) is None
+
+
+def test_morning_batch_shows_up_in_the_owner_alert_box():
+    """세션이 꺼져 있어도 사장님이 결과를 볼 수 있어야 한다."""
+    import service.app as app
+    assert "ScheduledPostStarted" in app.OWNER_ALERT_KINDS

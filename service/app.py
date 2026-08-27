@@ -356,7 +356,7 @@ def _trusted_kinds() -> set:
 # 민감 리뷰·세션 만료가 조용히 묻혔다(2026-08-16 점검). 기술 오류(새벽 점검
 # 몫)와 섞이지 않게 사장님용 kind 만 화이트리스트로 고른다.
 OWNER_ALERT_KINDS = ("SeriousReview", "SessionExpired", "ReplyReplaced",
-                     "Notice", "StuckApprovedRevived")
+                     "Notice", "StuckApprovedRevived", "ScheduledPostStarted")
 
 
 @cached(15)

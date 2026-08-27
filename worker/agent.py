@@ -512,9 +512,15 @@ _last_post_slot = None   # 같은 슬롯을 두 번 돌지 않게(메모리 — 
                          # 이미 게시된 건 posted 라 재게시는 없다)
 
 
-def slot_due(times, now, last_slot):
-    """지금이 정해진 시각(슬롯 시작 후 10분 안)이고 아직 안 돈 슬롯이면 그
-    슬롯 키("YYYY-MM-DD HH:MM")를, 아니면 None 을 반환한다. 순수 로직."""
+def slot_due(times, now, last_slot, window_minutes=10):
+    """지금이 정해진 시각(슬롯 시작 후 window_minutes 안)이고 아직 안 돈
+    슬롯이면 그 슬롯 키("YYYY-MM-DD HH:MM")를, 아니면 None 을 반환한다.
+
+    window_minutes 를 넓히는 이유(2026-08-28): 이 판정은 일꾼이 **한가할 때만**
+    돌아본다. 마침 그 10분에 수집이나 답글 등록이 물려 있으면 슬롯을 통째로
+    놓치고, 다음 기회는 **내일**이다. 놓치면 곤란한 일(아침 일괄 등록)은
+    창을 넉넉히 준다. 순수 로직.
+    """
     for t in (times or "").split(","):
         t = t.strip()
         if not t:
@@ -524,7 +530,7 @@ def slot_due(times, now, last_slot):
         except ValueError:
             continue
         slot = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
-        if slot <= now < slot + timedelta(minutes=10):
+        if slot <= now < slot + timedelta(minutes=window_minutes):
             key = slot.strftime("%Y-%m-%d %H:%M")
             return None if key == last_slot else key
     return None
@@ -840,6 +846,12 @@ def maybe_auto_post() -> None:
 # 그래서 9시부터 순차로 올려 9~10시 사이에 푸시가 닿게 한다.
 # 새벽에 쓴 답글이 새벽에 나가는 것도 이걸로 막힌다(사장님 요청 2026-08-28).
 SCHEDULED_POST_TIMES = os.getenv("WORKER_SCHEDULED_POST_TIMES", "09:00")
+# 9시에 수집이나 다른 등록이 물려 있으면 좁은 창은 그냥 지나간다 — 그러면
+# 예약분이 **하루를 통째로** 밀린다. 그래서 아침 내내(9~12시) 한 번만 열리는
+# 넓은 창으로 본다. 오후에는 열리지 않는다 — 낮에 일꾼이 재시작돼도 '아침
+# 예약'이 엉뚱한 시간에 쏟아지지 않게(재시작하면 아래 기억이 비기 때문).
+SCHEDULED_POST_WINDOW_MIN = int(
+    os.getenv("WORKER_SCHEDULED_POST_WINDOW_MIN", "180"))
 _last_scheduled_slot = None
 
 
@@ -877,7 +889,7 @@ def maybe_release_scheduled() -> None:
     global _last_scheduled_slot
     try:
         slot = slot_due(SCHEDULED_POST_TIMES, datetime.now(),
-                        _last_scheduled_slot)
+                        _last_scheduled_slot, SCHEDULED_POST_WINDOW_MIN)
         if slot:
             _last_scheduled_slot = slot
             release_scheduled()
