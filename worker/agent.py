@@ -866,7 +866,9 @@ def maybe_complaint_report() -> None:
 # 마케팅 캘린더용 매출 테이블(sales_daily 등)에 넣는다. (worker/pos_import.py)
 # ---------------------------------------------------------------------------
 
-POS_IMPORT_TIMES = os.getenv("WORKER_POS_IMPORT_TIMES", "10:20,21:20")
+# 장부는 한 달에 한 번 올라온다 — 하루 1회 스캔이면 충분(사장님 2026-08-27).
+# 급하면 웹의 [장부 지금 반영] 버튼이 있다.
+POS_IMPORT_TIMES = os.getenv("WORKER_POS_IMPORT_TIMES", "10:20")
 _last_pos_slot = None
 
 
