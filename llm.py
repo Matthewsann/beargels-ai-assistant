@@ -77,13 +77,13 @@ def available_providers() -> list[str]:
     """
     forced = (os.getenv("LLM_PROVIDER") or "").strip().lower()
     if forced in ("claude", "anthropic"):
-        return ["claude"] if _key("ANTHROPIC_API_KEY") else []
+        return ["claude"] if claude_keys() else []
     if forced == "gemini":
         return ["gemini"] if _key("GEMINI_API_KEY") else []
     out = []
     if _key("GEMINI_API_KEY"):
         out.append("gemini")
-    if _key("ANTHROPIC_API_KEY"):
+    if claude_keys():        # 1번 키가 비어도 예비 키만 있으면 쓴다
         out.append("claude")
     return out
 
@@ -120,10 +120,58 @@ def available() -> bool:
 # 공급자별 호출
 # ---------------------------------------------------------------------------
 
+def claude_keys() -> list[tuple[str, str]]:
+    """쓸 수 있는 클로드 키를 **쓸 순서대로** [(환경변수 이름, 키), ...].
+
+    앞의 키가 크레딧이 마르면 다음 키로 넘어간다(사장님 지시 2026-08-28:
+    "기존 크레딧 다 떨어지면 새 키를 다음 걸로"). 키를 더 받으면 .env 에
+    ANTHROPIC_API_KEY_3, _4 … 로 이어 붙이기만 하면 된다.
+    """
+    out, seen = [], set()
+    names = ["ANTHROPIC_API_KEY"] + [f"ANTHROPIC_API_KEY_{i}"
+                                     for i in range(2, 10)]
+    for name in names:
+        k = _key(name)
+        if k and k not in seen:      # 같은 키를 두 번 두면 헛되이 두 번 두드린다
+            seen.add(k)
+            out.append((name, k))
+    return out
+
+
 def _call_claude(system: str, user: str, max_tokens: int, model=None,
                  images: list | None = None) -> str:
+    """클로드에 묻는다. 키가 여럿이면 **살아 있는 키를 찾아** 쓴다.
+
+    크레딧이 마른 키·무효한 키는 그 키만 잠시 쉬게 하고(_cool_down) 다음
+    키로 넘어간다. 키를 전부 써도 안 되면 마지막 오류를 올려, 바깥 사다리가
+    제미나이 하위 모델로 내려가게 한다.
+    """
+    keys = claude_keys()
+    if not keys:
+        raise NoProviderError("클로드 키가 없습니다(.env ANTHROPIC_API_KEY).")
+    last = None
+    for env_name, api_key in keys:
+        if _cooling("claude", env_name):
+            continue                 # 이 키는 방금 마른 걸 확인했다
+        try:
+            return _claude_once(api_key, system, user, max_tokens, model, images)
+        except Exception as e:  # noqa: BLE001
+            last = e
+            if _is_credit_error(e) or _is_auth_error(e):
+                _cool_down("claude", env_name)
+                why = "크레딧 소진" if _is_credit_error(e) else "키 무효"
+                nxt = "다음 키로" if env_name != keys[-1][0] else "남은 키 없음"
+                logger.warning("클로드 %s %s → %s", env_name, why, nxt)
+                continue
+            raise                    # 그 밖의 오류는 키를 바꿔도 마찬가지다
+    raise last
+
+
+def _claude_once(api_key: str, system: str, user: str, max_tokens: int,
+                 model=None, images: list | None = None) -> str:
+    """키 하나로 한 번 부른다(키 고르기는 _call_claude 가 한다)."""
     from anthropic import Anthropic
-    client = Anthropic(api_key=_key("ANTHROPIC_API_KEY"))
+    client = Anthropic(api_key=api_key)
     model = model or CLAUDE_MODEL
     if images:
         content = [{"type": "image",
