@@ -85,6 +85,15 @@ def request(method: str, path: str, data: bytes | None = None,
                 return r.status, r.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", "replace")[:300]
+            if e.code == 429 and attempt < tries - 1:
+                # 파일이 30개가 넘어 PA 쪽 분당 한도에 걸렸다(2026-08-27 실사고).
+                # 응답이 "Expected available in N seconds" 로 알려주면 그만큼 쉰다.
+                m = re.search(r"in (\d+) second", body)
+                wait = int(m.group(1)) + 3 if m else 60
+                print(f"  잠깐 쉼: 요청 한도 — {wait}초 뒤 재시도")
+                last = f"HTTP {e.code} {body}"
+                time.sleep(wait)
+                continue
             if e.code >= 500 and attempt < tries - 1:
                 last = f"HTTP {e.code} {body}"
                 time.sleep(5)
