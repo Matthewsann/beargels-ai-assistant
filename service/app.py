@@ -442,7 +442,9 @@ def scheduled_post_when() -> str:
 
 # 고객 요청사항을 훑는 기간. 매장에서 "요즘 이런 얘기가 나온다"를 보는
 # 용도라 너무 길면 이미 고친 이야기가 계속 남는다.
-REQUEST_DAYS = int(os.getenv("REQUEST_DAYS", "60"))
+# 30일 — 사장님 확정(2026-08-28). 처음 60일로 뒀더니 몇 달 전 이야기까지
+# 올라와 '지금 챙길 것'이 흐려졌다.
+REQUEST_DAYS = int(os.getenv("REQUEST_DAYS", "30"))
 
 
 def _today_label() -> str:
