@@ -48,12 +48,12 @@
     <div><b>베어글스 AI 비서</b><small>송도타임스페이스점</small></div>
   </a>
 
-  {# 메뉴 순서는 사장님이 정한다 (2026-08-28 지시): 회의 기록 · 마케팅 ·
+  {# 메뉴 순서는 사장님이 정한다 (2026-08-28 지시): 회의 기록 · MKT 캘린더 ·
      리뷰 답글 · 네이버 블로그 · 인스타 · 스마트플레이스 · 메뉴/원가.
      홈 화면(home.html)의 바로가기 카드도 같은 순서로 맞춰 둘 것. #}
   <a class="sm {{ 'on' if _sec == 'meet' else '' }}" href="/{{ key }}/meeting">🗓️ 회의 기록</a>
 
-  <a class="sm {{ 'on' if _sec == 'mkt' else '' }}" href="/{{ key }}/mkt">📣 마케팅</a>
+  <a class="sm {{ 'on' if _sec == 'mkt' else '' }}" href="/{{ key }}/mkt">📣 MKT 캘린더</a>
 
   <a class="sm {{ 'on' if _sec == 'review' else '' }}" href="/{{ key }}/review">💬 리뷰 답글</a>
   {% if _sec == 'review' %}

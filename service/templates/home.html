@@ -147,7 +147,7 @@
 
   <div class="sec-lbl">바로가기</div>
   {# 카드 순서는 사이드바(_sidebar.html)와 같아야 한다 — 사장님이 정한 순서
-     (2026-08-28): 회의 기록 · 마케팅 · 리뷰 답글 · 네이버 블로그 · 인스타 ·
+     (2026-08-28): 회의 기록 · MKT 캘린더 · 리뷰 답글 · 네이버 블로그 · 인스타 ·
      스마트플레이스 · 메뉴/원가. 한쪽만 바꾸면 직원이 매번 다시 찾는다. #}
   <div class="grid">
     <a class="app" href="{{ url_for('meeting_home', path_key=key) }}">
@@ -161,8 +161,8 @@
     </a>
     <a class="app" href="{{ url_for('mkt_home', path_key=key) }}">
       <div class="ico">📣</div>
-      <div class="nm">마케팅</div>
-      <div class="ds">캘린더 · 행사 계획 · 효과</div>
+      <div class="nm">MKT 캘린더</div>
+      <div class="ds">행사 기록 · 효과 확인</div>
       <button class="owner {{ '' if owners.mkt else 'none' }}" type="button"
               onclick="setOwner(event, 'mkt')" data-name="{{ owners.mkt or '' }}">
         👤 {{ owners.mkt or '담당자 지정' }}</button>
