@@ -305,16 +305,28 @@ function render(){
   // 수집이 며칠 전인지 — 이게 안 보이면 '이미 고친 것'을 다시 고치게 된다
   const when=snaps.length?(snaps[0].collected_at||""):"";
   const days=when?Math.floor((Date.now()-new Date(when))/86400000):null;
-  // 수집이 정본 대비 너무 적으면 수집 실패다. 이때 '채널에 없음' 은 전부
-  // 거짓 작업이 된다(네이버 1건 수집인데 153건 등록하라고 시킨 실사고).
+  // 수집 건수가 적을 때 '수집 실패'로 단정하면 안 된다 — 채널에 진짜로 몇
+  // 개만 올라가 있을 수도 있다(네이버가 그랬다: 텍스트 메뉴 1개가 실제 상태).
+  // 수집기가 남긴 collect_status 로 갈라 말하고, 없으면 두 가능성을 다 적는다.
   const nActive = DATA.items.filter(i=>activeFor(i,CH)).length;
-  const thin=snaps.length && nActive && snaps.length < nActive*0.5
-    ? `<div class="stale bad">🚨 <b>${LABEL[CH]} 수집이 ${snaps.length}건뿐</b>입니다
-        (정본에서 ${LABEL[CH]}에 판다고 되어 있는 메뉴는 ${nActive}개).
-        수집이 제대로 안 된 것 같습니다 — <b>아래 '채널에 등록하기' 목록은 믿지 마세요.</b>
-        다시 수집한 뒤에 보세요.
-        <div><button class="recol" onclick="askCollect()">🔄 지금 다시 수집</button></div></div>`
-    : "";
+  const st=(DATA.settings.collect_status||{})[CH];
+  let thin="";
+  if(snaps.length && nActive && snaps.length < nActive*0.5){
+    if(st && st.ok===false)
+      thin=`<div class="stale bad">🚨 <b>${LABEL[CH]} 수집이 실패했습니다.</b>
+        (${(st.error||"").slice(0,80)})<br>지금 목록은 예전 수집분이라
+        <b>'채널에 등록하기'는 믿지 마세요.</b>
+        <div><button class="recol" onclick="askCollect()">🔄 다시 수집</button></div></div>`;
+    else
+      thin=`<div class="stale">📌 ${LABEL[CH]}에서 <b>${snaps.length}개</b>만 확인됩니다
+        (정본에서 ${LABEL[CH]} 판매로 켜 둔 메뉴는 ${nActive}개).
+        ${st&&st.source==="public"?`네이버 <b>로그인이 풀려</b> 관리자 대신 손님에게 보이는
+          공개 페이지를 읽었습니다. `:""}
+        둘 중 하나입니다 — <b>①</b> ${LABEL[CH]}에 정말 이만큼만 올려두셨거나,
+        <b>②</b> 수집이 덜 된 것. 아래 '채널에 등록하기'를 실행하기 전에
+        ${LABEL[CH]} 포털에서 눈으로 한 번 확인해 주세요.
+        <div><button class="recol" onclick="askCollect()">🔄 다시 수집</button></div></div>`;
+  }
   const stale=days!=null&&days>=3
     ? `<div class="stale">⚠️ 이 목록은 <b>${when.slice(0,10)}에 본 ${LABEL[CH]} 모습</b> 기준입니다
         (${days}일 전).<br>그 뒤 정본을 고치셨다면 <b>이미 해결된 항목이 섞여 있습니다.</b>

@@ -347,20 +347,33 @@ def collect_menus() -> tuple[int, list[str]]:
     from crawler import menu_scrape
 
     total, warnings = 0, []
+    # 채널별로 '어떻게 끝났는지' 를 남긴다. 건수만 보면 수집 실패와
+    # '채널에 진짜 그것뿐' 을 구분할 수 없어, 화면이 엉뚱한 경고를 낸다.
+    status = {}
     for channel, fetch in (("baemin", menu_scrape.fetch_baemin_menus),
                            ("coupang", menu_scrape.fetch_coupang_menus),
                            ("naver", menu_scrape.fetch_naver_menus)):
         try:
             rows = fetch()
+            status[channel] = {"ok": True, "count": len(rows),
+                               "at": datetime.utcnow().isoformat() + "Z"}
+            if channel == "naver":
+                status[channel]["source"] = menu_scrape.LAST_NAVER_SOURCE
             if rows:
                 total += db.save_menu_snapshots(channel, rows)
             else:
                 warnings.append(f"{channel} 0건(덤프 확인)")
         except Exception as e:  # noqa: BLE001 — 채널 하나 실패해도 나머지는 진행
+            status[channel] = {"ok": False, "count": 0, "error": str(e)[:120],
+                               "at": datetime.utcnow().isoformat() + "Z"}
             warnings.append(f"{channel} 실패: {str(e)[:80]}")
             db.log_error("worker", f"채널 메뉴 수집 실패({channel}): {e}",
                          kind=type(e).__name__, path=f"menu_collect/{channel}",
                          detail=traceback.format_exc())
+    try:
+        db.menu_set_setting("collect_status", status)
+    except Exception:  # noqa: BLE001 — 기록 실패가 수집을 망치면 안 된다
+        pass
     return total, warnings
 
 

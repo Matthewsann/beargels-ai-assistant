@@ -251,11 +251,25 @@ def _fetch_naver_admin_menus(page) -> list[dict]:
         if "네이버 로그인이 필요한" in body:
             logger.info("네이버 미로그인 — 공개 플레이스 페이지로 폴백")
             return []
-        m = re.search(r"/bizes/booking/(\d+)", page.content())
+        # 업체 링크는 화면·계정에 따라 여러 모양으로 나온다. 예전엔
+        # /bizes/booking/<id> 하나만 봤는데, 지금 화면은 예약·주문 탭
+        # (?menu=order)에서만 그 링크가 뜬다 — 그래서 못 찾고 공개 페이지로
+        # 떨어졌고, 손님에게 보이는 메뉴 1건만 수집됐다(2026-08-28 실사고).
+        html = page.content()
+        m = (re.search(r"/bizes/booking/(\d+)", html)
+             or re.search(r"partner\.booking\.naver\.com/bizes/(\d+)", html))
+        if not m:
+            page.goto(NAVER_SP_BIZES_URL + "?menu=order",
+                      wait_until="domcontentloaded")
+            page.wait_for_timeout(5000)
+            html = page.content()
+            m = (re.search(r"/bizes/booking/(\d+)", html)
+                 or re.search(r"partner\.booking\.naver\.com/bizes/(\d+)", html))
         if not m:
             logger.info("스마트플레이스 업체 링크를 못 찾음 — 공개 페이지로 폴백")
             return []
         biz = m.group(1)
+        logger.info("스마트플레이스 업체 ID 감지: %s", biz)
     page.goto(NAVER_SP_MENU_URL_TPL.format(biz=biz),
               wait_until="domcontentloaded")
     page.wait_for_timeout(8000)
@@ -269,13 +283,22 @@ def _fetch_naver_admin_menus(page) -> list[dict]:
     return rows
 
 
+# 네이버를 어느 경로로 가져왔는지 — 공개 페이지는 '손님에게 보이는 것'이라
+# 적게 나와도 정상일 수 있고, 관리자 경로는 등록된 전체다. 작업지시서가
+# '수집 실패'와 '진짜로 안 올려둠'을 구분하려면 이 값이 필요하다.
+LAST_NAVER_SOURCE = None
+
+
 def fetch_naver_menus() -> list[dict]:
     """네이버 메뉴 — 스마트플레이스 관리자(전체) 우선, 안 되면 공개 페이지."""
+    global LAST_NAVER_SOURCE
     with BrowserSession() as sess:
         rows = _fetch_naver_admin_menus(sess.page)
     if rows:
+        LAST_NAVER_SOURCE = "admin"
         logger.info("네이버 노출 메뉴 %d건 (스마트플레이스 관리자)", len(rows))
         return rows
+    LAST_NAVER_SOURCE = "public"
     return _fetch_naver_public_menus()
 
 
