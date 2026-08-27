@@ -83,6 +83,11 @@ REVIEW_PROMPT = """너는 네이버 블로그 상위노출 전문 SEO 컨설턴�
 아래 '정보 금고'(브랜드 철학·톤·메뉴)와 'SEO 지식'을 기준으로, 주어진 블로그 글을 냉정하게 평가하라.
 칭찬만 하지 말고 실제로 개선할 점을 구체적으로 짚어라.
 
+⚠️ 제조 사실 평가 기준(정확히 적용할 것 — 과잉 적용 금지):
+- 금지는 **베이글 제빵 암시**뿐이다: "수제 베이글/직접 반죽/매장에서 굽는/갓 구운" 등.
+- 크림치즈·생크림·산도·샌드위치·수제청·음료는 **실제로 매장에서 직접 만든다** —
+  이들에 "직접 만든/매장에서 만드는"이라고 쓰는 것은 사실이며 위반이 아니다.
+
 ===== 정보 금고 =====
 {knowledge}
 ===== SEO 지식 =====
@@ -113,7 +118,7 @@ def expert_review(body: str, title: str, main_keyword: str) -> dict:
         main_keyword=main_keyword, body=body,
     )
     import llm
-    raw = llm.complete(user=prompt, max_tokens=1800)
+    raw = llm.complete(user=prompt, max_tokens=1800, prefer="gemini")
     data = gp._extract_json(raw)
     data.setdefault("score", None)
     data.setdefault("one_line", "")

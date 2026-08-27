@@ -73,3 +73,5 @@ data/blog_media_index.json
 data/blog_media_cache/
 data/blog_clips/
 data/blog_used_log.json
+data/blog_reactions.json
+data/blog_quality.json

@@ -60,6 +60,17 @@ def load_photos() -> tuple[str, dict]:
         return "", {}
 
 
+def load_performance() -> str:
+    """발행 글들의 품질·반응·순위 요약(성과 피드백). 없으면 빈 문자열."""
+    try:
+        import blog_perf
+        return blog_perf.perf_context()
+    except Exception as e:  # noqa: BLE001 — 성과 데이터가 없어도 글쓰기는 계속
+        import logging
+        logging.getLogger(__name__).warning("성과 요약 실패: %s", str(e)[:120])
+        return ""
+
+
 def _client_cfg():
     """설정만 돌려준다. 실제 AI 호출은 llm.complete 가 공급자를 골라서 한다.
 
@@ -120,6 +131,8 @@ DRAFT_PROMPT = """너는 베어글스 송도점의 네이버 블로그 마케팅
 {seo}
 ===== 지금 쓸 수 있는 사진 (사진함) =====
 {photos}
+===== 발행 글 성과 (반응 피드백) =====
+{performance}
 =====================
 
 [확정 기획]
@@ -162,6 +175,8 @@ REC_PROMPT = """너는 베어글스 송도점의 네이버 블로그 마케팅 �
 {seo}
 ===== 지금 사진함에 있는 사진 =====
 {photos}
+===== 발행 글 성과 (반응 피드백) =====
+{performance}
 =====================
 
 ★ 사진이 이미 있는 주제를 먼저 추천하라. 사진 없이 글만 있는 글은 상위노출도 안 되고
@@ -203,7 +218,8 @@ def make_recommendations() -> list[dict]:
     knowledge, seo = load_knowledge()
     photos, _cat = load_photos()
     prompt = REC_PROMPT.format(knowledge=knowledge, seo=seo,
-                               photos=photos or "(사진함이 비어 있음 — 촬영부터 필요)")
+                               photos=photos or "(사진함이 비어 있음 — 촬영부터 필요)",
+                               performance=load_performance() or "(아직 성과 데이터 없음)")
     raw = llm.complete(user=prompt, max_tokens=2500, prefer="gemini")
     return _extract_json_array(raw)
 
@@ -220,6 +236,7 @@ def make_draft_data(topic: str, post_type: str = "정보성", title: str = "",
     subs = sub_keywords or []
     prompt = DRAFT_PROMPT.format(
         knowledge=knowledge, seo=seo, photos=photos or "(사진함이 비어 있음)",
+        performance=load_performance() or "(아직 성과 데이터 없음)",
         topic=topic, post_type=post_type,
         title=title or topic, main_keyword=main_keyword,
         sub_keywords=", ".join(subs), sub_keywords_json=json.dumps(subs, ensure_ascii=False),

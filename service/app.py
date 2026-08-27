@@ -1301,6 +1301,7 @@ def _blog_job_view(job) -> dict | None:
         "blog_recommend": "글감 추천", "blog_draft": "초안 작성",
         "blog_publish": "네이버 초안 넣기", "blog_rank": "순위 확인",
         "blog_media": "사진함 살펴보기", "blog_learn": "수정에서 배우기",
+        "blog_react": "반응 수집",
     }.get(job.get("kind"), job.get("kind") or "")
     return {
         "kind": label,
@@ -1350,6 +1351,12 @@ def blog_recommend(path_key):
 def blog_media_scan(path_key):
     """사진함에 새로 올린 사진을 집 PC가 살펴보게 한다."""
     return _ask_worker(path_key, "blog_media")
+
+
+@app.route("/<path_key>/blog/react", methods=["POST"])
+def blog_react(path_key):
+    """발행 글 반응(공감·댓글) 수집 + RSS 발행 감지."""
+    return _ask_worker(path_key, "blog_react")
 
 
 @app.route("/<path_key>/blog/rank", methods=["POST"])

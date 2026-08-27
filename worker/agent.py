@@ -460,6 +460,31 @@ def auto_collect_due(now, last_requested_at) -> bool:
     return (now - last_requested_at) >= timedelta(hours=AUTO_COLLECT_HOURS)
 
 
+# 블로그 반응·순위 자동 수집 시각(HH:MM). 성과 데이터가 매일 쌓여야
+# 글감 추천이 "반응 좋은 패턴"을 배울 수 있다 — 버튼만 있으면 아무도 안 누른다.
+BLOG_REACT_TIME = os.getenv("BLOG_REACT_TIME", "09:30")
+_last_react_day = None
+
+
+def maybe_blog_react() -> None:
+    """하루 한 번 blog_react(반응 수집)와 blog_rank(순위)를 스스로 대기열에 넣는다."""
+    global _last_react_day
+    try:
+        now = datetime.now()
+        if now.strftime("%H:%M") < BLOG_REACT_TIME:
+            return
+        today = now.date().isoformat()
+        if _last_react_day == today:
+            return
+        _last_react_day = today
+        from database import blog_store
+        blog_store.request_blog_job("blog_react", by="자동")
+        blog_store.request_blog_job("blog_rank", by="자동")
+        logger.info("블로그 반응·순위 자동 수집 요청 (%s)", BLOG_REACT_TIME)
+    except Exception as e:  # noqa: BLE001 — 자동 수집 실패가 루프를 막으면 안 된다
+        logger.warning("블로그 자동 수집 판단 실패: %s", e)
+
+
 def maybe_auto_collect() -> None:
     """때가 됐으면 수집 잡을 스스로 대기열에 넣는다(처리는 기존 잡 흐름 그대로)."""
     try:
@@ -1115,6 +1140,7 @@ def main() -> int:
                 maybe_release_scheduled()
                 maybe_complaint_report()
                 maybe_pos_import()
+                maybe_blog_react()
                 maybe_rescue_stuck()
                 db.worker_ping("idle", "대기 중")
         except KeyboardInterrupt:

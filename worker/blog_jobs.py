@@ -35,7 +35,7 @@ from database import blog_store as store  # noqa: E402
 logger = logging.getLogger(__name__)
 
 BLOG_KINDS = ("blog_recommend", "blog_draft", "blog_publish", "blog_rank",
-              "blog_media", "blog_learn")
+              "blog_media", "blog_learn", "blog_react")
 
 # 순위 추적 기본 키워드(창고 글의 대표 키워드에 더해 항상 확인)
 DEFAULT_KEYWORDS = ("송도 베이글", "송도 카페")
@@ -99,12 +99,33 @@ def do_draft(payload: dict) -> tuple[int, str]:
     except Exception as e:  # noqa: BLE001 — 사진을 못 붙여도 글은 저장한다
         logger.warning("사진 붙이기 실패: %s", str(e)[:120])
 
+    # ★ 품질 게이트 — 점수를 매기고, 기준 미달이면 개선점을 먹여 1회 자동 퇴고.
+    #   낮아도 저장은 한다(점수가 메시지에 붙어 사장님이 걸러 볼 수 있게).
+    q_note = ""
+    quality = None
+    try:
+        import blog_quality
+        body, quality = blog_quality.gate(
+            body, data.get("title") or topic, data.get("main_keyword") or "")
+        q_note = f" · 품질 {quality['score']}점"
+        if quality.get("revised"):
+            q_note += f"(퇴고로 {quality.get('before_score')}→{quality['score']})"
+    except Exception as e:  # noqa: BLE001 — 평가 실패가 저장을 막으면 안 된다
+        logger.warning("품질 평가 실패: %s", str(e)[:120])
+
     post_id = store.save_post(
         title=data.get("title"), body=body, post_type=post_type,
         main_keyword=data.get("main_keyword"), sub_keywords=data.get("sub_keywords"),
         tags=data.get("tags"),
     )
-    return 1, f"초안 저장 완료 (#{post_id}){photo_note} — {data.get('title', '')[:40]}"
+    if quality is not None:
+        try:
+            import blog_quality
+            blog_quality.record(post_id, data.get("title") or topic, quality)
+        except Exception:  # noqa: BLE001
+            pass
+    return 1, (f"초안 저장 완료 (#{post_id}){q_note}{photo_note}"
+               f" — {data.get('title', '')[:40]}")
 
 
 def build_blocks(body: str) -> tuple[list[dict], int]:
@@ -265,6 +286,15 @@ def do_learn(payload: dict) -> tuple[int, str]:
                           + (f" (잘못된 정보 교정 {facts}건 ❗)" if facts else ""))
 
 
+def do_react() -> tuple[int, str]:
+    """발행 감지(RSS→URL 연결) + 공감·댓글 수집. 결과는 다음 기획에 반영된다."""
+    import blog_perf
+    linked = blog_perf.sync_published()
+    n, likes, comments = blog_perf.collect()
+    link_note = f"새 발행 연결 {linked}건 · " if linked else ""
+    return n, f"{link_note}글 {n}개 반응 수집 (공감 {likes} · 댓글 {comments})"
+
+
 def do_rank(payload: dict) -> tuple[int, str]:
     """타겟 키워드들의 네이버 순위를 확인해 blog_ranks 에 기록."""
     import rank_checker as rc
@@ -304,6 +334,7 @@ _HANDLERS = {
     "blog_rank": do_rank,
     "blog_media": lambda p: do_media(),
     "blog_learn": do_learn,
+    "blog_react": lambda p: do_react(),
 }
 
 
