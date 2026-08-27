@@ -146,7 +146,27 @@
   {% endif %}
 
   <div class="sec-lbl">바로가기</div>
+  {# 카드 순서는 사이드바(_sidebar.html)와 같아야 한다 — 사장님이 정한 순서
+     (2026-08-28): 회의 기록 · 마케팅 · 리뷰 답글 · 네이버 블로그 · 인스타 ·
+     스마트플레이스 · 메뉴/원가. 한쪽만 바꾸면 직원이 매번 다시 찾는다. #}
   <div class="grid">
+    <a class="app" href="{{ url_for('meeting_home', path_key=key) }}">
+      {% if meet_open %}<span class="badge soft">{{ meet_open }}</span>{% endif %}
+      <div class="ico">🗓️</div>
+      <div class="nm">회의 기록</div>
+      <div class="ds">{% if meet_open %}정한 할 일 {{ meet_open }}건 남음{% else %}회의 내용 · 결정 · 할 일{% endif %}</div>
+      <button class="owner {{ '' if owners.meeting else 'none' }}" type="button"
+              onclick="setOwner(event, 'meeting')" data-name="{{ owners.meeting or '' }}">
+        👤 {{ owners.meeting or '담당자 지정' }}</button>
+    </a>
+    <a class="app" href="{{ url_for('mkt_home', path_key=key) }}">
+      <div class="ico">📣</div>
+      <div class="nm">마케팅</div>
+      <div class="ds">캘린더 · 행사 계획 · 효과</div>
+      <button class="owner {{ '' if owners.mkt else 'none' }}" type="button"
+              onclick="setOwner(event, 'mkt')" data-name="{{ owners.mkt or '' }}">
+        👤 {{ owners.mkt or '담당자 지정' }}</button>
+    </a>
     <a class="app" href="{{ url_for('review_home', path_key=key) }}">
       {% if stat.todo %}<span class="badge">{{ stat.todo }}</span>{% endif %}
       <div class="ico">💬</div>
@@ -165,14 +185,6 @@
               onclick="setOwner(event, 'blog')" data-name="{{ owners.blog or '' }}">
         👤 {{ owners.blog or '담당자 지정' }}</button>
     </a>
-    <a class="app" href="{{ url_for('menu_page', path_key=key) }}">
-      <div class="ico">🥯</div>
-      <div class="nm">메뉴/원가</div>
-      <div class="ds">작업지시서 · 자재/레시피</div>
-      <button class="owner {{ '' if owners.menu else 'none' }}" type="button"
-              onclick="setOwner(event, 'menu')" data-name="{{ owners.menu or '' }}">
-        👤 {{ owners.menu or '담당자 지정' }}</button>
-    </a>
     <a class="app" href="{{ url_for('instagram_info', path_key=key) }}">
       <div class="ico">🎬</div>
       <div class="nm">인스타</div>
@@ -189,14 +201,13 @@
               onclick="setOwner(event, 'place')" data-name="{{ owners.place or '' }}">
         👤 {{ owners.place or '담당자 지정' }}</button>
     </a>
-    <a class="app" href="{{ url_for('meeting_home', path_key=key) }}">
-      {% if meet_open %}<span class="badge soft">{{ meet_open }}</span>{% endif %}
-      <div class="ico">🗓️</div>
-      <div class="nm">회의 기록</div>
-      <div class="ds">{% if meet_open %}정한 할 일 {{ meet_open }}건 남음{% else %}회의 내용 · 결정 · 할 일{% endif %}</div>
-      <button class="owner {{ '' if owners.meeting else 'none' }}" type="button"
-              onclick="setOwner(event, 'meeting')" data-name="{{ owners.meeting or '' }}">
-        👤 {{ owners.meeting or '담당자 지정' }}</button>
+    <a class="app" href="{{ url_for('menu_page', path_key=key) }}">
+      <div class="ico">🥯</div>
+      <div class="nm">메뉴/원가</div>
+      <div class="ds">작업지시서 · 자재/레시피</div>
+      <button class="owner {{ '' if owners.menu else 'none' }}" type="button"
+              onclick="setOwner(event, 'menu')" data-name="{{ owners.menu or '' }}">
+        👤 {{ owners.menu or '담당자 지정' }}</button>
     </a>
     <a class="app" href="{{ url_for('guide', path_key=key) }}">
       <div class="ico">❓</div>

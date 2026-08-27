@@ -48,6 +48,13 @@
     <div><b>베어글스 AI 비서</b><small>송도타임스페이스점</small></div>
   </a>
 
+  {# 메뉴 순서는 사장님이 정한다 (2026-08-28 지시): 회의 기록 · 마케팅 ·
+     리뷰 답글 · 네이버 블로그 · 인스타 · 스마트플레이스 · 메뉴/원가.
+     홈 화면(home.html)의 바로가기 카드도 같은 순서로 맞춰 둘 것. #}
+  <a class="sm {{ 'on' if _sec == 'meet' else '' }}" href="/{{ key }}/meeting">🗓️ 회의 기록</a>
+
+  <a class="sm {{ 'on' if _sec == 'mkt' else '' }}" href="/{{ key }}/mkt">📣 마케팅</a>
+
   <a class="sm {{ 'on' if _sec == 'review' else '' }}" href="/{{ key }}/review">💬 리뷰 답글</a>
   {% if _sec == 'review' %}
   {# 답글 화면 4개(할 일·등록한 답글·전체 리뷰·관리 필요)는 이제 그 안의
@@ -62,6 +69,10 @@
 
   <a class="sm {{ 'on' if _sec == 'blog' else '' }}" href="/{{ key }}/blog/">📝 네이버 블로그</a>
 
+  <a class="sm {{ 'on' if _sec == 'insta' else '' }}" href="/{{ key }}/instagram">🎬 인스타 파이프라인</a>
+
+  <a class="sm {{ 'on' if _sec == 'place' else '' }}" href="/{{ key }}/place">📍 스마트플레이스</a>
+
   <a class="sm {{ 'on' if _sec == 'menu' else '' }}" href="/{{ key }}/menu">🥯 메뉴/원가</a>
   {% if _sec == 'menu' %}
   <div class="ssub">
@@ -69,14 +80,6 @@
     <a class="{{ 'on' if _p.endswith('/ingredients') else '' }}" href="/{{ key }}/menu/ingredients">🧺 자재/레시피</a>
   </div>
   {% endif %}
-
-  <a class="sm {{ 'on' if _sec == 'mkt' else '' }}" href="/{{ key }}/mkt">📣 마케팅</a>
-
-  <a class="sm {{ 'on' if _sec == 'insta' else '' }}" href="/{{ key }}/instagram">🎬 인스타 파이프라인</a>
-
-  <a class="sm {{ 'on' if _sec == 'place' else '' }}" href="/{{ key }}/place">📍 스마트플레이스</a>
-
-  <a class="sm {{ 'on' if _sec == 'meet' else '' }}" href="/{{ key }}/meeting">🗓️ 회의 기록</a>
 </nav>
 {# 나이트모드는 화면 우측 상단 작은 아이콘으로(사장님 요청 2026-08-16) —
    메뉴 목록에 섞여 있으면 매번 스크롤해야 했다. #}

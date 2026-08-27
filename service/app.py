@@ -550,7 +550,8 @@ def _visit_class(n):
 # ---------------------------------------------------------------------------
 
 # 홈 바로가기 카드에 담당자를 달 수 있는 프로그램들(사장님 요청 2026-08-26).
-HOME_PROGRAMS = ("review", "blog", "menu", "insta", "place", "meeting")
+# 순서는 화면에 보이는 순서와 같게 둔다(사장님이 정한 순서, 2026-08-28).
+HOME_PROGRAMS = ("meeting", "mkt", "review", "blog", "insta", "place", "menu")
 
 
 @app.route("/<path_key>/")
