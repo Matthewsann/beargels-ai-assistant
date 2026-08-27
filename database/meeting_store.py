@@ -49,6 +49,25 @@ def today_kst() -> date:
     return datetime.now(KST).date()
 
 
+def dday_label(due, today=None):
+    """기한 → 'D-3' / 'D-DAY' / 'D+2 지남' (기한 없으면 None).
+
+    사장님 지시 2026-08-28: 할 일 기한은 화면에 **D-Day 로만** 보여준다
+    ("2026-08-30" 을 보고 며칠 남았는지 매번 세는 게 번거롭다).
+    적을 때는 그대로 달력에서 날짜를 고른다 — 표시만 바꾼다.
+    기준일은 서버 시계(UTC)가 아니라 **매장 시간(KST)** 이다.
+    """
+    d = _d(due)
+    if not d:
+        return None
+    left = (date.fromisoformat(d) - (today or today_kst())).days
+    if left > 0:
+        return f"D-{left}"
+    if left == 0:
+        return "D-DAY"
+    return f"D+{-left} 지남"
+
+
 # ---------------------------------------------------------------------------
 # 회의
 # ---------------------------------------------------------------------------
@@ -255,6 +274,7 @@ def open_tasks(limit=20):
             "content": r.get("content") or "",
             "owner": r.get("owner") or "",
             "due": due,
+            "dday": dday_label(due, today),
             "overdue": overdue,
             "meeting_id": r.get("meeting_id"),
             "meeting_title": m.get("title") or "회의",

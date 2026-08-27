@@ -148,3 +148,40 @@ def test_card_survives_broken_date(app_mod):
 
 def test_decision_lines_drop_bullets(app_mod):
     assert app_mod._lines("- 첫째\n · 둘째\n\n") == ["첫째", "둘째"]
+
+
+# ── 기한 D-Day 표기 ─────────────────────────────────────────────
+# 사장님 지시 2026-08-28: 화면에는 날짜 대신 D-Day 로만 보여준다.
+
+@pytest.mark.parametrize("due,want", [
+    ("2026-08-31", "D-3"),
+    ("2026-08-29", "D-1"),
+    ("2026-08-28", "D-DAY"),
+    ("2026-08-27", "D+1 지남"),
+    ("2026-08-26", "D+2 지남"),
+    ("", None),
+    (None, None),
+    ("언젠가", None),
+])
+def test_dday_label(due, want):
+    from datetime import date
+    assert mt.dday_label(due, today=date(2026, 8, 28)) == want
+
+
+def test_dday_uses_store_time_not_server_time():
+    """기준일을 안 넘기면 매장 시간(KST) 오늘로 잰다 — 서버는 UTC 라 하루 어긋난다."""
+    today = mt.today_kst()
+    assert mt.dday_label(str(today)) == "D-DAY"
+
+
+def test_done_task_is_not_marked_late(app_mod, monkeypatch):
+    """끝난 일은 기한이 지났어도 빨갛게 하지 않는다 — 이미 처리된 일이다."""
+    from datetime import date
+    monkeypatch.setattr(app_mod.mt, "today_kst", lambda: date(2026, 8, 28))
+    monkeypatch.setattr(app_mod.mt, "get_tasks", lambda mid: [
+        {"id": 1, "content": "끝난 일", "due_date": "2026-08-20", "done": True},
+        {"id": 2, "content": "남은 일", "due_date": "2026-08-20", "done": False},
+    ])
+    rows = app_mod._meeting_tasks_view(1)
+    assert rows[0]["dday"] == "D+8 지남" and rows[0]["overdue"] is False
+    assert rows[1]["dday"] == "D+8 지남" and rows[1]["overdue"] is True

@@ -2214,8 +2214,24 @@ def meeting_detail(path_key, mid):
     if not m:
         abort(404)
     return render_template(
-        "meeting_detail.html", key=path_key, m=m, tasks=mt.get_tasks(mid),
+        "meeting_detail.html", key=path_key, m=m, tasks=_meeting_tasks_view(mid),
         when=_meeting_when(m), decisions=_lines(m.get("decisions")))
+
+
+def _meeting_tasks_view(mid) -> list[dict]:
+    """상세 화면용 할 일 — 기한을 D-Day 로 바꿔 붙인다(표시 전용)."""
+    today = mt.today_kst()
+    out = []
+    for t in mt.get_tasks(mid):
+        due = t.get("due_date")
+        out.append({
+            **t,
+            "dday": mt.dday_label(due, today),
+            # 끝난 일은 늦었어도 빨갛게 하지 않는다 — 이미 처리된 일이다.
+            "overdue": bool(due and not t.get("done")
+                            and str(due)[:10] < str(today)),
+        })
+    return out
 
 
 @app.route("/<path_key>/meeting/<int:mid>/edit")

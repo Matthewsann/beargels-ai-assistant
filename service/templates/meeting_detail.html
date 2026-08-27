@@ -87,8 +87,10 @@
           <input type="checkbox" {{ 'checked' if t.done else '' }}
                  onchange="toggleTask(this)">
           <span class="tx">{{ t.content }}</span>
-          {% if t.owner or t.due_date %}
-          <span class="who">{{ t.owner or '' }}{% if t.owner and t.due_date %} · {% endif %}{{ t.due_date or '' }}</span>
+          {# 기한은 D-Day 로만 보여준다(사장님 지시 2026-08-28).
+             실제 날짜는 마우스를 올리면 뜨고, 수정 화면 달력에도 그대로 있다. #}
+          {% if t.owner or t.dday %}
+          <span class="who {{ 'late' if t.overdue }}" title="{{ t.due_date or '' }}">{{ t.owner or '' }}{% if t.owner and t.dday %} · {% endif %}{{ t.dday or '' }}</span>
           {% endif %}
         </label>
         {% endfor %}
@@ -143,7 +145,7 @@
     lines.push("", "◆ 할 일");
     {% for t in tasks %}
     lines.push(({{ 'true' if t.done else 'false' }} ? "[v] " : "[ ] ") + {{ t.content | tojson }}
-      + "{% if t.owner %} ({{ t.owner }}{% if t.due_date %} ~{{ t.due_date }}{% endif %}){% elif t.due_date %} (~{{ t.due_date }}){% endif %}");
+      + "{% if t.owner %} ({{ t.owner }}{% if t.dday %} · {{ t.dday }}{% endif %}){% elif t.dday %} ({{ t.dday }}){% endif %}");
     {% endfor %}
     {% endif %}
     var text = lines.join("\n");

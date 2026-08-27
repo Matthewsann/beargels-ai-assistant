@@ -136,7 +136,7 @@
       <span class="tx">{{ t.content }}
         <a href="{{ url_for('meeting_detail', path_key=key, mid=t.meeting_id) }}">🗓️ {{ t.meeting_title }}{% if t.owner %} · {{ t.owner }}{% endif %}</a>
       </span>
-      {% if t.due %}<span class="due {{ 'late' if t.overdue }}">{{ t.due[5:] }}{{ ' 지남' if t.overdue else '' }}</span>{% endif %}
+      {% if t.dday %}<span class="due {{ 'late' if t.overdue }}" title="{{ t.due }}">{{ t.dday }}</span>{% endif %}
     </label>
     {% endfor %}
     {% if meet_open > meet_tasks|length %}
