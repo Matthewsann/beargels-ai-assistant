@@ -22,6 +22,7 @@
 import json
 import logging
 import os
+import random
 import re
 
 from assistant.beargels import (
@@ -76,7 +77,9 @@ _PLAT_LABEL = {"baemin": "배민", "coupang": "쿠팡"}
 
 # 배민 리뷰 목록을 넓혀보는 최대 횟수 — 한 묶음이 10건쯤이라 30회면 300건
 # 안팎까지 닿는다(오래된 리뷰 수정까지 커버).
-BAEMIN_LOAD_ROUNDS = int(os.getenv("BAEMIN_LOAD_ROUNDS", "30"))
+# 한 라운드가 한 화면이라, 오래된 리뷰일수록 라운드가 많이 필요하다.
+# 실측(2026-08-27): 30라운드로 9일치(63건)까지 내려갔다 — 30은 부족했다.
+BAEMIN_LOAD_ROUNDS = int(os.getenv("BAEMIN_LOAD_ROUNDS", "120"))
 
 
 def _click_baemin_more(page):
@@ -506,21 +509,38 @@ class ReplyToReviewAction(WriteAction):
         except Exception:  # noqa: BLE001
             pass
         # 지연 로딩 대비: 카드를 찾을 때까지 목록을 넓혀간다.
-        # ⚠️ 배민 리뷰 목록은 **스크롤만으로는 다음 묶음이 안 나온다** — 목록
-        #    아래 '더보기' 버튼을 눌러야 한다(수집기 _click_review_more 와 같은
-        #    이유). 스크롤만 하던 탓에 며칠 지난 리뷰는 카드가 아예 로드되지
-        #    않아 '카드를 찾지 못했습니다'로 끝났다(사장님 제보 2026-08-16:
-        #    8/8 자 배민 리뷰 등록 반복 실패).
+        #
+        # ⚠️ 이 목록은 두 가지 성질을 동시에 갖는다.
+        #    ① **가상 목록** — 화면 밖 카드는 DOM 에서 지워진다. 그래서 맨
+        #       아래로 한 번에 점프하면 중간 카드를 지나쳐 버린다. 조금씩
+        #       내리면서 매번 찾아야 한다.
+        #    ② **'더보기' 버튼이 있을 때도, 없을 때도 있다.** 2026-08-27 실측
+        #       기준 배민 화면엔 버튼이 아예 없고 무한 스크롤만 있다.
+        #       예전 코드는 '더보기가 두 번 연속 없으면 끝'으로 판단해서,
+        #       버튼이 사라진 지금은 카드 13개만 보고 포기했다
+        #       (사장님 제보 2026-08-27: 8/8 자 리뷰 등록 반복 실패).
+        #
+        #    그래서 끝 판정을 **'새 리뷰번호가 더 나오는가'** 로 바꾼다.
+        #    카드 개수로는 판단할 수 없다(가상 목록이라 늘지 않는다).
         card = self._find_baemin_card(page)
         stale = 0
-        prev = page.locator('[class*="ReviewContent-module__"]').count()
+        seen_nos = set(_baemin_seen_review_nos(page))
         for _ in range(BAEMIN_LOAD_ROUNDS):
             if card is not None:
                 break
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            human_pause(1.0, 1.8)
-            clicked = _click_baemin_more(page)
-            human_pause(1.5, 2.5)
+            # 한 번에 바닥까지 가지 않고 한 화면씩 — 지나친 카드는 DOM 에서
+            # 지워져 다시 못 찾는다.
+            page.evaluate(
+                "window.scrollBy(0, Math.round(window.innerHeight * 0.9))")
+            # 스크롤은 사람처럼 뜸들일 필요가 없다(클릭·입력과 달리 탐지
+            # 대상이 아니다). 예전엔 라운드마다 2.5초씩 쉬어 30라운드에
+            # 51초가 걸렸고, 그 사이 화면은 3분 만에 포기했다.
+            page.wait_for_timeout(random.randint(280, 480))
+            card = self._find_baemin_card(page)
+            if card is not None:
+                break
+            clicked = _click_baemin_more(page)   # 버튼이 있으면 누른다
+            page.wait_for_timeout(random.randint(200, 350))
             # 안전망: 엉뚱한 '더보기'로 목록을 벗어나면 되돌아온다. 벗어난 채
             # 계속 뒤지면 영영 못 찾는다(Q&A 화면만 열리던 사고, 2026-08-16).
             url = page.url or ""
@@ -534,21 +554,21 @@ class ReplyToReviewAction(WriteAction):
                     pass
                 card = self._find_baemin_card(page)
                 break
-            cur = page.locator('[class*="ReviewContent-module__"]').count()
-            # ⚠️ 카드 수로 '끝'을 판단하면 안 된다 — 배민 목록은 **가상 목록**
-            #    이라 화면 밖 카드는 DOM 에서 지워져, 더 불러와도 개수가 그대로
-            #    거나 오히려 줄어든다(수집기에서 이미 겪은 문제). 개수로
-            #    끊었더니 3번만 더 펼치면 나오는 리뷰를 '목록에 없다'고
-            #    포기했다(2026-08-16 실측). **'더보기' 버튼이 사라졌을 때만**
-            #    끝으로 본다.
-            if not clicked:
+            # 끝 판정: 새 리뷰번호가 더 안 나오면 바닥에 닿은 것이다.
+            # (카드 개수는 가상 목록이라 늘지 않으므로 쓸 수 없다.)
+            now_nos = set(_baemin_seen_review_nos(page))
+            fresh = now_nos - seen_nos
+            seen_nos |= now_nos
+            at_bottom = page.evaluate(
+                "() => window.innerHeight + window.scrollY"
+                " >= document.body.scrollHeight - 4")
+            if not fresh and not clicked and at_bottom:
                 stale += 1
-                if stale >= 2:      # 두 번 연속 더보기가 없으면 끝까지 본 것
+                if stale >= 3:      # 세 번 연속 새 리뷰가 없으면 끝까지 본 것
                     card = self._find_baemin_card(page)
                     break
             else:
                 stale = 0
-            prev = cur
             card = self._find_baemin_card(page)
         if card is None:
             # 추측하지 않고 '무엇을 봤는지' 남긴다 — 카드가 아예 안 열린

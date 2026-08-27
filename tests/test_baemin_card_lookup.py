@@ -1,13 +1,19 @@
 """배민 답글 등록 시 리뷰 카드 찾기 회귀 테스트.
 
-증상: 8/8 자 배민 리뷰에 답글 등록을 눌러도 '배민·쿠팡 화면에서 이 리뷰를
-못 찾았어요'만 반복(사장님 제보 2026-08-16).
+같은 증상이 두 번 났고 원인이 서로 달랐다.
 
-원인: 배민 리뷰 목록은 **스크롤만으로는 다음 묶음이 안 나온다** — 목록 아래
-'더보기' 버튼을 눌러야 한다(수집기는 그렇게 하는데 등록 쪽은 스크롤만 했다).
-그래서 며칠 지난 리뷰는 카드가 DOM 에 아예 없어 매칭이 불가능했다.
+  2026-08-16 — 스크롤만 하고 '더보기'를 안 눌러서 옛 리뷰가 로드되지 않았다.
+  2026-08-27 — 배민이 '더보기' 버튼을 없애고 무한 스크롤로 바꿨다. 그런데
+               코드는 "더보기가 두 번 연속 없으면 목록 끝"으로 판단해서,
+               카드 13개만 보고 "이 리뷰가 목록에 없다"며 포기했다.
 
-계약: 카드를 못 찾으면 스크롤 + '더보기'를 눌러 목록을 넓혀가며 다시 찾는다.
+그래서 지금의 계약은 **버튼이 있든 없든** 통하도록 이렇게 정한다.
+
+  · 한 번에 바닥으로 점프하지 않고 **한 화면씩** 내리며 매번 카드를 찾는다
+    (가상 목록이라 지나친 카드는 DOM 에서 지워진다).
+  · '더보기' 버튼이 있으면 누른다(없어도 정상).
+  · 끝 판정은 **새 리뷰번호가 더 나오는가**로 한다. 카드 개수로는 판단할 수
+    없다 — 가상 목록이라 더 불러와도 개수가 늘지 않는다.
 """
 
 import sys
@@ -29,17 +35,21 @@ class FakeLocator:
 
 
 class FakePage:
-    """'더보기'를 눌러야만 카드가 늘어나는 배민 목록 흉내."""
+    """무한 스크롤 배민 목록 흉내 — 내릴수록 옛 리뷰번호가 더 나온다.
 
-    def __init__(self, need_rounds, stray_at=None):
-        self.need = need_rounds      # 몇 번 더보기를 눌러야 대상이 나오는가
+    has_more_button=True 면 '더보기' 버튼이 있던 옛 화면도 함께 검증한다.
+    """
+
+    def __init__(self, need_rounds, stray_at=None, has_more_button=False):
+        self.need = need_rounds      # 몇 화면을 내려야 대상이 나오는가
+        self.rounds = 0              # 스크롤 횟수
         self.clicks = 0
         self.scrolls = 0
         self.cards = 10
         self.gotos = 0
-        # 실제 화면처럼 주소를 갖는다 — 코드가 '목록을 벗어났는지' 본다.
+        self.at_bottom = False
+        self.has_more_button = has_more_button
         self.url = rr.BAEMIN_REVIEWS_URL
-        # stray_at 번째 '더보기'에서 엉뚱한 페이지(도움말 Q&A)로 튕기는 상황.
         self.stray_at = stray_at
 
     class _Keyboard:
@@ -52,18 +62,34 @@ class FakePage:
         self.gotos += 1
         self.url = url
 
+    def wait_for_timeout(self, ms):
+        pass
+
     def locator(self, sel):
         return FakeLocator(self.cards)
 
+    def _seen_numbers(self):
+        """지금까지 내려온 만큼의 리뷰번호(가상 목록이라 최근 것 위주)."""
+        return [f"20260800{i:08d}" for i in range(self.rounds + 1)]
+
     def evaluate(self, js, *a):
-        if "scrollTo" in js:
+        if "scrollBy" in js or "scrollTo" in js:
             self.scrolls += 1
+            self.rounds += 1
+            # 필요한 만큼 내려가면 더는 새 번호가 안 나온다(=바닥).
+            if self.rounds > self.need + 2:
+                self.at_bottom = True
+                self.rounds = self.need + 2
             return None
-        if "리뷰번호" in js:          # 진단용 번호 수집 — 목록 형태로 답한다
-            return []
-        # 더보기 클릭 — 누를 때마다 한 묶음(10건)이 붙는다.
+        if "scrollHeight" in js:          # 바닥에 닿았는지
+            return self.at_bottom
+        if "리뷰번호" in js:               # 진단·끝판정용 번호 수집
+            return self._seen_numbers()
+        # 여기부터는 '더보기' 클릭 평가
+        if not self.has_more_button:
+            return False                  # 2026-08-27 이후의 실제 화면
         if self.clicks >= self.need + 3:
-            return False              # 더 나올 게 없음
+            return False
         self.clicks += 1
         self.cards += 10
         if self.stray_at and self.clicks == self.stray_at:
@@ -71,9 +97,9 @@ class FakePage:
         return True
 
 
-def _run(monkeypatch, need_rounds, found_after):
-    """need_rounds 번 더보기 후에 카드가 발견되는 상황을 만든다."""
-    page = FakePage(need_rounds)
+def _run(monkeypatch, need_rounds, found_after, has_more_button=False):
+    """need_rounds 화면을 내린 뒤에 카드가 발견되는 상황을 만든다."""
+    page = FakePage(need_rounds, has_more_button=has_more_button)
     act = rr.ReplyToReviewAction(
         {"platform": "baemin", "review_no": "2026080802903778",
          "author": "여왕쥐", "content": ""}, reply_text="답글")
@@ -90,10 +116,13 @@ def _run(monkeypatch, need_rounds, found_after):
     return page, act
 
 
-def test_clicks_more_button_to_reach_old_review(monkeypatch):
-    """첫 화면에 없던 리뷰도 '더보기'를 눌러 찾아낸다."""
-    page, act = _run(monkeypatch, need_rounds=3, found_after=3)
-    # 카드를 찾은 뒤엔 게시 단계로 넘어가므로, 거기서 멈추게 한다.
+def test_scrolls_to_reach_old_review_without_more_button(monkeypatch):
+    """'더보기'가 없는 지금 화면에서도 옛 리뷰까지 내려가 찾아낸다.
+
+    2026-08-27 사고: 버튼이 없다는 이유로 카드 13개만 보고 포기했다.
+    """
+    # 루프는 한 라운드에 _find 를 두 번 부른다 → 16이면 8화면쯤 내려간다.
+    page, act = _run(monkeypatch, need_rounds=12, found_after=16)
     monkeypatch.setattr(rr.ReplyToReviewAction, "_baemin_open_and_submit",
                         lambda self, page, card, reply: {"ok": True},
                         raising=False)
@@ -101,8 +130,21 @@ def test_clicks_more_button_to_reach_old_review(monkeypatch):
         act._apply_baemin(page, "답글")
     except Exception:
         pass                        # 이후 DOM 조작은 이 테스트 범위 밖
-    assert page.clicks >= 3, "더보기를 눌러 목록을 넓혀야 한다"
-    assert page.scrolls >= 3
+    assert page.scrolls >= 7, "버튼이 없어도 스크롤로 목록을 넓혀야 한다"
+
+
+def test_still_clicks_more_button_when_it_exists(monkeypatch):
+    """옛 화면(버튼 있음)에서도 그대로 동작해야 한다."""
+    page, act = _run(monkeypatch, need_rounds=6, found_after=8,
+                     has_more_button=True)
+    monkeypatch.setattr(rr.ReplyToReviewAction, "_baemin_open_and_submit",
+                        lambda self, page, card, reply: {"ok": True},
+                        raising=False)
+    try:
+        act._apply_baemin(page, "답글")
+    except Exception:
+        pass
+    assert page.clicks >= 3, "버튼이 있으면 눌러서도 넓혀야 한다"
 
 
 def test_gives_up_with_helpful_message(monkeypatch):
@@ -387,7 +429,9 @@ def test_more_button_must_belong_to_review_list():
 
 def test_returns_to_list_when_click_navigates_away(monkeypatch):
     """엉뚱한 '더보기'로 목록을 벗어나면 즉시 리뷰 목록으로 돌아온다."""
-    page = FakePage(need_rounds=5, stray_at=2)
+    # 목록을 벗어나는 건 엉뚱한 '더보기'를 눌렀을 때 생기는 일이라,
+    # 버튼이 있는 화면으로 재현한다.
+    page = FakePage(need_rounds=5, stray_at=2, has_more_button=True)
     act = rr.ReplyToReviewAction(
         {"platform": "baemin", "review_no": "20260808029", "author": "여왕쥐",
          "content": ""}, reply_text="답글")
