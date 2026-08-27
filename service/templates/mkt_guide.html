@@ -42,6 +42,18 @@ li .q{color:var(--muted); font-size:12px}
 .routine .step{flex:1; min-width:150px; border:1px solid var(--line);
   border-radius:10px; padding:9px 11px; font-size:13px}
 .routine .step .t{font-size:11px; color:var(--muted); letter-spacing:.04em; margin-bottom:2px}
+table.map{width:100%; border-collapse:collapse; font-size:13px; margin-top:4px}
+table.map td{padding:6px 4px; border-top:1px solid var(--line); vertical-align:top}
+table.map tr:first-child td{border-top:none}
+table.map td:first-child{font-weight:600; width:38%; padding-right:8px}
+table.map .q{color:var(--muted); font-size:12px}
+.formula{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px}
+.formula .f{flex:1; min-width:130px; background:var(--chip-bg); border-radius:9px;
+  padding:8px 11px; font-size:12.5px}
+.formula .f b{display:block; font-size:11px; color:var(--muted); letter-spacing:.04em;
+  margin-bottom:2px}
+.ex{margin-top:9px; font-size:12.5px; background:var(--accent-bg); color:var(--accent);
+  border-radius:8px; padding:6px 11px; font-weight:600}
 </style>
 </head>
 <body>
@@ -56,21 +68,44 @@ li .q{color:var(--muted); font-size:12px}
   </div>
 
   <div class="card">
-    <h2><span class="n">1</span>적는 것 — "매출을 움직이려고 한 행동"만</h2>
-    <ul>
-      <li class="yes">홍보 릴스·이벤트 게시물을 올린 날 <span class="q">— 일상 스토리는 ✗</span></li>
-      <li class="yes">쿠폰·할인을 시작하거나 끝낸 날</li>
-      <li class="yes">매장 이벤트 (1+1, 시식 등)</li>
-      <li class="yes">광고 조건을 바꾼 날 <span class="q">— 입찰가 변경, 껐다 켬 → ◆ 변수로</span></li>
-      <li class="yes">신메뉴 출시 <span class="q">— 마케팅은 아니지만 매출 변수라서 ◆ 변수로</span></li>
-      <li class="no">상시 돌아가는 광고(쿠팡 CPS·배민 클릭) — 조건을 바꿀 때만 ◆ 변수로</li>
-      <li class="no">평범한 일상 게시물, 리뷰 답글 — 측정 대상이 아니에요</li>
-    </ul>
-    <p class="note">헷갈리면: "이게 잘 되면 매출이 올라야 하나?" → 그렇다면 적는다.</p>
+    <h2><span class="n">1</span>지금 하는 일 → 이렇게 적는다</h2>
+    <table class="map">
+      <tr><td>인스타 릴스·피드 (홍보성)</td>
+        <td>낱개로 적지 말고 <b>민 메뉴 단위로 묶어서</b> 기간 캠페인으로.
+          <span class="q">예: "잠봉뵈르 릴스 시리즈" 9/1~9/14 · 일상 스토리는 ✗</span></td></tr>
+      <tr><td>블로그 글 발행</td>
+        <td>글 하나 = 당일 1일짜리, SNS·콘텐츠. <span class="q">제목에 메뉴명을 넣으면 타겟 자동 인식</span></td></tr>
+      <tr><td>플레이스 쿠폰·소식</td>
+        <td>시작한 날 ~ 끝난 날, 플레이스</td></tr>
+      <tr><td>매장 이벤트 (1+1, 시식)</td>
+        <td>기간 그대로, 매장 이벤트. <span class="q">비용 들었으면 "자세히"에 금액</span></td></tr>
+      <tr><td>상시 광고 (쿠팡 CPS·배민 클릭)</td>
+        <td>평소엔 안 적음 — <b>조건을 바꾼 날만</b> ◆ 변수 한 줄</td></tr>
+      <tr><td>신메뉴 출시</td>
+        <td>출시일에 ◆ 변수 한 줄 <span class="q">— 마케팅은 아니지만 매출 변수라서</span></td></tr>
+    </table>
+    <p class="note">핵심 요령 하나: 낱개 게시물이 아니라 <b>"무엇을 밀었나(타겟 메뉴)" 단위로 묶는다.</b>
+      헷갈리면 — "이게 잘 되면 매출이 올라야 하나?" → 그렇다면 적는다.</p>
   </div>
 
   <div class="card">
-    <h2><span class="n">2</span>깜빡해도 괜찮아요 — 시스템이 되물어요</h2>
+    <h2><span class="n">2</span>적을 게 없다면 — 그것도 정상이에요</h2>
+    <p style="font-size:13.5px; margin:0">상시 광고 + 일상 운영만 하고 있다는 뜻이에요.
+      그럴 땐 이 캘린더를 기록장이 아니라 <b>"이번엔 뭘 밀지" 정하는 도구</b>로 쓰세요.
+      캠페인은 이 공식이면 충분합니다:</p>
+    <div class="formula">
+      <div class="f"><b>① 메뉴 하나</b>요즘 뜨는 것에 올라타거나, 꺾인 시그니처 재점화</div>
+      <div class="f"><b>② 기간 1~2주</b>7일 미만은 효과가 "참고용"이 돼요</div>
+      <div class="f"><b>③ 하던 루틴 집중</b>새 일을 만들지 말고, 이미 올리는 릴스·소식을 그 메뉴에 몰기</div>
+      <div class="f"><b>④ 비용 0부터</b>할인 대신 콘텐츠로 — 되는 게 확인되면 그때 돈</div>
+    </div>
+    <p class="ex">예: "풀드포크 샌드위치 릴스 밀기 · 9/1~9/14 · SNS·콘텐츠 · 비용 0"</p>
+    <p class="note">뭘 밀지 모르겠으면 캘린더에서 지난달 날짜를 눌러보세요 —
+      그날 많이 팔린 상품이 보여요. 요즘 뜨는 메뉴가 곧 후보 목록입니다.</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">3</span>깜빡해도 괜찮아요 — 시스템이 되물어요</h2>
     <ul class="auto">
       <li>매출이 평소보다 크게 튀거나 꺼진 날, 기록이 없으면 → <b>"그날 뭐 하셨어요?"</b> 배너가 떠요. 그때 과거 날짜로 적으면 됩니다</li>
       <li>진행중 캠페인이 2주 넘게 열려 있으면 → <b>"아직 진행 중인가요?"</b> 끝났으면 종료만 눌러주세요</li>
@@ -80,7 +115,7 @@ li .q{color:var(--muted); font-size:12px}
   </div>
 
   <div class="card">
-    <h2><span class="n">3</span>월초 5분 루틴</h2>
+    <h2><span class="n">4</span>월초 5분 루틴</h2>
     <div class="routine">
       <div class="step"><div class="t">STEP 1</div>
         토스 매출리포트에서 지난달 엑셀을 받아 드라이브 <b>장부관리 &gt; 그 달 폴더</b>에 넣기
@@ -93,7 +128,7 @@ li .q{color:var(--muted); font-size:12px}
   </div>
 
   <div class="card">
-    <h2><span class="n">4</span>숫자를 읽을 때 한 가지만 기억</h2>
+    <h2><span class="n">5</span>숫자를 읽을 때 한 가지만 기억</h2>
     <ul>
       <li><b>"참고용" 뱃지</b>가 붙은 효과는 기간이 짧아 운일 수 있어요 — 다음에 한 번 더 해보고 판단</li>
       <li><b>"겹침" 경고</b>가 있으면 그 상승이 누구 덕인지 나눠 읽을 수 없어요 — 다음엔 기간을 떨어뜨려 보세요</li>
