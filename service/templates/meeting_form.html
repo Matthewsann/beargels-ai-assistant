@@ -32,27 +32,34 @@
   .row2 { display:flex; gap:8px; }
   .row2 .field { flex:1; min-width:0; }
 
+  /* ⚠️ 할 일 줄의 칸 너비는 위 '.field input[type=text]' 의 width:100% 를
+     반드시 이겨야 한다. 클래스만으로 쓰면(.trow .o) 특이도가 모자라 져서,
+     할 일 칸이 24px 로 찌그러지고 담당·날짜가 화면 밖으로 밀려났다
+     (사장님 보고 2026-08-28). 그래서 '.tasks .trow input[...]' 로 적는다. */
   .tasks { border:1px solid var(--line); border-radius:10px; padding:8px 10px 10px; }
-  .trow { display:flex; gap:6px; align-items:center; padding:6px 0;
+  .tasks .trow { display:flex; gap:6px; align-items:center; padding:6px 0;
           border-bottom:1px solid var(--line); }
-  .trow:last-of-type { border-bottom:none; }
-  .trow input { border:1px solid var(--line); background:var(--card); color:var(--ink);
-          border-radius:8px; padding:8px 9px; font-size:13.5px; font-family:inherit;
+  .tasks .trow:last-of-type { border-bottom:none; }
+  .tasks .trow input[type=text], .tasks .trow input[type=date] {
+          border:1px solid var(--line); background:var(--card); color:var(--ink);
+          border-radius:8px; padding:9px 10px; font-size:13.5px; font-family:inherit;
           min-width:0; }
-  .trow .c { flex:1; }
-  .trow .o { width:78px; flex-shrink:0; }
-  .trow .u { width:132px; flex-shrink:0; }
-  .trow .x { border:none; background:none; color:var(--muted); font-size:16px;
-          cursor:pointer; padding:0 2px; flex-shrink:0; font-family:inherit; }
-  .trow.isdone .c { color:var(--muted); text-decoration:line-through; }
+  .tasks .trow input.c { flex:1 1 auto; width:auto; }
+  .tasks .trow input.o { flex:0 0 84px; width:84px; }
+  .tasks .trow input.u { flex:0 0 150px; width:150px; }   /* '연도-월-일' 이 들어갈 만큼 */
+  .tasks .trow .x { border:none; background:none; color:var(--muted); font-size:18px;
+          line-height:1; cursor:pointer; padding:6px 4px; flex-shrink:0;
+          font-family:inherit; }
+  .tasks .trow.isdone input.c { color:var(--muted); text-decoration:line-through; }
   .addrow { border:1px dashed var(--line); background:none; color:var(--accent);
           border-radius:8px; padding:9px; font-size:13px; width:100%; margin-top:8px;
           font-family:inherit; cursor:pointer; }
+  /* 휴대폰: 할 일은 한 줄 통째로, 담당·기한은 그 아래 나란히 */
   @media (max-width:520px) {
-    .trow { flex-wrap:wrap; }
-    .trow .c { flex:1 1 100%; }
-    .trow .o { flex:1 1 auto; width:auto; }
-    .trow .u { flex:1 1 auto; width:auto; }
+    .tasks .trow { flex-wrap:wrap; }
+    .tasks .trow input.c { flex:1 1 100%; width:auto; }
+    .tasks .trow input.o { flex:1 1 84px; width:auto; }
+    .tasks .trow input.u { flex:2 1 140px; width:auto; }
   }
 
   .save { display:block; width:100%; background:var(--accent); color:#fff; border:none;
