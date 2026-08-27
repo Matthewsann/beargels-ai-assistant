@@ -395,6 +395,13 @@ def ack_alert(path_key, alert_id):
 
 # 플랫폼 리뷰 관리 페이지 — '실제 답글 보러가기' 바로가기용(리뷰별 딥링크는
 # 두 플랫폼 다 제공하지 않아 리뷰 목록 페이지로 보낸다).
+# ⚠️ 이 웹앱은 PythonAnywhere 에서 도는데 **서버 시계가 UTC** 다.
+# datetime.now() 를 그냥 쓰면 매장 시간과 9시간 어긋난다 — 밤 판정도,
+# '오늘/내일 아침' 안내도 전부 틀린다(사장님 지적 2026-08-28).
+# 시간을 사람에게 보여주거나 시간대로 판단할 때는 반드시 KST 로 본다.
+KST = timezone(timedelta(hours=9))
+
+
 # 일꾼이 예약분을 올리는 시각(worker.agent.SCHEDULED_POST_TIMES 와 같은 값을
 # 본다). 화면에 '언제 올라가는지'를 그대로 적어 주기 위한 것이라, 일꾼과
 # 화면이 다른 기계에서 돌아도 .env 만 맞춰 두면 된다.
@@ -408,18 +415,25 @@ def _is_night() -> bool:
 
     이 시간대에는 [🌙 아침에 등록]을 기본 버튼으로 강조한다. 손님 폰에
     새벽 푸시가 울리는 걸 실수로 보내지 않게 하는 장치다.
+
+    ⚠️ 매장 시간(KST)으로 본다 — 서버는 UTC 라 그냥 now() 를 쓰면 한국의
+       밤 10시가 서버에선 오후 1시가 돼 판정이 통째로 뒤집힌다.
     """
-    h = datetime.now().hour
+    h = datetime.now(KST).hour
     return h >= 22 or h < 8
 
 
 def scheduled_post_when() -> str:
-    """지금 예약하면 언제 올라가는지 — '오늘 아침 9시' / '내일 아침 9시'."""
+    """지금 예약하면 언제 올라가는지 — '오늘 아침 9시' / '내일 아침 9시'.
+
+    기준은 **매장 시간(KST)** 이다. 일꾼(집 PC)이 KST 09:00 에 올리므로,
+    UTC 로 재면 새벽 0시에 예약한 건을 '내일'이라고 잘못 안내한다.
+    """
     try:
         hh, mm = (int(x) for x in SCHEDULED_POST_AT.split(":"))
     except ValueError:
         hh, mm = 9, 0
-    now = datetime.now()
+    now = datetime.now(KST)
     today = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
     day = "오늘" if now < today else "내일"
     return f"{day} 아침 {hh}시" + (f" {mm}분" if mm else "")
@@ -537,8 +551,6 @@ def _visit_class(n):
 
 # 홈 바로가기 카드에 담당자를 달 수 있는 프로그램들(사장님 요청 2026-08-26).
 HOME_PROGRAMS = ("review", "blog", "menu", "insta", "place", "meeting")
-
-KST = timezone(timedelta(hours=9))
 
 
 @app.route("/<path_key>/")

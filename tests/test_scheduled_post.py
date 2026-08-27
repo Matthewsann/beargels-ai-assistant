@@ -10,7 +10,7 @@
   3) 아침 슬롯에서만 풀린다.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -90,33 +90,40 @@ def test_nothing_scheduled_is_a_quiet_noop(monkeypatch):
 
 # --- 화면 문구 ------------------------------------------------------------
 
-@pytest.mark.parametrize("hour,expect", [(3, "오늘"), (8, "오늘"), (10, "내일"),
-                                         (23, "내일")])
-def test_label_says_today_or_tomorrow(monkeypatch, hour, expect):
-    """9시 전에 누르면 '오늘 아침', 지난 뒤면 '내일 아침'."""
+def _freeze_kst(monkeypatch, hour, minute=5):
+    """서버 시계를 **UTC 로** 고정하고, 그 순간의 매장 시간(KST)이 hour 가 되게 한다.
+
+    이 웹앱은 PythonAnywhere(UTC)에서 돈다. 그냥 datetime.now() 를 쓰면 한국의
+    새벽 0시가 서버에선 전날 오후 3시라, '오늘/내일' 안내도 밤 판정도 통째로
+    뒤집힌다(사장님 지적 2026-08-28). 그래서 테스트도 UTC 서버를 흉내 낸다.
+    """
     import service.app as app
+    kst_moment = datetime(2026, 8, 28, hour, minute, tzinfo=app.KST)
 
     class _Now(datetime):
         @classmethod
         def now(cls, tz=None):
-            return datetime(2026, 8, 28, hour, 5)
+            # tz 를 안 주면 서버 지역시각(=UTC, naive) — 옛 코드가 쓰던 값
+            return (kst_moment.astimezone(tz) if tz
+                    else kst_moment.astimezone(timezone.utc).replace(tzinfo=None))
 
     monkeypatch.setattr(app, "datetime", _Now)
+    return app
+
+
+@pytest.mark.parametrize("hour,expect", [(3, "오늘"), (8, "오늘"), (10, "내일"),
+                                         (23, "내일")])
+def test_label_says_today_or_tomorrow(monkeypatch, hour, expect):
+    """9시 전에 누르면 '오늘 아침', 지난 뒤면 '내일 아침' — 매장 시간 기준."""
+    app = _freeze_kst(monkeypatch, hour)
     assert app.scheduled_post_when().startswith(expect)
 
 
 @pytest.mark.parametrize("hour,night", [(23, True), (2, True), (7, True),
                                         (8, False), (14, False), (21, False)])
 def test_night_hours_default_to_scheduling(monkeypatch, hour, night):
-    """22시~아침 8시엔 [🌙 아침에 등록]이 기본 버튼이 된다(사장님 확정)."""
-    import service.app as app
-
-    class _Now(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return datetime(2026, 8, 28, hour, 30)
-
-    monkeypatch.setattr(app, "datetime", _Now)
+    """22시~아침 8시엔 [🌙 아침에 등록]이 기본 버튼 — 한국 시간 기준으로."""
+    app = _freeze_kst(monkeypatch, hour, minute=30)
     assert app._is_night() is night
 
 
