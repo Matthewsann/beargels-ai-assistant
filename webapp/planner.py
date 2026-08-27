@@ -241,7 +241,10 @@ def make_draft_data(topic: str, post_type: str = "정보성", title: str = "",
         title=title or topic, main_keyword=main_keyword,
         sub_keywords=", ".join(subs), sub_keywords_json=json.dumps(subs, ensure_ascii=False),
     )
-    raw = llm.complete(user=prompt, prefer="gemini",
+    # 본문만은 '충분한 퀄리티와 분량'이 기준(사장님 2026-08-28) → Claude 우선.
+    # 크레딧이 없으면 llm 계층이 알아서 Gemini 로 넘어가고, 충전하는 순간
+    # 코드 변경 없이 Claude(Sonnet)로 승격된다. 추천·평가는 계속 무료.
+    raw = llm.complete(user=prompt, prefer="claude",
                        max_tokens=cfg.get("generate", {}).get("max_tokens", 5000))
     data = gp._extract_json(raw)
     data.setdefault("tags", [])

@@ -28,9 +28,14 @@ logger = logging.getLogger(__name__)
 
 STORE = ROOT / "data" / "blog_quality.json"
 
-# 이 점수 밑이면 자동 퇴고를 한 번 시도한다. 퇴고 후에도 낮으면 그대로 저장하되
+# 이 점수 밑이면 자동 퇴고를 시도한다. 퇴고 후에도 낮으면 그대로 저장하되
 # 점수가 메시지에 붙어 사장님이 걸러 볼 수 있다.
-QUALITY_MIN = 75
+QUALITY_MIN = 80
+# 이 글자 수(사진 표시 제외) 밑이면 점수와 무관하게 확장 퇴고를 건다.
+# 네이버 상위노출 기준 1,500자 — 짧은 글은 무료 모델의 고질 약점이다.
+LENGTH_MIN = 1400
+# 퇴고 최대 횟수. 1회로 부족한 경우(짧고+개선점 많음)를 위해 2회까지.
+MAX_REVISIONS = 2
 
 
 def _load() -> dict:
@@ -105,9 +110,10 @@ def improve(body: str, title: str, main_keyword: str,
     """개선점을 먹여 한 번 퇴고한 본문. 사진 표시가 깨졌으면 버린다(None)."""
     import llm
     imp = "\n".join(f"- {i}" for i in improvements[:6]) or "- 전반적 완성도"
+    # 퇴고도 본문이다 → Claude 우선(크레딧 없으면 자동 Gemini 폴백).
     raw = llm.complete(user=REVISE_PROMPT.format(
         title=title, main_keyword=main_keyword, body=body, improvements=imp),
-        max_tokens=4000, prefer="gemini").strip()
+        max_tokens=4000, prefer="claude").strip()
     raw = re.sub(r"^```.*?\n|\n```$", "", raw, flags=re.DOTALL)
     # 퇴고가 사진 표시를 잃어버렸으면 원본이 낫다
     marks = re.findall(r"\[[📷🎬][^\]]*\]", body)
@@ -119,26 +125,47 @@ def improve(body: str, title: str, main_keyword: str,
     return raw
 
 
-def gate(body: str, title: str, main_keyword: str) -> tuple[str, dict]:
-    """품질 게이트: 점수 매기고, 낮으면 1회 퇴고해 더 나은 쪽을 돌려준다.
+def _plain_len(body: str) -> int:
+    """사진 표시를 뺀 본문 글자 수."""
+    return len(re.sub(r"\[[📷🎬][^\]]*\]", "", body).strip())
 
+
+def gate(body: str, title: str, main_keyword: str) -> tuple[str, dict]:
+    """품질 게이트: 점수·분량을 재고, 모자라면 최대 2회 퇴고해 최선을 돌려준다.
+
+    기준(사장님 2026-08-28): '충분한 퀄리티와 분량'.
+    → 80점 미만 **또는** 1,400자 미만이면 확장·개선 퇴고를 건다.
     반환: (최종 본문, 품질 기록 dict)
     """
     q = score(body, title, main_keyword)
-    if q["score"] >= QUALITY_MIN or not q.get("improvements"):
-        q["revised"] = False
-        return body, q
-    logger.info("품질 %d점(<%d) — 자동 퇴고 시도", q["score"], QUALITY_MIN)
-    better = improve(body, title, main_keyword, q["improvements"])
-    if not better:
-        q["revised"] = False
-        return body, q
-    q2 = score(better, title, main_keyword)
-    if q2["score"] > q["score"]:
-        q2["revised"] = True
-        q2["before_score"] = q["score"]
-        return better, q2
     q["revised"] = False
+    first_score = q["score"]
+    for _ in range(MAX_REVISIONS):
+        short = _plain_len(body) < LENGTH_MIN
+        if q["score"] >= QUALITY_MIN and not short:
+            break
+        improvements = list(q.get("improvements") or [])
+        if short:
+            improvements.insert(0, (
+                f"본문이 {_plain_len(body)}자로 짧다. 금고에 있는 사실만으로 "
+                f"{LENGTH_MIN + 100}자 이상으로 확장하라 — 먹는 팁, 어울리는 음료, "
+                f"방문 시간대, 포장 여부 같은 실제 정보 밀도를 높여서. 뻔한 인사말로 늘리지 마라."))
+        if not improvements:
+            break
+        logger.info("품질 %d점·%d자 — 자동 퇴고", q["score"], _plain_len(body))
+        better = improve(body, title, main_keyword, improvements)
+        if not better:
+            break
+        q2 = score(better, title, main_keyword)
+        # 분량이 늘었으면 점수가 같아도 취한다(분량 자체가 기준이므로)
+        if q2["score"] >= q["score"] or _plain_len(better) > _plain_len(body):
+            body, q = better, q2
+            q["revised"] = True
+        else:
+            break
+    if q.get("revised"):
+        q["before_score"] = first_score
+    q["chars"] = _plain_len(body)
     return body, q
 
 
