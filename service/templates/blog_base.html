@@ -65,11 +65,8 @@
       <small>{% block sub %}네이버 블로그 자동화{% endblock %}</small></div>
   </div>
 
-  <div class="nav">
-    <a href="{{ url_for('review_home', path_key=key) }}">💬 리뷰 답글</a>
-    <a href="{{ url_for('blog_home', path_key=key) }}" class="on">📝 블로그</a>
-  </div>
-
+  {# 예전 상단 탭(리뷰 답글/블로그)은 사이드바가 생기면서 중복이라 제거
+     (사장님 요청 2026-08-28) — 이동은 왼쪽 사이드바로. #}
   {% if error %}<div class="note bad">{{ error }}</div>{% endif %}
 
   {% block content %}{% endblock %}

@@ -32,8 +32,26 @@
                 {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>📈 반응 수집</button>
       </form>
     </div>
-    <div style="font-size:12px; color:var(--muted); margin-top:6px;">
-      드라이브 <b>브랜딩 › 베어글스_블로그_사진함</b>에 사진을 올린 뒤 눌러주세요.
+    {# 사진함 드라이브 폴더 바로가기 — 폰에선 드라이브 앱이 열려 그 자리에서
+       업로드(+)까지 된다(사장님 요청 2026-08-28). 폴더 ID 는 고정값. #}
+    <a class="btn wide" style="margin-top:8px;" target="_blank" rel="noopener"
+       href="https://drive.google.com/drive/folders/1NMoo7FhTYMfhJHjpOfX_kfSFU-zHsTIv">
+      📂 사진함 열기 <span style="font-size:12px; color:var(--muted);">(여기서 업로드)</span>
+    </a>
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:7px;">
+      <a class="tag b" style="text-decoration:none; padding:5px 11px;" target="_blank" rel="noopener"
+         href="https://drive.google.com/drive/folders/1Qvaoc5Q_8OLwxb07YkBVA-SdlKUTyPkr">🥯 메뉴</a>
+      <a class="tag b" style="text-decoration:none; padding:5px 11px;" target="_blank" rel="noopener"
+         href="https://drive.google.com/drive/folders/183mBks1uXKxqQlXoTaCbZoVBl6mKbfw-">👩‍🍳 만드는과정</a>
+      <a class="tag b" style="text-decoration:none; padding:5px 11px;" target="_blank" rel="noopener"
+         href="https://drive.google.com/drive/folders/1Yqm_uHht5LXS42wDZngKIR5OdEC_GSz0">🏠 매장</a>
+      <a class="tag b" style="text-decoration:none; padding:5px 11px;" target="_blank" rel="noopener"
+         href="https://drive.google.com/drive/folders/14EkdMHx331wvRCeYqromqZ8hq34WMGAB">📦 기타</a>
+      <a class="tag b" style="text-decoration:none; padding:5px 11px;" target="_blank" rel="noopener"
+         href="https://drive.google.com/drive/folders/1-D3Zl9RH8SGSlmkR-4-4o1Wqerdn7Rp9">🎬 영상</a>
+    </div>
+    <div style="font-size:12px; color:var(--muted); margin-top:7px;">
+      사진을 올린 뒤 <b>📸 사진함 다시 보기</b>를 눌러주세요.
       글을 쓸 때 여기 있는 사진으로 짜고, 네이버 초안에 사진까지 같이 넣습니다.
     </div>
   </div>
