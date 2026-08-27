@@ -152,8 +152,9 @@ def _extract_array(text: str) -> list:
 
 def _tag_batch(paths: list[pathlib.Path]) -> list[dict]:
     import llm
+    # 사진 설명은 무료 등급으로 충분하다 — Claude 크레딧을 아낀다.
     raw = llm.see(paths, user=TAG_PROMPT.format(n=len(paths)),
-                  max_tokens=250 * len(paths) + 300)
+                  max_tokens=250 * len(paths) + 300, prefer="gemini")
     got = _extract_array(raw)
     if len(got) != len(paths):
         logger.warning("사진 %d장을 보냈는데 설명 %d개가 왔습니다 — 개수를 맞춥니다.",

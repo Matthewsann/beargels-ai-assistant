@@ -5,10 +5,13 @@
     공급자를 바꿔 끼울 수 있게 해두면, 무료 등급(Gemini)으로 계속 운영할 수 있고
     결제가 풀리면 자동으로 다시 Claude 를 쓴다.
 
-고르는 순서(.env 기준):
-    1) LLM_PROVIDER 가 지정돼 있으면 그것만 쓴다 (claude / gemini)
-    2) 아니면 ANTHROPIC_API_KEY → GEMINI_API_KEY 순으로 있는 것을 쓴다
-    3) Claude 가 크레딧 부족(400 credit balance)이면 Gemini 로 자동 우회한다
+고르는 순서 — 사장님 지시(2026-08-27):
+    ① 제미나이 무료 **상위** 모델(gemini-flash-latest)  ← 공짜, 품질 좋음
+    ② 클로드 API(유료)                                   ← 상위 무료가 한도 나면
+    ③ 제미나이 무료 **하위** 모델(flash-lite)            ← 마지막 보루, 한도 넉넉
+  즉 돈은 '좋은 공짜가 떨어졌을 때만' 쓴다. 셋 다 막히면 템플릿으로 떨어진다.
+  (LLM_PROVIDER 를 지정하면 그 공급자만 쓴다 — claude / gemini)
+  한도·크레딧으로 막힌 단계는 잠시 쉬었다(_COOLDOWN_SEC) 다시 시도한다.
 
 쓰는 쪽은 provider 를 몰라도 된다:
     from llm import complete
@@ -225,7 +228,8 @@ _AUTH_DEAD: set = set()
 # ---------------------------------------------------------------------------
 
 def complete(system: str = "", user: str = "", max_tokens: int = 1500,
-             model: str | None = None, images: list | None = None) -> str:
+             model: str | None = None, images: list | None = None,
+             prefer: str | None = None) -> str:
     """AI 에게 물어 답 텍스트를 받는다. 공급자는 자동 선택 · 실패 시 다음 것으로 넘어간다.
 
     model: 이번 호출에만 쓸 Claude 모델(없으면 CLAUDE_MODEL). 불만 리뷰처럼
@@ -233,8 +237,14 @@ def complete(system: str = "", user: str = "", max_tokens: int = 1500,
     images: 함께 보여줄 사진 [(mime, 바이트), ...]. 블로그 사진함 태깅처럼
             'AI 가 사진을 실제로 보고 판단해야' 하는 곳에서 쓴다.
             → 편하게 쓰려면 see() 를 부르면 파일 경로만 넘겨도 된다.
+    prefer: 이 호출만 특정 공급자를 먼저 쓴다("gemini" 등). 블로그 글쓰기처럼
+            무료 등급으로 충분한 작업이 Claude 크레딧을 갉아먹지 않게 하는 용도.
+            그 공급자가 없거나 실패하면 평소 순서로 넘어간다(사장님 확정 2026-08-27:
+            크레딧 사용 최소화).
     """
     providers = available_providers()
+    if prefer and prefer in providers:
+        providers = [prefer] + [p for p in providers if p != prefer]
     if not providers:
         raise NoProviderError(
             "쓸 수 있는 AI 가 없어요. .env 에 ANTHROPIC_API_KEY 또는 GEMINI_API_KEY 를 넣어주세요. "
@@ -295,7 +305,7 @@ def _as_jpeg(path, max_px: int = SEE_MAX_PX) -> tuple[str, bytes]:
 
 
 def see(paths, system: str = "", user: str = "", max_tokens: int = 1500,
-        model: str | None = None) -> str:
+        model: str | None = None, prefer: str | None = None) -> str:
     """사진 파일 경로들을 보여주며 AI 에게 묻는다.
 
         llm.see(["a.jpg", "b.HEIC"], user="이 사진들에 뭐가 찍혔는지 알려줘")
@@ -305,4 +315,4 @@ def see(paths, system: str = "", user: str = "", max_tokens: int = 1500,
     if isinstance(paths, (str, pathlib.Path)):
         paths = [paths]
     return complete(system=system, user=user, max_tokens=max_tokens, model=model,
-                    images=[_as_jpeg(p) for p in paths])
+                    images=[_as_jpeg(p) for p in paths], prefer=prefer)

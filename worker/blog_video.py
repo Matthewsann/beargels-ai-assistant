@@ -160,7 +160,7 @@ def plan_clip(path: str | pathlib.Path) -> dict:
         raw = llm.see([p for _, p in shots],
                       user=PLAN_PROMPT.format(timeline=timeline,
                                               minsec=int(MIN_SEC), maxsec=int(MAX_SEC)),
-                      max_tokens=700)
+                      max_tokens=700, prefer="gemini")
         plan = _extract_obj(raw)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

@@ -100,7 +100,7 @@ def make_plan(hint: str = "") -> dict:
     client, cfg, gp = _client_cfg()
     knowledge, seo = load_knowledge()
     prompt = PLAN_PROMPT.format(knowledge=knowledge, seo=seo, hint=hint or "")
-    raw = llm.complete(user=prompt, max_tokens=2500)
+    raw = llm.complete(user=prompt, max_tokens=2500, prefer="gemini")
     data = gp._extract_json(raw)
     data.setdefault("sub_keywords", [])
     data.setdefault("titles", [])
@@ -204,7 +204,7 @@ def make_recommendations() -> list[dict]:
     photos, _cat = load_photos()
     prompt = REC_PROMPT.format(knowledge=knowledge, seo=seo,
                                photos=photos or "(사진함이 비어 있음 — 촬영부터 필요)")
-    raw = llm.complete(user=prompt, max_tokens=2500)
+    raw = llm.complete(user=prompt, max_tokens=2500, prefer="gemini")
     return _extract_json_array(raw)
 
 
@@ -224,7 +224,8 @@ def make_draft_data(topic: str, post_type: str = "정보성", title: str = "",
         title=title or topic, main_keyword=main_keyword,
         sub_keywords=", ".join(subs), sub_keywords_json=json.dumps(subs, ensure_ascii=False),
     )
-    raw = llm.complete(user=prompt, max_tokens=cfg.get("generate", {}).get("max_tokens", 5000))
+    raw = llm.complete(user=prompt, prefer="gemini",
+                       max_tokens=cfg.get("generate", {}).get("max_tokens", 5000))
     data = gp._extract_json(raw)
     data.setdefault("tags", [])
     data.setdefault("sub_keywords", subs)
