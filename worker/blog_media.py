@@ -37,9 +37,18 @@ load_dotenv(ROOT / ".env")
 
 logger = logging.getLogger(__name__)
 
+# 소재 창고 = 드라이브 '콘텐츠 생성 > 원본소재' — **전 채널 공용** 단일 지점
+# (사장님 확정 2026-08-28). 예전 '베어글스_블로그_사진함'은 여기로 흡수했다.
+# 하위 폴더 하나 = 주제(콘텐츠) 하나. '_'로 시작하는 폴더는 상시 소재
+# (_상시_메뉴 등 — 계속 재활용하는 대표컷), 주제 폴더 안 '_클립'은 편집 파생물.
 DEFAULT_SHELF = (
     r"C:\Users\명구\Google Drive\1. Project_현재진행하는일\1. Business"
-    r"\베어글스_송도_타임스페이스\오픈후\브랜딩\베어글스_블로그_사진함"
+    r"\베어글스_송도_타임스페이스\오픈후\콘텐츠 생성\원본소재"
+)
+# 사이클 끝난 주제 폴더가 옮겨지는 곳(드라이브 정리). 스캔 대상 아님.
+ARCHIVE_DIR = (
+    r"C:\Users\명구\Google Drive\1. Project_현재진행하는일\1. Business"
+    r"\베어글스_송도_타임스페이스\오픈후\콘텐츠 생성\보관"
 )
 INDEX_PATH = ROOT / "data" / "blog_media_index.json"
 # 사용완료로 옮긴 것들의 기록. 영상은 "원본의 어느 구간을 썼는지"가 여기 남아,
@@ -53,8 +62,8 @@ CACHE_DIR = ROOT / "data" / "blog_media_cache"
 PHOTO_EXT = {".jpg", ".jpeg", ".png", ".heic", ".webp"}
 VIDEO_EXT = {".mp4", ".mov", ".m4v"}
 SKIP_NAMES = {"desktop.ini"}
-# 한 번 글에 쓴 사진이 옮겨지는 칸. 여기 있는 사진은 새 글 후보에서 빠진다
-# (같은 사진을 여러 글에 돌려쓰면 안 된다 — 사장님 확정 2026-08-28).
+# (구) 사용완료 폴더 이동 방식의 흔적 — 지금은 파일을 옮기지 않고
+# media_ledger(사용 원장)가 채널별 재사용을 막는다(사장님 확정 2026-08-28).
 USED_DIR = "사용완료"
 
 # 네이버 블로그 본문 사진 권장 폭. 이보다 크면 네이버가 어차피 줄인다.
@@ -91,8 +100,10 @@ def scan() -> list[dict]:
         if not f.is_file() or f.name in SKIP_NAMES or f.name.startswith("_"):
             continue
         rel_parts = f.relative_to(shelf).parts
-        if rel_parts and rel_parts[0] == USED_DIR:
-            continue                     # 이미 쓴 사진 — 새 글 후보에서 제외
+        if any(part.startswith("_사진함") for part in rel_parts):
+            continue
+        if re.search(r" \(\d+\)$", f.stem):
+            continue                     # 드라이브가 만든 중복본(IMG_1 (1).jpg)
         ext = f.suffix.lower()
         kind = "photo" if ext in PHOTO_EXT else ("video" if ext in VIDEO_EXT else None)
         if kind is None:
@@ -118,53 +129,32 @@ def full_path(rel: str) -> pathlib.Path:
     p = shelf_dir() / rel
     if p.exists():
         return p
-    used = shelf_dir() / USED_DIR / rel
-    return used if used.exists() else p
+    for base in (pathlib.Path(ARCHIVE_DIR), shelf_dir() / USED_DIR):
+        if not base.exists():
+            continue
+        cand = base / rel
+        if cand.exists():
+            return cand
+        # 보관은 연도 폴더(보관/2026/주제/…) 아래일 수 있다
+        hits = list(base.glob(f"*/{rel}"))
+        if hits:
+            return hits[0]
+    # 창고 재편으로 주제 폴더가 바뀐 옛 글 — 파일 이름으로 찾는다
+    name = rel.rsplit("/", 1)[-1]
+    hits = list(shelf_dir().rglob(name))
+    return hits[0] if hits else p
 
 
-def mark_used(rels: list[str], label: str = "") -> int:
-    """글에 쓴 사진·영상을 사용완료/ 로 옮긴다(재사용 방지). 옮긴 개수 반환.
+def mark_used(rels: list[str], label: str = "", channel: str = "blog") -> int:
+    """소재를 '이 채널이 썼다'고 원장에 기록한다. 파일은 옮기지 않는다.
 
-    원래 칸 구조를 그대로 유지한다(사용완료/만드는과정/IMG_x.jpg) —
-    나중에 봐도 어떤 종류였는지 알 수 있고, full_path 폴백도 단순해진다.
+    (구버전은 사용완료/ 폴더로 이동했지만, 여러 채널이 같은 창고를 쓰게 되면서
+    이동은 채널 간 공유를 깨뜨린다 → 원장 방식으로 전환. 드라이브 정리는
+    주제 사이클이 끝났을 때 폴더째 보관/ 으로 — scripts/archive_topic.py.)
     """
-    import shutil
-    shelf = shelf_dir()
-    idx = load_index()
-    log = []
-    if USED_LOG.exists():
-        try:
-            log = json.loads(USED_LOG.read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001
-            log = []
-    moved = 0
-    for rel in rels:
-        src = shelf / rel
-        if not src.exists():
-            continue                     # 이미 옮겨졌거나 지워진 것
-        dest = shelf / USED_DIR / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        if dest.exists():                # 같은 이름이 이미 있으면 덮지 않는다
-            dest = dest.with_stem(dest.stem + "_2")
-        shutil.move(str(src), str(dest))
-        entry = idx.pop(rel, None) or {} # 새 글 후보 목록에서도 제거
-        log.append({"rel": rel, "kind": entry.get("kind"),
-                    "source": entry.get("source"),
-                    "start": entry.get("start"), "end": entry.get("end"),
-                    "label": label})
-        moved += 1
-    if moved:
-        save_index(idx)
-        USED_LOG.write_text(json.dumps(log, ensure_ascii=False, indent=1),
-                            encoding="utf-8")
-        logger.info("사용한 사진 %d개를 %s/ 로 옮김%s",
-                    moved, USED_DIR, f" ({label})" if label else "")
-    return moved
+    import media_ledger
+    return media_ledger.record_many(rels, channel, ref=label)
 
-
-# ---------------------------------------------------------------------------
-# 인덱스(= AI 가 사진을 보고 적어 둔 기록)
-# ---------------------------------------------------------------------------
 
 def load_index() -> dict:
     if not INDEX_PATH.exists():
@@ -342,20 +332,29 @@ def pick_video(want: str = "", index: dict | None = None,
 # 사진 목록을 먼저 보여주고, AI가 있는 사진으로 글을 짜게 한다. 글 안에서는
 # `[📷 P07]` 처럼 번호로 가리키고, 나중에 resolve() 가 실제 파일로 바꾼다.
 
-def catalog(index: dict | None = None, include_bad: bool = False) -> dict:
-    """{"P01": {사진 기록}, ...} — AI 에게 보여줄 번호표를 붙인 사진 목록."""
+def catalog(index: dict | None = None, include_bad: bool = False,
+            channel: str = "blog") -> dict:
+    """{"P01": {사진 기록}, ...} — AI 에게 보여줄 번호표를 붙인 사진 목록.
+
+    channel 이 이미 쓴 소재는 원장 기준으로 뺀다(같은 채널 재탕 방지).
+    다른 채널이 쓴 건 남는다 — 채널 간 재사용은 허용이다.
+    """
+    import media_ledger
     idx = index if index is not None else load_index()
     items = [(rel, v) for rel, v in idx.items()
-             if v.get("kind") == "photo" and (include_bad or v.get("quality") != "bad")]
-    # 메뉴 → 만드는과정 → 매장 → 기타 순으로, 대표사진 후보를 앞에
-    order = {"메뉴": 0, "만드는과정": 1, "매장": 2, "기타": 3, "영상": 4}
-    items.sort(key=lambda kv: (order.get(kv[1].get("slot"), 9),
+             if v.get("kind") == "photo"
+             and (include_bad or v.get("quality") != "bad")
+             and not media_ledger.used_in(rel, channel)]
+    # 주제 폴더 이름순(상시 소재 _* 를 앞에), 대표사진 후보 우선
+    items.sort(key=lambda kv: (0 if kv[1].get("slot", "").startswith("_") else 1,
+                               kv[1].get("slot", ""),
                                0 if kv[1].get("hero") else 1, kv[0]))
     out = {}
     for i, (rel, v) in enumerate(items, 1):
         out[f"P{i:02d}"] = {**v, "rel": rel}
-    for j, (rel, v) in enumerate([(k, v) for k, v in idx.items()
-                                  if v.get("kind") == "video"], 1):
+    vids = [(k, v) for k, v in idx.items()
+            if v.get("kind") == "video" and not media_ledger.used_in(k, channel)]
+    for j, (rel, v) in enumerate(vids, 1):
         out[f"V{j:02d}"] = {**v, "rel": rel}
     return out
 
@@ -544,16 +543,24 @@ if __name__ == "__main__":
 
 
 def used_segments(source_name: str) -> list[tuple[float, float]]:
-    """이 원본 영상에서 이미 글에 쓴 구간들. 다음 편집은 여길 피해야 한다."""
-    if not USED_LOG.exists():
-        return []
-    try:
-        log = json.loads(USED_LOG.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
-        return []
+    """이 원본 영상에서 이미 쓴 구간들(전 채널). 다음 편집은 여길 피한다."""
+    import media_ledger
     out = []
-    for e in log:
-        if e.get("kind") == "video" and e.get("source") == source_name:
-            if e.get("start") is not None and e.get("end") is not None:
-                out.append((float(e["start"]), float(e["end"])))
+    # 원장은 rel 단위 — 파일 이름이 source 인 항목을 전부 훑는다
+    for rel, us in media_ledger._load().items():
+        if rel.rsplit("/", 1)[-1] not in (source_name,
+                                          source_name.replace(".MOV", ".mp4")):
+            continue
+        for u in us:
+            if u.get("segment"):
+                out.append((u["segment"][0], u["segment"][1]))
+    # 구 기록(blog_used_log)도 함께 본다
+    if USED_LOG.exists():
+        try:
+            for e in json.loads(USED_LOG.read_text(encoding="utf-8")):
+                if e.get("kind") == "video" and e.get("source") == source_name \
+                        and e.get("start") is not None:
+                    out.append((float(e["start"]), float(e["end"])))
+        except Exception:  # noqa: BLE001
+            pass
     return out

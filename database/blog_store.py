@@ -25,7 +25,7 @@ JOBS = "jobs"
 
 # 웹이 일꾼에게 시킬 수 있는 일
 JOB_KINDS = ("blog_recommend", "blog_draft", "blog_publish", "blog_rank",
-             "blog_media", "blog_learn", "blog_react")
+             "blog_media", "blog_learn", "blog_react", "blog_plan")
 
 
 def _now():
@@ -207,3 +207,38 @@ def finish_blog_job(job_id, status="done", message=None, result_count=None):
         "status": status, "finished_at": _now(),
         "message": message, "result_count": result_count,
     }).eq("id", job_id).execute()
+
+
+# ---------------------------------------------------------------------------
+# 채널 배분안 (media_plans — 007_media_plans.sql)
+# ---------------------------------------------------------------------------
+
+PLANS = "media_plans"
+
+
+def save_plan(topic, plan):
+    """새 배분안 저장. 같은 주제의 이전 pending 은 자동 반려(최신 것만 살린다)."""
+    c = get_client()
+    c.table(PLANS).update({"status": "rejected", "decided_at": _now()}) \
+        .eq("topic", topic).eq("status", "pending").execute()
+    res = c.table(PLANS).insert({"topic": topic, "plan": plan}).execute()
+    return res.data[0]["id"] if res.data else None
+
+
+def latest_plans(limit=3):
+    """웹에 보여줄 최근 배분안(대기 우선)."""
+    res = (get_client().table(PLANS).select("*")
+           .neq("status", "rejected")
+           .order("created_at", desc=True).limit(limit).execute())
+    return res.data or []
+
+
+def get_plan(plan_id):
+    res = get_client().table(PLANS).select("*").eq("id", plan_id).limit(1).execute()
+    return res.data[0] if res.data else None
+
+
+def decide_plan(plan_id, status):
+    """approved / rejected"""
+    get_client().table(PLANS).update(
+        {"status": status, "decided_at": _now()}).eq("id", plan_id).execute()

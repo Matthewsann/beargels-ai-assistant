@@ -35,7 +35,7 @@ from database import blog_store as store  # noqa: E402
 logger = logging.getLogger(__name__)
 
 BLOG_KINDS = ("blog_recommend", "blog_draft", "blog_publish", "blog_rank",
-              "blog_media", "blog_learn", "blog_react")
+              "blog_media", "blog_learn", "blog_react", "blog_plan")
 
 # 순위 추적 기본 키워드(창고 글의 대표 키워드에 더해 항상 확인)
 DEFAULT_KEYWORDS = ("송도 베이글", "송도 카페")
@@ -286,6 +286,88 @@ def do_learn(payload: dict) -> tuple[int, str]:
                           + (f" (잘못된 정보 교정 {facts}건 ❗)" if facts else ""))
 
 
+PLAN_PROMPT = """너는 베어글스 송도점의 멀티채널 콘텐츠 디렉터다.
+아래는 주제 「{topic}」 폴더에 있는 실제 소재 목록이다(번호|종류|내용|키워드).
+
+{materials}
+
+이 소재들을 채널별로 배분하라. 채널마다 목적이 다르다:
+- blog: 네이버 검색 상위노출 — 과정·정보 사진 4~6장 + 짧은 클립 1개(있으면)
+- insta: 릴스 — 가장 임팩트 있는 순간(자르기·단면·크림) 중심의 릴스 컨셉 한 줄 + 커버 사진 1장
+- danggeun: 당근 동네생활 — 친근한 사진 1~2장(사람 냄새 나는 컷 우선)
+- place: 네이버 플레이스 소식 — 완성품이 잘 보이는 대표컷 1~2장
+
+배분 원칙:
+1. 채널끼리 사진이 겹치지 않게 나눈다. 소재가 부족할 때만 겹치되 "(공유)"라고 note 에 적는다.
+2. 흐린 사진(quality bad)은 쓰지 않는다.
+3. 이 주제를 관통하는 한 줄 각도(angle)를 먼저 정한다 — 모든 채널이 같은 이야기를 다른 문법으로.
+4. 소재 번호(P01, V01)로만 가리킨다. 없는 번호를 지어내지 마라.
+
+JSON 하나만 순수 출력(설명·코드블록 금지):
+{{"angle": "이 주제의 한 줄 각도",
+  "channels": {{
+    "blog":     {{"photos": ["P01"], "clip": "V01 또는 null", "title_hint": "제목 힌트"}},
+    "insta":    {{"reel": "릴스 컨셉 한 줄", "cover": "P02"}},
+    "danggeun": {{"photos": ["P03"], "copy_hint": "당근 글 힌트 한 줄"}},
+    "place":    {{"photos": ["P04"], "copy_hint": "플레이스 소식 한 줄"}}
+  }},
+  "note": "배분 이유·주의 한 줄"}}"""
+
+
+def do_plan(payload: dict) -> tuple[int, str]:
+    """주제 하나의 소재를 채널별로 배분하는 안을 만들어 웹 승인 대기열에 올린다."""
+    import json as _json
+    import re as _re
+
+    import blog_media
+    import llm
+
+    idx = blog_media.load_index()
+    topic = (payload.get("topic") or "").strip()
+    if not topic:
+        # 상시(_)가 아닌 주제 중 소재가 가장 많은 것
+        from collections import Counter
+        counts = Counter(v.get("slot") for v in idx.values()
+                         if not (v.get("slot") or "_").startswith("_"))
+        if not counts:
+            raise ValueError("배분할 주제 폴더가 없습니다. 원본소재에 주제 폴더를 만들어 주세요.")
+        topic = counts.most_common(1)[0][0]
+
+    # 이 주제의 소재만 번호표를 붙여 보여준다 (어느 채널도 안 쓴 것 위주)
+    sub = {rel: v for rel, v in idx.items() if v.get("slot") == topic}
+    if not sub:
+        raise ValueError(f"주제 「{topic}」 에 소재가 없습니다.")
+    cat = blog_media.catalog(index=sub, channel="__plan__")  # 원장 필터 없이 전부
+    materials = blog_media.catalog_text(cat, limit=80)
+
+    raw = llm.complete(user=PLAN_PROMPT.format(topic=topic, materials=materials),
+                       max_tokens=1500, prefer="gemini")
+    m = _re.search(r"\{.*\}", raw, _re.DOTALL)
+    plan = _json.loads(m.group(0)) if m else {}
+    if not plan.get("channels"):
+        raise RuntimeError("배분안 생성 실패 — 다시 시도해 주세요.")
+
+    # 번호(P01)를 실제 파일 경로로 굳혀 저장한다(번호는 다음 스캔에 밀린다)
+    def to_rel(pid):
+        item = cat.get((pid or "").strip().upper())
+        return item["rel"] if item else None
+
+    for ch, c in (plan.get("channels") or {}).items():
+        if not isinstance(c, dict):
+            continue
+        if c.get("photos"):
+            c["photos"] = [r for r in (to_rel(p) for p in c["photos"]) if r]
+        for key in ("clip", "cover"):
+            if c.get(key):
+                c[key] = to_rel(c[key])
+
+    plan_id = store.save_plan(topic, plan)
+    n = sum(len(c.get("photos") or []) + (1 if c.get("cover") else 0)
+            + (1 if c.get("clip") else 0)
+            for c in plan["channels"].values() if isinstance(c, dict))
+    return 1, f"배분안 #{plan_id} — 「{topic}」 소재 {n}개를 4개 채널에 배분 (웹에서 승인해 주세요)"
+
+
 def do_react() -> tuple[int, str]:
     """발행 감지(RSS→URL 연결) + 공감·댓글 수집. 결과는 다음 기획에 반영된다."""
     import blog_perf
@@ -335,6 +417,7 @@ _HANDLERS = {
     "blog_media": lambda p: do_media(),
     "blog_learn": do_learn,
     "blog_react": lambda p: do_react(),
+    "blog_plan": do_plan,
 }
 
 

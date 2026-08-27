@@ -32,29 +32,75 @@
                 {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>📈 반응 수집</button>
       </form>
     </div>
-    {# 사진함 드라이브 폴더 바로가기 — 폰에선 드라이브 앱이 열려 그 자리에서
-       업로드(+)까지 된다(사장님 요청 2026-08-28). 폴더 ID 는 고정값. #}
+    {# 소재 창고 = 드라이브 '콘텐츠 생성 > 원본소재' — 인스타·블로그·당근 등
+       전 채널 공용 단일 지점(사장님 확정 2026-08-28). 드라이브 앱이 열려
+       그 자리에서 업로드(+)까지 된다. #}
     <a class="btn wide" style="margin-top:8px;" target="_blank" rel="noopener"
-       href="https://drive.google.com/drive/folders/1NMoo7FhTYMfhJHjpOfX_kfSFU-zHsTIv">
-      📂 사진함 열기 <span style="font-size:12px; color:var(--muted);">(여기서 업로드)</span>
+       href="https://drive.google.com/drive/folders/1cJf1C4C3LGAUqDdF9M8ckglPR0ViHBSw">
+      📂 소재함 열기 <span style="font-size:12px; color:var(--muted);">(원본소재 · 여기서 업로드)</span>
     </a>
-    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:7px;">
-      <a class="tag b" style="text-decoration:none; padding:5px 11px;" target="_blank" rel="noopener"
-         href="https://drive.google.com/drive/folders/1Qvaoc5Q_8OLwxb07YkBVA-SdlKUTyPkr">🥯 메뉴</a>
-      <a class="tag b" style="text-decoration:none; padding:5px 11px;" target="_blank" rel="noopener"
-         href="https://drive.google.com/drive/folders/183mBks1uXKxqQlXoTaCbZoVBl6mKbfw-">👩‍🍳 만드는과정</a>
-      <a class="tag b" style="text-decoration:none; padding:5px 11px;" target="_blank" rel="noopener"
-         href="https://drive.google.com/drive/folders/1Yqm_uHht5LXS42wDZngKIR5OdEC_GSz0">🏠 매장</a>
-      <a class="tag b" style="text-decoration:none; padding:5px 11px;" target="_blank" rel="noopener"
-         href="https://drive.google.com/drive/folders/14EkdMHx331wvRCeYqromqZ8hq34WMGAB">📦 기타</a>
-      <a class="tag b" style="text-decoration:none; padding:5px 11px;" target="_blank" rel="noopener"
-         href="https://drive.google.com/drive/folders/1-D3Zl9RH8SGSlmkR-4-4o1Wqerdn7Rp9">🎬 영상</a>
-    </div>
     <div style="font-size:12px; color:var(--muted); margin-top:7px;">
-      사진을 올린 뒤 <b>📸 사진함 다시 보기</b>를 눌러주세요.
-      글을 쓸 때 여기 있는 사진으로 짜고, 네이버 초안에 사진까지 같이 넣습니다.
+      새로 찍은 건 <b>주제 폴더</b>(예: 잠봉뵈르 베이글)를 만들어 그 안에,
+      메뉴 대표컷·매장 사진은 <b>_상시_메뉴 / _상시_매장</b>에 올려주세요.
+      인스타·블로그·당근이 이 한 곳을 같이 쓰고, 같은 채널에 같은 사진이
+      두 번 나가지 않도록 장부가 막아줍니다. 올린 뒤 <b>📸 사진함 다시 보기</b>!
     </div>
   </div>
+
+  <form method="post" action="{{ url_for('blog_plan', path_key=key) }}" style="margin-top:8px;">
+    <button class="btn wide" type="submit"
+            {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>🧭 채널 배분안 만들기</button>
+  </form>
+  <div style="font-size:12px; color:var(--muted); margin:6px 0 14px;">
+    주제 폴더의 소재를 블로그·인스타·당근·플레이스에 겹치지 않게 나눠줍니다.
+  </div>
+
+  {% if plans %}
+  <div class="sec">🧭 채널 배분안</div>
+  {% for pl in plans %}
+  <div class="card">
+    <div class="meta">
+      {% if pl.status == 'pending' %}<span class="tag c">승인 대기</span>
+      {% else %}<span class="tag g">승인됨</span>{% endif %}
+      <span>{{ pl.topic }}</span>
+    </div>
+    {% if pl.plan.angle %}<span class="ttl">“{{ pl.plan.angle }}”</span>{% endif %}
+    {% for ch, c in pl.plan.channels.items() %}
+    <div style="font-size:12px; margin-top:6px; padding-left:2px;">
+      <b>{{ {'blog':'📝 블로그','insta':'🎬 인스타','danggeun':'🥕 당근','place':'📍 플레이스'}.get(ch, ch) }}</b> ·
+      {% if c.photos %}사진 {{ c.photos|length }}장{% endif %}
+      {% if c.clip %} + 클립{% endif %}
+      {% if c.cover %} · 커버 1장{% endif %}
+      {% if c.reel %}<div style="color:var(--muted);">릴스: {{ c.reel }}</div>{% endif %}
+      {% if c.title_hint %}<div style="color:var(--muted);">제목: {{ c.title_hint }}</div>{% endif %}
+      {% if c.copy_hint %}<div style="color:var(--muted);">{{ c.copy_hint }}</div>{% endif %}
+    </div>
+    {% endfor %}
+    {% if pl.plan.note %}<div style="font-size:12px; color:var(--muted); margin-top:6px;">💡 {{ pl.plan.note }}</div>{% endif %}
+    {% if pl.status == 'pending' %}
+    <div class="row" style="margin-top:9px;">
+      <form method="post" action="{{ url_for('blog_plan_decide', path_key=key, plan_id=pl.id) }}" style="flex:1;">
+        <input type="hidden" name="status" value="approved">
+        <button class="btn sm wide" type="submit">✅ 이대로 진행</button>
+      </form>
+      <form method="post" action="{{ url_for('blog_plan_decide', path_key=key, plan_id=pl.id) }}" style="flex:1;">
+        <input type="hidden" name="status" value="rejected">
+        <button class="btn sm wide" type="submit">↻ 다시 짜줘</button>
+      </form>
+    </div>
+    {% elif pl.status == 'approved' and pl.plan.channels.blog %}
+    <form method="post" action="{{ url_for('blog_draft', path_key=key) }}" style="margin-top:9px;">
+      <input type="hidden" name="title" value="{{ pl.plan.channels.blog.title_hint or pl.topic }}">
+      <input type="hidden" name="post_type" value="신메뉴">
+      <input type="hidden" name="main_keyword" value="">
+      <input type="hidden" name="sub_keywords" value="">
+      <button class="btn sm wide" type="submit"
+              {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>✍️ 블로그 몫으로 초안 만들기</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
 
   {% if ranks %}
   <div class="sec">📊 키워드 순위</div>

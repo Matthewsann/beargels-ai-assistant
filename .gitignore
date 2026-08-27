@@ -81,3 +81,5 @@ projects/
 
 # 기획·성과 데이터 (기기 로컬 — 집 PC에만 쌓임)
 data/
+data/media_ledger.json
+data/archive_media/

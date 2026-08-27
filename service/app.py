@@ -1314,7 +1314,7 @@ def _blog_job_view(job) -> dict | None:
         "blog_recommend": "글감 추천", "blog_draft": "초안 작성",
         "blog_publish": "네이버 초안 넣기", "blog_rank": "순위 확인",
         "blog_media": "사진함 살펴보기", "blog_learn": "수정에서 배우기",
-        "blog_react": "반응 수집",
+        "blog_react": "반응 수집", "blog_plan": "채널 배분안",
     }.get(job.get("kind"), job.get("kind") or "")
     return {
         "kind": label,
@@ -1334,12 +1334,17 @@ def blog_home(path_key):
         recs = blog.list_recommendations()
         ranks = blog.latest_ranks()
         job = _blog_job_view(blog.latest_blog_job())
+        try:
+            plans = blog.latest_plans()
+        except Exception:  # noqa: BLE001 — 007 SQL 을 아직 안 돌렸으면 없는 테이블
+            plans = []
     except Exception as e:  # noqa: BLE001
         error = f"데이터를 불러오지 못했어요: {str(e)[:150]}"
         db.log_error("service", f"블로그 화면 로드 실패: {e}",
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
     return render_template("blog.html", key=path_key, posts=posts, recs=recs,
+                           plans=plans,
                            ranks=ranks, job=job, worker=_worker_view(), error=error)
 
 
@@ -1364,6 +1369,30 @@ def blog_recommend(path_key):
 def blog_media_scan(path_key):
     """사진함에 새로 올린 사진을 집 PC가 살펴보게 한다."""
     return _ask_worker(path_key, "blog_media")
+
+
+@app.route("/<path_key>/blog/plan", methods=["POST"])
+def blog_plan(path_key):
+    """주제 소재를 채널별로 배분하는 안을 집 PC에 요청."""
+    payload = {}
+    t = (request.form.get("topic") or "").strip()
+    if t:
+        payload["topic"] = t
+    return _ask_worker(path_key, "blog_plan", payload)
+
+
+@app.route("/<path_key>/blog/plan/<int:plan_id>/decide", methods=["POST"])
+def blog_plan_decide(path_key, plan_id):
+    """배분안 승인/반려 — 웹이 DB에 바로 기록(집 PC 불필요)."""
+    check(path_key)
+    status = request.form.get("status")
+    if status in ("approved", "rejected"):
+        try:
+            blog.decide_plan(plan_id, status)
+        except Exception as e:  # noqa: BLE001
+            db.log_error("service", f"배분안 결정 실패({plan_id}): {e}",
+                         kind=type(e).__name__, path=request.path)
+    return redirect(url_for("blog_home", path_key=path_key))
 
 
 @app.route("/<path_key>/blog/react", methods=["POST"])
