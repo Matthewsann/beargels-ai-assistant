@@ -42,6 +42,10 @@ DEFAULT_SHELF = (
     r"\베어글스_송도_타임스페이스\오픈후\브랜딩\베어글스_블로그_사진함"
 )
 INDEX_PATH = ROOT / "data" / "blog_media_index.json"
+# 사용완료로 옮긴 것들의 기록. 영상은 "원본의 어느 구간을 썼는지"가 여기 남아,
+# 같은 원본으로 다음 클립을 만들 때 그 구간을 피한다(다르게 편집하면 재사용 OK
+# — 사장님 확정 2026-08-28).
+USED_LOG = ROOT / "data" / "blog_used_log.json"
 # 네이버에 올릴 용도로 변환해 둔 사진(회전·크기·HEIC 처리 완료본).
 # 드라이브가 아니라 PC 안에 둔다 — 동기화 용량을 잡아먹지 않게.
 CACHE_DIR = ROOT / "data" / "blog_media_cache"
@@ -49,6 +53,9 @@ CACHE_DIR = ROOT / "data" / "blog_media_cache"
 PHOTO_EXT = {".jpg", ".jpeg", ".png", ".heic", ".webp"}
 VIDEO_EXT = {".mp4", ".mov", ".m4v"}
 SKIP_NAMES = {"desktop.ini"}
+# 한 번 글에 쓴 사진이 옮겨지는 칸. 여기 있는 사진은 새 글 후보에서 빠진다
+# (같은 사진을 여러 글에 돌려쓰면 안 된다 — 사장님 확정 2026-08-28).
+USED_DIR = "사용완료"
 
 # 네이버 블로그 본문 사진 권장 폭. 이보다 크면 네이버가 어차피 줄인다.
 UPLOAD_MAX_PX = int(os.getenv("BLOG_PHOTO_MAX_PX", "1600"))
@@ -83,6 +90,9 @@ def scan() -> list[dict]:
     for f in sorted(shelf.rglob("*")):
         if not f.is_file() or f.name in SKIP_NAMES or f.name.startswith("_"):
             continue
+        rel_parts = f.relative_to(shelf).parts
+        if rel_parts and rel_parts[0] == USED_DIR:
+            continue                     # 이미 쓴 사진 — 새 글 후보에서 제외
         ext = f.suffix.lower()
         kind = "photo" if ext in PHOTO_EXT else ("video" if ext in VIDEO_EXT else None)
         if kind is None:
@@ -100,7 +110,56 @@ def scan() -> list[dict]:
 
 
 def full_path(rel: str) -> pathlib.Path:
-    return shelf_dir() / rel
+    """사진함 안의 실제 경로. 사용완료로 옮겨진 파일도 찾아준다.
+
+    발행된 글의 본문은 옮기기 전 경로를 기억하고 있으므로, 그 글을 다시
+    네이버에 넣을 때(재발행)도 끊기지 않아야 한다.
+    """
+    p = shelf_dir() / rel
+    if p.exists():
+        return p
+    used = shelf_dir() / USED_DIR / rel
+    return used if used.exists() else p
+
+
+def mark_used(rels: list[str], label: str = "") -> int:
+    """글에 쓴 사진·영상을 사용완료/ 로 옮긴다(재사용 방지). 옮긴 개수 반환.
+
+    원래 칸 구조를 그대로 유지한다(사용완료/만드는과정/IMG_x.jpg) —
+    나중에 봐도 어떤 종류였는지 알 수 있고, full_path 폴백도 단순해진다.
+    """
+    import shutil
+    shelf = shelf_dir()
+    idx = load_index()
+    log = []
+    if USED_LOG.exists():
+        try:
+            log = json.loads(USED_LOG.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            log = []
+    moved = 0
+    for rel in rels:
+        src = shelf / rel
+        if not src.exists():
+            continue                     # 이미 옮겨졌거나 지워진 것
+        dest = shelf / USED_DIR / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.exists():                # 같은 이름이 이미 있으면 덮지 않는다
+            dest = dest.with_stem(dest.stem + "_2")
+        shutil.move(str(src), str(dest))
+        entry = idx.pop(rel, None) or {} # 새 글 후보 목록에서도 제거
+        log.append({"rel": rel, "kind": entry.get("kind"),
+                    "source": entry.get("source"),
+                    "start": entry.get("start"), "end": entry.get("end"),
+                    "label": label})
+        moved += 1
+    if moved:
+        save_index(idx)
+        USED_LOG.write_text(json.dumps(log, ensure_ascii=False, indent=1),
+                            encoding="utf-8")
+        logger.info("사용한 사진 %d개를 %s/ 로 옮김%s",
+                    moved, USED_DIR, f" ({label})" if label else "")
+    return moved
 
 
 # ---------------------------------------------------------------------------
@@ -482,3 +541,19 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def used_segments(source_name: str) -> list[tuple[float, float]]:
+    """이 원본 영상에서 이미 글에 쓴 구간들. 다음 편집은 여길 피해야 한다."""
+    if not USED_LOG.exists():
+        return []
+    try:
+        log = json.loads(USED_LOG.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for e in log:
+        if e.get("kind") == "video" and e.get("source") == source_name:
+            if e.get("start") is not None and e.get("end") is not None:
+                out.append((float(e["start"]), float(e["end"])))
+    return out

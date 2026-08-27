@@ -127,7 +127,7 @@ PLAN_PROMPT = """너는 베어글스(인천 송도 베이글 카페)의 네이�
 4. 장면이 갑자기 끊기지 않게 끝낼 것.
 
 지어내지 마라. 안 보이면 본 대로만 적어라.
-
+{avoid}
 JSON 하나만 출력(설명·코드블록 금지):
 {{"start": 0.0, "end": 10.0,
   "subject": "이 영상에 찍힌 것 한 줄",
@@ -150,15 +150,26 @@ def _extract_obj(text: str) -> dict:
     return json.loads(text)
 
 
-def plan_clip(path: str | pathlib.Path) -> dict:
-    """영상을 훑어보고 자를 구간을 정한다."""
+def plan_clip(path: str | pathlib.Path,
+              avoid: list[tuple[float, float]] | None = None) -> dict:
+    """영상을 훑어보고 자를 구간을 정한다.
+
+    avoid: 이미 다른 글에 쓴 구간들. 같은 원본이라도 **다른 구간**으로 편집하면
+    재사용해도 된다(사장님 확정 2026-08-28) — 그래서 겹치지만 않게 고른다.
+    """
     import llm
+    avoid_txt = ""
+    if avoid:
+        spans = ", ".join(f"{a:.0f}~{b:.0f}초" for a, b in avoid)
+        avoid_txt = (f"\n★ 이 원본의 {spans} 구간은 이미 다른 글에 썼다."
+                     f" **그 구간과 겹치지 않는 다른 순간**을 골라라."
+                     f" 피할 수 없으면 usable 을 false 로.\n")
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="blogvid_"))
     try:
         shots = sample_frames(path, tmp)
         timeline = "\n".join(f"- 장면 {i + 1}: {t:.1f}초" for i, (t, _) in enumerate(shots))
         raw = llm.see([p for _, p in shots],
-                      user=PLAN_PROMPT.format(timeline=timeline,
+                      user=PLAN_PROMPT.format(timeline=timeline, avoid=avoid_txt,
                                               minsec=int(MIN_SEC), maxsec=int(MAX_SEC)),
                       max_tokens=700, prefer="gemini")
         plan = _extract_obj(raw)
@@ -206,13 +217,14 @@ def make_clip(src: str | pathlib.Path, out: str | pathlib.Path,
 
 
 def build(src: str | pathlib.Path, out_dir: str | pathlib.Path,
-          name: str | None = None) -> dict | None:
+          name: str | None = None,
+          avoid: list[tuple[float, float]] | None = None) -> dict | None:
     """영상 1개 → 블로그용 클립 1개. 쓸 구간이 없으면 None.
 
     돌려주는 값: {path, start, end, subject, caption, keywords, why, size}
     """
     src = pathlib.Path(src)
-    plan = plan_clip(src)
+    plan = plan_clip(src, avoid=avoid)
     if not plan.get("usable", True):
         logger.info("쓸 만한 구간 없음: %s", src.name)
         return None

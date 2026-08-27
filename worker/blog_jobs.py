@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import pathlib
 import sys
 
@@ -34,7 +35,7 @@ from database import blog_store as store  # noqa: E402
 logger = logging.getLogger(__name__)
 
 BLOG_KINDS = ("blog_recommend", "blog_draft", "blog_publish", "blog_rank",
-              "blog_media")
+              "blog_media", "blog_learn")
 
 # 순위 추적 기본 키워드(창고 글의 대표 키워드에 더해 항상 확인)
 DEFAULT_KEYWORDS = ("송도 베이글", "송도 카페")
@@ -120,13 +121,18 @@ def build_blocks(body: str) -> tuple[list[dict], int]:
     blocks, n = [], 0
     for b in raw:
         if b.get("type") == "text":
-            blocks.append(b)
+            # 마크다운 표시는 네이버 에디터에서 글자 그대로 보인다 → 뗀다.
+            # 소제목(##)은 ◆ 로 바꿔 문단 구분이 눈에 띄게만 한다.
+            text = re.sub(r"^#{1,4}\s*(.+)$", r"◆ \1", b.get("text", ""),
+                          flags=re.MULTILINE)
+            text = re.sub(r"^-{3,}\s*$", "", text, flags=re.MULTILINE)
+            blocks.append({"type": "text", "text": text})
             continue
         try:
             path = blog_media.prepare(b["rel"]) if b["type"] == "photo" \
                 else blog_media.full_path(b["rel"])
             blocks.append({"type": b["type"], "path": str(path),
-                           "caption": b.get("caption", "")})
+                           "rel": b["rel"], "caption": b.get("caption", "")})
             n += 1
         except Exception as e:  # noqa: BLE001 — 사진 한 장 때문에 글 전체를 막지 않는다
             logger.warning("사진 준비 실패(%s): %s", b.get("rel"), str(e)[:100])
@@ -166,8 +172,97 @@ def do_publish(payload: dict) -> tuple[int, str]:
     if not ok:
         raise RuntimeError("네이버 에디터 입력 실패 (화면 구조가 바뀌었을 수 있어요)")
     store.update_post(post_id, prepared_at=store._now())
+
+    # ★ 쓴 사진은 사용완료/ 로 옮긴다 — 다음 글이 같은 사진을 또 쓰지 않게
+    #   (사장님 확정 2026-08-28). 옮겨도 이 글의 재발행은 full_path 폴백으로 된다.
+    #   에디터에 **실제로 들어간 것만** 옮긴다(예: 영상 삽입이 실패했으면
+    #   그 클립은 아직 안 쓴 것이므로 남긴다).
+    moved = 0
+    try:
+        import blog_media
+        rels = [b["rel"] for b in blocks
+                if b.get("rel") and b.get("inserted", True)]
+        moved = blog_media.mark_used(rels, label=f"글 #{post_id}")
+    except Exception as e:  # noqa: BLE001 — 이동 실패가 발행 성공을 덮으면 안 된다
+        logger.warning("사용완료 이동 실패: %s", str(e)[:120])
+
     with_photo = f" (사진 {n_media}장 포함)" if n_media else ""
-    return 1, f"네이버 임시저장 완료{with_photo} — {post.get('title', '')[:40]}"
+    used_note = f" · 사진 {moved}개 사용완료 처리" if moved else ""
+    return 1, f"네이버 임시저장 완료{with_photo}{used_note} — {post.get('title', '')[:40]}"
+
+
+LEARN_FILE = ROOT / "knowledge" / "블로그-배운점.md"
+
+LEARN_PROMPT = """너는 베어글스 송도점 블로그의 편집 코치다.
+AI 가 쓴 블로그 초안을 사장님이 직접 고쳤다. 아래에 '고치기 전'과 '고친 후'가 있다.
+사장님이 왜 고쳤는지를 읽어내서, 다음 글부터 지킬 교훈을 뽑아라.
+
+[고치기 전]
+{before}
+
+[고친 후]
+{after}
+
+규칙:
+- 사진 표시([📷 …], [🎬 …])의 이동/삭제는 교훈이 아니다. 무시하라.
+- 오탈자 수준의 사소한 것도 무시하라.
+- 가장 중요한 것은 **잘못된 정보**다: 메뉴 이름·재료·가격·영업 정보처럼
+  사실이 틀려서 고친 흔적이 보이면 type 을 "사실"로, 틀린 내용과 맞는 내용을 적어라.
+- 말투·표현·구성 취향이 보이면 type 을 "표현"으로.
+- 교훈이 없으면 빈 배열.
+
+JSON 배열만 출력(설명·코드블록 금지):
+[{{"type":"사실","wrong":"틀리게 쓴 것","right":"맞는 것","lesson":"다음부터 이렇게"}}]"""
+
+
+def do_learn(payload: dict) -> tuple[int, str]:
+    """사장님의 본문 수정에서 교훈을 뽑아 knowledge/블로그-배운점.md 에 쌓는다.
+
+    이 파일은 금고(knowledge/)라 다음 초안·글감 추천 프롬프트에 자동 포함된다
+    — 같은 실수를 두 번 하지 않게 하는 학습 루프의 저장소.
+    """
+    import json as _json
+    import re as _re
+    from datetime import date
+
+    import llm
+    before = (payload.get("before") or "").strip()
+    after = (payload.get("after") or "").strip()
+    if not before or not after:
+        return 0, "비교할 내용이 없습니다."
+
+    raw = llm.complete(user=LEARN_PROMPT.format(before=before[:6000],
+                                                after=after[:6000]),
+                       max_tokens=1200, prefer="gemini")
+    m = _re.search(r"\[.*\]", raw, _re.DOTALL)
+    lessons = _json.loads(m.group(0)) if m else []
+    lessons = [l for l in lessons if l.get("lesson") or l.get("right")]
+    if not lessons:
+        return 0, "특별히 배울 수정이 아니었어요."
+
+    if not LEARN_FILE.exists():
+        LEARN_FILE.write_text(
+            "# 블로그 배운점 — 사장님 수정에서 자동으로 배운 것\n\n"
+            "> 사장님이 비서 페이지에서 본문을 고치면, 그 차이에서 뽑은 교훈이\n"
+            "> 여기 자동으로 쌓입니다. 이 파일은 다음 글을 쓸 때 항상 함께 읽힙니다.\n"
+            "> ❗사실 교정이 반복되면 금고 본체(매장정보.md 등)로 옮겨 확정하세요.\n\n",
+            encoding="utf-8")
+
+    today = date.today().isoformat()
+    post_id = payload.get("post_id")
+    lines = []
+    for l in lessons:
+        if l.get("type") == "사실":
+            lines.append(f"- ❗사실({today}, 글#{post_id}): "
+                         f"'{l.get('wrong', '')}' 는 틀림 → **{l.get('right', '')}**. "
+                         f"{l.get('lesson', '')}")
+        else:
+            lines.append(f"- 표현({today}, 글#{post_id}): {l.get('lesson', '')}")
+    with LEARN_FILE.open("a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    facts = sum(1 for l in lessons if l.get("type") == "사실")
+    return len(lessons), (f"배운 것 {len(lessons)}개 기록"
+                          + (f" (잘못된 정보 교정 {facts}건 ❗)" if facts else ""))
 
 
 def do_rank(payload: dict) -> tuple[int, str]:
@@ -208,6 +303,7 @@ _HANDLERS = {
     "blog_publish": do_publish,
     "blog_rank": do_rank,
     "blog_media": lambda p: do_media(),
+    "blog_learn": do_learn,
 }
 
 

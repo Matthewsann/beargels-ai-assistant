@@ -395,6 +395,36 @@ def ack_alert(path_key, alert_id):
 
 # 플랫폼 리뷰 관리 페이지 — '실제 답글 보러가기' 바로가기용(리뷰별 딥링크는
 # 두 플랫폼 다 제공하지 않아 리뷰 목록 페이지로 보낸다).
+# 일꾼이 예약분을 올리는 시각(worker.agent.SCHEDULED_POST_TIMES 와 같은 값을
+# 본다). 화면에 '언제 올라가는지'를 그대로 적어 주기 위한 것이라, 일꾼과
+# 화면이 다른 기계에서 돌아도 .env 만 맞춰 두면 된다.
+SCHEDULED_POST_AT = (os.getenv("WORKER_SCHEDULED_POST_TIMES", "09:00")
+                     .split(",")[0].strip() or "09:00")
+SCHEDULED_POST_LABEL = f"아침 {SCHEDULED_POST_AT}"
+
+
+def _is_night() -> bool:
+    """지금이 '답글이 나가면 곤란한' 시간대인가 — 22시~아침 8시.
+
+    이 시간대에는 [🌙 아침에 등록]을 기본 버튼으로 강조한다. 손님 폰에
+    새벽 푸시가 울리는 걸 실수로 보내지 않게 하는 장치다.
+    """
+    h = datetime.now().hour
+    return h >= 22 or h < 8
+
+
+def scheduled_post_when() -> str:
+    """지금 예약하면 언제 올라가는지 — '오늘 아침 9시' / '내일 아침 9시'."""
+    try:
+        hh, mm = (int(x) for x in SCHEDULED_POST_AT.split(":"))
+    except ValueError:
+        hh, mm = 9, 0
+    now = datetime.now()
+    today = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+    day = "오늘" if now < today else "내일"
+    return f"{day} 아침 {hh}시" + (f" {mm}분" if mm else "")
+
+
 PLATFORM_REVIEW_URL = {
     "baemin": "https://self.baemin.com/shops/reviews",
     "coupang": "https://store.coupangeats.com/merchant/management/reviews",
@@ -677,7 +707,12 @@ def todo(path_key):
             approved=lambda: db.count_by_status("approved"),
             job=_latest_job_cached, worker=_worker_view, alerts=_owner_alerts)
         found, total = g["rows"] or ([], 0)
-        reviews = [_review_view(r) for r in found]
+        reviews = []
+        for row in found:
+            v = _review_view(row)
+            # '아침에 등록'으로 재워 둔 건 — 카드는 그대로 두고 배지만 바꾼다.
+            v["scheduled"] = (row.get("reply_status") == "scheduled")
+            reviews.append(v)
         trusted = _trusted_kinds()
         for r in reviews:
             r["trusted"] = (not r["escalate"]) and r.get("kind") in trusted
@@ -697,6 +732,9 @@ def todo(path_key):
         kind=kind, days=days, total=len(reviews),
         alerts=g.get("alerts") or [],
         active_tab="todo", tab_counts=_tab_counts(),
+        # '아침에 등록' 버튼에 쓸 문구 + 밤에는 그 버튼을 기본으로 강조한다
+        # (사장님 확정 2026-08-28: 22시~아침 8시는 예약이 기본).
+        sched_when=scheduled_post_when(), night=_is_night(),
     )
 
 
@@ -955,6 +993,39 @@ def post_reply(path_key, review_id):
         return jsonify({"ok": True, "job": (job or {}).get("id")})
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"답글 등록 요청 실패(review {review_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:150]}), 200
+
+
+@app.route("/<path_key>/review/<int:review_id>/schedule", methods=["POST"])
+def schedule_reply(path_key, review_id):
+    """'아침에 등록' — 지금 올리지 않고 다음 아침 슬롯까지 재워 둔다.
+
+    답글을 달면 손님 폰에 푸시가 간다. 새벽 3시에 울리는 푸시는 반갑지
+    않고, 주문으로도 이어지지 않는다. 베어글스 주문은 오전 10~12시에
+    몰리므로(실측), 9시에 일꾼이 한 건씩 올려 그 직전에 닿게 한다.
+    """
+    check(path_key)
+    try:
+        db.mark_scheduled(review_id)
+        return jsonify({"ok": True, "at": SCHEDULED_POST_LABEL})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"아침 등록 예약 실패(review {review_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:150]}), 200
+
+
+@app.route("/<path_key>/review/<int:review_id>/unschedule", methods=["POST"])
+def unschedule_reply(path_key, review_id):
+    """'예약 취소' — 다시 평범한 할 일(초안)로 돌린다."""
+    check(path_key)
+    try:
+        db.mark_drafted(review_id)
+        return jsonify({"ok": True})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"예약 취소 실패(review {review_id}): {e}",
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
         return jsonify({"ok": False, "error": str(e)[:150]}), 200
@@ -1229,7 +1300,7 @@ def _blog_job_view(job) -> dict | None:
     label = {
         "blog_recommend": "글감 추천", "blog_draft": "초안 작성",
         "blog_publish": "네이버 초안 넣기", "blog_rank": "순위 확인",
-        "blog_media": "사진함 살펴보기",
+        "blog_media": "사진함 살펴보기", "blog_learn": "수정에서 배우기",
     }.get(job.get("kind"), job.get("kind") or "")
     return {
         "kind": label,
@@ -1319,9 +1390,25 @@ def blog_post(path_key, post_id):
 
 @app.route("/<path_key>/blog/post/<int:post_id>/save", methods=["POST"])
 def blog_post_save(path_key, post_id):
+    """본문 저장 + 학습: 사장님이 뭘 고쳤는지가 다음 글의 교본이 된다.
+
+    고치기 전/후를 blog_learn 잡으로 집 PC에 보내면, AI 가 차이를 읽어
+    '잘못된 정보(사실 교정)'와 '말투 교정'을 knowledge/블로그-배운점.md 에
+    쌓는다. 그 파일은 다음 초안 프롬프트에 자동 포함된다(금고 자동 로드).
+    """
     check(path_key)
     try:
-        blog.update_post(post_id, body=request.form.get("body", ""))
+        new_body = request.form.get("body", "")
+        old_body = ""
+        try:
+            old_body = (blog.get_post(post_id) or {}).get("body") or ""
+        except Exception:  # noqa: BLE001 — 학습은 덤, 저장이 우선
+            pass
+        blog.update_post(post_id, body=new_body)
+        if old_body and old_body.strip() != new_body.strip():
+            blog.request_blog_job("blog_learn", {
+                "post_id": post_id, "before": old_body, "after": new_body,
+            }, by="web")
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"블로그 글 저장 실패(post {post_id}): {e}",
                      kind=type(e).__name__, path=request.path,

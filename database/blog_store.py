@@ -25,7 +25,7 @@ JOBS = "jobs"
 
 # 웹이 일꾼에게 시킬 수 있는 일
 JOB_KINDS = ("blog_recommend", "blog_draft", "blog_publish", "blog_rank",
-             "blog_media")
+             "blog_media", "blog_learn")
 
 
 def _now():
@@ -171,10 +171,12 @@ def request_blog_job(kind, payload=None, by=None):
     if kind not in JOB_KINDS:
         raise ValueError(f"알 수 없는 블로그 작업: {kind}")
     c = get_client()
-    same = (c.table(JOBS).select("*").eq("kind", kind)
-            .in_("status", ["pending", "running"]).limit(1).execute())
-    if same.data:
-        return same.data[0]
+    # blog_learn 은 수정 1건 = 잡 1건이어야 한다(각각 다른 내용) → 중복 억제 제외
+    if kind != "blog_learn":
+        same = (c.table(JOBS).select("*").eq("kind", kind)
+                .in_("status", ["pending", "running"]).limit(1).execute())
+        if same.data:
+            return same.data[0]
     res = c.table(JOBS).insert({
         "kind": kind, "status": "pending", "requested_by": by, "payload": payload or {},
     }).execute()

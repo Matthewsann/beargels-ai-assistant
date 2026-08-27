@@ -57,18 +57,36 @@ def main() -> None:
     shelf_videos = blog_media.shelf_dir() / "영상"
     shelf_videos.mkdir(parents=True, exist_ok=True)
 
+    used_dir = blog_media.shelf_dir() / blog_media.USED_DIR / "영상"
+
+    def next_name(stem: str) -> str | None:
+        """사진함에 이미 클립이 있으면 None(건너뜀). 사용완료에만 있으면
+        다른 구간으로 새 판(_v2, _v3 …)을 만든다 — 원본 재사용 규칙."""
+        if (shelf_videos / f"{stem}.mp4").exists():
+            return None
+        if not (used_dir / f"{stem}.mp4").exists():
+            return stem
+        n = 2
+        while (shelf_videos / f"{stem}_v{n}.mp4").exists() or \
+              (used_dir / f"{stem}_v{n}.mp4").exists():
+            n += 1
+        return f"{stem}_v{n}"
+
     vids = sources(src_dir)
-    todo = [v for v in vids if not (shelf_videos / f"{v.stem}.mp4").exists()]
+    todo = [(v, next_name(v.stem)) for v in vids]
+    todo = [(v, name) for v, name in todo if name]
     if limit:
         todo = todo[:limit]
     print(f"원본 영상 {len(vids)}개 · 새로 만들 것 {len(todo)}개\n")
 
     idx = blog_media.load_index()
     made = 0
-    for i, v in enumerate(todo, 1):
-        print(f"[{i}/{len(todo)}] {v.name}")
+    for i, (v, name) in enumerate(todo, 1):
+        avoid = blog_media.used_segments(v.name)
+        note = f" (이미 쓴 {len(avoid)}구간 피해서)" if avoid else ""
+        print(f"[{i}/{len(todo)}] {v.name}{note}")
         try:
-            info = blog_video.build(v, shelf_videos)
+            info = blog_video.build(v, shelf_videos, name=name, avoid=avoid)
         except Exception as e:  # noqa: BLE001 — 하나 실패로 전체를 멈추지 않는다
             print(f"    ✗ 실패: {str(e)[:120]}")
             continue
@@ -91,6 +109,8 @@ def main() -> None:
             "keywords": info.get("keywords") or [],
             "quality": "good", "hero": False,
             "source": info.get("source", v.name),
+            # 어느 구간을 잘랐는지 — 사용완료 뒤 '다른 편집' 판별의 근거
+            "start": info.get("start"), "end": info.get("end"),
         }
         blog_media.save_index(idx)
         made += 1

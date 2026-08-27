@@ -71,6 +71,21 @@ DEFAULT_SELECTORS = {
         "button[title='사진']",
         "button:has-text('사진')",
     ],
+    # 본문 툴바의 '동영상' 버튼 — 사진 업로더는 mp4 를 '파일 형식 오류'로 거부한다
+    # (2026-08-27 실측). 영상은 반드시 이 버튼의 별도 흐름으로 넣어야 한다.
+    "video_button": [
+        "button.se-video-toolbar-button",
+        "button[data-name='video']",
+        ".se-toolbar-item-video button",
+        "button[title='동영상']",
+        "button:has-text('동영상')",
+    ],
+    # 업로드 오류·안내 팝업의 확인/완료 버튼 — 안 닫으면 dim 막이 저장 클릭을 가로챈다
+    "popup_ok": [
+        ".se-popup button:has-text('확인')",
+        ".se-popup-button-confirm",
+        "button:has-text('확인')",
+    ],
     # 사진을 넣은 뒤 뜨는 '사진 설명' 칸(여기에 글이 잘못 들어가는 걸 막는 데 씀)
     "image_caption": [
         ".se-caption .se-text-paragraph",
@@ -179,6 +194,162 @@ def type_body(frame: Frame, body_loc, text: str) -> None:
             page.keyboard.press("Enter")
 
 
+def clear_popups(page: Page, frame: Frame, selectors: dict) -> bool:
+    """떠 있는 오류/안내 팝업을 닫는다('파일 전송 오류' 등).
+
+    팝업의 반투명 막(se-popup-dim)이 남아 있으면 이후 모든 클릭이 막힌다
+    — 저장 실패의 실제 원인이었다(2026-08-27 실측). 닫은 게 있으면 True.
+    """
+    closed = False
+    for _ in range(3):                       # 팝업이 겹쳐 뜨는 경우까지
+        loc = first_working(frame, selectors["popup_ok"])
+        if loc is None:
+            break
+        try:
+            loc.click(timeout=2000)
+            page.wait_for_timeout(400)
+            closed = True
+        except Exception:  # noqa: BLE001
+            break
+    return closed
+
+
+def _refocus_body(page: Page, frame: Frame) -> None:
+    """커서를 본문 맨 끝 문단으로 되돌린다(사진 설명 칸에 글이 새는 것 방지)."""
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    try:
+        last = frame.locator(".se-component.se-text .se-text-paragraph").last
+        if last.count() > 0:
+            last.click(timeout=3000)
+            page.wait_for_timeout(300)       # 포커스가 자리잡기 전에 치면 글자가 샌다
+            page.keyboard.press("End")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _close_layer(page: Page, frame: Frame) -> None:
+    """동영상 첨부 같은 전면 레이어를 닫는다(X 버튼 → Escape 순).
+
+    이 레이어가 남아 있으면 투명 dim 이 이후 모든 클릭을 가로챈다
+    — 사진 11·13번과 저장이 전부 막혔던 실제 원인(2026-08-28 실측).
+    """
+    for css in ("button.se-popup-close-button", ".se-popup-close-button",
+                "button[data-name='close']", ".se-popup button:has-text('닫기')",
+                "button[title='닫기']"):
+        try:
+            loc = frame.locator(css).first
+            if loc.count() > 0:
+                loc.click(timeout=2000)
+                page.wait_for_timeout(500)
+                return
+        except Exception:  # noqa: BLE001
+            continue
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(500)
+
+
+def _dim_gone(frame: Frame) -> bool:
+    try:
+        return frame.locator(".se-popup-dim").count() == 0
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def insert_video(page: Page, frame: Frame, selectors: dict, path: str,
+                 timeout_ms: int = 180000) -> bool:
+    """'동영상' 버튼 흐름으로 영상 하나를 넣는다. 실패하면 False(글은 계속).
+
+    실측한 실제 흐름(2026-08-28):
+      툴바 [동영상] → '일반 동영상/360VR' 첨부 레이어 → 레이어 안 [동영상 추가]
+      버튼이 파일선택창을 연다 → 업로드 후 (제목 입력) → [완료] → 본문 삽입.
+    사진 업로더는 mp4 를 '파일 형식 오류'로 거부하므로 반드시 이 경로여야 한다.
+    어떤 단계에서 실패하든 레이어를 확실히 닫고 나온다.
+    """
+    btn = first_working(frame, selectors["video_button"])
+    if btn is None:
+        print("    · 동영상 버튼을 찾지 못해 영상은 건너뜁니다.")
+        return False
+    try:
+        btn.click(timeout=5000)
+    except Exception as e:  # noqa: BLE001
+        print(f"    · 동영상 버튼 클릭 실패({str(e)[:60]}) — 건너뜁니다.")
+        return False
+
+    # 첨부 레이어의 '동영상 추가' 버튼을 기다린다
+    add = None
+    for _ in range(16):                       # 최대 8초
+        loc = frame.locator("button:has-text('동영상 추가')").first
+        try:
+            if loc.count() > 0:
+                add = loc
+                break
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(500)
+    if add is None:
+        print("    · 동영상 첨부 레이어가 안 열렸습니다 — 건너뜁니다.")
+        _close_layer(page, frame)
+        _refocus_body(page, frame)
+        return False
+
+    try:
+        with page.expect_file_chooser(timeout=10000) as fc:
+            add.click(timeout=5000)
+        fc.value.set_files(path)
+    except Exception as e:  # noqa: BLE001
+        print(f"    · 동영상 파일 선택 실패({str(e)[:60]}) — 건너뜁니다.")
+        _close_layer(page, frame)
+        _refocus_body(page, frame)
+        return False
+
+    # 업로드 완료 대기 → 제목 채우고 완료. 오류 팝업이면 닫고 포기.
+    inserted = False
+    waited = 0
+    while waited < timeout_ms:
+        page.wait_for_timeout(1000)
+        waited += 1000
+        try:
+            if frame.locator(".se-popup:has-text('오류')").count() > 0:
+                print("    · 동영상 업로드 오류 — 닫고 건너뜁니다.")
+                clear_popups(page, frame, selectors)
+                break
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            done_btn = frame.locator(
+                "button:has-text('완료'):visible").first
+            title_box = frame.locator(
+                "input[placeholder*='제목'], .se-popup input[type='text']").first
+            if title_box.count() > 0:
+                try:
+                    title_box.click(timeout=1500)
+                    title_box.fill("베어글스 송도")
+                    page.wait_for_timeout(300)
+                except Exception:  # noqa: BLE001
+                    pass
+            if done_btn.count() > 0:
+                done_btn.click(timeout=3000)
+                page.wait_for_timeout(2000)
+                inserted = True
+                break
+            if _dim_gone(frame) and waited > 5000:
+                inserted = True               # 레이어가 스스로 닫힘 = 삽입 완료형
+                break
+        except Exception:  # noqa: BLE001
+            pass
+
+    # 무슨 일이 있었든 레이어가 남아 있으면 닫는다
+    if not _dim_gone(frame):
+        _close_layer(page, frame)
+    if not _dim_gone(frame):                  # 그래도 남았으면 한 번 더
+        _close_layer(page, frame)
+    _refocus_body(page, frame)
+    if inserted:
+        print("    · 동영상 삽입 완료")
+    return inserted
+
+
 def insert_media(page: Page, frame: Frame, selectors: dict, path: str,
                  timeout_ms: int = 60000) -> bool:
     """본문 커서 위치에 사진(또는 영상) 파일 하나를 넣는다.
@@ -187,6 +358,9 @@ def insert_media(page: Page, frame: Frame, selectors: dict, path: str,
     Playwright 가 그 창을 가로채 파일 경로를 넘겨주면 사람 손 없이 올라간다.
     버튼을 못 찾으면 에디터 안의 숨은 file 입력칸에 직접 넣어 본다(보조 경로).
     """
+    if not _dim_gone(frame):                  # 앞 단계가 남긴 레이어부터 청소
+        clear_popups(page, frame, selectors)
+        _close_layer(page, frame)
     btn = first_working(frame, selectors["image_button"])
     if btn is not None:
         try:
@@ -221,17 +395,12 @@ def insert_media(page: Page, frame: Frame, selectors: dict, path: str,
             pass
     page.wait_for_timeout(800)
 
+    # 업로드 오류 팝업이 남아 있으면 닫는다(안 닫으면 이후 클릭 전부 막힘)
+    if clear_popups(page, frame, selectors):
+        print("    · 업로드 안내/오류 팝업을 닫았습니다.")
     # 사진을 넣으면 커서가 '사진 설명' 칸에 가 있을 수 있다. 그대로 두면
     # 다음 문단이 사진 설명으로 들어가 버린다 → 본문 맨 끝으로 커서를 되돌린다.
-    page.keyboard.press("Escape")
-    page.wait_for_timeout(200)
-    try:
-        last = frame.locator(".se-component.se-text .se-text-paragraph").last
-        if last.count() > 0:
-            last.click(timeout=3000)
-            page.keyboard.press("End")
-    except Exception:  # noqa: BLE001
-        pass
+    _refocus_body(page, frame)
     return True
 
 
@@ -266,8 +435,14 @@ def type_blocks(page: Page, frame: Frame, selectors: dict, body_loc,
             if not first_text:
                 page.keyboard.press("Enter")
             name = pathlib.Path(path).name
-            print(f"    · 사진 넣는 중 ({i + 1}/{len(blocks)}) {name}")
-            if insert_media(page, frame, selectors, path):
+            if b.get("type") == "video":
+                print(f"    · 동영상 넣는 중 ({i + 1}/{len(blocks)}) {name}")
+                ok = insert_video(page, frame, selectors, path)
+            else:
+                print(f"    · 사진 넣는 중 ({i + 1}/{len(blocks)}) {name}")
+                ok = insert_media(page, frame, selectors, path)
+            b["inserted"] = ok           # 호출자(worker)가 사용완료 판단에 쓴다
+            if ok:
                 first_text = False
 
 
@@ -336,7 +511,10 @@ def draft_one(page: Page, cfg: dict, post: dict) -> bool:
     if frame is None:
         return False
 
-    # 임시저장
+    # 임시저장 — 떠 있는 팝업/레이어부터 닫는다(dim 막이 클릭을 가로챈다)
+    clear_popups(page, frame, selectors)
+    if not _dim_gone(frame):
+        _close_layer(page, frame)
     save_loc = first_working(frame, selectors["save"])
     if not save_loc:
         save_debug(page, "no_save")

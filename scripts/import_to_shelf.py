@@ -99,7 +99,10 @@ def main() -> None:
             if str(f).lower() in taken:
                 continue
             dest = SHELF / slot / f.name
-            if dest.exists():
+            used = SHELF / "사용완료" / slot / f.name
+            if dest.exists() or used.exists():
+                # 이미 사진함에 있거나, 한 번 글에 써서 사용완료로 옮겨진 사진
+                # → 다시 가져오면 재사용 금지 규칙이 깨진다
                 skipped += 1
                 taken.add(str(f).lower())
                 continue
