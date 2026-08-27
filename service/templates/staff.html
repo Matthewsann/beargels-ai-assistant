@@ -68,6 +68,10 @@
   /* 보조 버튼은 작게 — 글 쓰는 공간을 넓히기 위함(사장님 요청 2026-08-16) */
   .acts.mini { gap:6px; flex-wrap:wrap; }
   .acts.mini .btn { flex:0 0 auto; padding:7px 11px; font-size:12.5px; }
+  /* '아침에 등록'으로 재워 둔 카드의 배지 */
+  .sched { display:inline-flex; align-items:center; font-size:12.5px;
+           font-weight:600; color:var(--accent); border:1px solid var(--accent);
+           background:transparent; border-radius:9px; padding:7px 11px; }
   .acts.mini .btn.go { background:var(--accent); border-color:var(--accent);
                        color:#fff; font-weight:600; }
   textarea { min-height:150px; }
@@ -80,6 +84,7 @@
   .card[data-state="posting"] .lamp i { background:#c98a12;
           animation:blink 1s ease-in-out infinite; }
   .card[data-state="done"] .lamp i { background:#3b6d11; }
+  .card[data-state="scheduled"] .lamp i { background:var(--accent); }
   .card[data-state="failed"] .lamp i { background:#a3271f; }
   .card[data-state="done"] .lamp { background:var(--ok-bg); color:var(--ok);
           border-color:var(--ok-bg); }
@@ -92,6 +97,8 @@
   .result { font-size:12.5px; margin-top:8px; padding:9px 11px; border-radius:9px; display:none; }
   .result.ok { display:block; background:var(--ok-bg); color:var(--ok); }
   .result.bad { display:block; background:var(--bad-bg); color:var(--bad); }
+  .result.info { display:block; background:transparent; color:var(--ink);
+                 border:1px solid var(--accent); }
   .result a { color:inherit; font-weight:600; }
   /* 등록 완료 칸 안에 '실제로 나간 답글' 본문 */
   /* 경계선은 회색 반투명 — 밝은 화면·나이트모드 양쪽에서 다 보인다 */
@@ -242,7 +249,8 @@
       </span>
     </div>
     {% for r in reviews %}
-    <div class="card {{ 'esc' if r.escalate else '' }}" id="r{{ r.id }}">
+    <div class="card {{ 'esc' if r.escalate else '' }}" id="r{{ r.id }}"
+         {% if r.scheduled %}data-state="scheduled"{% endif %}>
       {# 배민·쿠팡 리뷰 관리 화면과 같은 배치: 왼쪽 작성자·별점·작성일,
          오른쪽 주문 정보(메뉴/주문번호/수령방식). #}
       <div class="rvhead">
@@ -250,6 +258,7 @@
           <div class="whoname">
             {% if not r.escalate and r.has_draft %}
             <input type="checkbox" class="pick" id="s{{ r.id }}" value="{{ r.id }}"
+                   {% if r.scheduled %}disabled title="아침 등록으로 예약된 답글이에요"{% endif %}
                    onchange="syncBar()" aria-label="일괄 등록에 포함">
             {% endif %}
             {{ r.author }}
@@ -268,7 +277,7 @@
       <div class="badges">
         {# 상태 신호등 — 지금 이 답글이 어느 단계인지 한눈에(등록 전/중/완료). #}
         {% if not r.escalate and r.has_draft %}
-        <span class="lamp" id="l{{ r.id }}"><i></i><b>등록 전</b></span>
+        <span class="lamp" id="l{{ r.id }}"><i></i><b>{{ "아침 등록 예약" if r.scheduled else "등록 전" }}</b></span>
         {% endif %}
         {% if r.escalate %}<span class="tag bad">🚨 직접 대응</span>{% endif %}
         {% if r.trusted %}<span class="tag" style="background:var(--ok-bg); color:var(--ok);">✅ 그대로 등록해도 좋아요</span>{% endif %}
@@ -315,10 +324,24 @@
                   data-url-post="{{ url_for('post_reply', path_key=key, review_id=r.id) }}"
                   data-url-state="{{ url_for('draft_state', path_key=key, review_id=r.id) }}"
                   onblur="saveDraft({{ r.id }})">{{ r.draft }}</textarea>
-        {# 작은 보조 버튼들 — 주 동작(등록)은 아래 일괄 바 또는 이 줄의 첫 버튼. #}
+        {# 등록은 두 갈래다(사장님 요청 2026-08-28):
+             ✅ 지금 등록  — 그 자리에서 바로 올린다
+             🌙 아침에 등록 — 재워 뒀다가 아침 9시에 일꾼이 순서대로 올린다
+           답글을 달면 손님 폰에 푸시가 간다. 새벽 푸시는 반갑지도 않고
+           주문으로도 안 이어진다 — 이 가게 주문은 오전 10~12시에 몰린다
+           (실측 1,039건). 그래서 밤(22~08시)에는 예약이 기본 버튼이다. #}
         <div class="acts mini">
-          <button class="btn go" type="button" id="ok{{ r.id }}"
-                  onclick="postOne({{ r.id }})">✅ 등록</button>
+          {% if r.scheduled %}
+          <span class="sched" id="sc{{ r.id }}">🌙 {{ sched_when }}에 등록 예정</span>
+          <button class="btn" type="button" id="un{{ r.id }}"
+                  onclick="unschedule({{ r.id }}, '{{ url_for('unschedule_reply', path_key=key, review_id=r.id) }}')">예약 취소</button>
+          {% else %}
+          <button class="btn {{ '' if night else 'go' }}" type="button" id="ok{{ r.id }}"
+                  onclick="postOne({{ r.id }})">✅ 지금 등록</button>
+          <button class="btn {{ 'go' if night else '' }}" type="button" id="sb{{ r.id }}"
+                  title="지금 올리지 않고 {{ sched_when }}에 자동으로 올려요"
+                  onclick="scheduleOne({{ r.id }}, '{{ url_for('schedule_reply', path_key=key, review_id=r.id) }}')">🌙 아침에 등록</button>
+          {% endif %}
           <button class="btn" type="button" id="g{{ r.id }}"
                   title="지금 초안을 버리고 AI가 새로 씁니다"
                   onclick="regenIt({{ r.id }}, '{{ url_for('regen', path_key=key, review_id=r.id) }}', '{{ url_for('draft_state', path_key=key, review_id=r.id) }}')">🔄 AI</button>
@@ -492,7 +515,7 @@ function copyIt(id) {
 // 등록 전 → (대기) → 등록 중 → 완료 / 실패. 카드는 **사라지지 않는다** —
 // 사라지면 "정말 됐나?" 확인할 길이 없고 하던 자리를 잃는다(사장님 지적).
 const LAMP = {ready:'등록 전', queued:'등록 대기', posting:'등록 중…',
-              done:'등록 완료', failed:'등록 실패'};
+              scheduled:'아침 등록 예약', done:'등록 완료', failed:'등록 실패'};
 function escHtml(s) {
   const d = document.createElement('div');
   d.textContent = s == null ? '' : String(s);
@@ -516,7 +539,8 @@ function setState(id, state, msg, okLink, postedText) {
   const box = document.getElementById('rs' + id);
   if (box) {
     box.className = 'result' + (state === 'done' ? ' ok'
-                              : state === 'failed' ? ' bad' : '');
+                              : state === 'failed' ? ' bad'
+                              : state === 'scheduled' ? ' info' : '');
     box.innerHTML = msg ? (msg + (okLink ? ' <a href="' + okLink +
                     '" target="_blank" rel="noopener">실제 답글 보기 →</a>' : '')
                     + postedBlock(state === 'done' ? postedText : '')) : '';
@@ -524,7 +548,8 @@ function setState(id, state, msg, okLink, postedText) {
   const btn = document.getElementById('ok' + id);
   if (btn) btn.disabled = (state === 'posting' || state === 'done');
   const pick = document.getElementById('s' + id);
-  if (pick && (state === 'done' || state === 'posting')) {
+  if (pick && (state === 'done' || state === 'posting'
+               || state === 'scheduled')) {
     pick.checked = false; pick.disabled = true;
   }
   applyHideDone();
@@ -576,6 +601,59 @@ function postOne(id) {
   if (!confirm('이 내용 그대로 지금 등록할까요? (고객에게 바로 공개됩니다)\n\n'
                + t.value.slice(0, 70) + '…')) return;
   runPost(id);
+}
+
+// ── 아침에 등록(예약) ───────────────────────────────────────────
+// 지금 올리지 않고 재워 둔다. 아침 9시에 집 PC가 순서대로 올린다.
+// 카드는 사라지지 않는다 — 예약한 걸 눈으로 확인하고 취소도 할 수 있어야 한다.
+const SCHED_WHEN = {{ sched_when|tojson }};
+
+function scheduleOne(id, url) {
+  const btn = document.getElementById('sb' + id);
+  if (btn) { btn.disabled = true; btn.textContent = '예약 중…'; }
+  // 칸에서 나가지 않고 눌러도 고친 내용이 저장되게 먼저 저장한다.
+  saveDraft(id)
+    .then(() => fetch(url, {method: 'POST'}))
+    .then(r => r.json())
+    .then(res => {
+      if (!res.ok) throw new Error(res.error || '');
+      const acts = btn.parentNode;
+      const badge = document.createElement('span');
+      badge.className = 'sched';
+      badge.id = 'sc' + id;
+      badge.textContent = '🌙 ' + SCHED_WHEN + '에 등록 예정';
+      acts.insertBefore(badge, btn);
+      // 취소 버튼도 바로 붙인다 — 없으면 새로고침해야 물릴 수 있어,
+      // 잘못 누른 걸 되돌릴 길이 그 자리에 없다.
+      const undo = document.createElement('button');
+      undo.className = 'btn';
+      undo.type = 'button';
+      undo.id = 'un' + id;
+      undo.textContent = '예약 취소';
+      undo.onclick = () => unschedule(id, url.replace(/\/schedule$/, '/unschedule'));
+      acts.insertBefore(undo, btn);
+      btn.remove();
+      const now = document.getElementById('ok' + id);
+      if (now) now.remove();                 // '지금 등록'도 함께 치운다
+      setState(id, 'scheduled', '🌙 ' + SCHED_WHEN + '에 자동으로 등록돼요. '
+               + '지금 바로 올리려면 [예약 취소] 후 [지금 등록]을 눌러주세요.');
+    })
+    .catch(e => {
+      if (btn) { btn.disabled = false; btn.textContent = '🌙 아침에 등록'; }
+      setState(id, 'failed', '예약하지 못했어요: ' + (e.message || '통신 실패'));
+    });
+}
+
+function unschedule(id, url) {
+  const btn = document.getElementById('un' + id);
+  if (btn) { btn.disabled = true; btn.textContent = '취소 중…'; }
+  fetch(url, {method: 'POST'}).then(r => r.json()).then(res => {
+    if (!res.ok) throw new Error(res.error || '');
+    location.reload();          // 버튼 두 개를 되살리는 건 새로고침이 확실하다
+  }).catch(e => {
+    if (btn) { btn.disabled = false; btn.textContent = '예약 취소'; }
+    setState(id, 'failed', '예약을 취소하지 못했어요: ' + (e.message || '통신 실패'));
+  });
 }
 
 // ── 일괄 등록 ───────────────────────────────────────────────────

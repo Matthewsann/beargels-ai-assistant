@@ -807,6 +807,60 @@ def maybe_auto_post() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 아침 일괄 등록 — 직원이 '아침에 등록'으로 재워 둔 답글 (2026-08-28)
+# ---------------------------------------------------------------------------
+# 왜 아침 9시인가: 답글을 달면 손님 폰에 푸시가 간다. 그 푸시는 **주문을
+# 정하기 직전**에 닿아야 힘이 있다. 베어글스 주문은 오전 10~12시에 몰린다
+# (실측 1,039건: 11시 160 · 10시 117 · 12시 115 · 8시 100 · 9시 93).
+# 그래서 9시부터 순차로 올려 9~10시 사이에 푸시가 닿게 한다.
+# 새벽에 쓴 답글이 새벽에 나가는 것도 이걸로 막힌다(사장님 요청 2026-08-28).
+SCHEDULED_POST_TIMES = os.getenv("WORKER_SCHEDULED_POST_TIMES", "09:00")
+_last_scheduled_slot = None
+
+
+def release_scheduled() -> int:
+    """'아침에 등록'으로 재워 둔 답글을 등록 줄에 세운다. 세운 건수 반환.
+
+    직접 게시하지 않고 **등록 잡(post)을 넣는다** — 버튼으로 등록할 때와
+    똑같은 길을 타야 실패 처리·기한 만료 정리·중복 방지가 모두 그대로
+    적용된다. 잡은 한 건씩 순서대로 처리돼 자연히 간격이 생긴다.
+    """
+    rows = db.get_scheduled_reviews()
+    if not rows:
+        return 0
+    logger.info("아침 일괄 등록 — 예약된 답글 %d건을 줄 세웁니다", len(rows))
+    queued = 0
+    for row in rows:
+        rid = row.get("id")
+        if rid is None:
+            continue
+        try:
+            db.mark_approved(rid)       # 이제부터는 평소의 '등록 대기'
+            db.request_post(rid, by="아침예약")
+            queued += 1
+        except Exception as e:  # noqa: BLE001 — 한 건 실패가 전체를 막지 않게
+            logger.warning("예약 등록 줄세우기 실패(리뷰 %s): %s", rid, e)
+    if queued:
+        db.log_error("worker",
+                     f"아침 일괄 등록 — 예약해 두신 답글 {queued}건을 지금부터 "
+                     f"순서대로 등록합니다.",
+                     kind="ScheduledPostStarted", path="release_scheduled")
+    return queued
+
+
+def maybe_release_scheduled() -> None:
+    global _last_scheduled_slot
+    try:
+        slot = slot_due(SCHEDULED_POST_TIMES, datetime.now(),
+                        _last_scheduled_slot)
+        if slot:
+            _last_scheduled_slot = slot
+            release_scheduled()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("아침 일괄 등록 판단 실패: %s", e)
+
+
+# ---------------------------------------------------------------------------
 # 문제(심각) 리뷰 정기 보고 — 구 스케줄러(14/22시)에서 이식 (2026-08-16)
 # ---------------------------------------------------------------------------
 # 스케줄러가 퇴역하면서 이 보고도 함께 죽어, 민감 리뷰가 며칠씩 조용히
@@ -1058,6 +1112,7 @@ def main() -> int:
             else:
                 maybe_auto_collect()
                 maybe_auto_post()
+                maybe_release_scheduled()
                 maybe_complaint_report()
                 maybe_pos_import()
                 maybe_rescue_stuck()

@@ -403,7 +403,12 @@ def worker_status():
 
 
 # 이미 결론이 난 상태 — 초안 자동저장이 여기로 되돌리면 안 된다.
-_SETTLED_STATUSES = ("posted", "approved", "skipped")
+_SETTLED_STATUSES = ("posted", "approved", "skipped", "scheduled")
+
+# '아직 손님에게 안 나간 = 답글 화면에 남아야 할' 상태들.
+# scheduled(아침에 등록 예약)도 여기 든다 — 목록에서 사라지면 직원이 예약한
+# 걸 확인·취소할 길이 없고, 할 일 배지 숫자와 목록 길이도 어긋난다.
+_PENDING_STATUSES = ["none", "drafted", "scheduled"]
 
 
 def save_reply_draft(review_id, text, status="drafted"):
@@ -497,6 +502,25 @@ def mark_drafted(review_id):
     """검토 대기(drafted)로 되돌린다 — 등록 실패 시 카드가 다시 나타나
     직원이 재시도할 수 있게."""
     _update_review(review_id, {"reply_status": "drafted"})
+
+
+def mark_scheduled(review_id):
+    """'아침에 등록' — 지금 올리지 않고 다음 아침 슬롯까지 재워 둔다.
+
+    왜 approved 를 안 쓰나: approved 는 '지금 등록 대기'라, 일꾼의 자동복구
+    (rescue_stuck_approved)가 잡 없는 approved 를 발견하면 **즉시** 줄을
+    세운다. 새벽에 쓴 답글이 새벽에 나가면 안 되므로 상태를 따로 둔다.
+    (reply_status 는 자유 텍스트 컬럼이라 표 변경 없이 값만 늘리면 된다.)
+    """
+    _update_review(review_id, {"reply_status": "scheduled"})
+
+
+def get_scheduled_reviews(limit=200):
+    """아침 일괄 등록을 기다리는 리뷰 — 오래된 순(기한 임박한 것부터)."""
+    return (get_client().table("reviews").select("*")
+            .eq("reply_status", "scheduled")
+            .order("written_date", desc=False).order("review_no", desc=False)
+            .limit(limit).execute().data)
 
 
 def _request_review_job(kind, review_id, by=None):
@@ -636,7 +660,7 @@ def search_reviews(platform=None, rating=None, replied=None, q=None,
         # '지금 답글 달 것'(답글 화면)의 조건 — get_pending_reviews 와 같은 기준.
         # 필터를 화면마다 따로 만들지 않고 한 곳에서 쓰기 위해 여기에 뒀다.
         if pending_only:
-            s = (s.in_("reply_status", ["none", "drafted"])
+            s = (s.in_("reply_status", _PENDING_STATUSES)
                   .or_("platform_replied.is.null,platform_replied.eq.false"))
         if has_draft is True:
             s = s.not_.is_("reply_draft", "null")
@@ -754,7 +778,7 @@ def get_attention_reviews(platform=None, mode="all", limit=30, offset=0,
 def _pending_base(select="id"):
     """답글이 아직 안 끝난 리뷰의 공통 조건(get_pending_reviews 와 같은 기준)."""
     return (get_client().table("reviews").select(select, count="exact")
-            .in_("reply_status", ["none", "drafted"])
+            .in_("reply_status", _PENDING_STATUSES)
             .or_("platform_replied.is.null,platform_replied.eq.false"))
 
 
@@ -941,7 +965,7 @@ def get_pending_reviews(limit=50):
           플랫폼에 이미 사장님 답글이 달려 있는 것(platform_replied=true).
     """
     return (get_client().table("reviews").select("*")
-            .in_("reply_status", ["none", "drafted"])
+            .in_("reply_status", _PENDING_STATUSES)
             .or_("platform_replied.is.null,platform_replied.eq.false")
             .order("written_date", desc=False)
             # 같은 날 리뷰의 순서 — collected_at 은 '마지막 수집 시각'이라
