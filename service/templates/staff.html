@@ -531,9 +531,7 @@ function runPost(id) {
               setState(id, 'failed',
                 (st.why || '등록되지 않았어요.') +
                 ((st.why || '').indexOf('closed') >= 0
-                  ? '
-
-브라우저 연결이 잠깐 끊긴 거예요. 한 번 더 눌러주시면 대개 됩니다.'
+                  ? '\n\n브라우저 연결이 잠깐 끊긴 거예요. 한 번 더 눌러주시면 대개 됩니다.'
                   : ' 다시 눌러보세요.'));
               resolve(false);
             } else if (tries >= 60) {          // 3분
