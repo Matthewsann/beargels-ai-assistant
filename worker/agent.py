@@ -586,15 +586,17 @@ def run_auto_post() -> None:
             kind="AutoPostFailed", path="run_auto_post")
 
 
-def _notify_replaced(row) -> None:
+def _notify_replaced(row, removed=0) -> None:
     """이미 달려 있던 답글을 덮어쓴 사실을 알린다(화면 오류기록 + 로그).
 
     사장님이 배민·쿠팡 앱에서 직접 단 답글일 수도 있으므로 조용히 넘기지
     않는다. 기록이 실패해도 등록 자체는 이미 끝났으니 예외를 올리지 않는다.
     """
+    how = (f"기존 답글 {removed}개를 지우고 새로 등록했습니다"
+           if removed else "직원이 등록한 내용으로 수정했습니다")
     notify_owner(
         f"[{row.get('platform')}] {row.get('author')} 님 리뷰에 이미 답글이 "
-        f"달려 있어, 직원이 등록한 내용으로 수정했습니다. 앱에서 직접 답글을 "
+        f"달려 있어, {how}. 앱에서 직접 답글을 "
         f"다셨다면 내용이 바뀌었을 수 있어요.",
         kind="ReplyReplaced", path="run_post_job")
 
@@ -654,14 +656,17 @@ def run_post_job(job) -> None:
             db.mark_replied(rid)
             # 시간차로 이미 답글이 달려 있어 '수정'으로 맞춘 경우 — 조용히
             # 덮어쓰면 사장님이 앱에서 직접 단 답글이 바뀐 걸 모른다.
-            detail = res.get("result")
-            replaced = bool(detail.get("replaced")) if isinstance(detail, dict) \
-                else False
-            note = " (이미 있던 답글을 이 내용으로 수정)" if replaced else ""
+            detail = res.get("result") if isinstance(res.get("result"), dict) else {}
+            replaced = bool(detail.get("replaced"))
+            removed = int(detail.get("removed") or 0)
+            note = ""
+            if replaced:
+                note = (f" (기존 답글 {removed}개를 지우고 새로 등록)" if removed
+                        else " (이미 있던 답글을 이 내용으로 수정)")
             db.finish_job(jid, "done", f"리뷰 {rid} 답글 등록 완료{note}", 1)
             logger.info("답글 등록 #%s 완료 (리뷰 %s)%s", jid, rid, note)
             if replaced:
-                _notify_replaced(row)
+                _notify_replaced(row, removed)
         else:   # 리허설(WRITE_DRY_RUN=true) — 게시 안 됨
             db.mark_drafted(rid)
             db.finish_job(jid, "done",

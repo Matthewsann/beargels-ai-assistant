@@ -98,16 +98,50 @@ def test_coupang_without_reply_id_explains_recollect(monkeypatch):
         assert "이미 답글" in str(e) and "수집" in str(e)
 
 
-# --- 배민: 이미 답글이 있으면 하나 더 붙이지 않는다 (2026-08-27) -----------
+# --- 배민: 이미 답글이 있으면 하나 더 붙이지 않고 '대체'한다 (2026-08-27) ---
 # 배민이 '사장님 댓글 추가하기'를 주기 시작하면서, 답글이 있어도 등록 버튼이
 # 보인다. 예전 로직('버튼 없음 = 이미 답글 있음')이 무력화돼 손님 리뷰에
 # 답글이 두 개 달렸다(재윤님 리뷰: 8/16·8/27).
+# 처음엔 여기서 멈추고 사람이 지우게 했는데, 사장님 지시(2026-08-27)로
+# **기존 답글을 정리하고 새 내용으로 대체**하도록 바꿨다.
 
-def test_baemin_refuses_to_add_second_reply():
+def test_baemin_never_adds_a_second_reply():
+    """답글이 이미 있으면 '추가 등록' 흐름으로 절대 빠지지 않는다."""
     import inspect
     from crawler import review_reply as rr
     src = inspect.getsource(rr.ReplyToReviewAction._apply_baemin)
-    assert "ReviewCommentBox-module__" in src
-    assert "답글이 두 개" in src, "중복 등록을 막는 안내가 있어야 한다"
-    # allow_edit(=수정 등록) 일 때는 막지 않아야 한다
-    assert "not self.allow_edit and existing.count()" in src
+    assert "ReviewCommentBox-module__" not in src or "_baemin_reply_boxes" in src
+    # 기존 답글이 있으면 대체 경로로 넘어가고, 신규 등록은 '수정모드가 아닐 때'만
+    assert "self._baemin_take_over(page, card)" in src
+    assert "if not editing:" in src
+
+
+def test_baemin_take_over_prefers_edit_then_delete():
+    """대체 순서: 중복분 삭제 → '수정' → (없으면) '삭제 후 신규 등록'."""
+    import inspect
+    from crawler import review_reply as rr
+    src = inspect.getsource(rr.ReplyToReviewAction._baemin_take_over)
+    assert "_baemin_delete_reply" in src, "지우는 경로가 있어야 한다"
+    assert "'수정' 버튼" in src, "수정 우선 경로가 있어야 한다"
+    # 신규 등록으로 돌아갈 때는 반드시 카드를 다시 찾는다(가상 목록)
+    assert "_find_baemin_card" in src
+
+
+def test_baemin_delete_requires_confirmation():
+    """삭제는 '지워진 것을 확인'해야만 성공으로 친다 — 확인 못 하면 예외."""
+    import inspect
+    from crawler import review_reply as rr
+    src = inspect.getsource(rr.ReplyToReviewAction._baemin_delete_reply)
+    assert "_baemin_confirm_delete" in src
+    assert "if not gone:" in src, "삭제 확인 없이 넘어가면 안 된다"
+    # 네이티브 confirm 창은 기본이 '취소'라 지우는 동안만 accept 로 바꾼다
+    assert 'page.on("dialog"' in src and "remove_listener" in src
+
+
+def test_baemin_confirm_never_clicks_cancel():
+    """확인창에서 '취소·닫기·아니오'는 절대 고르지 않는다."""
+    from crawler import review_reply as rr
+    for good in ("삭제", "삭제하기", "확인", "네", "예"):
+        assert rr._BAEMIN_CONFIRM_RE.match(good), good
+    for bad in ("취소", "닫기", "아니오", "돌아가기", "삭제 취소"):
+        assert not rr._BAEMIN_CONFIRM_RE.match(bad), bad

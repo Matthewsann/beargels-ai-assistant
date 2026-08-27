@@ -256,6 +256,78 @@ def _baemin_editor_report(page):
     return " / ".join(bits)
 
 
+# 답글박스는 본문 없이 '사장님 · 날짜' 만 있는 빈 껍데기로도 렌더된다
+# (2026-08-27 실측: 답글 1개인 리뷰에 ReviewCommentBox 가 2개). 빈 껍데기를
+# '답글이 있다'로 세면 멀쩡한 리뷰가 '이미 답글 있음'으로 막힌다.
+_BAEMIN_REPLY_MIN_LEN = 20
+
+# 삭제 확인창에서 누를 버튼 — '취소·닫기·아니오'는 절대 고르지 않는다.
+_BAEMIN_CONFIRM_RE = re.compile(r"^(삭제|삭제하기|확인|네|예)$")
+_BAEMIN_MODAL_SELECTORS = ('[role="alertdialog"]', '[role="dialog"]',
+                           '[class*="Modal"]', '[class*="Dialog"]',
+                           '[class*="Popup"]', '[class*="Confirm"]')
+
+
+def _baemin_reply_texts(page, review_no):
+    """그 리뷰에 실제로 달려 있는 사장님 답글 본문들(빈 껍데기 제외).
+
+    카드 Locator 가 아니라 **화면 전체에서 리뷰번호로 다시 찾는다** — 가상
+    목록이라 삭제 직후 카드 요소가 통째로 갈릴 수 있어서, 들고 있던 Locator
+    로는 '지워졌는지'를 못 본다. 카드를 못 찾으면 None(모름).
+    """
+    if not review_no:
+        return None
+    try:
+        return page.evaluate(
+            r"""([no, minLen]) => {
+                const cards = [...document.querySelectorAll(
+                    '[class*="ReviewContent-module__"]')];
+                const c = cards.find(
+                    x => (x.innerText || '').replace(/\s+/g, '').includes(no));
+                if (!c) return null;
+                return [...c.querySelectorAll(
+                        '[class*="ReviewCommentBox-module__"]')]
+                    .map(b => (b.innerText || '').trim())
+                    .filter(t => t.length >= minLen);
+            }""", [str(review_no), _BAEMIN_REPLY_MIN_LEN])
+    except Exception:  # noqa: BLE001 — 진단 실패가 본 흐름을 막지 않게
+        return None
+
+
+def _baemin_confirm_delete(page, timeout_ms=5000):
+    """'삭제' 뒤에 뜨는 확인창의 [삭제/확인]을 눌러 준다(없으면 False).
+
+    확인창 구조·문구는 배포마다 바뀌므로 **버튼 글자**로만 고른다.
+    확인창이 아예 없는 화면(바로 삭제)일 수도 있어 없는 건 실패가 아니다 —
+    실제로 지워졌는지는 부르는 쪽에서 답글 개수로 확인한다.
+    """
+    import time as _t
+    deadline = _t.monotonic() + timeout_ms / 1000
+    while _t.monotonic() < deadline:
+        for sel in _BAEMIN_MODAL_SELECTORS:
+            try:
+                layers = page.locator(sel)
+                n = min(layers.count(), 5)
+            except Exception:  # noqa: BLE001
+                continue
+            for li in range(n):
+                layer = layers.nth(li)
+                try:
+                    if not layer.is_visible():
+                        continue
+                    btns = layer.get_by_role("button")
+                    for bi in range(min(btns.count(), 8)):
+                        b = btns.nth(bi)
+                        t = (b.inner_text(timeout=1000) or "").strip()
+                        if _BAEMIN_CONFIRM_RE.match(t):
+                            _baemin_click(b, f"확인창 '{t}' 버튼")
+                            return True
+                except Exception:  # noqa: BLE001 — 렌더 중일 수 있다
+                    continue
+        _t.sleep(0.3)
+    return False
+
+
 def _baemin_fill_editor(editor, kind, text):
     """입력칸 종류에 맞게 답글을 채우고, 실제로 들어갔는지 확인한다."""
     if kind == "textarea":
@@ -316,6 +388,8 @@ class ReplyToReviewAction(WriteAction):
         # 신규 등록인 줄 알았는데 이미 답글이 있어 '수정'으로 덮어썼는지.
         # (시간차 등록 — 보고에 남겨 사장님이 알 수 있게 한다)
         self.replaced_existing = False
+        # 대체하면서 실제로 지운 기존 답글 수(배민) — 보고·로그용.
+        self.removed_replies = 0
 
     # -- 미리보기(부작용 없음) ---------------------------------------------
 
@@ -629,46 +703,23 @@ class ReplyToReviewAction(WriteAction):
         #    등록 버튼이 보인다 — 예전 로직('버튼 없음 = 이미 답글 있음')이
         #    무력화돼 손님 리뷰에 답글이 두 개 달렸다(2026-08-27 실측:
         #    재윤님 리뷰에 8/16·8/27 답글 2개).
-        #    답글을 지우는 건 사람이 판단할 일이라, 여기서는 멈추고 알린다.
-        existing = card.locator('[class*="ReviewCommentBox-module__"]')
-        if not self.allow_edit and existing.count() > 0:
-            raise ReplyPostError(
-                "이 리뷰엔 이미 사장님 답글이 달려 있어요. 그대로 등록하면 "
-                "답글이 두 개가 됩니다 — 배민 앱에서 기존 답글을 지운 뒤 "
-                "다시 등록하시거나, 그냥 두시려면 [넘김]을 눌러주세요.")
-
-        # 작성기 열기 — 미답변이면 '사장님 댓글 등록하기', 이미 답글이 있고
-        # 수정 모드면 답글박스(형제)의 '수정' 버튼.
-        open_btn = card.get_by_text(BAEMIN_REPLY_BTN_RE)
+        #
+        #    예전엔 여기서 멈추고 "배민 앱에서 지우고 다시 누르세요"라고
+        #    안내했는데, 직원이 손으로 지워야 해서 사실상 등록이 막혔다
+        #    (사장님 지시 2026-08-27: 기존 답글을 지우고 새로 등록되게 하라).
+        #    → _baemin_take_over 가 기존 답글을 정리하고 이 내용으로 맞춘다.
         editing = False
-        if open_btn.count() == 0:
-            # 등록 버튼이 없다 = 이미 답글이 달려 있다. 시간차로 앱/다른 경로에서
-            # 먼저 등록된 경우인데, 직원이 등록을 누른 내용이 최종본이므로
-            # '수정'으로 전환해 그 내용으로 맞춘다(누락 방지). 덮어쓴 사실은
-            # replaced_existing 으로 상위에 알려 보고에 남긴다.
-            box = card.locator(
-                'xpath=following::*[contains(@class,"ReviewCommentBox-module__")][1]')
-            if box.count() == 0:
+        if self._baemin_reply_boxes(card):
+            card, editing = self._baemin_take_over(page, card)
+
+        # 작성기 열기 — 미답변이면 '사장님 댓글 등록하기'(=추가하기).
+        # 수정 모드면 _baemin_take_over 가 이미 '수정' 버튼을 눌러 뒀다.
+        if not editing:
+            open_btn = card.get_by_text(BAEMIN_REPLY_BTN_RE)
+            if open_btn.count() == 0:
                 raise ReplyPostError(
-                    "'사장님 댓글 등록하기' 버튼도, 수정할 답글박스도 "
-                    "찾지 못했습니다.")
-            if not self.allow_edit:
-                self.replaced_existing = True
-                logger.info("배민 리뷰 #%s 에 이미 답글이 있어 '수정'으로 "
-                            "전환합니다", self.review.get("review_no"))
-            edit_btn = box.first.get_by_text("수정", exact=True)
-            if edit_btn.count() == 0:
-                # 2026-08-27 현재 배민 답글박스에는 '삭제'만 있고 '수정'이
-                # 없다. 남의 답글을 말없이 지우는 건 위험하므로 자동으로
-                # 처리하지 않고, 사람이 판단하도록 알린다.
-                raise ReplyPostError(
-                    "이 리뷰엔 이미 답글이 달려 있는데 배민 화면에 '수정' "
-                    "버튼이 없어요. 배민 사장님앱에서 기존 답글을 지운 뒤 "
-                    "다시 등록해 주세요.")
-            _baemin_click(edit_btn.first, "'수정' 버튼")
-            editing = True
-            card = box.first    # 이후 textarea·버튼은 답글박스 안에서 찾는다
-        else:
+                    f"'{BAEMIN_REPLY_BTN_TEXT}' 버튼을 찾지 못했습니다 — "
+                    "배민 화면 구조가 바뀌었을 수 있어요.")
             # 텍스트가 아니라 **버튼 역할**로 먼저 잡는다 — 텍스트로 잡으면
             # 안쪽 span 이 걸려 클릭이 먹지 않는다(2026-08-16 실측).
             btn = card.get_by_role("button", name=BAEMIN_REPLY_BTN_RE)
@@ -702,7 +753,141 @@ class ReplyToReviewAction(WriteAction):
                     self.review.get("review_no"))
         return {"platform": "baemin",
                 "review_no": self.review.get("review_no"),
-                "replaced": self.replaced_existing}
+                "replaced": self.replaced_existing,
+                "removed": self.removed_replies}
+
+    # -- 이미 달린 답글 정리 -------------------------------------------
+
+    @staticmethod
+    def _baemin_reply_boxes(card):
+        """카드 안의 **본문이 있는** 사장님 답글박스들(빈 껍데기는 뺀다)."""
+        out = []
+        boxes = card.locator('[class*="ReviewCommentBox-module__"]')
+        try:
+            n = boxes.count()
+        except Exception:  # noqa: BLE001 — 가상 목록이라 사라졌을 수 있다
+            return out
+        for i in range(n):
+            b = boxes.nth(i)
+            try:
+                txt = (b.inner_text(timeout=2000) or "").strip()
+            except Exception:  # noqa: BLE001
+                continue
+            if len(txt) >= _BAEMIN_REPLY_MIN_LEN:
+                out.append(b)
+        return out
+
+    def _baemin_delete_reply(self, page, box):
+        """답글박스 1개를 지운다 — 지워진 걸 확인하지 못하면 예외.
+
+        ⚠️ 손님에게 보이던 답글을 지우는 쓰기다. 지우기 전 본문을 로그에
+           남겨, 뒤에서 등록이 실패해도 무슨 글이 사라졌는지 알 수 있게 한다.
+        """
+        import time as _t
+        rid = self.review.get("review_no")
+        try:
+            old = (box.inner_text(timeout=3000) or "").strip()
+        except Exception:  # noqa: BLE001
+            old = ""
+        before = _baemin_reply_texts(page, rid)
+        del_btn = box.get_by_role("button", name="삭제", exact=True)
+        if del_btn.count() == 0:
+            del_btn = box.get_by_text("삭제", exact=True)
+        if del_btn.count() == 0:
+            raise ReplyPostError("답글박스에서 '삭제' 버튼을 찾지 못했습니다.")
+        # 네이티브 confirm() 창이면 Playwright 는 기본으로 '취소'를 누른다 —
+        # 지우는 동안만 '확인'을 누르게 바꿔 둔다(끝나면 원복).
+        def _accept(dialog):
+            try:
+                dialog.accept()
+            except Exception:  # noqa: BLE001
+                pass
+
+        page.on("dialog", _accept)
+        gone = False
+        try:
+            _baemin_click(del_btn.first, "'삭제' 버튼")
+            human_pause(0.5, 0.9)
+            _baemin_confirm_delete(page)     # 확인창이 없는 화면일 수도 있다
+            deadline = _t.monotonic() + 8
+            while _t.monotonic() < deadline:
+                now = _baemin_reply_texts(page, rid)
+                if before is not None and now is not None:
+                    if len(now) < len(before):
+                        gone = True
+                        break
+                else:
+                    # 리뷰번호로 카드를 못 세는 경우 — 요소가 사라졌는지로 본다
+                    try:
+                        if box.count() == 0:
+                            gone = True
+                            break
+                    except Exception:  # noqa: BLE001 — 요소가 통째로 사라짐
+                        gone = True
+                        break
+                _t.sleep(0.4)
+        finally:
+            try:
+                page.remove_listener("dialog", _accept)
+            except Exception:  # noqa: BLE001
+                pass
+        if not gone:
+            # 확인창이 열린 채로 남으면 다음 시도까지 화면을 막는다 — 닫아 둔다.
+            try:
+                page.keyboard.press("Escape")
+            except Exception:  # noqa: BLE001
+                pass
+            raise ReplyPostError(
+                "기존 답글을 지우지 못했습니다(확인창을 못 찾았거나 삭제가 "
+                "반영되지 않음) — 배민 앱에서 직접 지운 뒤 다시 등록해 주세요.")
+        self.removed_replies += 1
+        logger.info("배민 리뷰 #%s 의 기존 답글을 지웠습니다: %s",
+                    rid, " ".join(old.split())[:60])
+
+    def _baemin_take_over(self, page, card):
+        """이미 달린 사장님 답글을 이 답글로 **대체**한다. (범위, 수정모드) 반환.
+
+        사장님 지시(2026-08-27): 답글이 이미 있으면 막지 말고 기존 것을
+        정리한 뒤 새 내용이 올라가게 한다. 순서는 안전한 것부터다.
+
+          ① 답글이 2개 이상(이미 중복된 상태)이면 뒤엣것부터 지운다.
+          ② 남은 하나는 '수정'으로 덮어쓴다 — 답글이 비는 순간이 없어 가장
+             안전하고, 결과도 '답글 하나에 새 내용'으로 같다.
+          ③ '수정' 버튼이 없는 화면이면 '삭제' 후 새로 등록한다. 잠깐 답글이
+             비지만, 실패해도 초안은 DB 에 남아 카드가 되살아난다.
+        """
+        rid = self.review.get("review_no")
+        if not self.allow_edit:
+            # 직원이 '신규 등록'인 줄 알고 누른 건이다 — 덮어쓴 사실을
+            # 상위(일꾼)에 알려 사장님께 보고되게 한다.
+            self.replaced_existing = True
+        boxes = self._baemin_reply_boxes(card)
+        logger.info("배민 리뷰 #%s 에 이미 답글 %d개 — 새 내용으로 대체합니다",
+                    rid, len(boxes))
+        for extra in boxes[:0:-1]:          # 중복분은 뒤에서부터
+            self._baemin_delete_reply(page, extra)
+            human_pause(0.6, 1.0)
+        if len(boxes) > 1:
+            card = self._find_baemin_card(page) or card
+            boxes = self._baemin_reply_boxes(card)
+        if not boxes:
+            return card, False              # 다 지워졌다 → 새로 등록
+        box = boxes[0]
+        edit_btn = box.get_by_role("button", name="수정", exact=True)
+        if edit_btn.count() == 0:
+            edit_btn = box.get_by_text("수정", exact=True)
+        if edit_btn.count():
+            _baemin_click(edit_btn.first, "'수정' 버튼")
+            return box, True                # 입력칸·'저장'은 답글박스 안에서
+        # '수정'이 없는 화면 — 지우고 새로 쓴다.
+        self._baemin_delete_reply(page, box)
+        human_pause(0.8, 1.2)
+        card = self._find_baemin_card(page)
+        if card is None:
+            raise ReplyPostError(
+                "기존 답글은 지웠는데 리뷰 카드를 다시 찾지 못했습니다 — "
+                "초안은 그대로 있으니 [답글 등록]을 한 번 더 눌러주세요.")
+        return card, False
 
     def _find_baemin_card(self, page):
         """대상 배민 리뷰 카드(ReviewContent) Locator 를 반환한다(없으면 None).
