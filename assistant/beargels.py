@@ -238,6 +238,55 @@ class LLMUnavailable(RuntimeError):
     """Claude 호출 실패(크레딧 부족·네트워크 등)."""
 
 
+# 답글을 쓸 때 **리뷰가 바뀌어도 늘 똑같은** 지시문 — 흐름·분량 규칙.
+# (예전엔 리뷰 본문과 함께 user 로 보냈다. 아래 _reply_system() 설명 참고)
+_REPLY_FORM = (
+    "[구성] 아래 흐름으로 채운다(항목 제목은 쓰지 말고 자연스럽게 이어서):\n"
+    " ① 이름을 부르고 반가움·감사 — 정형구 말고 이 손님에게 하는 말로\n"
+    " ② 손님의 상황·마음에 공감 (아이와 함께, 운동 후, 바쁜 아침 등)\n"
+    " ③ 시키신 것에 대한 우리 이야기 — 어떻게 준비하는지, 왜 그 조합이 좋은지\n"
+    " ④ 다음에 권하고 싶은 것 한 가지 (강요 아닌 제안)\n"
+    " ⑤ 오늘 하루 응원하며 마무리\n\n"
+    "분량은 리뷰마다 따로 알려준다. 사장님 실제 답글이 그 분량이다. 문장 수를 "
+    "채우려고 같은 말을 반복하지 말고, 주문 메뉴·경험을 구체적으로 짚어 진짜 "
+    "내용으로 채운다(사진은 실제로 있는 리뷰에서만 언급). 다른 답글과 겹치지 "
+    "않게 자연스럽게 쓴다."
+)
+
+
+def _reply_system():
+    """답글 계열 호출이 **모두 공유하는** 지시문 — 통째로 캐시되는 블록.
+
+    ⚠️ 리뷰마다 달라지는 내용은 절대 넣지 마라. 여기 있는 글자는 첫 호출에서
+       한 번 캐시에 얹히고, 그 뒤 호출은 1/10 값에 읽는다. 리뷰별 내용이
+       섞이면 캐시가 매번 깨져 **오히려 비싸진다.**
+
+    왜 이렇게 바꿨나(2026-08-27): 답글 1회 호출의 입력이 11,639토큰인데 그중
+    8,200토큰(참고 사실 + 교훈 노트 + 위 [구성])이 리뷰가 바뀌어도 같은
+    내용이었다. 그런데 캐시가 걸리는 system 에는 REPLY_PERSONA 2,127자만
+    있고 나머지는 user 에 있어서, 재생성 한 번에 매번 전액이 과금됐다.
+    (사장님 지적: Claude API 사용량이 너무 많다)
+
+    초안 생성·넓히기·금지어 손질이 모두 이 함수를 쓴다 — 같은 블록을 써야
+    셋이 캐시를 함께 나눠 쓴다.
+    """
+    parts = [REPLY_PERSONA]
+    ctx = _reply_context()
+    if ctx:
+        parts.append(f"[참고 사실(백데이터)]\n{ctx}")
+    lessons = _reply_lessons()
+    if lessons:
+        parts.append(f"[답글 교훈 노트 — 반드시 지킬 것]\n{lessons}")
+    parts.append(_REPLY_FORM)
+    return "\n\n".join(parts)
+
+
+# 답글 1건에 AI 를 부르는 최대 횟수(초안 1회 + 손질 나머지). 2 면 '초안 +
+# 한 번 손질'이다. 품질을 더 태우고 싶으면 .env 로 3~4 까지 올릴 수 있다.
+# (드물게 도는 금지어 손질은 확정 치환표가 먼저 처리하므로 여기 안 센다.)
+MAX_REPLY_CALLS = max(1, int(os.getenv("BEARGELS_MAX_REPLY_CALLS", "2")))
+
+
 # 유형별 모델 — 평범한 감사 답글은 작은 모델(Haiku)로 충분하지만, 사과·해명이
 # 필요한 글은 문장 하나가 가게 평판을 좌우한다. 그런 리뷰만 큰 모델로 쓴다
 # (사장님 지시로 기본 모델을 Haiku 로 내리면서 함께 넣음, 2026-08-23).
@@ -1216,14 +1265,14 @@ def generate_review_reply(review):
         visit = "고객(주문 횟수 모름 — 첫 주문인지 단골인지 단정하지 말 것)"
 
     try:
-        ctx = _reply_context()
-        ctx_block = f"[참고 사실(백데이터)]\n{ctx}\n\n" if ctx else ""
-        lessons = _reply_lessons()
-        if lessons:
-            ctx_block += f"[답글 교훈 노트 — 반드시 지킬 것]\n{lessons}\n\n"
+        # ⚠️ 참고 사실·교훈 노트·공통 작성 지침은 **여기 넣지 않는다** —
+        #    리뷰가 바뀌어도 똑같은 8,000자라, user 에 두면 호출마다 전액
+        #    과금됐다(2026-08-27 실측: 입력 11,639토큰 중 8,200이 그것).
+        #    _reply_system() 의 캐시 블록으로 옮겨, 두 번째 호출부터 1/10 값에
+        #    읽힌다. 아래 ctx_block 에는 **리뷰마다 달라지는 것만** 담는다.
         # 사장님이 실제로 쓴 비슷한 답글을 함께 보여준다 — 무료·저가 모델은
         # 규칙보다 예시를 훨씬 잘 따라한다(사장님 제안 2026-08-18).
-        ctx_block += _examples_block(review, typ, target=target)
+        ctx_block = _examples_block(review, typ, target=target)
 
         # 주문한 메뉴가 **무엇으로 만든 메뉴인지** 알려준다. 이름만 주면
         # 모델이 상상해서 쓴다(치아바타를 두고 "베이글의 식감"이라고 쓴 초안이
@@ -1245,19 +1294,10 @@ def generate_review_reply(review):
             f"별점 {rating}점으로 남긴 리뷰:\n"
             f"\"{content or ('(사진만, 텍스트 없음)' if typ == 'photo_only' else '(내용 없이 별점만 남김)')}\"\n\n"
             f"[이 리뷰 유형 대응 지침] {_guide_for(review, typ)}\n"
-            "위 지침대로 답글을 써줘." + chr(10)
-            + "[구성] 아래 흐름으로 채운다(항목 제목은 쓰지 말고 자연스럽게 이어서):" + chr(10)
-            + " ① 이름을 부르고 반가움·감사 — 정형구 말고 이 손님에게 하는 말로" + chr(10)
-            + " ② 손님의 상황·마음에 공감 (아이와 함께, 운동 후, 바쁜 아침 등)" + chr(10)
-            + " ③ 시키신 것에 대한 우리 이야기 — 어떻게 준비하는지, 왜 그 조합이 좋은지" + chr(10)
-            + " ④ 다음에 권하고 싶은 것 한 가지 (강요 아닌 제안)" + chr(10)
-            + " ⑤ 오늘 하루 응원하며 마무리" + chr(10) + chr(10)
+            "위 지침과 [구성] 흐름대로 답글을 써줘." + chr(10)
             + f"**{smin}~{smax}문장**으로 쓴다(문장을 짧게 툭툭 끊지 말고 "
             + "한 문장 안에서 이유·마음까지 충분히 풀어 쓴다). "
-            f"(닉네임 줄 제외, {max_len}자 절대 초과 금지). 사장님 실제 답글이 "
-            "그 분량이다. 문장 수를 채우려고 같은 말을 반복하지 말고, 주문 "
-            "메뉴·경험을 구체적으로 짚어 진짜 내용으로 채운다(사진은 실제로 "
-            "있는 리뷰에서만 언급). 다른 답글과 겹치지 않게 자연스럽게 쓴다."
+            f"(닉네임 줄 제외, {max_len}자 절대 초과 금지)."
         )
         def _tidy(text):
             """정형구·상품명 태그·근거 없는 정책 문장을 걷어낸다.
@@ -1267,9 +1307,22 @@ def generate_review_reply(review):
             """
             return _drop_unfounded(_clean_menu(_strip_boilerplate(text)))
 
+        # 답글 1건에 AI 를 몇 번까지 부를지 — 초안 1회 + 손질 (MAX-1)회.
+        # 예전엔 초안·넓히기·다시쓰기2·금지어손질까지 최대 5회가 나갔다.
+        # 재생성 버튼을 하루 50건 누르면 그게 그대로 요금이 된다
+        # (사장님 지적 2026-08-27). 남은 횟수는 '품질 문제 > 길이' 순으로 쓴다.
+        budget = [MAX_REPLY_CALLS]
+
+        def _spend():
+            """호출 횟수를 하나 쓴다(남았으면 True)."""
+            if budget[0] <= 1:
+                return False
+            budget[0] -= 1
+            return True
+
         def _write(extra=""):
             return _tidy(_truncate_at_sentence(
-                _ask_claude(REPLY_PERSONA, user + extra, max_tokens=900,
+                _ask_claude(_reply_system(), user + extra, max_tokens=900,
                             model=_model_for(typ)), max_len))
 
         draft = _write()
@@ -1286,11 +1339,19 @@ def generate_review_reply(review):
         # 분량이 모자라면 '다시 쓰기'보다 **넓히기**가 잘 듣는다. 처음부터
         # 길게 쓰라고 하면 모델이 미사여구로 늘리는데, 쓴 답글을 두고
         # "무엇을 더 얘기할 수 있나"를 물으면 진짜 내용이 붙는다(2026-08-26).
+        # ⚠️ 남은 호출이 한 번뿐이면 길이보다 **품질 문제를 먼저** 고친다 —
+        #    다시 쓰기는 길이까지 함께 지시하므로 한 번에 둘 다 잡는다.
+        quality_bad = [b for b in bad if not b.startswith("너무 짧다")]
         for _grow in range(1):
             if len(draft) >= target * 0.85:
                 break
+            if quality_bad:
+                break               # 아래 '다시 쓰기'가 길이까지 함께 고친다
+            if not _spend():
+                logger.info("답글 넓히기 생략 — 호출 한도 %d회", MAX_REPLY_CALLS)
+                break
             grown = _truncate_at_sentence(_ask_claude(
-                REPLY_PERSONA,
+                _reply_system(),
                 "아래는 우리가 손님에게 보낼 답글 초안이다. 지금 "
                 f"{len(draft)}자인데 **{target}자에 가깝게** 넓혀라." + chr(10)
                 + "- 이미 쓴 문장을 바꾸지 말고, 자연스럽게 이어서 내용을 더한다."
@@ -1311,6 +1372,10 @@ def generate_review_reply(review):
 
         for _try in range(2):
             if not bad:
+                break
+            if not _spend():
+                logger.info("답글 다시 쓰기 생략(%s) — 호출 한도 %d회",
+                            ", ".join(bad), MAX_REPLY_CALLS)
                 break
             logger.info("답글 다시 쓰기(%d): %s", _try + 1, ", ".join(bad))
             draft = _write(
@@ -1421,7 +1486,7 @@ def _strip_banned(text, max_len):
     if still:                       # 표에 없는 금지어가 남은 경우만 AI 에 맡긴다
         try:
             fixed = _ask_claude(
-                REPLY_PERSONA,
+                _reply_system(),
                 "다음 답글에서 금지 표현(" + ", ".join(still) + ")이 들어간 부분만 "
                 "자연스러운 다른 말로 바꿔줘. 나머지 내용·말투·길이는 그대로 두고, "
                 "답글 본문만 출력해:\n\n" + safe,
