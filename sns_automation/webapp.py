@@ -27,7 +27,7 @@ import time
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from . import video_editor
+from . import planner, video_editor
 from .templates import TEMPLATES, get_template
 
 logger = logging.getLogger(__name__)
@@ -191,6 +191,25 @@ def create_app() -> FastAPI:
     os.makedirs(PROJECTS_DIR, exist_ok=True)
     os.makedirs(FINAL_DIR, exist_ok=True)
     app = FastAPI(title="베어글스 인스타 파이프라인")
+
+    # (선택) 접속 코드 — .env의 PIPELINE_ACCESS_CODE 설정 시에만 켜짐.
+    # 폰/외부에서 접속을 열 때 남이 못 들어오게 하는 간단한 잠금.
+    access_code = os.getenv("PIPELINE_ACCESS_CODE", "").strip()
+    if access_code:
+        @app.middleware("http")
+        async def _access_gate(request, call_next):
+            given = request.query_params.get("code", "")
+            if request.cookies.get("pipe_code") == access_code or given == access_code:
+                resp = await call_next(request)
+                if given == access_code:
+                    resp.set_cookie("pipe_code", access_code,
+                                    max_age=90 * 24 * 3600, httponly=True)
+                return resp
+            return HTMLResponse(
+                "<meta charset='utf-8'><body style='font-family:sans-serif;"
+                "text-align:center;padding-top:80px'><h2>🔒 접속 코드가 필요해요</h2>"
+                "<p>주소 뒤에 <b>?code=접속코드</b> 를 붙여 다시 접속하세요.<br>"
+                "예: http://주소:8000/?code=1234</p></body>", status_code=401)
 
     @app.get("/", response_class=HTMLResponse)
     async def index():
@@ -363,13 +382,24 @@ def create_app() -> FastAPI:
             raise HTTPException(400, "먼저 릴스를 생성해주세요.")
         folder = os.path.join(FINAL_DIR, f"{_slug(p['title'])}")
         os.makedirs(folder, exist_ok=True)
-        shutil.copy2(reel_path, os.path.join(folder, "reel.mp4"))
-        with open(os.path.join(folder, "caption.txt"), "w", encoding="utf-8") as f:
+        # 같은 주제로 훅만 바꾼 버전을 여러 개 저장할 수 있게 (덮어쓰지 않음)
+        n = 1
+        while os.path.exists(os.path.join(
+                folder, "reel.mp4" if n == 1 else f"reel_{n}.mp4")):
+            n += 1
+        reel_name = "reel.mp4" if n == 1 else f"reel_{n}.mp4"
+        cap_name = "caption.txt" if n == 1 else f"caption_{n}.txt"
+        shutil.copy2(reel_path, os.path.join(folder, reel_name))
+        with open(os.path.join(folder, cap_name), "w", encoding="utf-8") as f:
             f.write(caption or p.get("hook", ""))
         p["status"] = ST_DONE
         p["final_path"] = folder
+        if caption:
+            p["caption"] = caption
         _save_project(p)
-        return {"ok": True, "folder": folder}
+        # 훅 라이브러리에 자동 기록 (발행·성과는 나중에 채움)
+        planner.record_hook(pid, p.get("title", ""), p.get("hook", ""), reel_name)
+        return {"ok": True, "folder": folder, "file": reel_name}
 
     # 📁 폴더 열기 (윈도우 탐색기) — 촬영본(raw) / 완성본(final)
     @app.post("/api/projects/{pid}/open")
@@ -390,6 +420,116 @@ def create_app() -> FastAPI:
         except Exception as e:  # 서버가 GUI 없는 환경이면 못 염 (경로는 반환)
             logger.warning("폴더 열기 실패(경로만 반환): %s", e)
         return {"ok": True, "opened": opened, "path": target}
+
+    # ═══ ① 주간 촬영 체크리스트 (기획 에이전트) ═══
+    @app.get("/api/plan")
+    async def get_plan():
+        return planner.get_plan()
+
+    @app.post("/api/plan/generate")
+    async def generate_plan():
+        plan = await planner.generate_weekly_plan(count=3)
+        return plan
+
+    @app.post("/api/plan/start")
+    async def start_plan_item(index: int = Form(...)):
+        plan = planner.get_plan()
+        items = plan.get("items", [])
+        if not (0 <= index < len(items)):
+            raise HTTPException(400, "잘못된 항목입니다.")
+        t = items[index]
+        pid = f"{int(time.time())}-{_slug(t['title'])}"
+        data = {
+            "id": pid, "title": t["title"], "hook": t.get("hook", ""),
+            "menu": t.get("menu", ""), "guide": t.get("guide", ""),
+            "template": t.get("template", "T1"), "status": ST_SHOOT,
+            "created": int(time.time()),
+        }
+        os.makedirs(os.path.join(_proj_dir(pid), "raw"), exist_ok=True)
+        _save_project(data)
+        planner.mark_plan_item(index, pid)
+        return data
+
+    # ═══ ② 훅 3버전 추천 (1→N 변형) ═══
+    @app.post("/api/projects/{pid}/hooks")
+    async def hook_variants(pid: str):
+        p = _load_project(pid)
+        if not p:
+            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
+        r = await planner.suggest_hooks(
+            p.get("title", ""), p.get("menu", ""), p.get("hook", ""))
+        p["hook_variants"] = r["hooks"]
+        _save_project(p)
+        return r
+
+    # ═══ ③ 발행 대기 큐 ═══
+    @app.get("/api/queue")
+    async def publish_queue():
+        items = []
+        if os.path.isdir(PROJECTS_DIR):
+            for pid in os.listdir(PROJECTS_DIR):
+                p = _load_project(pid)
+                if p and p.get("status") == ST_DONE and not p.get("published"):
+                    items.append({
+                        "id": p["id"], "title": p.get("title", ""),
+                        "hook": p.get("hook", ""),
+                        "caption": p.get("caption", ""),
+                        "hashtags": p.get("hashtags", []),
+                        "final_path": p.get("final_path", ""),
+                        "created": p.get("created", 0),
+                    })
+        items.sort(key=lambda x: x["created"])
+        return {"items": items, "rhythm": planner.PUBLISH_RHYTHM}
+
+    @app.post("/api/projects/{pid}/published")
+    async def mark_published(pid: str):
+        p = _load_project(pid)
+        if not p:
+            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
+        p["published"] = True
+        p["published_at"] = int(time.time())
+        _save_project(p)
+        planner.mark_published(pid)
+        return {"ok": True}
+
+    # ═══ ④ 주간 리뷰 (성과 피드백 루프) ═══
+    @app.get("/api/review")
+    async def review():
+        hooks = planner.get_hook_library()
+        hooks = [h for h in hooks if h.get("published")]
+        hooks.reverse()
+        insights = planner.get_insights_log()
+        insights.reverse()
+        return {"hooks": hooks[:20], "insights": insights[:5]}
+
+    @app.post("/api/hooks/{hid}/result")
+    async def hook_result(
+        hid: str,
+        reach: str = Form(""), saves: str = Form(""),
+        shares: str = Form(""), likes: str = Form(""),
+    ):
+        def _num(v):
+            v = v.strip().replace(",", "")
+            return int(v) if v.isdigit() else None
+        ok = planner.record_result(
+            hid, reach=_num(reach), saves=_num(saves),
+            shares=_num(shares), likes=_num(likes))
+        if not ok:
+            raise HTTPException(404, "기록을 찾을 수 없습니다.")
+        return {"ok": True}
+
+    @app.post("/api/insights")
+    async def insights(
+        files: list[UploadFile] = File(default=[]),
+        note: str = Form(""),
+    ):
+        images = []
+        for f in files:
+            images.append(await f.read())
+        if not images and not note:
+            raise HTTPException(400, "스크린샷이나 메모를 넣어주세요.")
+        r = await planner.analyze_insights(images, note)
+        return r
 
     # 프로젝트 삭제
     @app.delete("/api/projects/{pid}")

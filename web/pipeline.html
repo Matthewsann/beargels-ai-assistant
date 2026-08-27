@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>베어글스 송도 · 인스타 파이프라인</title>
+<style>
+  :root{
+    --bg:#FBF6EE; --surface:#FFFFFF; --surface-2:#F7EFE1;
+    --ink:#2C2016; --ink-soft:#6E5C49; --line:#EADFCB;
+    --crust:#E4692A; --crust-ink:#B84E17; --crust-soft:#FBE7D7;
+    --good:#2F8F5B; --good-soft:#DFF0E6; --warn:#B7841F; --warn-soft:#F6EBCF;
+    --sans:"Pretendard",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","맑은 고딕","Segoe UI",Roboto,sans-serif;
+    --r:16px; --r-sm:10px; --shadow:0 1px 2px rgba(44,32,22,.05),0 8px 24px -12px rgba(44,32,22,.14);
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#181109; --surface:#241A10; --surface-2:#2D2013;
+    --ink:#F4E9D8; --ink-soft:#B49B7F; --line:#38291A;
+    --crust:#F0813F; --crust-ink:#F0813F; --crust-soft:#3A2414;
+    --good:#5AB988; --good-soft:#1F3327; --warn:#E0AE52; --warn-soft:#33280F;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 28px -14px rgba(0,0,0,.6);
+  }}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;
+    letter-spacing:-.01em;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1000px;margin:0 auto;padding:0 18px 80px;}
+  a{color:var(--crust-ink)}
+  button{font-family:inherit;cursor:pointer}
+
+  header{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--line);}
+  .bar{max-width:1000px;margin:0 auto;padding:13px 18px;display:flex;align-items:center;gap:11px;}
+  .ring{width:28px;height:28px;flex:0 0 auto}
+  .brand{font-weight:800;font-size:1rem;letter-spacing:-.02em}
+  .brand small{display:block;font-weight:600;font-size:.71rem;color:var(--ink-soft)}
+  .spacer{flex:1}
+  .btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:700;
+    padding:9px 15px;border-radius:10px;font-size:.88rem;transition:.15s;}
+  .btn:hover{border-color:var(--crust);color:var(--crust-ink)}
+  .btn.pri{background:var(--crust);border-color:var(--crust);color:#fff}
+  .btn.pri:hover{filter:brightness(1.05);color:#fff}
+  .btn.ghost{background:transparent}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.sm{padding:6px 11px;font-size:.8rem}
+
+  .eyebrow{font-size:.72rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--crust-ink)}
+  h2{font-size:1.1rem;font-weight:800;margin:.15em 0 0;letter-spacing:-.02em}
+  .muted{color:var(--ink-soft)}
+
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .section{margin-top:26px}
+
+  /* project cards */
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:13px;margin-top:14px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:15px;
+    box-shadow:var(--shadow);text-align:left;transition:.15s;position:relative}
+  .card.click{cursor:pointer}
+  .card.click:hover{border-color:var(--crust);transform:translateY(-2px)}
+  .card b{font-weight:700;font-size:.95rem;display:block;line-height:1.35}
+  .card .meta{font-size:.78rem;color:var(--ink-soft);margin-top:4px}
+  .pill{display:inline-block;font-size:.72rem;font-weight:800;padding:4px 9px;border-radius:999px;margin-top:10px}
+  .pill.촬영대기{color:var(--ink-soft);background:var(--surface-2)}
+  .pill.업로드됨{color:var(--warn);background:var(--warn-soft)}
+  .pill.편집완료{color:var(--crust-ink);background:var(--crust-soft)}
+  .pill.완성{color:var(--good);background:var(--good-soft)}
+
+  /* topic suggestions */
+  .topic{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:15px;
+    text-align:left;box-shadow:var(--shadow);cursor:pointer;transition:.15s}
+  .topic:hover{border-color:var(--crust);transform:translateY(-2px)}
+  .topic .tp{font-size:.71rem;font-weight:800;color:var(--crust-ink);text-transform:uppercase;letter-spacing:.05em}
+  .topic b{display:block;font-size:.98rem;margin-top:3px}
+  .topic .g{font-size:.8rem;color:var(--ink-soft);margin-top:7px;line-height:1.45}
+
+  /* detail */
+  .detail{margin-top:16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+    box-shadow:var(--shadow);overflow:hidden}
+  .detail .dhead{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:flex-start}
+  .detail .dhead h2{font-size:1.15rem}
+  .stepper{display:flex;gap:6px;margin:14px 20px 0;flex-wrap:wrap}
+  .stp{flex:1;min-width:70px;font-size:.7rem;font-weight:700;text-align:center;padding:7px 4px;border-radius:8px;
+    background:var(--surface-2);color:var(--ink-soft);border:1px solid var(--line)}
+  .stp.on{background:var(--crust-soft);color:var(--crust-ink);border-color:var(--crust-soft)}
+  .stp.done{background:var(--good-soft);color:var(--good);border-color:var(--good-soft)}
+  .block{padding:18px 20px;border-top:1px solid var(--line)}
+  .block h3{margin:0 0 10px;font-size:.95rem;font-weight:800}
+  label{font-size:.78rem;font-weight:700;color:var(--ink-soft);display:block;margin-bottom:4px}
+  input[type=text],textarea{width:100%;font-family:inherit;font-size:.9rem;color:var(--ink);
+    background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 11px}
+  textarea{resize:vertical;min-height:60px}
+  .field{margin-bottom:12px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+  .drop{border:2px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--ink-soft);
+    background:var(--surface-2);transition:.15s;cursor:pointer}
+  .drop.over{border-color:var(--crust);color:var(--crust-ink);background:var(--crust-soft)}
+  .files{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .chip{font-size:.78rem;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:5px 10px}
+  .chip.video::before{content:"🎬 "}
+  .chip.image::before{content:"🖼 "}
+
+  .pathrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;font-size:.8rem;
+    font-weight:700;color:var(--ink-soft)}
+  .path{font-weight:500;background:var(--surface-2);border:1px solid var(--line);padding:4px 9px;border-radius:7px;
+    word-break:break-all;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:.76rem;color:var(--ink)}
+
+  video{width:100%;max-width:300px;border-radius:12px;border:1px solid var(--line);display:block;background:#000}
+
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);
+    padding:11px 18px;border-radius:10px;font-size:.86rem;font-weight:700;box-shadow:var(--shadow);opacity:0;
+    transition:.25s;pointer-events:none;z-index:50}
+  .toast.show{opacity:1}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--crust-soft);border-top-color:var(--crust);
+    border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:6px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spin{animation:none}}
+  .empty{color:var(--ink-soft);font-size:.9rem;padding:18px;text-align:center}
+  @media (max-width:640px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <svg class="ring" viewBox="0 0 40 40" aria-hidden="true">
+      <circle cx="20" cy="20" r="17" fill="none" stroke="var(--crust)" stroke-width="6"/>
+      <circle cx="20" cy="20" r="5.5" fill="var(--bg)" stroke="var(--crust)" stroke-width="2.5"/>
+    </svg>
+    <div class="brand">베어글스 송도<small>인스타 릴스 파이프라인</small></div>
+    <div class="spacer"></div>
+    <button class="btn pri" onclick="showNew()">+ 새 릴스</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- ⓪ 이번 주 촬영 체크리스트 (기획 에이전트) -->
+  <div class="section">
+    <div class="eyebrow">이번 주</div>
+    <h2 class="row" style="gap:12px">촬영 체크리스트
+      <button class="btn sm" id="planBtn" onclick="genPlan()">🤖 새로 계획 짜기</button></h2>
+    <div id="plan" class="cards"></div>
+    <p class="muted" style="font-size:.82rem;margin-top:10px">반나절에 몰아서 찍고(배치 촬영), 요일별로 나눠 발행하는 게 물량의 비결이에요. 성과를 기록할수록 AI 계획이 똑똑해져요.</p>
+  </div>
+
+  <!-- 진행 중 프로젝트 -->
+  <div class="section">
+    <div class="eyebrow">작업 중</div>
+    <h2>내 릴스 프로젝트</h2>
+    <div id="projects" class="cards"></div>
+  </div>
+
+  <!-- 발행 대기 큐 -->
+  <div class="section" id="queueSec" style="display:none">
+    <div class="eyebrow">발행 대기</div>
+    <h2>완성된 릴스 — Edits 앱에서 인기음원 얹어 발행</h2>
+    <div class="muted" id="rhythm" style="font-size:.82rem;margin-top:4px"></div>
+    <div id="queue" class="cards"></div>
+  </div>
+
+  <!-- 새 릴스 시작: 주제 고르기 -->
+  <div id="newPanel" class="section" style="display:none">
+    <div class="eyebrow">① 주제 고르기</div>
+    <h2>이번 주 릴스 주제 <span class="muted" style="font-weight:600;font-size:.85rem">— 클릭하면 프로젝트가 생겨요</span></h2>
+    <div id="topics" class="cards"></div>
+    <p class="muted" style="font-size:.82rem;margin-top:10px">주제를 고르면 촬영 가이드와 함께 프로젝트가 만들어져요. 그 가이드대로 찍어서 올리면 됩니다.</p>
+  </div>
+
+  <!-- 프로젝트 상세 (6단계 작업 공간) -->
+  <div id="detail"></div>
+
+  <!-- 주간 리뷰 (성과 피드백 루프) -->
+  <div class="section">
+    <div class="eyebrow">주간 리뷰 · 일주일에 15분</div>
+    <h2>성과 기록 &amp; AI 분석</h2>
+    <div class="card" style="margin-top:14px">
+      <b>📈 인사이트 스크린샷 분석</b>
+      <div class="meta" style="margin-top:3px">인스타 앱 → 프로페셔널 대시보드 화면을 캡처해 올리면, AI가 "다음 주에 뭘 바꿀지" 알려주고 다음 촬영 계획에 반영해요.</div>
+      <div class="field" style="margin-top:10px"><input id="insFiles" type="file" accept="image/*" multiple></div>
+      <div class="field"><textarea id="insNote" placeholder="메모 (선택) — 예: 크림치즈 릴스가 제일 잘 됐어요"></textarea></div>
+      <button class="btn pri sm" id="insBtn" onclick="analyzeIns()">📈 AI 분석</button>
+      <div id="insResult" class="muted" style="white-space:pre-wrap;font-size:.85rem;margin-top:12px"></div>
+    </div>
+    <div id="hookLib"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+let TOPICS = [], CURRENT = null;
+
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),2600); }
+function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+async function api(url, opts){ const r=await fetch(url,opts); if(!r.ok){ let m=r.statusText; try{m=(await r.json()).detail||m}catch(e){} throw new Error(m); } return r.json(); }
+
+// ── 초기 로드 ──
+async function init(){
+  const t = await api("/api/topics"); TOPICS = t.topics; renderTopics();
+  await loadProjects();
+  await loadPlan(); await loadQueue(); await loadReview();
+}
+function renderTopics(){
+  $("#topics").innerHTML = TOPICS.map((t,i)=>`
+    <div class="topic" onclick="pickTopic(${i})">
+      <div class="tp">${t.pillar}</div>
+      <b>${t.title}</b>
+      <div class="g">🎬 ${t.guide}</div>
+      <div class="g" style="color:var(--crust-ink)">훅: ${t.hook}</div>
+    </div>`).join("");
+}
+function showNew(){ const p=$("#newPanel"); p.style.display = p.style.display==="none"?"block":"none"; p.scrollIntoView({behavior:"smooth"}); }
+
+// ② 프로젝트 생성
+async function pickTopic(i){
+  const t = TOPICS[i];
+  const fd = new FormData();
+  fd.append("title",t.title); fd.append("hook",t.hook); fd.append("menu",t.menu);
+  fd.append("guide",t.guide); fd.append("template",t.template||"T1");
+  const p = await api("/api/projects",{method:"POST",body:fd});
+  $("#newPanel").style.display="none";
+  toast("프로젝트 생성됨 — 이제 영상을 올려주세요");
+  await loadProjects(); openProject(p.id);
+}
+
+// 프로젝트 목록
+async function loadProjects(){
+  const {projects} = await api("/api/projects");
+  const el = $("#projects");
+  if(!projects.length){ el.innerHTML = `<div class="empty">아직 프로젝트가 없어요. <b>+ 새 릴스</b>로 시작하세요.</div>`; return; }
+  el.innerHTML = projects.map(p=>`
+    <div class="card click" onclick="openProject('${p.id}')">
+      <b>${p.title}</b>
+      <div class="meta">영상·사진 ${p.file_count||0}개</div>
+      <span class="pill ${p.status}">${statusLabel(p)}</span>
+    </div>`).join("");
+}
+function statusLabel(p){ return {촬영대기:"촬영·업로드 대기",업로드됨:"편집 대기",편집완료:"확인·피드백",완성:"완성본 저장됨"}[p.status]||p.status; }
+
+// 프로젝트 상세
+async function openProject(pid){
+  CURRENT = await api("/api/projects/"+pid);
+  renderDetail(); $("#detail").scrollIntoView({behavior:"smooth"});
+}
+// 현재 해야 할 단계를 가리킨다 (주제=1은 프로젝트가 있으면 항상 완료)
+function stepIndex(s){ return {촬영대기:2,업로드됨:3,편집완료:4,완성:6}[s]||2; }
+function renderDetail(){
+  const p = CURRENT; const si = stepIndex(p.status);
+  const steps = ["주제·가이드","영상 업로드","릴스 편집","확인·피드백","완성본 저장"];
+  const hasVideo = (p.files||[]).some(f=>f.kind==="video");
+  const captionText = p.caption ? (p.caption + ((p.hashtags&&p.hashtags.length)?("\n\n"+p.hashtags.join(" ")):"")) : "";
+  $("#detail").innerHTML = `
+  <div class="section">
+    <div class="eyebrow">작업 공간</div>
+    <div class="detail">
+      <div class="dhead">
+        <div style="flex:1">
+          <h2>${p.title}</h2>
+          <div class="muted" style="font-size:.82rem;margin-top:3px">${p.guide||""}</div>
+        </div>
+        <button class="btn ghost sm" onclick="delProject('${p.id}')">삭제</button>
+      </div>
+      <div class="stepper">
+        ${steps.map((s,i)=>`<div class="stp ${i+1<si?'done':(i+1===si?'on':'')}">${i+1}. ${s}</div>`).join("")}
+      </div>
+
+      <!-- ③ 업로드 -->
+      <div class="block">
+        <h3>③ 매장에서 찍은 영상 올리기</h3>
+        <div id="drop" class="drop">여기로 영상을 끌어다 놓거나 클릭해서 선택<br><span class="muted" style="font-size:.8rem">여러 개 가능 · 세로/가로 상관없음</span></div>
+        <input id="file" type="file" accept="video/*,image/*" multiple style="display:none">
+        <div class="files">${(p.files||[]).map(f=>`<span class="chip ${f.kind}">${f.name}</span>`).join("")||'<span class="muted" style="font-size:.82rem">아직 올린 파일이 없어요</span>'}</div>
+        <div class="pathrow">📂 사진/영상 넣는 곳<span class="path">${p.raw_dir||''}</span>
+          <button class="btn sm" onclick="openFolder('${p.id}','raw')">폴더 열기</button>
+          <span class="muted" style="font-weight:500">— 드래그 대신 이 폴더에 직접 넣어도 돼요</span></div>
+      </div>
+
+      <!-- ④⑤ 편집 + 자막 -->
+      <div class="block">
+        <h3>④ 릴스 자동 편집 <span class="muted" style="font-weight:600;font-size:.82rem">— 9:16·자막·원본소리</span></h3>
+        <div class="row" style="margin-bottom:12px">
+          <button class="btn" onclick="genCaption()">✨ AI가 자막·캡션 추천</button>
+          <button class="btn" onclick="genHooks()">🎣 훅 3버전 추천</button>
+          <span class="muted" style="font-size:.8rem">훅만 바꿔 여러 버전을 만들면 뭐가 잘 되는지 배울 수 있어요</span>
+        </div>
+        <div class="row" id="hookChips" style="margin-bottom:12px">${hookChipsHtml(p.hook_variants)}</div>
+        <div class="grid2">
+          <div class="field"><label>상단 훅 자막 (첫 3초)</label><input id="hook" type="text" value="${(p.hook||'').replace(/"/g,'&quot;')}"></div>
+          <div class="field"><label>하단 자막 (메뉴·키워드)</label><input id="menu" type="text" value="${(p.menu||'').replace(/"/g,'&quot;')}"></div>
+        </div>
+        <button class="btn pri" id="renderBtn" onclick="renderReel()" ${hasVideo?'':'disabled'}>
+          ${p.has_reel?'🔄 자막 바꿔 다시 편집':'🎬 릴스 만들기'}
+        </button>
+        ${hasVideo?'':'<div class="muted" style="font-size:.8rem;margin-top:8px">※ 릴스는 영상이 필요해요. 위에서 영상을 먼저 올려주세요.</div>'}
+      </div>
+
+      <!-- 미리보기 -->
+      ${p.has_reel?`
+      <div class="block">
+        <h3>⑤ 확인 &amp; 피드백</h3>
+        <video controls src="/api/projects/${p.id}/reel?t=${Date.now()}"></video>
+        <p class="muted" style="font-size:.82rem;margin-top:10px">자막을 바꾸고 싶으면 위에서 문구 고쳐서 <b>다시 편집</b>을 누르세요.</p>
+      </div>
+      <!-- ⑥ 완성본 -->
+      <div class="block">
+        <h3>⑥ 완성본으로 저장</h3>
+        <div class="field"><label>캡션 (인스타에 붙일 글 — ✨버튼으로 자동 생성, 수정 가능)</label><textarea id="caption" placeholder="예: 송도 카페에서 크림치즈 듬뿍 베이글 어때요 …">${esc(captionText)}</textarea></div>
+        <button class="btn pri" onclick="finalize()">📁 완성본 폴더에 저장</button>
+        <span class="muted" style="font-size:.78rem;margin-left:8px">훅 바꿔 또 저장하면 reel_2.mp4처럼 버전이 추가돼요</span>
+        ${p.status==="완성"?`<span class="pill 완성" style="margin-left:10px">저장됨</span>`:''}
+        <div class="pathrow">📁 릴스 저장되는 곳<span class="path">${p.final_dir||''}</span>
+          <button class="btn sm" onclick="openFolder('${p.id}','final')">폴더 열기</button></div>
+      </div>`:''}
+    </div>
+  </div>`;
+  wireUpload();
+}
+
+// 업로드 배선
+function wireUpload(){
+  const drop=$("#drop"), file=$("#file"); if(!drop) return;
+  drop.onclick=()=>file.click();
+  file.onchange=()=>upload(file.files);
+  ["dragover","dragenter"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add("over")}));
+  ["dragleave","drop"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove("over")}));
+  drop.addEventListener("drop",ev=>upload(ev.dataTransfer.files));
+}
+async function upload(fileList){
+  if(!fileList||!fileList.length) return;
+  const fd=new FormData(); for(const f of fileList) fd.append("files",f);
+  toast("업로드 중… ("+fileList.length+"개)");
+  try{ await api("/api/projects/"+CURRENT.id+"/upload",{method:"POST",body:fd});
+    toast("업로드 완료"); await openProject(CURRENT.id);
+  }catch(e){ toast("업로드 실패: "+e.message); }
+}
+
+// 📁 폴더 열기 (윈도우 탐색기)
+async function openFolder(pid, which){
+  const fd=new FormData(); fd.append("which",which);
+  try{ const r=await api("/api/projects/"+pid+"/open",{method:"POST",body:fd});
+    toast(r.opened?"탐색기에서 폴더를 열었어요":"폴더 위치를 확인하세요");
+  }catch(e){ toast("폴더 열기 실패: "+e.message); }
+}
+
+// ✨ AI 캡션·자막 생성
+async function genCaption(){
+  toast("AI가 자막·캡션 만드는 중…");
+  try{
+    const r = await api("/api/projects/"+CURRENT.id+"/caption",{method:"POST"});
+    toast(r.ai ? "AI 캡션 완성 ✨ (완성본 단계에 채워졌어요)" : "캡션 초안 완성 (크레딧 충전 시 AI가 더 잘 써줘요)");
+    await openProject(CURRENT.id);
+  }catch(e){ toast("캡션 생성 실패: "+e.message); }
+}
+
+// ④ 편집
+async function renderReel(){
+  const btn=$("#renderBtn"); const hook=$("#hook").value, menu=$("#menu").value;
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>편집 중… (1~2분)';
+  const fd=new FormData(); fd.append("hook",hook); fd.append("menu",menu);
+  try{ await api("/api/projects/"+CURRENT.id+"/render",{method:"POST",body:fd});
+    toast("릴스 완성! 아래에서 확인하세요"); await openProject(CURRENT.id);
+  }catch(e){ toast("편집 실패: "+e.message); btn.disabled=false; btn.textContent="🎬 릴스 만들기"; }
+}
+
+// ⑥ 완성본
+async function finalize(){
+  const cap=$("#caption")?$("#caption").value:"";
+  const fd=new FormData(); fd.append("caption",cap);
+  try{ const r=await api("/api/projects/"+CURRENT.id+"/finalize",{method:"POST",body:fd});
+    toast("완성본 저장됨 📁 — 발행 대기에 추가"); await openProject(CURRENT.id); await loadProjects(); await loadQueue();
+  }catch(e){ toast("저장 실패: "+e.message); }
+}
+
+async function delProject(pid){
+  if(!confirm("이 프로젝트를 삭제할까요?")) return;
+  await api("/api/projects/"+pid,{method:"DELETE"});
+  CURRENT=null; $("#detail").innerHTML=""; await loadProjects(); toast("삭제됨");
+}
+
+// ═══ ⓪ 이번 주 촬영 체크리스트 ═══
+async function loadPlan(){
+  const plan = await api("/api/plan");
+  const el = $("#plan");
+  if(!plan.items || !plan.items.length){
+    el.innerHTML = `<div class="empty">아직 이번 주 계획이 없어요. <b>🤖 새로 계획 짜기</b>를 눌러보세요.</div>`;
+    return;
+  }
+  el.innerHTML = plan.items.map((t,i)=>`
+    <div class="card">
+      <div style="font-size:.71rem;font-weight:800;color:var(--crust-ink);text-transform:uppercase">${esc(t.pillar||'')} · ${esc(t.publish_day||'')}요일 발행 · ${esc(t.template||'T1')}</div>
+      <b style="margin-top:3px">${esc(t.title)}</b>
+      <div class="meta">🎬 ${esc(t.guide||'')}</div>
+      <div class="meta" style="color:var(--crust-ink)">훅: ${esc(t.hook||'')}</div>
+      ${t.project_id
+        ? `<button class="btn sm" style="margin-top:10px" onclick="openProject('${t.project_id}')">✅ 진행 중 — 열기</button>`
+        : `<button class="btn pri sm" style="margin-top:10px" onclick="startPlan(${i})">🎬 촬영 시작</button>`}
+    </div>`).join("");
+}
+async function genPlan(){
+  const b=$("#planBtn"); b.disabled=true; b.innerHTML='<span class="spin"></span>계획 만드는 중…';
+  try{ await api("/api/plan/generate",{method:"POST"}); await loadPlan(); toast("이번 주 촬영 계획 완성 🤖"); }
+  catch(e){ toast("계획 생성 실패: "+e.message); }
+  b.disabled=false; b.textContent="🤖 새로 계획 짜기";
+}
+async function startPlan(i){
+  const fd=new FormData(); fd.append("index",i);
+  try{
+    const p = await api("/api/plan/start",{method:"POST",body:fd});
+    toast("프로젝트 생성됨 — 가이드대로 찍어서 올려주세요");
+    await loadPlan(); await loadProjects(); openProject(p.id);
+  }catch(e){ toast("실패: "+e.message); }
+}
+
+// ═══ 🎣 훅 3버전 (1→N 변형) ═══
+function hookChipsHtml(hooks){
+  return (hooks||[]).map(h=>{
+    const v = esc(h).replace(/"/g,"&quot;");
+    return `<button class="btn sm ghost" style="border-style:dashed" data-h="${v}" onclick="useHook(this.dataset.h)">🎣 ${esc(h)}</button>`;
+  }).join("");
+}
+function useHook(h){
+  const el=$("#hook"); if(el){ el.value=h; toast("훅 적용됨 — 릴스 만들기(다시 편집)를 누르세요"); }
+}
+async function genHooks(){
+  toast("훅 만드는 중…");
+  try{
+    const r = await api("/api/projects/"+CURRENT.id+"/hooks",{method:"POST"});
+    CURRENT.hook_variants = r.hooks;
+    $("#hookChips").innerHTML = hookChipsHtml(r.hooks);
+    toast(r.ai ? "훅 3버전 완성 — 눌러서 적용하세요" : "기본 훅 제안 (크레딧 충전 시 AI 추천)");
+  }catch(e){ toast("훅 추천 실패: "+e.message); }
+}
+
+// ═══ 📤 발행 대기 큐 ═══
+let QUEUE=[];
+async function loadQueue(){
+  const q = await api("/api/queue"); QUEUE=q.items;
+  const sec=$("#queueSec");
+  if(!q.items.length){ sec.style.display="none"; return; }
+  sec.style.display="block";
+  $("#rhythm").textContent = "📅 " + q.rhythm;
+  $("#queue").innerHTML = q.items.map((it,i)=>`
+    <div class="card">
+      <b>${esc(it.title)}</b>
+      <div class="meta">훅: ${esc(it.hook||'')}</div>
+      <div class="path" style="margin-top:8px;font-size:.72rem">${esc(it.final_path||'')}</div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn sm" onclick="copyCap(${i})">📋 캡션 복사</button>
+        <button class="btn pri sm" onclick="markPub('${it.id}')">✅ 발행 완료</button>
+      </div>
+    </div>`).join("");
+}
+function copyCap(i){
+  const it=QUEUE[i];
+  const txt=(it.caption||it.hook||"")+((it.hashtags&&it.hashtags.length)?"\n\n"+it.hashtags.join(" "):"");
+  navigator.clipboard.writeText(txt).then(()=>toast("캡션 복사됨 — Edits 앱에 붙여넣으세요"))
+    .catch(()=>toast("복사 실패 — 캡션은 완성본 폴더 caption.txt에도 있어요"));
+}
+async function markPub(pid){
+  try{
+    await api("/api/projects/"+pid+"/published",{method:"POST"});
+    toast("발행 완료 ✅ — 2~3일 뒤 주간 리뷰에서 성과를 적어주세요");
+    await loadQueue(); await loadReview(); await loadProjects();
+  }catch(e){ toast("실패: "+e.message); }
+}
+
+// ═══ 📈 주간 리뷰 ═══
+async function loadReview(){
+  const r = await api("/api/review");
+  const el = $("#hookLib");
+  if(!r.hooks.length){ el.innerHTML=""; }
+  else{
+    el.innerHTML = `<div class="card" style="margin-top:13px">
+      <b>발행한 릴스 — 성과 기록 (훅 라이브러리)</b>
+      <div class="meta" style="margin-top:3px">발행 2~3일 뒤 인사이트 숫자를 적어두면, 다음 계획 때 AI가 잘 된 훅을 변형해 재활용해요.</div>
+      ${r.hooks.map(h=>`
+        <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
+          <b style="font-size:.88rem">${esc(h.title)}</b>
+          <span class="muted" style="font-size:.8rem"> · 훅: ${esc(h.hook||'(없음)')}</span>
+          <div class="row" style="margin-top:8px">
+            ${[["reach","도달"],["saves","저장"],["shares","공유"],["likes","좋아요"]].map(([k,l])=>
+              `<input type="text" inputmode="numeric" placeholder="${l}" value="${h[k]??''}" id="m_${h.id}_${k}" style="width:84px">`).join("")}
+            <button class="btn sm" onclick="saveResult('${h.id}')">저장</button>
+          </div>
+        </div>`).join("")}
+    </div>`;
+  }
+  if(r.insights.length && !$("#insResult").textContent){
+    $("#insResult").textContent = "지난 분석 ▸ " + r.insights[0].summary;
+  }
+}
+async function saveResult(hid){
+  const fd=new FormData();
+  for(const k of ["reach","saves","shares","likes"]) fd.append(k, ($("#m_"+hid+"_"+k)||{value:""}).value||"");
+  try{ await api("/api/hooks/"+hid+"/result",{method:"POST",body:fd}); toast("성과 기록됨 📊"); }
+  catch(e){ toast("기록 실패: "+e.message); }
+}
+async function analyzeIns(){
+  const files=$("#insFiles").files, note=$("#insNote").value;
+  if(!files.length && !note.trim()){ toast("스크린샷이나 메모를 넣어주세요"); return; }
+  const fd=new FormData(); for(const f of files) fd.append("files",f); fd.append("note",note);
+  const b=$("#insBtn"); b.disabled=true; b.innerHTML='<span class="spin"></span>분석 중…';
+  try{
+    const r=await api("/api/insights",{method:"POST",body:fd});
+    $("#insResult").textContent=r.summary;
+    toast(r.ai?"분석 완료 — 다음 주 계획에 반영돼요":"기록해뒀어요");
+  }catch(e){ toast("분석 실패: "+e.message); }
+  b.disabled=false; b.textContent="📈 AI 분석";
+}
+
+init().catch(e=>toast("불러오기 실패: "+e.message));
+</script>
+</body>
+</html>

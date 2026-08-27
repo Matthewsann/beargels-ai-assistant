@@ -75,3 +75,9 @@ data/blog_clips/
 data/blog_used_log.json
 data/blog_reactions.json
 data/blog_quality.json
+# 파이프라인 런타임 산출물
+projects/
+완성본/
+
+# 기획·성과 데이터 (기기 로컬 — 집 PC에만 쌓임)
+data/
