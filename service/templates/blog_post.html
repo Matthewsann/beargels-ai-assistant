@@ -16,9 +16,28 @@
     </div>
     <span class="ttl" style="font-size:15px;">{{ post.title or '(제목 없음)' }}</span>
     {% if post.prepared_at %}
-    <div class="note" style="margin-top:9px;">✅ 네이버에 임시저장돼 있어요. 네이버 → 글쓰기 → 저장 목록에서 사진 넣고 <b>발행</b>을 눌러주세요.</div>
+    <div class="note" style="margin-top:9px;">✅ 네이버에 임시저장돼 있어요{% if photos %} (사진 {{ photos|length }}장 포함){% endif %}.
+      네이버 → 글쓰기 → 저장 목록에서 확인하고 <b>발행</b>을 눌러주세요.</div>
     {% endif %}
   </div>
+
+  {% if photos %}
+  <div class="sec">📸 같이 들어갈 사진 <span style="font-weight:400; color:var(--muted); font-size:12px;">{{ photos|length }}개 · 사진함에서 자동으로 골랐어요</span></div>
+  <div class="panel" style="padding:8px 14px;">
+    {% for ph in photos %}
+    <div style="display:flex; gap:9px; align-items:center; padding:7px 0;
+                border-bottom:1px solid var(--line);">
+      <span style="font-size:14px;">{{ ph.icon }}</span>
+      <span style="font-size:13px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;">{{ ph.name }}</span>
+      {% if ph.slot %}<span class="tag b" style="white-space:nowrap;">{{ ph.slot }}</span>{% endif %}
+    </div>
+    {% endfor %}
+    <div style="font-size:12px; color:var(--muted); padding:8px 0 4px;">
+      본문의 <code>[📷 …]</code> 자리에 이 사진들이 들어갑니다. 바꾸고 싶으면 아래 본문에서
+      그 줄의 파일 이름만 고쳐 주세요.
+    </div>
+  </div>
+  {% endif %}
 
   <form method="post" action="{{ url_for('blog_post_publish', path_key=key, post_id=post.id) }}">
     <button class="btn primary wide" type="submit">🚀 네이버에 초안 넣기</button>

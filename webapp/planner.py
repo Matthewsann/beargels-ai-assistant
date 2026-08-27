@@ -15,7 +15,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "automation" / "src"
-for _p in (SRC, ROOT):
+for _p in (SRC, ROOT, ROOT / "worker"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
@@ -41,6 +41,23 @@ def load_knowledge() -> tuple[str, str]:
     seo_path = ROOT / "네이버-SEO-지식.md"
     seo = seo_path.read_text(encoding="utf-8") if seo_path.exists() else ""
     return "\n\n".join(parts), seo
+
+
+def load_photos() -> tuple[str, dict]:
+    """사진함에 **지금 실제로 있는** 사진 목록을 읽어온다.
+
+    글을 먼저 쓰고 사진을 나중에 끼워 넣으면 글과 사진이 따로 논다. 그래서
+    초안을 쓰기 전에 이 목록을 프롬프트에 넣어, 있는 사진으로 글을 짜게 한다.
+    사진함이 비었거나 인덱스가 아직 없으면 빈 값 — 예전처럼 글만 나온다.
+    """
+    try:
+        import blog_media
+        cat = blog_media.catalog()
+        return (blog_media.catalog_text(cat) if cat else ""), cat
+    except Exception as e:  # noqa: BLE001 — 사진이 없다고 글쓰기가 멈추면 안 된다
+        import logging
+        logging.getLogger(__name__).warning("사진함을 읽지 못했습니다: %s", str(e)[:120])
+        return "", {}
 
 
 def _client_cfg():
@@ -101,6 +118,8 @@ DRAFT_PROMPT = """너는 베어글스 송도점의 네이버 블로그 마케팅
 {knowledge}
 ===== SEO 지식 =====
 {seo}
+===== 지금 쓸 수 있는 사진 (사진함) =====
+{photos}
 =====================
 
 [확정 기획]
@@ -114,7 +133,13 @@ DRAFT_PROMPT = """너는 베어글스 송도점의 네이버 블로그 마케팅
 - 금고의 '톤앤보이스'와 '브랜드 철학'을 반드시 지킨다(따뜻·담백, 과장 금지, 자연스러운 ~요체).
 - 글자 수 1,500자 이상. 첫 문단에 대표 키워드 1회, 본문 전체 3~5회(도배 금지).
 - 소제목 2~4개로 구조화. 1인칭 경험. 구체적 숫자(가격·시간·온도)는 금고에 있는 것만, 없으면 비워둔다.
-- 사진 위치를 본문에 5~8군데 [📷 사진: 무엇을 어떻게]로 안내.
+- ★사진은 위 '사진함' 목록에 **있는 것만** 쓴다. 본문에 `[📷 P07]` 처럼 번호만 적으면
+  그 자리에 실제 사진이 들어간다. 5~8장. **목록에 없는 번호를 지어내지 마라.**
+  · 첫 문단 앞에 대표사진(★대표감) 1장을 먼저 놓는다.
+  · 사진 바로 앞 문장은 그 사진에 실제로 찍힌 것과 이어지게 쓴다(엉뚱한 설명 금지).
+  · 같은 사진을 두 번 쓰지 않는다.
+  · 영상(V01 …)이 목록에 있으면 글 중간에 1개까지 `[🎬 V01]` 로 넣어도 좋다.
+  · 사진 목록이 비어 있으면 사진 표시 없이 글만 쓴다.
 - 사실(메뉴명·주소 등)은 금고 표기를 그대로 쓴다. 지어내지 않는다. 없는 정보는 비운다.
 - 맨 아래에 매장정보(주소·영업시간 등, 금고에 있는 것만) 블록을 넣는다.
 
@@ -135,7 +160,14 @@ REC_PROMPT = """너는 베어글스 송도점의 네이버 블로그 마케팅 �
 {knowledge}
 ===== SEO 지식 =====
 {seo}
+===== 지금 사진함에 있는 사진 =====
+{photos}
 =====================
+
+★ 사진이 이미 있는 주제를 먼저 추천하라. 사진 없이 글만 있는 글은 상위노출도 안 되고
+   사장님이 다시 촬영해야 해서 결국 안 올라간다. 위 사진 목록으로 **바로 쓸 수 있는**
+   주제를 앞 번호(priority)에 두고, 촬영이 더 필요한 주제는 뒤로 미뤄라.
+   각 글감의 "why" 끝에 쓸 사진 번호를 적어라(예: "… / 사진 P03,P11 있음").
 
 베어글스답고(루틴·Basecamp·따뜻함) SEO 상위노출에 유리하며, 실제 인기메뉴·타겟(단골·직장인·건강지향)을
 노리는 블로그 글감 10개를 추천하라. 유형(정보성·신메뉴·일상·후기·이벤트)을 다양하게 섞어라.
@@ -169,7 +201,9 @@ def make_recommendations() -> list[dict]:
     """금고 전체를 읽고 베어글스 맞춤 글감 10개를 추천(JSON 배열)."""
     client, cfg, gp = _client_cfg()
     knowledge, seo = load_knowledge()
-    prompt = REC_PROMPT.format(knowledge=knowledge, seo=seo)
+    photos, _cat = load_photos()
+    prompt = REC_PROMPT.format(knowledge=knowledge, seo=seo,
+                               photos=photos or "(사진함이 비어 있음 — 촬영부터 필요)")
     raw = llm.complete(user=prompt, max_tokens=2500)
     return _extract_json_array(raw)
 
@@ -182,9 +216,11 @@ def make_draft_data(topic: str, post_type: str = "정보성", title: str = "",
     """
     client, cfg, gp = _client_cfg()
     knowledge, seo = load_knowledge()
+    photos, _cat = load_photos()
     subs = sub_keywords or []
     prompt = DRAFT_PROMPT.format(
-        knowledge=knowledge, seo=seo, topic=topic, post_type=post_type,
+        knowledge=knowledge, seo=seo, photos=photos or "(사진함이 비어 있음)",
+        topic=topic, post_type=post_type,
         title=title or topic, main_keyword=main_keyword,
         sub_keywords=", ".join(subs), sub_keywords_json=json.dumps(subs, ensure_ascii=False),
     )

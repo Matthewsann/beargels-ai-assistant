@@ -20,8 +20,10 @@ Gemini 는 REST 로 직접 호출한다(추가 패키지 설치 불필요 — re
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
+import pathlib
 import time
 
 import requests
@@ -92,12 +94,21 @@ def available() -> bool:
 # 공급자별 호출
 # ---------------------------------------------------------------------------
 
-def _call_claude(system: str, user: str, max_tokens: int, model=None) -> str:
+def _call_claude(system: str, user: str, max_tokens: int, model=None,
+                 images: list | None = None) -> str:
     from anthropic import Anthropic
     client = Anthropic(api_key=_key("ANTHROPIC_API_KEY"))
     model = model or CLAUDE_MODEL
+    if images:
+        content = [{"type": "image",
+                    "source": {"type": "base64", "media_type": mime,
+                               "data": base64.b64encode(raw).decode()}}
+                   for mime, raw in images]
+        content.append({"type": "text", "text": user})
+    else:
+        content = user
     kwargs = {"model": model, "max_tokens": max_tokens,
-              "messages": [{"role": "user", "content": user}]}
+              "messages": [{"role": "user", "content": content}]}
     if CLAUDE_EFFORT and any(m in model for m in _EFFORT_MODELS):
         kwargs["output_config"] = {"effort": CLAUDE_EFFORT}
     if system:
@@ -126,15 +137,20 @@ _THINKING_CONFIGS = (
 )
 
 
-def _call_gemini(system: str, user: str, max_tokens: int, model: str | None = None) -> str:
+def _call_gemini(system: str, user: str, max_tokens: int, model: str | None = None,
+                 images: list | None = None) -> str:
     model = model or GEMINI_MODEL
+    parts = [{"inline_data": {"mime_type": mime,
+                              "data": base64.b64encode(raw).decode()}}
+             for mime, raw in (images or [])]
+    parts.append({"text": user})
     resp = None
     for tc in _THINKING_CONFIGS:
         gen_cfg = {"maxOutputTokens": max_tokens}
         if tc:
             gen_cfg["thinkingConfig"] = tc
         body = {
-            "contents": [{"parts": [{"text": user}]}],
+            "contents": [{"parts": parts}],
             "generationConfig": gen_cfg,
         }
         if system:
@@ -155,7 +171,7 @@ def _call_gemini(system: str, user: str, max_tokens: int, model: str | None = No
         why = "없음" if resp.status_code == 404 else "무료 한도 소진"
         logger.warning("Gemini 모델 %s %s → %s 로 재시도",
                        model, why, GEMINI_FALLBACK_MODEL)
-        return _call_gemini(system, user, max_tokens, GEMINI_FALLBACK_MODEL)
+        return _call_gemini(system, user, max_tokens, GEMINI_FALLBACK_MODEL, images)
     if resp.status_code != 200:
         raise RuntimeError(f"Gemini 오류 {resp.status_code}: {resp.text[:300]}")
     data = resp.json()
@@ -170,9 +186,9 @@ def _call_gemini(system: str, user: str, max_tokens: int, model: str | None = No
     return text
 
 
-def _call_gemini_any(system, user, max_tokens, model=None):
+def _call_gemini_any(system, user, max_tokens, model=None, images=None):
     """gemini 는 claude 쪽 모델 이름을 받지 않는다 — 인자만 맞춘다."""
-    return _call_gemini(system, user, max_tokens)
+    return _call_gemini(system, user, max_tokens, None, images)
 
 
 _CALLERS = {"claude": _call_claude, "gemini": _call_gemini_any}
@@ -209,11 +225,14 @@ _AUTH_DEAD: set = set()
 # ---------------------------------------------------------------------------
 
 def complete(system: str = "", user: str = "", max_tokens: int = 1500,
-             model: str | None = None) -> str:
+             model: str | None = None, images: list | None = None) -> str:
     """AI 에게 물어 답 텍스트를 받는다. 공급자는 자동 선택 · 실패 시 다음 것으로 넘어간다.
 
     model: 이번 호출에만 쓸 Claude 모델(없으면 CLAUDE_MODEL). 불만 리뷰처럼
            품질이 중요한 곳에서 더 큰 모델을 지정하는 데 쓴다.
+    images: 함께 보여줄 사진 [(mime, 바이트), ...]. 블로그 사진함 태깅처럼
+            'AI 가 사진을 실제로 보고 판단해야' 하는 곳에서 쓴다.
+            → 편하게 쓰려면 see() 를 부르면 파일 경로만 넘겨도 된다.
     """
     providers = available_providers()
     if not providers:
@@ -229,7 +248,7 @@ def complete(system: str = "", user: str = "", max_tokens: int = 1500,
         # 떨어지면 멀쩡한 리뷰가 저품질 초안을 받는다(2026-08-16 점검).
         for attempt in range(2):
             try:
-                return _CALLERS[name](system, user, max_tokens, model)
+                return _CALLERS[name](system, user, max_tokens, model, images)
             except Exception as e:  # noqa: BLE001
                 last = e
                 if _is_auth_error(e):
@@ -248,3 +267,42 @@ def complete(system: str = "", user: str = "", max_tokens: int = 1500,
     if last:
         raise last
     raise NoProviderError("AI 호출에 모두 실패했습니다.")
+
+
+# ---------------------------------------------------------------------------
+# 사진을 보여주며 묻기
+# ---------------------------------------------------------------------------
+
+_MIME = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+         ".webp": "image/webp", ".gif": "image/gif"}
+# 사진 1장이 너무 크면 요청이 무거워지고 무료 한도도 빨리 닳는다.
+# 태깅은 '무엇이 찍혔나'만 보면 되므로 긴 변 768px 로 줄여 보낸다.
+SEE_MAX_PX = int(os.getenv("LLM_SEE_MAX_PX", "768"))
+
+
+def _as_jpeg(path, max_px: int = SEE_MAX_PX) -> tuple[str, bytes]:
+    """어떤 사진이든 작은 JPEG 바이트로 바꿔 준다(HEIC·회전·초대형 대응)."""
+    import io as _io
+    from PIL import Image, ImageOps
+    img = Image.open(path)
+    img = ImageOps.exif_transpose(img)          # 폰 세로사진이 눕는 것 방지
+    img.thumbnail((max_px, max_px), Image.LANCZOS)
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+    buf = _io.BytesIO()
+    img.save(buf, "JPEG", quality=82)
+    return "image/jpeg", buf.getvalue()
+
+
+def see(paths, system: str = "", user: str = "", max_tokens: int = 1500,
+        model: str | None = None) -> str:
+    """사진 파일 경로들을 보여주며 AI 에게 묻는다.
+
+        llm.see(["a.jpg", "b.HEIC"], user="이 사진들에 뭐가 찍혔는지 알려줘")
+
+    HEIC·초대형·눕는 사진을 알아서 작은 JPEG 로 바꿔 보낸다.
+    """
+    if isinstance(paths, (str, pathlib.Path)):
+        paths = [paths]
+    return complete(system=system, user=user, max_tokens=max_tokens, model=model,
+                    images=[_as_jpeg(p) for p in paths])

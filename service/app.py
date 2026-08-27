@@ -909,6 +909,11 @@ def draft_state(path_key, review_id):
         return jsonify({"draft": r.get("reply_draft") or "",
                         "at": r.get("draft_updated_at") or "",
                         "reply_status": r.get("reply_status") or "",
+                        # 실제로 손님에게 나간 답글 본문 — 플랫폼에서 되읽어온
+                        # 것(platform_reply)이 진짜이고, 방금 등록해 아직 못
+                        # 읽어왔으면 우리가 보낸 초안이 곧 그 내용이다.
+                        "posted_reply": (r.get("platform_reply")
+                                         or r.get("reply_draft") or ""),
                         "worker_alive": bool(w.get("alive")),
                         "worker_text": w.get("text") or "",
                         "job_status": (job or {}).get("status") or "",
@@ -1196,8 +1201,7 @@ def skip(path_key, review_id):
 from database import blog_store as blog  # noqa: E402
 
 
-_PHOTO_MARK = re.compile(r"\[\s*([📷🎬])\s*([^\[\]
-]{1,200}?)\s*\]")
+_PHOTO_MARK = re.compile(r"\[\s*([📷🎬])\s*([^\[\]\n]{1,200}?)\s*\]")
 
 
 def _blog_photos(body: str) -> list[dict]:

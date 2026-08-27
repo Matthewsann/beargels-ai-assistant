@@ -22,6 +22,14 @@
                 {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>📊 순위 확인</button>
       </form>
     </div>
+    <form method="post" action="{{ url_for('blog_media_scan', path_key=key) }}" style="margin-top:8px;">
+      <button class="btn wide" type="submit"
+              {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>📸 사진함 다시 보기</button>
+    </form>
+    <div style="font-size:12px; color:var(--muted); margin-top:6px;">
+      드라이브 <b>브랜딩 › 베어글스_블로그_사진함</b>에 사진을 올린 뒤 눌러주세요.
+      글을 쓸 때 여기 있는 사진으로 짜고, 네이버 초안에 사진까지 같이 넣습니다.
+    </div>
   </div>
 
   {% if ranks %}

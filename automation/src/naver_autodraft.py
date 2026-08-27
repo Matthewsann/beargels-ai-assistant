@@ -63,6 +63,19 @@ DEFAULT_SELECTORS = {
         ".se-module-text .se-text-paragraph",
         "span.se-placeholder:has-text('내용')",
     ],
+    # 본문 툴바의 '사진' 버튼 — 누르면 파일 선택창이 열린다
+    "image_button": [
+        "button.se-image-toolbar-button",
+        "button[data-name='image']",
+        ".se-toolbar-item-image button",
+        "button[title='사진']",
+        "button:has-text('사진')",
+    ],
+    # 사진을 넣은 뒤 뜨는 '사진 설명' 칸(여기에 글이 잘못 들어가는 걸 막는 데 씀)
+    "image_caption": [
+        ".se-caption .se-text-paragraph",
+        ".se-module-caption .se-text-paragraph",
+    ],
     # 임시저장 버튼
     "save": [
         "button.save_btn__bzc5B",
@@ -166,6 +179,98 @@ def type_body(frame: Frame, body_loc, text: str) -> None:
             page.keyboard.press("Enter")
 
 
+def insert_media(page: Page, frame: Frame, selectors: dict, path: str,
+                 timeout_ms: int = 60000) -> bool:
+    """본문 커서 위치에 사진(또는 영상) 파일 하나를 넣는다.
+
+    네이버 에디터의 '사진' 버튼은 눌리면 파일 선택창(file chooser)을 연다.
+    Playwright 가 그 창을 가로채 파일 경로를 넘겨주면 사람 손 없이 올라간다.
+    버튼을 못 찾으면 에디터 안의 숨은 file 입력칸에 직접 넣어 본다(보조 경로).
+    """
+    btn = first_working(frame, selectors["image_button"])
+    if btn is not None:
+        try:
+            with page.expect_file_chooser(timeout=10000) as fc:
+                btn.click(timeout=5000)
+            fc.value.set_files(path)
+        except Exception as e:  # noqa: BLE001 — 보조 경로로 넘어간다
+            print(f"    · 사진 버튼 경로 실패({str(e)[:60]}) → 숨은 입력칸으로 시도")
+            btn = None
+    if btn is None:
+        loc = frame.locator("input[type='file']").first
+        try:
+            if loc.count() == 0:
+                print("    ✗ 사진을 넣을 방법을 찾지 못했습니다.")
+                return False
+            loc.set_input_files(path)
+        except Exception as e:  # noqa: BLE001
+            print(f"    ✗ 사진 넣기 실패: {str(e)[:80]}")
+            return False
+
+    # 업로드가 끝나 본문에 이미지 덩어리가 하나 늘어날 때까지 기다린다.
+    # (파일이 크면 몇 초 걸린다 — 안 기다리면 다음 글자가 엉뚱한 데 들어간다)
+    before = frame.locator(".se-component.se-image").count()
+    waited = 0
+    while waited < timeout_ms:
+        page.wait_for_timeout(500)
+        waited += 500
+        try:
+            if frame.locator(".se-component.se-image").count() > before:
+                break
+        except Exception:  # noqa: BLE001
+            pass
+    page.wait_for_timeout(800)
+
+    # 사진을 넣으면 커서가 '사진 설명' 칸에 가 있을 수 있다. 그대로 두면
+    # 다음 문단이 사진 설명으로 들어가 버린다 → 본문 맨 끝으로 커서를 되돌린다.
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(200)
+    try:
+        last = frame.locator(".se-component.se-text .se-text-paragraph").last
+        if last.count() > 0:
+            last.click(timeout=3000)
+            page.keyboard.press("End")
+    except Exception:  # noqa: BLE001
+        pass
+    return True
+
+
+def type_blocks(page: Page, frame: Frame, selectors: dict, body_loc,
+                blocks: list) -> None:
+    """글 토막과 사진을 순서대로 넣는다.
+
+    blocks 예: [{"type":"photo","path":"…jpg"}, {"type":"text","text":"…"}, …]
+    사진이 하나도 없는 예전 방식(글자만)도 그대로 돌아간다.
+    """
+    body_loc.click()
+    frame.wait_for_timeout(300)
+    first_text = True
+    for i, b in enumerate(blocks):
+        if b.get("type") == "text":
+            text = b.get("text", "")
+            if not text.strip():
+                continue
+            if not first_text:
+                page.keyboard.press("Enter")
+            lines = text.replace("\r\n", "\n").split("\n")
+            for j, line in enumerate(lines):
+                if line:
+                    page.keyboard.type(line, delay=8)
+                if j < len(lines) - 1:
+                    page.keyboard.press("Enter")
+            first_text = False
+        else:
+            path = b.get("path")
+            if not path:
+                continue
+            if not first_text:
+                page.keyboard.press("Enter")
+            name = pathlib.Path(path).name
+            print(f"    · 사진 넣는 중 ({i + 1}/{len(blocks)}) {name}")
+            if insert_media(page, frame, selectors, path):
+                first_text = False
+
+
 def save_debug(page: Page, tag: str) -> None:
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
     try:
@@ -185,6 +290,8 @@ def fill_editor(page: Page, cfg: dict, post: dict) -> Frame | None:
     blog_id = cfg["naver"]["blog_id"]
     title = post.get("title", "")
     body = post.get("body", "")
+    # blocks 가 있으면 사진까지 같이 넣는다(없으면 예전처럼 글자만).
+    blocks = post.get("blocks")
 
     print(f"  · '{title}' 작성 시작")
     page.goto(write_url(blog_id), wait_until="domcontentloaded")
@@ -212,7 +319,12 @@ def fill_editor(page: Page, cfg: dict, post: dict) -> Frame | None:
         save_debug(page, "no_body")
         print("    ✗ 본문 입력 영역을 찾지 못했습니다.")
         return None
-    type_body(frame, body_loc, body)
+    if blocks:
+        n_photo = sum(1 for b in blocks if b.get("type") != "text")
+        print(f"    · 글 {len(blocks) - n_photo}토막 + 사진 {n_photo}장")
+        type_blocks(page, frame, selectors, body_loc, blocks)
+    else:
+        type_body(frame, body_loc, body)
     frame.wait_for_timeout(500)
     return frame
 

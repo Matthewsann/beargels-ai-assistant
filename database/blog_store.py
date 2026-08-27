@@ -24,7 +24,8 @@ RECS = "blog_recommendations"
 JOBS = "jobs"
 
 # 웹이 일꾼에게 시킬 수 있는 일
-JOB_KINDS = ("blog_recommend", "blog_draft", "blog_publish", "blog_rank")
+JOB_KINDS = ("blog_recommend", "blog_draft", "blog_publish", "blog_rank",
+             "blog_media")
 
 
 def _now():

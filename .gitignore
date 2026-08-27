@@ -67,3 +67,8 @@ automation/reels_완성본/
 
 # 발주 사이트 수집 원본 — 거래처 단가가 들어 있어 올리지 않는다(집 PC 로컬)
 data/msfs_raw.json
+
+# 블로그 사진함 — AI가 사진을 보고 적어 둔 기록과 변환본(각 PC에서 다시 만들면 됨)
+data/blog_media_index.json
+data/blog_media_cache/
+data/blog_clips/

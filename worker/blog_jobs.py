@@ -8,6 +8,11 @@
     blog_draft      기획 주제로 초안 작성 → 창고 저장   (AI)
     blog_publish    글을 네이버에 임시저장(초안) 넣기    (브라우저)
     blog_rank       타겟 키워드 네이버 순위 확인        (브라우저)
+    blog_media      사진함에 새로 올린 사진 살펴보기     (AI)
+
+사진은 드라이브 '베어글스_블로그_사진함' 에서 가져온다(blog_media.py).
+초안을 쓸 때 이미 사진을 골라 본문에 박아 두고, 네이버 초안 넣기에서
+그 사진들을 실제로 올린다 — 사장님이 에디터에서 사진을 찾아 넣을 일이 없다.
 
 무거운 일(AI 호출·크롬 조작)은 전부 여기서만 한다. 클라우드 웹은 버튼과 결과 표시만.
 실제 '발행' 버튼은 사장님이 네이버에서 직접 누른다(자동 발행하지 않는다).
@@ -20,7 +25,7 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-for _p in (ROOT, ROOT / "webapp", ROOT / "automation" / "src"):
+for _p in (ROOT, ROOT / "worker", ROOT / "webapp", ROOT / "automation" / "src"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
@@ -28,7 +33,8 @@ from database import blog_store as store  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-BLOG_KINDS = ("blog_recommend", "blog_draft", "blog_publish", "blog_rank")
+BLOG_KINDS = ("blog_recommend", "blog_draft", "blog_publish", "blog_rank",
+              "blog_media")
 
 # 순위 추적 기본 키워드(창고 글의 대표 키워드에 더해 항상 확인)
 DEFAULT_KEYWORDS = ("송도 베이글", "송도 카페")
@@ -50,8 +56,25 @@ def do_recommend() -> tuple[int, str]:
     return len(items), f"글감 {len(items)}개 추천"
 
 
+def do_media() -> tuple[int, str]:
+    """사진함을 다시 훑어 새로 올라온 사진을 AI 가 살펴본다."""
+    import blog_media
+    before = len(blog_media.load_index())
+    idx = blog_media.build_index()
+    photos = sum(1 for v in idx.values() if v.get("kind") == "photo")
+    videos = len(idx) - photos
+    added = len(idx) - before
+    grew = f"새 사진 {added}장 · " if added > 0 else ""
+    return len(idx), f"{grew}사진함 사진 {photos}장 · 영상 {videos}개"
+
+
 def do_draft(payload: dict) -> tuple[int, str]:
-    """기획 주제로 초안 작성 → blog_posts 에 저장."""
+    """기획 주제로 초안 작성 → blog_posts 에 저장.
+
+    AI 에게 사진함 목록을 먼저 보여주고 그 사진으로 글을 짜게 한 다음,
+    본문의 사진 번호([📷 P07])를 **파일 경로로 굳혀서** 저장한다.
+    사진함이 나중에 바뀌어도 이 글이 쓰던 사진은 그대로 남는다.
+    """
     import planner
     topic = (payload.get("topic") or payload.get("title") or "").strip()
     if not topic:
@@ -64,27 +87,76 @@ def do_draft(payload: dict) -> tuple[int, str]:
         main_keyword=payload.get("main_keyword") or "",
         sub_keywords=payload.get("sub_keywords") or [],
     )
+    body = data.get("body") or ""
+    photo_note = ""
+    try:
+        import blog_media
+        body = blog_media.freeze_marks(body)
+        media = blog_media.used_media(body)
+        if media:
+            photo_note = f" · 사진 {len(media)}장"
+    except Exception as e:  # noqa: BLE001 — 사진을 못 붙여도 글은 저장한다
+        logger.warning("사진 붙이기 실패: %s", str(e)[:120])
+
     post_id = store.save_post(
-        title=data.get("title"), body=data.get("body"), post_type=post_type,
+        title=data.get("title"), body=body, post_type=post_type,
         main_keyword=data.get("main_keyword"), sub_keywords=data.get("sub_keywords"),
         tags=data.get("tags"),
     )
-    return 1, f"초안 저장 완료 (#{post_id}) — {data.get('title', '')[:40]}"
+    return 1, f"초안 저장 완료 (#{post_id}){photo_note} — {data.get('title', '')[:40]}"
+
+
+def build_blocks(body: str) -> tuple[list[dict], int]:
+    """본문을 '글 토막 + 올릴 사진 파일' 순서로 바꾼다.
+
+    사진은 여기서 미리 업로드용으로 손질한다(세로사진 회전·HEIC 변환·1600px 축소).
+    사진함을 못 읽으면 글자만 넣는 예전 방식으로 조용히 되돌아간다.
+    """
+    try:
+        import blog_media
+    except Exception:  # noqa: BLE001
+        return [], 0
+    raw, _media = blog_media.resolve_body(body)
+    blocks, n = [], 0
+    for b in raw:
+        if b.get("type") == "text":
+            blocks.append(b)
+            continue
+        try:
+            path = blog_media.prepare(b["rel"]) if b["type"] == "photo" \
+                else blog_media.full_path(b["rel"])
+            blocks.append({"type": b["type"], "path": str(path),
+                           "caption": b.get("caption", "")})
+            n += 1
+        except Exception as e:  # noqa: BLE001 — 사진 한 장 때문에 글 전체를 막지 않는다
+            logger.warning("사진 준비 실패(%s): %s", b.get("rel"), str(e)[:100])
+    return blocks, n
 
 
 def do_publish(payload: dict) -> tuple[int, str]:
-    """글 하나를 네이버 임시저장(초안)으로 넣는다. 발행은 사장님이 직접."""
+    """글 하나를 네이버 임시저장(초안)으로 넣는다. 발행은 사장님이 직접.
+
+    본문에 박아 둔 사진도 이때 같이 올라간다 — 사장님이 에디터에서
+    사진을 찾아 넣을 일이 없다는 게 이 기능의 핵심이다.
+    """
     import naver_autodraft as na
     post_id = payload.get("post_id")
     post = store.get_post(post_id) if post_id else None
     if not post:
         raise ValueError(f"글 #{post_id} 를 찾을 수 없습니다.")
 
+    body = post.get("body") or ""
+    blocks, n_media = build_blocks(body)
+
     cfg = na.load_config()
     headful = bool(cfg.get("naver", {}).get("headful", True))
     pw, ctx, page = na.launch(cfg, headful=headful)
     try:
-        ok = na.draft_one(page, cfg, {"title": post.get("title"), "body": post.get("body")})
+        ok = na.draft_one(page, cfg, {
+            "title": post.get("title"),
+            "body": body,
+            "blocks": blocks or None,
+        })
     finally:
         try:
             ctx.close()
@@ -94,7 +166,8 @@ def do_publish(payload: dict) -> tuple[int, str]:
     if not ok:
         raise RuntimeError("네이버 에디터 입력 실패 (화면 구조가 바뀌었을 수 있어요)")
     store.update_post(post_id, prepared_at=store._now())
-    return 1, f"네이버 임시저장 완료 — {post.get('title', '')[:40]}"
+    with_photo = f" (사진 {n_media}장 포함)" if n_media else ""
+    return 1, f"네이버 임시저장 완료{with_photo} — {post.get('title', '')[:40]}"
 
 
 def do_rank(payload: dict) -> tuple[int, str]:
@@ -134,6 +207,7 @@ _HANDLERS = {
     "blog_draft": do_draft,
     "blog_publish": do_publish,
     "blog_rank": do_rank,
+    "blog_media": lambda p: do_media(),
 }
 
 
