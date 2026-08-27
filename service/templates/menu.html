@@ -42,6 +42,21 @@ padding:0 11px;background:var(--card);color:var(--ink);font-size:13px;cursor:poi
 .seg button.on{background:var(--brown);color:#fff;font-weight:700}
 html.dk .seg button.on{color:#1c1a17}
 
+/* 출시 진행 배너 + 출시 체크 */
+#launchBand{margin:6px 0 2px;padding:8px 11px;border-radius:10px;cursor:pointer;
+background:var(--brownbg);color:var(--brown);font-size:12.5px;line-height:1.5}
+#launchBand.onf{outline:2px solid var(--brown)}
+#launchBand b{font-weight:700}
+.lc-item{display:flex;align-items:center;gap:8px;padding:6px 2px;font-size:13px;
+border-bottom:1px dashed var(--line)}
+.lc-item:last-child{border-bottom:none}
+.lc-ok{color:var(--green);font-weight:700;width:16px;text-align:center;flex:0 0 16px}
+.lc-no{color:var(--sub);width:16px;text-align:center;flex:0 0 16px}
+.lc-cb{flex:0 0 auto;width:22px;height:22px;border-radius:6px;border:2px solid var(--line);
+background:var(--card);cursor:pointer;padding:0}
+.lc-cb.on{background:var(--green);border-color:var(--green);color:#fff;font-size:13px;line-height:1}
+.lc-via{margin-left:auto;font-size:11px;color:var(--sub);text-align:right}
+.lc-grp{font-size:11px;font-weight:700;color:var(--sub);margin:8px 0 2px}
 /* 채널 노출 점 — 기본 보기의 매장/배달/네이버 토글 */
 td.chdot{text-align:center}
 .dot{width:30px;height:30px;border:none;background:none;cursor:pointer;
@@ -278,6 +293,7 @@ z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
     <button id="colBtn" onclick="toggleCols()">📊 원가·분석</button>
     <button onclick="dlgTools.showModal()">⚙ 도구</button>
   </div>
+  <div id="launchBand" style="display:none"></div>
   <div class="chips" id="chips"></div>
   <div class="chips" id="pchips"></div>
 </header>
@@ -846,8 +862,10 @@ function render(){
     [["전체", DATA.items.length], ...cats.map(c=>[c, DATA.items.filter(i=>i.category===c).length])]
     .map(([c,n])=>`<span class="chip ${c===CAT?"on":""}" data-cat="${esc(c)}">${esc(c)}<small>${n}</small></span>`).join("");
 
+  renderLaunchBand();
   let items = DATA.items.filter(i=>(CAT==="전체"||i.category===CAT) &&
     (!q || i.name.includes(q) || (i.sku||"").includes(q) || (i.name_en||"").toLowerCase().includes(q.toLowerCase())));
+  if (LFILTER){ const ls = launchList(); items = items.filter(i=>ls.includes(i.sku)); }
   const probFn = PROB ? PROBS.find(p=>p[0]===PROB)[2] : null;
   if (probFn) items = items.filter(probFn);
   const stFn = STATE ? STATES.find(s=>s[0]===STATE)[2] : null;
@@ -1062,6 +1080,125 @@ function editCell(td, sku, field){
 }
 
 // 노출 토글 — 실수 비용이 가장 큰 액션이라 되돌리기를 꼭 붙인다.
+// ── 출시 체크리스트 ─────────────────────────────────────────
+// 새 메뉴가 각 채널(포스·키오스크/배민/쿠팡/네이버)에 다 올라갔는지 챙기는
+// 체크리스트. 목록은 menu_settings.launching, 채널 등록 표시는
+// menu_channels.active 를 쓴다 — 새 테이블 없음.
+let LFILTER = false;                       // 배너 탭 = 출시 중 메뉴만 보기
+const launchList = () => ((DATA.settings.launching || [])
+  .filter(sku => DATA.items.some(i => i.sku === sku)));
+async function saveLaunch(list){
+  DATA.settings.launching = list;
+  return api("/settings/launching", list);
+}
+// 수집 스냅샷에 이 메뉴가 잡혀 있으면 그 채널엔 이미 등록된 것(자동 확인)
+const snapHas = (sku, ch) => (DATA.snapshots || [])
+  .some(s => s.channel === ch && s.matched_sku === sku);
+const chChecked = (sku, ch) => { const o = chOverride(sku, ch);
+  return !!o && o.active !== false; };
+
+// 체크 항목 — 위 4개는 정본 데이터로 자동 판정, 아래는 직접 체크.
+function launchTasks(it){
+  const t = [];
+  if (it.store_active)
+    t.push({k:"sp", grp:"정본", label:"매장가", auto:true, ok:!!it.store_price,
+            via: it.store_price ? won(it.store_price)+"원" : "상세 위 칸에서 입력"});
+  if (it.delivery_active)
+    t.push({k:"dp", grp:"정본", label:"배달가", auto:true, ok:!!it.delivery_price,
+            via: it.delivery_price ? won(it.delivery_price)+"원"
+               : (it.store_price ? "추천 "+won(suggestPrice(it,"baemin")) : "")});
+  t.push({k:"cost", grp:"정본", label:"원가 (레시피)", auto:true,
+          ok: it.ingredient_cost != null,
+          via: it.ingredient_cost != null ? won(it.ingredient_cost)+"원" : "레시피 편집에서"});
+  t.push({k:"intro", grp:"정본", label:"소개글 한/영", auto:true,
+          ok: !!(it.intro_ko||"").trim(), via: (it.intro_ko||"").trim() ? "" : "직접 입력"});
+  if (it.store_active)
+    t.push({k:"store", grp:"채널", label:"매장 포스 · 키오스크", auto:false,
+            ok: chChecked(it.sku,"store")});
+  if (it.delivery_active){
+    const bs = snapHas(it.sku,"baemin"), cs = snapHas(it.sku,"coupang");
+    t.push({k:"baemin", grp:"채널", label:"배민", auto:false,
+            ok: chChecked(it.sku,"baemin") || bs, via: bs ? "📡 수집에서 확인됨" : ""});
+    t.push({k:"coupang", grp:"채널", label:"쿠팡이츠", auto:false,
+            ok: chChecked(it.sku,"coupang") || cs, via: cs ? "📡 수집에서 확인됨" : ""});
+  }
+  t.push({k:"naver", grp:"채널", label:"네이버", auto:false,
+          ok: naverOn(it.sku), via: "노출 점과 같은 값"});
+  return t;
+}
+const launchLeft = it => launchTasks(it).filter(x=>!x.ok).length;
+
+async function toggleLaunchCh(sku, ch, val){
+  const ok = await diffOverride(sku, ch, {active: val});
+  if (!ok) return;
+  toast(val ? "등록 표시 ✓" : "표시 해제");
+  if (sheetOpen() && OPEN_SKU === sku)
+    document.getElementById("sheetBody").innerHTML = detailHTML(sku);
+  render();
+}
+async function launchDone(sku){
+  await saveLaunch(launchList().filter(s => s !== sku));
+  const it = DATA.items.find(i=>i.sku===sku);
+  toast(`${it?it.name:sku} — 출시 완료, 배너에서 내렸습니다`, {label:"되돌리기",
+    fn: async ()=>{ await saveLaunch([...launchList(), sku]); render(); }});
+  if (sheetOpen() && OPEN_SKU === sku)
+    document.getElementById("sheetBody").innerHTML = detailHTML(sku);
+  render();
+}
+async function launchAdd(sku){
+  await saveLaunch([...launchList(), sku]);
+  toast("출시 진행에 올렸습니다 — 첫 화면 배너에 뜹니다");
+  if (sheetOpen() && OPEN_SKU === sku)
+    document.getElementById("sheetBody").innerHTML = detailHTML(sku);
+  render();
+}
+
+function launchHTML(sku){
+  const it = DATA.items.find(i=>i.sku===sku);
+  if (!it) return "";
+  const inL = launchList().includes(sku);
+  const ts = launchTasks(it);
+  const left = ts.filter(x=>!x.ok).length;
+  const row = x => x.auto
+    ? `<div class="lc-item">${x.ok?'<span class="lc-ok">✓</span>':'<span class="lc-no">·</span>'}
+        ${esc(x.label)}<span class="lc-via">${esc(x.via||"")}</span></div>`
+    : `<div class="lc-item"><button class="lc-cb ${x.ok?"on":""}"
+        onclick="${x.k==='naver'?`toggleNaver('${sku}',${!naverOn(sku)})`
+                 :`toggleLaunchCh('${sku}','${x.k}',${!chChecked(sku,x.k)})`}">${x.ok?"✓":""}</button>
+        ${esc(x.label)}<span class="lc-via">${esc(x.via||"")}</span></div>`;
+  const grp = g => ts.filter(x=>x.grp===g).map(row).join("");
+  return `<div class="dsec">
+    <b>🚀 출시 체크</b>
+    <span class="note">위는 정본에서 자동 판정, 아래는 채널에 등록한 뒤 직접 체크.
+      ${it.delivery_active?"배민·쿠팡은 채널수집이 돌면 자동으로 확인됩니다.":""}</span>
+    <div class="lc-grp">정본 채우기 (자동)</div>${grp("정본")}
+    <div class="lc-grp">채널 등록 (직접 체크)</div>${grp("채널")}
+    <div style="margin-top:8px;display:flex;gap:6px;align-items:center">
+      ${inL
+        ? `<span class="note" style="margin:0">${left?`남은 일 ${left}개 — 첫 화면 배너에 떠 있습니다`:"다 됐습니다 👍"}</span>
+           <button style="margin-left:auto" onclick="launchDone('${sku}')">✅ 출시 완료 (배너 내리기)</button>`
+        : `<button onclick="launchAdd('${sku}')">🚀 출시 진행에 올리기</button>
+           <span class="note" style="margin:0">새로 만든 메뉴는 자동으로 올라갑니다</span>`}
+    </div></div>`;
+}
+
+function renderLaunchBand(){
+  const el = document.getElementById("launchBand");
+  if (!el) return;
+  const ls = launchList();
+  if (!ls.length){ el.style.display = "none"; LFILTER = false; return; }
+  const parts = ls.map(sku => {
+    const it = DATA.items.find(i=>i.sku===sku);
+    const left = launchLeft(it);
+    return `<b>${esc(it.name)}</b> <small>(${left?`남은 일 ${left}`:"완료 ✓"})</small>`;
+  });
+  el.style.display = "";
+  el.classList.toggle("onf", LFILTER);
+  el.innerHTML = `🚀 <b>출시 진행 ${ls.length}</b> — ${parts.join(" · ")}
+    <small style="float:right">${LFILTER?"탭 = 전체 보기":"탭 = 이 메뉴만 보기"}</small>`;
+  el.onclick = ()=>{ LFILTER = !LFILTER; render(); };
+}
+
 // 네이버 등록 표시 — 배민·쿠팡과 달리 크롤러가 없어 자동 감지를 못 한다.
 // menu_channels(naver).active 를 수동 체크로 쓴다: 켜 두면 '네이버에 올라가
 // 있다'는 직원의 표시일 뿐, 실제 네이버를 읽어 온 것이 아니다.
@@ -1204,6 +1341,7 @@ function detailHTML(sku){
         <button onclick="copyIntro('${sku}','en')">📋 영문 복사</button>
       </div>
     </div>
+    ${launchHTML(sku)}
     ${setEditor(sku)}
     ${it.composition?`<div class="note">구성: ${esc(it.composition)}</div>`:""}
     <div class="dsec">
@@ -1417,7 +1555,7 @@ async function createMenu(){
   await reloadData();
   CAT = j.category; PROB = null; SORT = null;
   document.getElementById("q").value = "";
-  toast(`'${j.name}' 추가됨 (${j.sku})${j.intro_ko?" · 소개글 초안 자동 작성":""}`);
+  toast(`'${j.name}' 추가됨 (${j.sku}) · 출시 체크리스트가 배너에 떴습니다`);
   render();
   // 방금 만든 메뉴를 열어 원가·소개글을 바로 채울 수 있게 한다.
   setTimeout(()=>{ revealRow(j.sku); toggleDetail(j.sku); }, 100);

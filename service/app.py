@@ -1422,6 +1422,14 @@ def menu_item_new(path_key):
     # 만들고 상세 창에서 직접 적는다.
     try:
         out = db.menu_create(body)
+        # 새 메뉴는 '출시 진행' 목록에 올린다 — 채널 등록 체크리스트가 끝나거나
+        # 직원이 '출시 완료'를 누를 때까지 첫 화면 배너에 뜬다.
+        try:
+            cur = db.menu_settings_all().get("launching") or []
+            if out["sku"] not in cur:
+                db.menu_set_setting("launching", cur + [out["sku"]])
+        except Exception:  # noqa: BLE001 — 배너는 편의 기능, 생성 자체를 막지 않는다
+            pass
         out["intro_ko"] = body.get("intro_ko")
         out["intro_en"] = body.get("intro_en")
         out["name_en"] = body.get("name_en")
@@ -1734,7 +1742,8 @@ def menu_channel_save(path_key, sku, channel):
 @app.route("/<path_key>/menu/settings/<key>", methods=["POST"])
 def menu_settings_save(path_key, key):
     check(path_key)
-    if key not in ("channel_fees", "target_cost_rates", "order_model", "task_done"):
+    if key not in ("channel_fees", "target_cost_rates", "order_model", "task_done",
+                   "launching"):
         abort(400)
     try:
         db.menu_set_setting(key, request.get_json(force=True))
