@@ -244,6 +244,23 @@ def _refocus_body(page: Page, frame: Frame) -> None:
         pass
 
 
+def _refocus_after_video(page: Page, frame: Frame) -> None:
+    """영상 삽입 직후의 커서 복귀 — ⚠️ Escape 를 누르지 않는다.
+
+    '업로드 진행중' 상태의 비디오 블록이 선택된 채 Escape 를 누르면
+    업로드가 취소되어 블록이 사라진다(2026-08-28 실측 — 로그는 성공인데
+    본문이 비어 있던 진짜 원인). 본문 마지막 문단 클릭으로만 이동한다.
+    """
+    try:
+        last = frame.locator(".se-component.se-text .se-text-paragraph").last
+        if last.count() > 0:
+            last.click(timeout=3000)
+            page.wait_for_timeout(300)
+            page.keyboard.press("End")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _refocus_body_inner(page: Page, frame: Frame) -> None:
     """커서를 본문 맨 끝 문단으로 되돌린다(사진 설명 칸에 글이 새는 것 방지)."""
     page.keyboard.press("Escape")
@@ -287,14 +304,16 @@ def _dim_gone(frame: Frame) -> bool:
 
 
 def insert_video(page: Page, frame: Frame, selectors: dict, path: str,
-                 timeout_ms: int = 180000) -> bool:
+                 timeout_ms: int = 180000, title: str = "베어글스 송도") -> bool:
     """'동영상' 버튼 흐름으로 영상 하나를 넣는다. 실패하면 False(글은 계속).
 
-    실측한 실제 흐름(2026-08-28):
-      툴바 [동영상] → '일반 동영상/360VR' 첨부 레이어 → 레이어 안 [동영상 추가]
-      버튼이 파일선택창을 연다 → 업로드 후 (제목 입력) → [완료] → 본문 삽입.
+    실측한 실제 흐름(2026-08-28, 셀렉터까지 DOM 검증):
+      툴바 [동영상](data-name='video') → 첨부 레이어의 [동영상 추가]
+      (button.nvu_btn_append.nvu_local — ⚠️ 툴바 버튼의 툴팁 텍스트도
+      '동영상 추가'라서 has-text 로 찾으면 툴바를 다시 눌러 레이어가 닫힌다.
+      그게 첫 실패의 진짜 원인이었다) → 파일선택창 → 업로드(작은 클립은 1초)
+      → 제목 input.nvu_inp(필수, 40자) → [완료] button.nvu_btn_submit → 삽입.
     사진 업로더는 mp4 를 '파일 형식 오류'로 거부하므로 반드시 이 경로여야 한다.
-    어떤 단계에서 실패하든 레이어를 확실히 닫고 나온다.
     """
     btn = first_working(frame, selectors["video_button"])
     if btn is None:
@@ -306,12 +325,12 @@ def insert_video(page: Page, frame: Frame, selectors: dict, path: str,
         print(f"    · 동영상 버튼 클릭 실패({str(e)[:60]}) — 건너뜁니다.")
         return False
 
-    # 첨부 레이어의 '동영상 추가' 버튼을 기다린다
+    # 첨부 레이어의 '동영상 추가'(로컬 업로드) 버튼을 기다린다
     add = None
     for _ in range(16):                       # 최대 8초
-        loc = frame.locator("button:has-text('동영상 추가')").first
+        loc = frame.locator("button.nvu_btn_append.nvu_local").first
         try:
-            if loc.count() > 0:
+            if loc.count() > 0 and loc.is_visible():
                 add = loc
                 break
         except Exception:  # noqa: BLE001
@@ -333,8 +352,8 @@ def insert_video(page: Page, frame: Frame, selectors: dict, path: str,
         _refocus_body(page, frame)
         return False
 
-    # 업로드 완료 대기 → 제목 채우고 완료. 오류 팝업이면 닫고 포기.
-    inserted = False
+    # 업로드 완료 = 완료 버튼(nvu_btn_submit)이 나타난다. 클립은 수 MB 라 금방.
+    submit = None
     waited = 0
     while waited < timeout_ms:
         page.wait_for_timeout(1000)
@@ -343,40 +362,70 @@ def insert_video(page: Page, frame: Frame, selectors: dict, path: str,
             if frame.locator(".se-popup:has-text('오류')").count() > 0:
                 print("    · 동영상 업로드 오류 — 닫고 건너뜁니다.")
                 clear_popups(page, frame, selectors)
+                _close_layer(page, frame)
+                _refocus_body(page, frame)
+                return False
+            loc = frame.locator("button.nvu_btn_submit").first
+            if loc.count() > 0 and loc.is_visible():
+                submit = loc
                 break
         except Exception:  # noqa: BLE001
             pass
-        try:
-            done_btn = frame.locator(
-                "button:has-text('완료'):visible").first
-            title_box = frame.locator(
-                "input[placeholder*='제목'], .se-popup input[type='text']").first
-            if title_box.count() > 0:
-                try:
-                    title_box.click(timeout=1500)
-                    title_box.fill("베어글스 송도")
-                    page.wait_for_timeout(300)
-                except Exception:  # noqa: BLE001
-                    pass
-            if done_btn.count() > 0:
-                done_btn.click(timeout=3000)
-                page.wait_for_timeout(2000)
+    if submit is None:
+        print("    · 동영상 업로드가 끝나지 않았습니다 — 건너뜁니다.")
+        _close_layer(page, frame)
+        _refocus_body(page, frame)
+        return False
+
+    inserted = False
+    page.wait_for_timeout(1500)           # 업로드 목록이 자리잡을 시간
+    try:
+        title_box = frame.locator("input.nvu_inp").first
+        if title_box.count() > 0:
+            title_box.click(timeout=3000)
+            title_box.fill(title[:40])
+            page.wait_for_timeout(300)
+        # 삽입 성공 판정은 클래스 이름에 걸지 않는다(SE 내부 클래스는 자주
+        # 바뀐다). 대신 ①본문 컴포넌트 수가 늘었거나 ②업로더 레이어가 스스로
+        # 닫혔으면 성공. 완료 클릭이 간혹 무시되면(실측) 한 번 더 누른다.
+        before = frame.locator(".se-component").count()
+
+        def layer_open() -> bool:
+            try:
+                return frame.locator(
+                    "button.nvu_btn_append.nvu_local:visible").count() > 0
+            except Exception:  # noqa: BLE001
+                return False
+
+        submit.click(timeout=5000)
+        waited2 = 0
+        while waited2 < 90000:
+            page.wait_for_timeout(1000)
+            waited2 += 1000
+            if frame.locator(".se-component").count() > before or not layer_open():
                 inserted = True
                 break
-            if _dim_gone(frame) and waited > 5000:
-                inserted = True               # 레이어가 스스로 닫힘 = 삽입 완료형
-                break
-        except Exception:  # noqa: BLE001
-            pass
+            if waited2 == 15000:          # 15초째 그대로면 완료를 한 번 더
+                try:
+                    loc = frame.locator("button.nvu_btn_submit").first
+                    if loc.count() and loc.is_visible():
+                        print("    · 완료 버튼 재클릭")
+                        loc.click(timeout=3000)
+                except Exception:  # noqa: BLE001
+                    pass
+        if inserted:
+            page.wait_for_timeout(2000)   # 플레이어 블록이 자리잡을 시간
+    except Exception as e:  # noqa: BLE001
+        print(f"    · 동영상 완료 단계 실패({str(e)[:60]})")
 
-    # 무슨 일이 있었든 레이어가 남아 있으면 닫는다
-    if not _dim_gone(frame):
+    if not inserted and not _dim_gone(frame):
         _close_layer(page, frame)
-    if not _dim_gone(frame):                  # 그래도 남았으면 한 번 더
-        _close_layer(page, frame)
-    _refocus_body(page, frame)
     if inserted:
-        print("    · 동영상 삽입 완료")
+        _refocus_after_video(page, frame)   # Escape 금지 — 업로드가 취소된다
+    else:
+        _refocus_body(page, frame)
+    print("    · 동영상 삽입 완료" if inserted
+          else "    · 동영상이 본문에 안 들어갔습니다 — 건너뜁니다.")
     return inserted
 
 
