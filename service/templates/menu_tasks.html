@@ -15,6 +15,16 @@ font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic","Apple SD Gothic Ne
 header{position:sticky;top:0;z-index:10;background:var(--card);border-bottom:1px solid var(--line);padding:10px 14px}
 h1{font-size:16px;margin:0}
 h1 a{font-size:12px;font-weight:400;margin-left:8px;color:var(--brown)}
+.stale{background:var(--amberbg);color:var(--amber);border:1px solid var(--amber);
+border-radius:10px;padding:10px 12px;margin:8px 0;font-size:12.5px;line-height:1.6}
+.stale.bad{background:var(--redbg);color:var(--red);border-color:var(--red)}
+.stale.bad .recol{border-color:var(--red);color:var(--red)}
+.recol{margin-top:6px;border:1px solid var(--amber);background:var(--card);color:var(--amber);
+border-radius:6px;padding:5px 11px;font-size:11.5px;cursor:pointer}
+.why{font-size:11.5px;color:var(--sub);line-height:1.55;margin:2px 0 6px}
+.fix{display:inline-block;font-size:11px;color:var(--brown);border:1px solid var(--line);
+border-radius:6px;padding:2px 8px;margin-left:4px;text-decoration:none}
+.tag.q{background:var(--brownbg);color:var(--brown)}
 .chips{display:flex;gap:6px;margin-top:8px}
 .chip{flex:1;text-align:center;border:1px solid var(--line);background:var(--card);border-radius:10px;
 padding:7px 4px;font-size:12px;cursor:pointer}
@@ -78,6 +88,9 @@ let DATA=null, CH="baemin", DONE={};
 const LABEL={baemin:"배민",coupang:"쿠팡이츠",naver:"네이버"};
 const NOISE=/^\[B\]|^\[신메뉴\]$|^\[1~2인 세트\]$|^커피$|^보틀\(1L\)$|^단체주문 10인$|^든든한 샌드위치 세트$|^BEARGLS HEALTHY|^Bear Cream Cheese/;
 const won=n=>n==null?"–":Math.round(n).toLocaleString("ko-KR")+"원";
+// 받침 있으면 '은', 없으면 '는' (배민은 / 쿠팡이츠는)
+const eunNeun=w=>{const c=(w||"").charCodeAt((w||"").length-1);
+  return w+((c>=0xac00&&c<=0xd7a3&&(c-0xac00)%28)?"은":"는");};
 const norm=s=>(s||"").replace(/\[[^\]]*\]/g,"").replace(/[^0-9a-zA-Z가-힣]/g,"").toLowerCase();
 
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");
@@ -160,7 +173,21 @@ function analyze(ch){
     } else still.push(s);
   }
   missing=missing.filter((_,i)=>!used.has(i));
-  for(const s of still) tasks.push({type:"extra",name:s.menu_name,cur:s.price});
+  // 0.8 미만이라 자동으로 못 이은 것 중에도, 정본에 '비슷한 이름'이 있는 게
+  // 많다. 그걸 '정본에 없음'으로 밀면 사장님이 정본에 또 추가하게 되고 결국
+  // 중복 메뉴가 생긴다. 사람이 판단할 자리로 따로 뺀다.
+  for(const s of still){
+    let best=null,score=0;
+    for(const it of DATA.items){
+      const r=sim(norm(s.menu_name),norm(it.name));
+      if(r>score){score=r;best=it;}
+    }
+    if(best&&score>=0.5)
+      tasks.push({type:"maybe",name:s.menu_name,cur:s.price,
+                  guess:best.name,guessSku:best.sku,guessPrice:expPrice(best,ch)});
+    else
+      tasks.push({type:"extra",name:s.menu_name,cur:s.price});
+  }
   for(const it of missing) tasks.push({type:"add",name:it.name,to:expPrice(it,ch),sku:it.sku});
   return CACHE[ch]={tasks,obs};
 }
@@ -200,6 +227,12 @@ const PORTAL={
 
 // 붙여넣을 값을 클립보드로. 체크박스를 감싼 label 안이라 기본 동작을 막아야
 // 복사만 하고 '완료 체크'가 딸려 켜지지 않는다.
+async function askCollect(){
+  if(!confirm("집 PC에 채널 수집을 요청할까요?\n집 PC가 켜져 있어야 하고, 몇 분 걸립니다.")) return;
+  const r=await fetch(BASE+"/collect",{method:"POST"});
+  toast(r.ok?"수집 요청 보냄 — 끝나면 새로고침하세요":"⚠ 요청 실패");
+}
+
 async function copyVal(e, text){
   e.preventDefault(); e.stopPropagation();
   const v = String(text);
@@ -233,10 +266,21 @@ function markDone(ch,t,checked,el){
   },600);
 }
 
-const SEC=[["price","💰 가격 수정","p","포털에서 가격만 변경"],
-           ["name","✏️ 이름 수정","n","포털에서 메뉴명 변경"],
-           ["extra","❓ 정본에 없음","x","옛 메뉴면 내리기 · 파는 메뉴면 웹 /menu 정본에 추가"],
-           ["add","➕ 채널에 없음","a","이 채널에서 팔 거면 등록 · 안 팔 거면 /menu에서 해당 채널 판매 체크 끄기"]];
+// 제목은 '무엇을 하라'는 문장으로 쓴다. 예전 제목('정본에 없음')은 상태만
+// 말하고 할 일을 말하지 않아 "뭘 어떻게 하라는거냐"는 말을 들었다.
+const SEC=[["price","💰 가격 고치기","p"],
+           ["name","✏️ 이름 고치기","n"],
+           ["maybe","❓ 같은 메뉴인지 확인","q"],
+           ["extra","🗑 정본에 없는 메뉴","x"],
+           ["add","➕ 채널에 등록하기","a"]];
+// 섹션 설명 — 채널 이름이 들어가야 '어디서' 가 분명해진다
+const SECTIP={
+  price: ch=>`${LABEL[ch]} 포털에서 가격만 바꾸면 됩니다`,
+  name:  ch=>`${LABEL[ch]} 포털에서 메뉴 이름을 정본과 같게 바꾸세요`,
+  maybe: ch=>`${LABEL[ch]}에 있는데 정본에서 짝을 못 찾았습니다 — 같은 메뉴인지 봐 주세요`,
+  extra: ch=>`${LABEL[ch]}에만 있고 정본에 비슷한 것도 없습니다 — 안 파는 메뉴면 내리세요`,
+  add:   ch=>`정본에는 있는데 ${LABEL[ch]}에 없습니다 — 팔 거면 등록하세요`,
+};
 
 function renderHeader(){
   const counts={};
@@ -258,17 +302,37 @@ function render(){
   const snaps=(DATA.snapshots||[]).filter(s=>s.channel===CH);
   document.getElementById("when").textContent=snaps.length?
     "수집 "+(snaps[0].collected_at||"").slice(0,16).replace("T"," "):"";
+  // 수집이 며칠 전인지 — 이게 안 보이면 '이미 고친 것'을 다시 고치게 된다
+  const when=snaps.length?(snaps[0].collected_at||""):"";
+  const days=when?Math.floor((Date.now()-new Date(when))/86400000):null;
+  // 수집이 정본 대비 너무 적으면 수집 실패다. 이때 '채널에 없음' 은 전부
+  // 거짓 작업이 된다(네이버 1건 수집인데 153건 등록하라고 시킨 실사고).
+  const nActive = DATA.items.filter(i=>activeFor(i,CH)).length;
+  const thin=snaps.length && nActive && snaps.length < nActive*0.5
+    ? `<div class="stale bad">🚨 <b>${LABEL[CH]} 수집이 ${snaps.length}건뿐</b>입니다
+        (정본에서 ${LABEL[CH]}에 판다고 되어 있는 메뉴는 ${nActive}개).
+        수집이 제대로 안 된 것 같습니다 — <b>아래 '채널에 등록하기' 목록은 믿지 마세요.</b>
+        다시 수집한 뒤에 보세요.
+        <div><button class="recol" onclick="askCollect()">🔄 지금 다시 수집</button></div></div>`
+    : "";
+  const stale=days!=null&&days>=3
+    ? `<div class="stale">⚠️ 이 목록은 <b>${when.slice(0,10)}에 본 ${LABEL[CH]} 모습</b> 기준입니다
+        (${days}일 전).<br>그 뒤 정본을 고치셨다면 <b>이미 해결된 항목이 섞여 있습니다.</b>
+        먼저 다시 수집하세요.
+        <div><button class="recol" onclick="askCollect()">🔄 지금 다시 수집 (집 PC 켜져 있어야 함)</button></div></div>`
+    : "";
   const tasks=computeTasks(CH);
   const hideDone=document.getElementById("hideDone")?.checked??false;
   let html="";
   if(!snaps.length){
     html=`<div class="empty">이 채널의 수집 데이터가 없습니다.<br>집 PC에서 <code>worker\\menu_report.bat</code> 실행 후 새로고침하세요.</div>`;
   } else if(!tasks.length){
-    html=`<div class="empty">🎉 이 채널은 정본과 완전히 일치합니다!</div>`;
+    html=thin+stale+`<div class="empty">🎉 이 채널은 정본과 완전히 일치합니다!</div>`;
   } else {
-    html=`<label class="hidebox"><input type="checkbox" id="hideDone" ${hideDone?"checked":""}
+    html=thin+stale+`<label class="hidebox"><input type="checkbox" id="hideDone" ${hideDone?"checked":""}
       onchange="render()"> 완료한 항목 숨기기</label>`;
-    for(const [type,title,tag,tip] of SEC){
+    for(const [type,title,tag] of SEC){
+      const tip=SECTIP[type](CH);
       const list=tasks.filter(t=>t.type===type&&!(hideDone&&DONE[key(CH,t)]));
       const totalOfType=tasks.filter(t=>t.type===type).length;
       if(!totalOfType) continue;
@@ -281,10 +345,28 @@ function render(){
         const done=!!DONE[key(CH,t)];
         let desc="";
         const cp = v => `<button class="cpbtn" onclick="copyVal(event,'${String(v).replace(/'/g,"\\'")}')">📋 복사</button>`;
-        if(t.type==="price") desc=`<span class="price">${won(t.cur)}</span> → <span class="to">${won(t.to)}</span> ${cp(t.to)}`;
-        if(t.type==="name") desc=`→ <span class="to">${t.to}</span> ${cp(t.to)}`;
-        if(t.type==="extra") desc=`채널가 ${won(t.cur)}`;
-        if(t.type==="add") desc=`등록 가격 <b>${won(t.to)}</b> ${cp(t.to)} · 이름 ${cp(t.name)}`;
+        // '왜' 한 줄 + 고칠 값. 정본이 틀린 경우도 있으므로 반대로 고치는
+        // 길(웹 /menu)을 항상 같이 준다 — 없으면 채널을 잘못 맞추게 된다.
+        const master = t.sku ? `<a class="fix" href="/{{ key }}/menu?sku=${t.sku}"
+            onclick="event.stopPropagation()">정본이 틀렸어요 → 정본 고치기</a>` : "";
+        if(t.type==="price") desc=`<div class="why">${eunNeun(LABEL[CH])} ${won(t.cur)},
+            정본은 ${won(t.to)} 입니다.</div>
+          <span class="price">${won(t.cur)}</span> → <span class="to">${won(t.to)}</span> ${cp(t.to)} ${master}`;
+        if(t.type==="name") desc=`<div class="why">${LABEL[CH]}에는
+            <b>${t.name}</b>, 정본에는 <b>${t.to}</b> 로 적혀 있습니다.</div>
+          → <span class="to">${t.to}</span> ${cp(t.to)} ${master}`;
+        if(t.type==="maybe") desc=`<div class="why">${LABEL[CH]}의
+            <b>${t.name}</b>(${won(t.cur)})과 정본의 <b>${t.guess}</b>(${won(t.guessPrice)})가
+            비슷합니다. <b>같은 메뉴면</b> 이름·가격만 맞추면 되고,
+            <b>다른 메뉴면</b> 정본에 새로 추가해야 합니다.</div>
+          <a class="fix" href="/{{ key }}/menu?sku=${t.guessSku}"
+             onclick="event.stopPropagation()">정본에서 ${t.guess} 열기</a>`;
+        if(t.type==="extra") desc=`<div class="why">${LABEL[CH]}에 ${won(t.cur)}로 올라와
+            있는데 정본에 비슷한 메뉴도 없습니다. 안 파는 메뉴면 ${LABEL[CH]}에서 내리고,
+            파는 메뉴면 정본에 추가하세요.</div>`;
+        if(t.type==="add") desc=`<div class="why">정본에는 있는데 ${LABEL[CH]}에 없습니다.
+            팔 메뉴가 아니면 정본에서 ${LABEL[CH]} 판매를 꺼 두세요.</div>
+          등록 가격 <b>${won(t.to)}</b> ${cp(t.to)} · 이름 ${cp(t.name)} ${master}`;
         html+=`<label class="row ${done?"done":""}">
           <input type="checkbox" ${done?"checked":""}
             onchange="markDone('${CH}',${JSON.stringify(t).replace(/"/g,"&quot;")},this.checked,this.closest('.row'))">
