@@ -1153,6 +1153,63 @@ async function launchAdd(sku){
   render();
 }
 
+// ── 메뉴 사진 정본 ──────────────────────────────────────────
+// 원본 1장 올리면 서버가 채널 규격(배민 1280×960 · 쿠팡 1080×660 ·
+// 네이버/키오스크 1000×1000)으로 잘라 저장한다. 파일 존재 여부는 컬럼이
+// 아니라 공개 URL 로 확인한다(onerror = 아직 없음).
+let IMG_V = 1;                       // 업로드 후 캐시를 깨는 버전 값
+const IMG_CH = [["baemin","배민 1280×960"],["coupang","쿠팡이츠 1080×660"],
+                ["naver","네이버 1000×1000"],["kiosk","키오스크 1000×1000"]];
+const imgUrl = (sku, name) => `${DATA.img_base}/${sku}/${name}?v=${IMG_V}`;
+
+function imageHTML(sku){
+  return `<div class="dsec">
+    <b>🖼 메뉴 사진</b>
+    <span class="note">원본 1장을 올리면 채널 규격 4장이 자동으로 만들어집니다.
+      링크를 눌러 저장한 뒤 각 채널 포털에 올리세요. 다시 올리면 교체됩니다.</span>
+    <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-top:6px">
+      <img id="img-${sku}" src="${imgUrl(sku,"original.jpg")}" alt=""
+        style="width:96px;height:96px;object-fit:cover;border-radius:10px;border:1px solid var(--line)"
+        onerror="this.style.display='none';document.getElementById('imgnone-${sku}').style.display=''">
+      <span id="imgnone-${sku}" class="note" style="display:none;margin:0;align-self:center">아직 사진이 없습니다</span>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        ${IMG_CH.map(([ch,label])=>`<a href="${imgUrl(sku, ch+".jpg")}" target="_blank" rel="noopener"
+          style="font-size:12.5px">📥 ${label}</a>`).join("")}
+      </div>
+    </div>
+    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+      <input type="file" id="imgfile-${sku}" accept="image/*" style="display:none"
+        onchange="uploadImage('${sku}', this.files[0])">
+      <button onclick="document.getElementById('imgfile-${sku}').click()">📷 사진 올리기 / 교체</button>
+      <button onclick="deleteImage('${sku}')">🗑 사진 삭제</button>
+    </div></div>`;
+}
+
+async function uploadImage(sku, file){
+  if (!file) return;
+  toast("사진 올리는 중… (채널 규격 4장 생성)");
+  const fd = new FormData();
+  fd.append("file", file);
+  const r = await fetch(`${BASE}/item/${sku}/image`, {method:"POST", body: fd});
+  const j = await r.json().catch(()=>({ok:false,error:"응답을 읽지 못했습니다"}));
+  if (!j.ok){ toast("⚠ 실패: " + (j.error||r.status)); return; }
+  IMG_V++;                                   // 캐시 깨고 새 사진 표시
+  toast("사진 저장 ✓ — 채널 규격 4장 생성됨");
+  if (sheetOpen() && OPEN_SKU === sku)
+    document.getElementById("sheetBody").innerHTML = detailHTML(sku);
+  else refreshDetail(sku);
+}
+async function deleteImage(sku){
+  if (!confirm("이 메뉴의 사진(원본+채널 4장)을 삭제할까요?")) return;
+  const j = await api(`/item/${sku}/image/delete`);
+  if (!j) return;
+  IMG_V++;
+  toast("사진 삭제됨");
+  if (sheetOpen() && OPEN_SKU === sku)
+    document.getElementById("sheetBody").innerHTML = detailHTML(sku);
+  else refreshDetail(sku);
+}
+
 function launchHTML(sku){
   const it = DATA.items.find(i=>i.sku===sku);
   if (!it) return "";
@@ -1341,6 +1398,7 @@ function detailHTML(sku){
         <button onclick="copyIntro('${sku}','en')">📋 영문 복사</button>
       </div>
     </div>
+    ${imageHTML(sku)}
     ${launchHTML(sku)}
     ${setEditor(sku)}
     ${it.composition?`<div class="note">구성: ${esc(it.composition)}</div>`:""}

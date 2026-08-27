@@ -1685,6 +1685,9 @@ def menu_data(path_key):
             "offers": _safe(db.offers_all),
             "components": _safe(db.components_all),
             "merge_undo": _safe(db.merge_undo_info),
+            # 메뉴 사진 공개 URL 베이스 — 화면이 {base}/{sku}/{채널}.jpg 로 조합
+            "img_base": (os.getenv("SUPABASE_URL", "").rstrip("/")
+                         + "/storage/v1/object/public/menu-images"),
         })
     except Exception as e:  # noqa: BLE001
         return jsonify({"error": str(e)[:200]}), 500
@@ -1721,6 +1724,54 @@ def menu_item_save(path_key, sku):
         db.log_error("service", f"메뉴 저장 실패({sku}): {e}",
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/menu/item/<sku>/image", methods=["POST"])
+def menu_item_image(path_key, sku):
+    """메뉴 사진 원본 업로드 → 채널별 규격(배민/쿠팡/네이버/키오스크) 자동 생성.
+
+    menu_images 는 service/ 안의 모듈이라 지연 import — 위(모듈 로드 시점)에서
+    import 하면 `import service.app` 으로 부르는 테스트가 경로 문제로 죽는다
+    (menu_intro 시절에 실제로 겪은 사고).
+    """
+    check(path_key)
+    if not any(m["sku"] == sku for m in db.menu_all()):
+        abort(404)
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"ok": False, "error": "파일이 없습니다"}), 400
+    raw = f.read()
+    try:
+        from menu_images import MAX_UPLOAD, upload_all
+    except ImportError:
+        from service.menu_images import MAX_UPLOAD, upload_all
+    if len(raw) > MAX_UPLOAD:
+        return jsonify({"ok": False,
+                        "error": f"파일이 너무 큽니다({len(raw)//1024//1024}MB) — 15MB 이하로"}), 400
+    try:
+        out = upload_all(db.get_client(), sku, raw)
+        return jsonify({"ok": True, **out})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"메뉴 사진 업로드 실패({sku}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/menu/item/<sku>/image/delete", methods=["POST"])
+def menu_item_image_delete(path_key, sku):
+    check(path_key)
+    try:
+        from menu_images import delete_all
+    except ImportError:
+        from service.menu_images import delete_all
+    try:
+        n = delete_all(db.get_client(), sku)
+        return jsonify({"ok": True, "removed": n})
+    except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
