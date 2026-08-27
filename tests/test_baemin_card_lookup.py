@@ -468,3 +468,24 @@ def test_content_match_still_rejects_a_different_review():
     card = "알뜰배달\n다른손님\n전혀 다른 내용의 리뷰입니다"
     stored = "맛있어요 항상.. 리뷰이벤트 베이글 러스크"
     assert _squash(stored)[:15] not in _squash(card)
+
+
+# ---------------------------------------------------------------------------
+# 배민이 버튼 문구를 바꾼다 (2026-08-27: '등록하기' → '추가하기')
+# ---------------------------------------------------------------------------
+# 등록기가 옛 문구만 찾다가 "등록 버튼이 없다 = 이미 답글이 있다"고 오판해
+# 게시가 막혔다. 수집기(baemin.py)는 진작 둘 다 알고 있었는데 등록기만 몰랐다.
+
+def test_reply_button_text_accepts_both_wordings():
+    from crawler.review_reply import BAEMIN_REPLY_BTN_RE
+    assert BAEMIN_REPLY_BTN_RE.search("사장님 댓글 등록하기")
+    assert BAEMIN_REPLY_BTN_RE.search("사장님 댓글 추가하기")
+    assert not BAEMIN_REPLY_BTN_RE.search("삭제")
+
+
+def test_collector_and_poster_agree_on_button_wording():
+    """두 곳이 서로 다른 문구를 알고 있으면 또 같은 사고가 난다."""
+    from crawler import baemin, review_reply
+    src = (baemin.__file__ and open(baemin.__file__, encoding="utf-8").read())
+    for text in review_reply.BAEMIN_REPLY_BTN_TEXTS:
+        assert text in src, f"수집기가 '{text}' 를 모른다"

@@ -69,7 +69,12 @@ COUPANG_REPLY_GLOB = "**/merchant/reviews/reply"
 BAEMIN_REVIEWS_URL = "https://self.baemin.com/shops/reviews"
 # 안정적 시맨틱: 사장님 댓글 작성 컴포넌트 접두사 + 버튼 텍스트(해시 클래스 금지).
 BAEMIN_CREATOR_SEL = '[class*="CEOCommentCreator-module__"]'
-BAEMIN_REPLY_BTN_TEXT = "사장님 댓글 등록하기"
+# ⚠️ 배민이 문구를 바꾼다 — 2026-08-27 실측 화면은 '추가하기' 다
+#    (예전엔 '등록하기'). 등록기는 옛 문구만 찾다가 "이미 답글이 있다"고
+#    오판해 게시가 막혔다. 수집기는 진작 둘 다 알고 있었다(baemin.py).
+BAEMIN_REPLY_BTN_TEXTS = ("사장님 댓글 등록하기", "사장님 댓글 추가하기")
+BAEMIN_REPLY_BTN_RE = re.compile(r"사장님 댓글 (?:등록|추가)하기")
+BAEMIN_REPLY_BTN_TEXT = BAEMIN_REPLY_BTN_TEXTS[0]   # 메시지용
 BAEMIN_SUBMIT_TEXTS = ("등록", "댓글 등록", "답글 등록")
 
 _PLAT_LABEL = {"baemin": "배민", "coupang": "쿠팡"}
@@ -621,7 +626,7 @@ class ReplyToReviewAction(WriteAction):
 
         # 작성기 열기 — 미답변이면 '사장님 댓글 등록하기', 이미 답글이 있고
         # 수정 모드면 답글박스(형제)의 '수정' 버튼.
-        open_btn = card.get_by_text(BAEMIN_REPLY_BTN_TEXT, exact=False)
+        open_btn = card.get_by_text(BAEMIN_REPLY_BTN_RE)
         editing = False
         if open_btn.count() == 0:
             # 등록 버튼이 없다 = 이미 답글이 달려 있다. 시간차로 앱/다른 경로에서
@@ -640,14 +645,20 @@ class ReplyToReviewAction(WriteAction):
                             "전환합니다", self.review.get("review_no"))
             edit_btn = box.first.get_by_text("수정", exact=True)
             if edit_btn.count() == 0:
-                raise ReplyPostError("답글박스에 '수정' 버튼이 없습니다.")
+                # 2026-08-27 현재 배민 답글박스에는 '삭제'만 있고 '수정'이
+                # 없다. 남의 답글을 말없이 지우는 건 위험하므로 자동으로
+                # 처리하지 않고, 사람이 판단하도록 알린다.
+                raise ReplyPostError(
+                    "이 리뷰엔 이미 답글이 달려 있는데 배민 화면에 '수정' "
+                    "버튼이 없어요. 배민 사장님앱에서 기존 답글을 지운 뒤 "
+                    "다시 등록해 주세요.")
             _baemin_click(edit_btn.first, "'수정' 버튼")
             editing = True
             card = box.first    # 이후 textarea·버튼은 답글박스 안에서 찾는다
         else:
             # 텍스트가 아니라 **버튼 역할**로 먼저 잡는다 — 텍스트로 잡으면
             # 안쪽 span 이 걸려 클릭이 먹지 않는다(2026-08-16 실측).
-            btn = card.get_by_role("button", name=BAEMIN_REPLY_BTN_TEXT)
+            btn = card.get_by_role("button", name=BAEMIN_REPLY_BTN_RE)
             _baemin_click(btn.first if btn.count() else open_btn.first,
                           f"'{BAEMIN_REPLY_BTN_TEXT}' 버튼")
         human_pause(0.8, 1.5)
@@ -729,7 +740,7 @@ class ReplyToReviewAction(WriteAction):
             if author and content and author in txt and content in txt:
                 return c
             if (author and not content and author in txt
-                    and BAEMIN_REPLY_BTN_TEXT in txt):
+                    and any(t in txt for t in BAEMIN_REPLY_BTN_TEXTS)):
                 author_only_hits.append(c)
         if len(author_only_hits) == 1:
             return author_only_hits[0]
