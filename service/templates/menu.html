@@ -107,8 +107,10 @@ table{border-collapse:collapse;width:100%;min-width:700px}
 th,td{padding:8px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
 th{position:sticky;top:0;z-index:3;background:#faf8f3;font-size:11px;color:var(--sub);font-weight:600;
 box-shadow:inset 0 -1px 0 var(--line)}
-th[data-sort]{cursor:pointer}
-th[data-sort] .arr{font-size:9px}
+[data-sort]{cursor:pointer}
+[data-sort] .arr{font-size:9px}
+/* 메뉴 칸의 · SKU 는 이름과 따로 눌리는 정렬 손잡이 */
+th.name span[data-sort]{color:var(--sub);margin-left:2px}
 /* 이름 열 고정 — 가로 스크롤 중에도 어느 메뉴 줄인지 안 놓친다(NN/g·Toast 패턴).
    sticky 셀은 배경이 비치면 글자가 겹쳐 보이므로 반드시 불투명 배경. */
 td.name,th.name{text-align:left;position:sticky;left:0;z-index:2;background:var(--card);
@@ -840,12 +842,23 @@ async function bSave(){
 
 // ── 정렬 — 열 머리 탭. 1탭 오름 → 2탭 내림 → 3탭 해제.
 //    정렬 중에는 분류 묶음 행을 끄고 평평하게(묶음과 정렬은 동시에 못 산다).
+// 이름·SKU 는 글자라 숫자 빼기로는 못 비긴다. 값 대신 '비교 함수'를 둔다.
+// SKU 는 BK-2 가 BK-10 보다 앞이어야 하므로 접두사+번호를 나눠 본다
+// (문자열 그대로 비교하면 BK-10 < BK-2 가 된다).
+const skuParts = sku => { const m = /^([A-Za-z]+)-?(\d+)$/.exec(sku || "");
+  return m ? [m[1].toUpperCase(), +m[2]] : [(sku || "").toUpperCase(), 0]; };
 const SORTKEYS = {
+  name: (a, b) => a.name.localeCompare(b.name, "ko"),
+  sku: (a, b) => { const [pa, na] = skuParts(a.sku), [pb, nb] = skuParts(b.sku);
+    return pa === pb ? na - nb : pa.localeCompare(pb); },
   store_price: it => it.store_price,
   delivery_price: it => it.delivery_price ?? it.store_price,
   ingredient_cost: it => it.ingredient_cost,
   rate: it => costRate(it,"store"),
 };
+// 숨김(매장·배달 둘 다 내린 것)은 어떻게 정렬하든 맨 아래로 — 안 파는 메뉴가
+// 목록 한가운데 있으면 파는 메뉴를 훑는 데 방해만 된다(사장님 2026-08-28).
+const hiddenLast = (a, b) => (isSelling(a) ? 0 : 1) - (isSelling(b) ? 0 : 1);
 function clickSort(k){
   if (!SORT || SORT.k !== k) SORT = {k, d:1};
   else if (SORT.d === 1) SORT.d = -1;
@@ -890,13 +903,26 @@ function render(){
   const nm = document.getElementById("noteMin"); if(nm) nm.textContent = won(minOrd);
 
   // 정렬 — 순서를 손보는 중에 정렬이 끼면 뭘 옮긴 건지 알 수 없다.
-  if (SORT && MODE === "view"){
-    const f = SORTKEYS[SORT.k];
-    items = [...items].sort((a,b)=>{
-      const x=f(a), y=f(b);
-      if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1;
-      return (x-y)*SORT.d;
-    });
+  if (MODE === "view"){
+    if (SORT){
+      const f = SORTKEYS[SORT.k];
+      items = [...items].sort((a,b)=> hiddenLast(a,b) || (
+        f.length === 2                       // 이름·SKU: 비교 함수
+          ? f(a,b) * SORT.d
+          : (()=>{ const x=f(a), y=f(b);     // 숫자 열: 빈 값은 늘 뒤로
+              if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1;
+              return (x-y)*SORT.d; })()));
+    } else {
+      // 정렬을 안 걸었어도 숨김은 뒤로 보낸다. 다만 분류 묶음은 지켜야 하므로
+      // (분류 첫 등장 순서, 숨김, 원래 순서) 로 줄을 세운다 — 분류가 흩어지면
+      // 머리줄이 여러 번 뜬다.
+      const rank = new Map();
+      DATA.items.forEach((i,idx)=>{ if(!rank.has(i.category)) rank.set(i.category, idx); });
+      items = [...items].sort((a,b)=>
+        (rank.get(a.category) - rank.get(b.category))
+        || hiddenLast(a,b)
+        || ((a.sort_order||0) - (b.sort_order||0)));
+    }
   }
   const arr = k => SORT&&SORT.k===k ? `<span class="arr">${SORT.d===1?"▲":"▼"}</span>` : "";
 
@@ -904,7 +930,8 @@ function render(){
   document.getElementById("th").innerHTML = BULK
     ? `<tr><th class="name">메뉴명 (바로 고치세요)</th><th>분류</th><th>매장가</th><th>배달가</th>
          <th>재료원가</th><th>원가율<br>매장</th></tr>`
-    : `<tr><th class="name">메뉴 <span style="font-weight:400">(탭=상세)</span></th>
+    : `<tr><th class="name" data-sort="name" title="메뉴명 가나다순 — 한 번 더 누르면 역순, 세 번째는 해제">메뉴${arr("name")}
+           <span style="font-weight:400" data-sort="sku" title="SKU 순 (BK-2 → BK-10 처럼 번호대로)">· SKU${arr("sku")}</span></th>
          <th data-sort="store_price">매장가${arr("store_price")}</th>
          <th data-sort="delivery_price">배달가${arr("delivery_price")}</th>
          ${COLS?`<th data-sort="ingredient_cost">재료원가${arr("ingredient_cost")}</th>
@@ -1037,7 +1064,9 @@ document.getElementById("pchips").addEventListener("click", e=>{
   PROB = (PROB === c.dataset.prob) ? null : c.dataset.prob; render();
 });
 document.getElementById("th").addEventListener("click", e=>{
-  const t = e.target.closest("th[data-sort]"); if(!t) return;
+  // 메뉴 칸은 th(이름)와 그 안의 스팬(SKU)이 겹쳐 있다. th 로 먼저 찾으면
+  // 'SKU' 를 눌러도 이름 정렬이 걸리므로, 가장 가까운 [data-sort] 를 잡는다.
+  const t = e.target.closest("[data-sort]"); if(!t) return;
   clickSort(t.dataset.sort);
 });
 

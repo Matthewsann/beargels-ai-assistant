@@ -411,7 +411,9 @@ function renderIng2(){
       <td class="ed" onclick="editCell(this,${i.id},'pack_cost')">${won(i.pack_cost)}</td>
       <td><b>${w1(unitCost(i))}</b><span class="sub">/${i.unit}</span></td>
       <td>${n||"–"}</td>
-      <td>${n?"":`<span class="del" onclick="delIng(${i.id})">삭제</span>`}</td>
+      <td>${n
+        ? `<span class="del" onclick="delIng(${i.id})" title="${n}개 메뉴가 쓰는 중 — 누르면 어느 메뉴인지 보여주고 한 번 더 묻습니다">삭제<sup>${n}</sup></span>`
+        : `<span class="del" onclick="delIng(${i.id})">삭제</span>`}</td>
     </tr>`;
   }
   tbl.className=BULK?"bulk":"";
