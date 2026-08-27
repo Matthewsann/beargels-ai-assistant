@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{{ m.title }} — 회의 기록</title>
+{# 회의 상세 — 논의 내용 / 결정한 것 / 할 일(여기서 체크한다). #}
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
+          --ok:#3b6d11; --ok-bg:#eaf3de; --bad:#a3271f; --bad-bg:#fbe9e7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px 14px 64px; }
+
+  .back { display:inline-block; font-size:12.5px; color:var(--accent);
+          text-decoration:none; margin-bottom:9px; }
+  .dtl { background:var(--card); border:1px solid var(--line); border-radius:13px;
+         padding:14px 14px 16px; }
+  .chip { display:inline-block; font-size:11px; padding:2px 8px; border-radius:20px;
+          background:var(--accent-bg); color:var(--accent); }
+  h1 { font-size:17px; margin:6px 0 3px; }
+  .meta { font-size:12.5px; color:var(--muted); margin-bottom:4px; }
+
+  .blk { margin-top:15px; }
+  .blk .lbl { font-size:11.5px; font-weight:700; color:var(--muted);
+              letter-spacing:.04em; margin-bottom:6px; }
+  .blk p { margin:0; font-size:14px; white-space:pre-wrap; word-break:break-word; }
+  .decide { background:var(--ok-bg); border-radius:10px; padding:11px 12px; }
+  .decide .lbl { color:var(--ok); }
+  .decide ul { margin:0; padding-left:18px; font-size:14px; }
+  .decide li { margin-bottom:3px; }
+
+  .todo { border:1px solid var(--line); border-radius:10px; padding:6px 11px; }
+  .trow { display:flex; gap:9px; align-items:flex-start; font-size:14px;
+          padding:8px 0; border-bottom:1px solid var(--line); }
+  .trow:last-child { border-bottom:none; }
+  .trow input[type=checkbox] { width:18px; height:18px; margin:3px 0 0; flex-shrink:0;
+          accent-color:var(--ok); cursor:pointer; }
+  .trow .tx { flex:1; word-break:break-word; }
+  .trow .who { font-size:11.5px; color:var(--muted); white-space:nowrap; margin-top:3px;
+          font-variant-numeric:tabular-nums; }
+  .trow .who.late { color:var(--bad); font-weight:700; }
+  .trow.done .tx { color:var(--muted); text-decoration:line-through; }
+
+  .acts { display:flex; gap:7px; margin-top:16px; }
+  .acts a, .acts button { flex:1; text-align:center; border:1px solid var(--line);
+          background:var(--card); color:var(--ink); border-radius:9px; padding:10px;
+          font-size:13.5px; text-decoration:none; font-family:inherit; cursor:pointer; }
+  .acts .del { color:var(--bad); }
+  .empty { color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+{% include "_sidebar.html" %}
+<div class="wrap">
+
+  <a class="back" href="{{ url_for('meeting_home', path_key=key) }}">← 회의 목록</a>
+
+  <div class="dtl">
+    {% if m.category %}<span class="chip">{{ m.category }}</span>{% endif %}
+    <h1>{{ m.title }}</h1>
+    <div class="meta">{{ when }}{% if m.attendees %} · {{ m.attendees }}{% endif %}</div>
+
+    {% if m.body %}
+    <div class="blk">
+      <div class="lbl">논의 내용</div>
+      <p>{{ m.body }}</p>
+    </div>
+    {% endif %}
+
+    {% if decisions %}
+    <div class="blk decide">
+      <div class="lbl">결정한 것</div>
+      <ul>{% for d in decisions %}<li>{{ d }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    {% if tasks %}
+    <div class="blk">
+      <div class="lbl">할 일</div>
+      <div class="todo">
+        {% for t in tasks %}
+        <label class="trow {{ 'done' if t.done else '' }}" data-id="{{ t.id }}">
+          <input type="checkbox" {{ 'checked' if t.done else '' }}
+                 onchange="toggleTask(this)">
+          <span class="tx">{{ t.content }}</span>
+          {% if t.owner or t.due_date %}
+          <span class="who">{{ t.owner or '' }}{% if t.owner and t.due_date %} · {% endif %}{{ t.due_date or '' }}</span>
+          {% endif %}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if not m.body and not decisions and not tasks %}
+    <div class="blk empty">적어 둔 내용이 없어요. [✏️ 수정]에서 채워 넣으세요.</div>
+    {% endif %}
+
+    <div class="acts">
+      <a href="{{ url_for('meeting_edit', path_key=key, mid=m.id) }}">✏️ 수정</a>
+      <button type="button" onclick="copyAll()">📋 내용 복사</button>
+      <form method="post" style="flex:1; margin:0"
+            action="{{ url_for('meeting_delete', path_key=key, mid=m.id) }}"
+            onsubmit="return confirm('이 회의 기록을 지울까요? 되돌릴 수 없어요.')">
+        <button class="del" type="submit" style="width:100%">🗑 삭제</button>
+      </form>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // 할 일 체크 — 그 자리에서 저장한다(화면 새로 그리지 않는다).
+  function toggleTask(box) {
+    var row = box.closest(".trow");
+    row.classList.toggle("done", box.checked);
+    fetch("/{{ key }}/meeting/task/" + row.dataset.id + "/done", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "fetch" },
+      body: JSON.stringify({ done: box.checked }),
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.ok) throw new Error();
+    }).catch(function () {
+      box.checked = !box.checked;
+      row.classList.toggle("done", box.checked);
+      alert("저장하지 못했어요. 잠시 뒤 다시 눌러주세요.");
+    });
+  }
+
+  // 카톡 등에 그대로 붙여 넣을 수 있게 회의록을 글로 만든다.
+  function copyAll() {
+    var lines = ["[{{ m.title }}]", "{{ when }}{% if m.attendees %} · {{ m.attendees }}{% endif %}"];
+    {% if m.body %}lines.push("", "◆ 논의 내용", {{ m.body | tojson }});{% endif %}
+    {% if decisions %}
+    lines.push("", "◆ 결정한 것");
+    {% for d in decisions %}lines.push("- " + {{ d | tojson }});{% endfor %}
+    {% endif %}
+    {% if tasks %}
+    lines.push("", "◆ 할 일");
+    {% for t in tasks %}
+    lines.push(({{ 'true' if t.done else 'false' }} ? "[v] " : "[ ] ") + {{ t.content | tojson }}
+      + "{% if t.owner %} ({{ t.owner }}{% if t.due_date %} ~{{ t.due_date }}{% endif %}){% elif t.due_date %} (~{{ t.due_date }}){% endif %}");
+    {% endfor %}
+    {% endif %}
+    var text = lines.join("\n");
+    var done = function () { alert("복사했어요. 붙여넣기 하세요."); };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done, function () { fallback(text, done); });
+    } else { fallback(text, done); }
+  }
+  function fallback(text, done) {
+    var ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); done(); }
+    catch (e) { alert("복사가 안 됐어요. 화면에서 직접 선택해 복사해주세요."); }
+    document.body.removeChild(ta);
+  }
+</script>
+</body>
+</html>

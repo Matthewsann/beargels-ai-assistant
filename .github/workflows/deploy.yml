@@ -21,6 +21,8 @@ on:
       - 'service/**'
       - 'database/supabase_client.py'
       - 'database/blog_store.py'
+      - 'database/mkt_store.py'
+      - 'database/meeting_store.py'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
@@ -83,12 +85,16 @@ jobs:
           upload service/templates/menu_ingredients.html
           upload service/templates/mkt.html
           upload service/templates/mkt_guide.html
+          upload service/templates/meeting.html
+          upload service/templates/meeting_detail.html
+          upload service/templates/meeting_form.html
           upload service/mkt_page.py
           upload service/menu_images.py
           upload data/ingredients_seed.json
           upload database/supabase_client.py
           upload database/blog_store.py
           upload database/mkt_store.py
+          upload database/meeting_store.py
 
       - name: 웹앱 재시작
         run: |

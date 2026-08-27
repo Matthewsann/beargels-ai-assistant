@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{{ '회의 수정' if m else '새 회의 기록' }} — 베어글스 AI 비서</title>
+{# 회의 작성·수정 — 평범한 폼 전송이다(JS 는 줄 추가·분류 직접입력만 돕는다). #}
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
+          --ok:#3b6d11; --ok-bg:#eaf3de; --bad:#a3271f; --bad-bg:#fbe9e7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px 14px 64px; }
+
+  .back { display:inline-block; font-size:12.5px; color:var(--accent);
+          text-decoration:none; margin-bottom:9px; }
+  .box { background:var(--card); border:1px solid var(--line); border-radius:13px;
+         padding:14px 14px 16px; }
+
+  .field { margin-bottom:11px; }
+  .field label { display:block; font-size:11.5px; font-weight:700; color:var(--muted);
+                 margin-bottom:5px; letter-spacing:.03em; }
+  .field input[type=text], .field input[type=date], .field select, .field textarea {
+          width:100%; border:1px solid var(--line); background:var(--card); color:var(--ink);
+          border-radius:9px; padding:10px 11px; font-size:14px; font-family:inherit; }
+  .field textarea { min-height:140px; resize:vertical; line-height:1.65; }
+  .field textarea.short { min-height:84px; }
+  .field .hint { font-size:11.5px; color:var(--muted); margin-top:4px; }
+  .row2 { display:flex; gap:8px; }
+  .row2 .field { flex:1; min-width:0; }
+
+  .tasks { border:1px solid var(--line); border-radius:10px; padding:8px 10px 10px; }
+  .trow { display:flex; gap:6px; align-items:center; padding:6px 0;
+          border-bottom:1px solid var(--line); }
+  .trow:last-of-type { border-bottom:none; }
+  .trow input { border:1px solid var(--line); background:var(--card); color:var(--ink);
+          border-radius:8px; padding:8px 9px; font-size:13.5px; font-family:inherit;
+          min-width:0; }
+  .trow .c { flex:1; }
+  .trow .o { width:78px; flex-shrink:0; }
+  .trow .u { width:132px; flex-shrink:0; }
+  .trow .x { border:none; background:none; color:var(--muted); font-size:16px;
+          cursor:pointer; padding:0 2px; flex-shrink:0; font-family:inherit; }
+  .trow.isdone .c { color:var(--muted); text-decoration:line-through; }
+  .addrow { border:1px dashed var(--line); background:none; color:var(--accent);
+          border-radius:8px; padding:9px; font-size:13px; width:100%; margin-top:8px;
+          font-family:inherit; cursor:pointer; }
+  @media (max-width:520px) {
+    .trow { flex-wrap:wrap; }
+    .trow .c { flex:1 1 100%; }
+    .trow .o { flex:1 1 auto; width:auto; }
+    .trow .u { flex:1 1 auto; width:auto; }
+  }
+
+  .save { display:block; width:100%; background:var(--accent); color:#fff; border:none;
+          border-radius:10px; padding:13px; font-size:15px; font-weight:700;
+          font-family:inherit; cursor:pointer; margin-top:16px; }
+</style>
+</head>
+<body>
+{% include "_sidebar.html" %}
+<div class="wrap">
+
+  <a class="back" href="{{ url_for('meeting_detail', path_key=key, mid=m.id) if m else url_for('meeting_home', path_key=key) }}">← 취소</a>
+
+  <form class="box" method="post"
+        action="{{ url_for('meeting_save', path_key=key, mid=m.id) if m else url_for('meeting_save', path_key=key) }}">
+
+    <div class="row2">
+      <div class="field">
+        <label for="meeting_date">날짜</label>
+        <input type="date" id="meeting_date" name="meeting_date"
+               value="{{ ((m.meeting_date if m else today)|string)[:10] }}" required>
+      </div>
+      <div class="field">
+        <label for="category">분류</label>
+        <select id="category" name="category" onchange="onCat(this)">
+          <option value="">(없음)</option>
+          {% for c in cats %}
+          <option value="{{ c }}" {{ 'selected' if m and m.category == c else '' }}>{{ c }}</option>
+          {% endfor %}
+          <option value="__new__">➕ 직접 입력…</option>
+        </select>
+        <input type="text" id="category_new" name="category_new" maxlength="20"
+               placeholder="새 분류 이름" style="display:none; margin-top:6px">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="title">제목</label>
+      <input type="text" id="title" name="title" maxlength="120" required
+             value="{{ m.title if m else '' }}" placeholder="예) 8월 5주차 주간회의">
+    </div>
+
+    <div class="field">
+      <label for="attendees">참석자</label>
+      <input type="text" id="attendees" name="attendees" maxlength="200"
+             value="{{ m.attendees or '' if m else '' }}" placeholder="사장님, 지은">
+    </div>
+
+    <div class="field">
+      <label for="body">논의 내용</label>
+      <textarea id="body" name="body"
+                placeholder="회의 때 나온 이야기를 편하게 적으세요. 말한 순서대로 적어도 괜찮아요.">{{ m.body or '' if m else '' }}</textarea>
+    </div>
+
+    <div class="field">
+      <label for="decisions">결정한 것</label>
+      <textarea id="decisions" name="decisions" class="short"
+                placeholder="한 줄에 하나씩 적으세요.">{{ m.decisions or '' if m else '' }}</textarea>
+      <div class="hint">비워도 됩니다.</div>
+    </div>
+
+    <div class="field">
+      <label>할 일</label>
+      <div class="tasks" id="tasks">
+        {% for t in tasks %}
+        <div class="trow {{ 'isdone' if t.done else '' }}">
+          <input type="hidden" name="task_id" value="{{ t.id }}">
+          <input type="hidden" name="task_done" value="{{ '1' if t.done else '0' }}">
+          <input class="c" type="text" name="task_content" maxlength="300"
+                 value="{{ t.content }}" placeholder="할 일">
+          <input class="o" type="text" name="task_owner" maxlength="30"
+                 value="{{ t.owner or '' }}" placeholder="담당">
+          <input class="u" type="date" name="task_due" value="{{ t.due_date or '' }}">
+          <button class="x" type="button" onclick="dropRow(this)" title="이 줄 지우기">×</button>
+        </div>
+        {% endfor %}
+      </div>
+      <button class="addrow" type="button" onclick="addRow()">＋ 할 일 추가</button>
+      <div class="hint">담당·기한은 비워도 됩니다. 완료 체크는 회의 상세 화면에서 해요.</div>
+    </div>
+
+    <button class="save" type="submit">저장하기</button>
+  </form>
+
+</div>
+
+<script>
+  // 분류 '직접 입력' — 고르면 이름 칸이 나온다.
+  function onCat(sel) {
+    var box = document.getElementById("category_new");
+    var on = sel.value === "__new__";
+    box.style.display = on ? "block" : "none";
+    box.required = on;
+    if (on) box.focus();
+  }
+
+  function addRow() {
+    var row = document.createElement("div");
+    row.className = "trow";
+    row.innerHTML =
+      '<input type="hidden" name="task_id" value="">' +
+      '<input type="hidden" name="task_done" value="0">' +
+      '<input class="c" type="text" name="task_content" maxlength="300" placeholder="할 일">' +
+      '<input class="o" type="text" name="task_owner" maxlength="30" placeholder="담당">' +
+      '<input class="u" type="date" name="task_due">' +
+      '<button class="x" type="button" onclick="dropRow(this)" title="이 줄 지우기">×</button>';
+    document.getElementById("tasks").appendChild(row);
+    row.querySelector(".c").focus();
+  }
+
+  function dropRow(btn) { btn.closest(".trow").remove(); }
+
+  // 처음 열었을 때 빈 줄 하나는 있어야 바로 적을 수 있다.
+  if (!document.querySelectorAll("#tasks .trow").length) addRow();
+</script>
+</body>
+</html>

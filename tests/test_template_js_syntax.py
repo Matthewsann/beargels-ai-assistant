@@ -33,7 +33,8 @@ sys.path.insert(0, str(ROOT / "service"))
 SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", re.S)
 
 # 검사할 화면 — 버튼이 있는 곳은 전부.
-PAGES = ["", "todo", "care", "history", "reviews", "review", "menu"]
+PAGES = ["", "todo", "care", "history", "reviews", "review", "menu",
+         "meeting", "meeting/new"]
 
 
 def _client():
@@ -77,7 +78,9 @@ def test_screen_javascript_parses(page, tmp_path):
         if not js.strip():
             continue
         if node:
-            f = tmp_path / f"{page or 'home'}_{i}.js"
+            # 화면 이름에 / 가 있으면(meeting/new) 파일 이름으로 못 쓴다
+            safe = (page or "home").replace("/", "_")
+            f = tmp_path / f"{safe}_{i}.js"
             f.write_text(js, encoding="utf-8")
             r = subprocess.run([node, "--check", str(f)],
                                capture_output=True, text=True, timeout=30)

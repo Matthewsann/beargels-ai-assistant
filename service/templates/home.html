@@ -46,6 +46,25 @@
 
   .sec-lbl { font-size:12px; color:var(--muted); margin:16px 2px 8px; font-weight:600;
              letter-spacing:.04em; }
+
+  /* 회의에서 정한 할 일 — 답글 카드 바로 아래. 없으면 통째로 안 보인다. */
+  .mtasks { background:var(--card); border:1px solid var(--line); border-radius:13px;
+            padding:4px 12px; margin-top:8px; }
+  .mtask { display:flex; gap:9px; align-items:flex-start; padding:9px 0; font-size:13.5px;
+           border-bottom:1px solid var(--line); }
+  .mtask:last-child { border-bottom:none; }
+  .mtask input[type=checkbox] { width:17px; height:17px; margin:3px 0 0; flex-shrink:0;
+           accent-color:var(--ok); cursor:pointer; }
+  .mtask .tx { flex:1; word-break:break-word; }
+  .mtask .tx a { color:var(--muted); font-size:11.5px; text-decoration:none;
+           display:block; margin-top:1px; }
+  .mtask .due { font-size:11.5px; color:var(--muted); white-space:nowrap; margin-top:3px;
+           font-variant-numeric:tabular-nums; }
+  .mtask .due.late { color:var(--bad); font-weight:700; }
+  .mtask.gone { opacity:.45; }
+  .mtask.gone .tx { text-decoration:line-through; }
+  .mtmore { display:block; text-align:center; font-size:12px; color:var(--accent);
+            text-decoration:none; padding:9px 0 10px; }
   .grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
   .app { position:relative; display:flex; flex-direction:column; background:var(--card);
          border:1px solid var(--line); border-radius:13px; padding:13px 12px 11px;
@@ -109,6 +128,23 @@
     {% endif %}
   </a>
 
+  {% if meet_tasks %}
+  <div class="mtasks">
+    {% for t in meet_tasks %}
+    <label class="mtask" data-id="{{ t.id }}">
+      <input type="checkbox" onchange="doneTask(this)">
+      <span class="tx">{{ t.content }}
+        <a href="{{ url_for('meeting_detail', path_key=key, mid=t.meeting_id) }}">🗓️ {{ t.meeting_title }}{% if t.owner %} · {{ t.owner }}{% endif %}</a>
+      </span>
+      {% if t.due %}<span class="due {{ 'late' if t.overdue }}">{{ t.due[5:] }}{{ ' 지남' if t.overdue else '' }}</span>{% endif %}
+    </label>
+    {% endfor %}
+    {% if meet_open > meet_tasks|length %}
+    <a class="mtmore" href="{{ url_for('meeting_home', path_key=key) }}">회의 할 일 {{ meet_open }}건 전부 보기 →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <div class="sec-lbl">바로가기</div>
   <div class="grid">
     <a class="app" href="{{ url_for('review_home', path_key=key) }}">
@@ -153,6 +189,15 @@
               onclick="setOwner(event, 'place')" data-name="{{ owners.place or '' }}">
         👤 {{ owners.place or '담당자 지정' }}</button>
     </a>
+    <a class="app" href="{{ url_for('meeting_home', path_key=key) }}">
+      {% if meet_open %}<span class="badge soft">{{ meet_open }}</span>{% endif %}
+      <div class="ico">🗓️</div>
+      <div class="nm">회의 기록</div>
+      <div class="ds">{% if meet_open %}정한 할 일 {{ meet_open }}건 남음{% else %}회의 내용 · 결정 · 할 일{% endif %}</div>
+      <button class="owner {{ '' if owners.meeting else 'none' }}" type="button"
+              onclick="setOwner(event, 'meeting')" data-name="{{ owners.meeting or '' }}">
+        👤 {{ owners.meeting or '담당자 지정' }}</button>
+    </a>
     <a class="app" href="{{ url_for('guide', path_key=key) }}">
       <div class="ico">❓</div>
       <div class="nm">사용법</div>
@@ -171,6 +216,23 @@
 </div>
 
 <script>
+  // 회의 할 일 체크 — 그 자리에서 저장하고 흐리게 남긴다(새로고침하면 사라진다).
+  function doneTask(box) {
+    var row = box.closest(".mtask");
+    row.classList.toggle("gone", box.checked);
+    fetch("/{{ key }}/meeting/task/" + row.dataset.id + "/done", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "fetch" },
+      body: JSON.stringify({ done: box.checked }),
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.ok) throw new Error();
+    }).catch(function () {
+      box.checked = !box.checked;
+      row.classList.toggle("gone", box.checked);
+      alert("저장하지 못했어요. 잠시 뒤 다시 눌러주세요.");
+    });
+  }
+
   // 담당자 태그 — 카드(링크) 안의 버튼이라, 페이지 이동을 막고 이름만 받는다.
   function setOwner(ev, program) {
     ev.preventDefault();

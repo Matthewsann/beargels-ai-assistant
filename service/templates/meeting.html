@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>회의 기록 — 베어글스 AI 비서</title>
+{# 회의 목록 — 월별로 묶인 카드. 색은 반드시 var(--...) 로(다크모드 공용). #}
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
+          --ok:#3b6d11; --ok-bg:#eaf3de; --bad:#a3271f; --bad-bg:#fbe9e7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px 14px 64px; }
+  a { color:inherit; }
+
+  .top { display:flex; align-items:baseline; justify-content:space-between;
+         gap:8px; margin:4px 2px 12px; }
+  .top b { font-size:18px; }
+  .top small { color:var(--muted); font-size:12.5px; flex-shrink:0; }
+
+  .note { font-size:12.5px; padding:11px 12px; border-radius:9px; margin-bottom:12px;
+          background:var(--warn-bg); color:var(--warn); }
+
+  .cats { display:flex; gap:2px; border-bottom:2px solid var(--line);
+          margin:0 0 13px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .cats a { display:block; padding:9px 12px 8px; text-decoration:none; color:var(--muted);
+            font-size:13.5px; font-weight:600; border-bottom:2.5px solid transparent;
+            margin-bottom:-2px; white-space:nowrap; }
+  .cats a.on { color:var(--ink); border-bottom-color:var(--accent); }
+
+  form.find { display:flex; gap:6px; margin-bottom:11px; }
+  form.find input { flex:1; min-width:0; border:1px solid var(--line); background:var(--card);
+            color:var(--ink); border-radius:9px; padding:10px 12px; font-size:13.5px;
+            font-family:inherit; }
+  form.find button { border:1px solid var(--line); background:var(--card); color:var(--ink);
+            border-radius:9px; padding:10px 13px; font-size:13.5px; font-family:inherit;
+            cursor:pointer; flex-shrink:0; }
+
+  .newbtn { display:block; text-align:center; background:var(--accent); color:#fff;
+            border-radius:10px; padding:12px; font-size:14.5px; font-weight:700;
+            text-decoration:none; margin-bottom:14px; }
+
+  .mon { font-size:11.5px; color:var(--muted); font-weight:700; margin:16px 2px 6px;
+         letter-spacing:.03em; }
+  .mlist { display:flex; flex-direction:column; gap:8px; }
+  .mcard { display:block; background:var(--card); border:1px solid var(--line);
+           border-radius:12px; padding:11px 12px; text-decoration:none; color:inherit; }
+  .mcard .d { font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .mcard .t { font-size:14.5px; font-weight:700; margin:2px 0 4px; }
+  .mcard .s { font-size:12.5px; color:var(--muted); line-height:1.5;
+              display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+              overflow:hidden; }
+  .chips { display:flex; gap:5px; flex-wrap:wrap; margin-top:8px; }
+  .chip { font-size:11px; padding:2px 8px; border-radius:20px; background:var(--bg);
+          border:1px solid var(--line); color:var(--muted); }
+  .chip.acc { background:var(--accent-bg); color:var(--accent); border-color:transparent; }
+  .chip.warn { background:var(--warn-bg); color:var(--warn); border-color:transparent; }
+  .chip.ok { background:var(--ok-bg); color:var(--ok); border-color:transparent; }
+
+  .empty { background:var(--card); border:1px dashed var(--line); border-radius:12px;
+           padding:26px 16px; text-align:center; color:var(--muted); font-size:13.5px; }
+</style>
+</head>
+<body>
+{% include "_sidebar.html" %}
+<div class="wrap">
+
+  <div class="top">
+    <b>🗓️ 회의 기록</b>
+    <small>{% if q or cat %}{{ total }}건 찾음{% else %}총 {{ total }}건{% endif %}</small>
+  </div>
+
+  {% if error %}<div class="note">{{ error }}</div>{% endif %}
+
+  <div class="cats">
+    <a class="{{ '' if cat else 'on' }}" href="{{ url_for('meeting_home', path_key=key, q=q or None) }}">전체</a>
+    {% for c in cats %}
+    <a class="{{ 'on' if cat == c else '' }}"
+       href="{{ url_for('meeting_home', path_key=key, cat=c, q=q or None) }}">{{ c }}</a>
+    {% endfor %}
+  </div>
+
+  <form class="find" method="get" action="{{ url_for('meeting_home', path_key=key) }}">
+    {% if cat %}<input type="hidden" name="cat" value="{{ cat }}">{% endif %}
+    <input type="search" name="q" value="{{ q }}" placeholder="회의 내용·결정사항 검색">
+    <button type="submit">찾기</button>
+  </form>
+
+  <a class="newbtn" href="{{ url_for('meeting_new', path_key=key) }}">＋ 새 회의 기록하기</a>
+
+  {% if not months %}
+    <div class="empty">
+      {% if q or cat %}조건에 맞는 회의가 없어요.
+      {% else %}아직 기록한 회의가 없어요.<br>회의가 끝나면 바로 적어 두세요.{% endif %}
+    </div>
+  {% endif %}
+
+  {% for mon in months %}
+  <div class="mon">{{ mon.head }}</div>
+  <div class="mlist">
+    {% for m in mon['items'] %}
+    <a class="mcard" href="{{ url_for('meeting_detail', path_key=key, mid=m.id) }}">
+      <div class="d">{{ m.view.when }}{% if m.attendees %} · 참석 {{ m.attendees }}{% endif %}</div>
+      <div class="t">{{ m.title }}</div>
+      {% if m.view.summary %}<div class="s">{{ m.view.summary }}</div>{% endif %}
+      <div class="chips">
+        {% if m.category %}<span class="chip acc">{{ m.category }}</span>{% endif %}
+        {% if m.view.open %}<span class="chip warn">할 일 {{ m.view.open }} 남음</span>
+        {% elif m.view.tasks %}<span class="chip ok">할 일 완료</span>{% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endfor %}
+
+</div>
+</body>
+</html>

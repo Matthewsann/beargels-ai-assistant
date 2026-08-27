@@ -506,7 +506,7 @@ def _visit_class(n):
 # ---------------------------------------------------------------------------
 
 # 홈 바로가기 카드에 담당자를 달 수 있는 프로그램들(사장님 요청 2026-08-26).
-HOME_PROGRAMS = ("review", "blog", "menu", "insta", "place")
+HOME_PROGRAMS = ("review", "blog", "menu", "insta", "place", "meeting")
 
 KST = timezone(timedelta(hours=9))
 
@@ -543,6 +543,10 @@ def home(path_key):
             learning=_learning_cached,
             alerts=_owner_alerts,
             owners=lambda: db.get_setting("home_owners", {}) or {},
+            # 회의에서 정한 할 일도 홈에서 챙긴다(사장님 결정 2026-08-27).
+            # 표가 아직 없으면 gather 가 None 으로 돌려주고 홈은 그대로 뜬다.
+            meet_tasks=lambda: mt.open_tasks(limit=6),
+            meet_open=mt.open_task_count,
         )
         stat = {
             "todo": (g["todo_baemin"] or 0) + (g["todo_coupang"] or 0),
@@ -563,6 +567,7 @@ def home(path_key):
         "home.html", key=path_key, stat=stat, greet=greet, today=today,
         blog_ready=blog_ready, owners=owners,
         learning=g.get("learning"), error=error, alerts=g.get("alerts") or [],
+        meet_tasks=g.get("meet_tasks") or [], meet_open=g.get("meet_open") or 0,
     )
 
 
@@ -1191,6 +1196,28 @@ def skip(path_key, review_id):
 from database import blog_store as blog  # noqa: E402
 
 
+_PHOTO_MARK = re.compile(r"\[\s*([📷🎬])\s*([^\[\]
+]{1,200}?)\s*\]")
+
+
+def _blog_photos(body: str) -> list[dict]:
+    """본문에 박힌 사진 표시를 목록으로 뽑는다.
+
+    초안을 만들 때 집 PC가 사진함에서 골라 `[📷 메뉴/잠봉뵈르.JPG]` 형태로
+    본문에 박아 둔다. 웹(PythonAnywhere)은 드라이브 파일을 직접 못 읽으므로
+    사진 자체가 아니라 **어떤 사진이 들어가는지**를 보여준다.
+    """
+    out, seen = [], set()
+    for icon, rel in _PHOTO_MARK.findall(body or ""):
+        if rel in seen:
+            continue
+        seen.add(rel)
+        slot, _, name = rel.rpartition("/")
+        out.append({"icon": icon, "rel": rel, "slot": slot,
+                    "name": name, "video": icon == "🎬"})
+    return out
+
+
 def _blog_job_view(job) -> dict | None:
     """블로그 작업 진행 상태를 화면용으로."""
     if not job:
@@ -1198,6 +1225,7 @@ def _blog_job_view(job) -> dict | None:
     label = {
         "blog_recommend": "글감 추천", "blog_draft": "초안 작성",
         "blog_publish": "네이버 초안 넣기", "blog_rank": "순위 확인",
+        "blog_media": "사진함 살펴보기",
     }.get(job.get("kind"), job.get("kind") or "")
     return {
         "kind": label,
@@ -1243,6 +1271,12 @@ def blog_recommend(path_key):
     return _ask_worker(path_key, "blog_recommend")
 
 
+@app.route("/<path_key>/blog/media", methods=["POST"])
+def blog_media_scan(path_key):
+    """사진함에 새로 올린 사진을 집 PC가 살펴보게 한다."""
+    return _ask_worker(path_key, "blog_media")
+
+
 @app.route("/<path_key>/blog/rank", methods=["POST"])
 def blog_rank(path_key):
     check(path_key)
@@ -1274,7 +1308,9 @@ def blog_post(path_key, post_id):
         error = f"글을 불러오지 못했어요: {str(e)[:150]}"
     if post is None and error is None:
         abort(404)
-    return render_template("blog_post.html", key=path_key, post=post or {}, error=error)
+    return render_template("blog_post.html", key=path_key, post=post or {},
+                           photos=_blog_photos((post or {}).get("body", "")),
+                           error=error)
 
 
 @app.route("/<path_key>/blog/post/<int:post_id>/save", methods=["POST"])
@@ -1922,6 +1958,219 @@ def mkt_import(path_key):
         mkt_store.request_pos_import(by="mkt")
         return jsonify({"ok": True})
     except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+# ---------------------------------------------------------------------------
+# 회의 기록 (/meeting) — 사장님 요청 2026-08-27
+#
+# 회의에서 나온 이야기·결정·할 일을 적어 두는 곳. AI 자동 정리는 넣지 않는다
+# (사장님 결정) — 직원이 직접 적고, 할 일만 홈 화면에서 같이 챙긴다.
+# ---------------------------------------------------------------------------
+
+from database import meeting_store as mt  # noqa: E402
+
+# schema_v8 미적용 등으로 표가 없을 때 화면에 띄울 안내
+_MEETING_SETUP = ("회의 기록 표가 아직 준비되지 않았어요. "
+                  "사장님께 알려주시면 바로 열어드릴게요.")
+
+_WEEKDAY = "월화수목금토일"
+
+
+def _looks_missing_table(e) -> bool:
+    """표가 아직 없어서 난 오류인가(PGRST205 / 42P01)."""
+    m = str(e)
+    return ("42P01" in m or "PGRST205" in m
+            or ("meetings" in m and "does not exist" in m))
+
+
+def _meeting_form_tasks() -> list[dict]:
+    """작성/수정 폼에서 온 할 일 줄들을 모은다(빈 줄은 버린다)."""
+    f = request.form
+    ids = f.getlist("task_id")
+    contents = f.getlist("task_content")
+    owners = f.getlist("task_owner")
+    dues = f.getlist("task_due")
+    # 완료 여부는 상세 화면에서 체크한다. 폼에는 숨은 값으로 실려 오가므로
+    # (줄마다 하나씩) 수정하다가 완료 표시가 풀리지 않는다.
+    dones = f.getlist("task_done")
+    out = []
+    for i, content in enumerate(contents):
+        if not (content or "").strip():
+            continue
+        out.append({
+            "id": ids[i] if i < len(ids) else None,
+            "content": content,
+            "owner": owners[i] if i < len(owners) else "",
+            "due_date": dues[i] if i < len(dues) else "",
+            "done": (dones[i] if i < len(dones) else "") in ("1", "true", "on"),
+        })
+    return out
+
+
+def _meeting_category() -> str:
+    """분류 — 목록에서 고르거나, '직접 입력'으로 새 이름을 넣는다."""
+    cat = (request.form.get("category") or "").strip()
+    if cat == "__new__":
+        cat = (request.form.get("category_new") or "").strip()
+    return cat[:20]
+
+
+def _meeting_card(row, tasks) -> dict:
+    """목록 카드에 보여줄 것 — 날짜 표기, 한 줄 요약, 남은 할 일 수."""
+    d = str(row.get("meeting_date") or "")[:10]
+    when = d
+    try:
+        dt = datetime.fromisoformat(d)
+        when = f"{dt.month}월 {dt.day}일 ({_WEEKDAY[dt.weekday()]})"
+    except ValueError:
+        pass
+    summary = " · ".join(
+        line.strip(" -·•")
+        for line in (row.get("decisions") or row.get("body") or "").splitlines()
+        if line.strip())
+    return {
+        "when": when,
+        "summary": summary[:120],
+        "tasks": len(tasks),
+        "open": sum(1 for t in tasks if not t.get("done")),
+    }
+
+
+def _meeting_when(m) -> str:
+    d = str(m.get("meeting_date") or "")[:10]
+    try:
+        dt = datetime.fromisoformat(d)
+        return f"{dt.year}년 {dt.month}월 {dt.day}일 ({_WEEKDAY[dt.weekday()]})"
+    except ValueError:
+        return d
+
+
+def _lines(text):
+    return [ln.strip(" -·•\t") for ln in (text or "").splitlines() if ln.strip()]
+
+
+def _meeting_cats():
+    try:
+        return mt.categories()
+    except Exception:  # noqa: BLE001
+        return list(mt.DEFAULT_CATEGORIES)
+
+
+@app.route("/<path_key>/meeting")
+def meeting_home(path_key):
+    """회의 목록 — 월별로 묶어 최신순. 검색·분류 탭."""
+    check(path_key)
+    q = (request.args.get("q") or "").strip()[:60]
+    category = (request.args.get("cat") or "").strip()[:20]
+    error, rows, total, tasks = None, [], 0, {}
+    cats = list(mt.DEFAULT_CATEGORIES)
+    try:
+        listing = mt.list_meetings(q=q or None, category=category or None)
+        rows, total = listing
+        cats = _meeting_cats()
+        tasks = mt.tasks_for([r["id"] for r in rows]) if rows else {}
+    except Exception as e:  # noqa: BLE001
+        error = (_MEETING_SETUP if _looks_missing_table(e)
+                 else f"회의 목록을 불러오지 못했어요: {str(e)[:150]}")
+
+    months = []
+    for r in rows:
+        d = str(r.get("meeting_date") or "")[:10]
+        head = f"{d[:4]}년 {int(d[5:7])}월" if len(d) == 10 else "날짜 미상"
+        r["view"] = _meeting_card(r, tasks.get(r["id"]) or [])
+        if not months or months[-1]["head"] != head:
+            months.append({"head": head, "items": []})
+        months[-1]["items"].append(r)
+
+    return render_template(
+        "meeting.html", key=path_key, months=months, total=total,
+        q=q, cat=category, cats=cats, error=error)
+
+
+@app.route("/<path_key>/meeting/new")
+def meeting_new(path_key):
+    check(path_key)
+    return render_template(
+        "meeting_form.html", key=path_key, m=None, tasks=[],
+        cats=_meeting_cats(), today=str(mt.today_kst()))
+
+
+@app.route("/<path_key>/meeting/<int:mid>")
+def meeting_detail(path_key, mid):
+    check(path_key)
+    m = mt.get_meeting(mid)
+    if not m:
+        abort(404)
+    return render_template(
+        "meeting_detail.html", key=path_key, m=m, tasks=mt.get_tasks(mid),
+        when=_meeting_when(m), decisions=_lines(m.get("decisions")))
+
+
+@app.route("/<path_key>/meeting/<int:mid>/edit")
+def meeting_edit(path_key, mid):
+    check(path_key)
+    m = mt.get_meeting(mid)
+    if not m:
+        abort(404)
+    return render_template(
+        "meeting_form.html", key=path_key, m=m, tasks=mt.get_tasks(mid),
+        cats=_meeting_cats(), today=str(mt.today_kst()))
+
+
+@app.route("/<path_key>/meeting/save", methods=["POST"])
+@app.route("/<path_key>/meeting/<int:mid>/save", methods=["POST"])
+def meeting_save(path_key, mid=None):
+    """작성·수정 저장 — 평범한 폼 전송(JS 가 막혀도 저장된다)."""
+    check(path_key)
+    fields = {
+        "title": (request.form.get("title") or "").strip() or "제목 없는 회의",
+        "meeting_date": (request.form.get("meeting_date") or "").strip(),
+        "category": _meeting_category(),
+        "attendees": (request.form.get("attendees") or "").strip(),
+        "body": (request.form.get("body") or "").strip(),
+        "decisions": (request.form.get("decisions") or "").strip(),
+    }
+    try:
+        if mid:
+            mt.update_meeting(mid, **fields)
+        else:
+            mid = mt.create_meeting(**fields)
+        mt.save_tasks(mid, _meeting_form_tasks())
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"회의 저장 실패(#{mid}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        abort(500)
+    return redirect(url_for("meeting_detail", path_key=path_key, mid=mid))
+
+
+@app.route("/<path_key>/meeting/<int:mid>/delete", methods=["POST"])
+def meeting_delete(path_key, mid):
+    check(path_key)
+    try:
+        mt.delete_meeting(mid)
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"회의 삭제 실패(#{mid}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        abort(500)
+    return redirect(url_for("meeting_home", path_key=path_key))
+
+
+@app.route("/<path_key>/meeting/task/<int:tid>/done", methods=["POST"])
+def meeting_task_done(path_key, tid):
+    """할 일 체크 — 회의 상세와 홈 화면이 같이 쓴다."""
+    check(path_key)
+    data = request.get_json(force=True, silent=True) or {}
+    done = bool(data.get("done", True))
+    try:
+        mt.set_task_done(tid, done)
+        return jsonify({"ok": True, "done": done})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"회의 할일 체크 실패(#{tid}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 

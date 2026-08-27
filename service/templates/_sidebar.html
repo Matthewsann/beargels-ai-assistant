@@ -3,7 +3,7 @@
    넓은 화면: 왼쪽 고정 세로 메뉴 / 좁은 화면(≤900px): 상단 가로 스크롤 메뉴 #}
 {% include "_theme.html" %}{# 나이트모드 — 모든 화면이 사이드바를 거치므로 여기서 적용 #}
 {% set _p = request.path %}
-{% set _sec = 'home' if _p == '/' ~ key ~ '/' else ('menu' if '/menu' in _p else ('blog' if '/blog' in _p else ('place' if '/place' in _p else ('insta' if '/instagram' in _p else ('mkt' if '/mkt' in _p else 'review'))))) %}
+{% set _sec = 'home' if _p == '/' ~ key ~ '/' else ('menu' if '/menu' in _p else ('blog' if '/blog' in _p else ('place' if '/place' in _p else ('insta' if '/instagram' in _p else ('mkt' if '/mkt' in _p else ('meet' if '/meeting' in _p else 'review')))))) %}
 <style>
   .sbar { position:fixed; left:0; top:0; bottom:0; width:198px; background:#fff;
           border-right:1px solid #e7e5de; padding:16px 10px; overflow-y:auto; z-index:50;
@@ -75,6 +75,8 @@
   <a class="sm {{ 'on' if _sec == 'insta' else '' }}" href="/{{ key }}/instagram">🎬 인스타 파이프라인</a>
 
   <a class="sm {{ 'on' if _sec == 'place' else '' }}" href="/{{ key }}/place">📍 스마트플레이스</a>
+
+  <a class="sm {{ 'on' if _sec == 'meet' else '' }}" href="/{{ key }}/meeting">🗓️ 회의 기록</a>
 </nav>
 {# 나이트모드는 화면 우측 상단 작은 아이콘으로(사장님 요청 2026-08-16) —
    메뉴 목록에 섞여 있으면 매번 스크롤해야 했다. #}
