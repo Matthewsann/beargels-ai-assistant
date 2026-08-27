@@ -39,8 +39,14 @@ def main() -> int:
             print(f"{NO} 토큰 권한 부족 — 빠진 권한: {', '.join(missing)}")
             print("    그래프 API 탐색기에서 이 권한을 체크하고 토큰을 다시 만드세요.")
             print("    (권한이 없으면 인스타가 연결돼 있어도 API가 안 보여줍니다)")
+            print("    ※ 탐색기 왼쪽 위 호스트가 graph.facebook.com 인지 확인하세요.")
+            print("      graph.instagram.com 으로 두면 페이지 권한이 목록에 안 뜹니다.")
             return 1
-        print(f"{OK} 권한 전부 있음 ({', '.join(api.NEEDED_SCOPES)})")
+        print(f"{OK} 필수 권한 전부 있음 ({', '.join(api.NEEDED_SCOPES)})")
+        opt = api.missing_optional_scopes()
+        if opt:
+            print(f"    (선택 권한 없음: {', '.join(opt)} — 해시태그 리서치는 됩니다.")
+            print("     내 게시물 도달·저장 측정만 나중에 붙이면 됩니다)")
     except MetaGraphError as e:
         print(f"{NO} 권한 확인 실패\n    {e}")
         return 1

@@ -111,13 +111,17 @@ class MetaGraph:
             "페이스북 페이지와 연결돼 있는지 확인하세요."
         )
 
-    #: 이 연동에 반드시 필요한 권한. 하나라도 빠지면 조용히 빈 값이 돌아온다.
+    #: 없으면 아무것도 안 되는 권한. 하나라도 빠지면 조용히 빈 값이 돌아온다.
+    #: (페이지 권한이 없으면 me/accounts 가 빈 배열이라 인스타 계정을 못 찾는다)
     NEEDED_SCOPES = (
         "pages_show_list",
         "pages_read_engagement",
         "instagram_basic",
-        "instagram_manage_insights",
     )
+
+    #: 있으면 좋지만 없어도 해시태그 리서치는 되는 권한.
+    #: 사용 사례에 따라 탐색기 목록에 아예 안 뜨는 경우가 있어 필수에서 뺐다.
+    OPTIONAL_SCOPES = ("instagram_manage_insights",)
 
     def granted_scopes(self) -> list[str]:
         data = self._get("me/permissions").get("data", [])
@@ -126,6 +130,10 @@ class MetaGraph:
     def missing_scopes(self) -> list[str]:
         granted = set(self.granted_scopes())
         return [s for s in self.NEEDED_SCOPES if s not in granted]
+
+    def missing_optional_scopes(self) -> list[str]:
+        granted = set(self.granted_scopes())
+        return [s for s in self.OPTIONAL_SCOPES if s not in granted]
 
     def token_info(self) -> dict:
         """토큰 유효기간 등. 실패해도 치명적이지 않다."""
