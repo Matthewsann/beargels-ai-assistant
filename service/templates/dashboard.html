@@ -53,6 +53,17 @@
   .links { display:flex; gap:8px; flex-wrap:wrap; }
   .links a { font-size:13px; padding:10px 14px; border-radius:9px; text-decoration:none;
              color:var(--ink); background:var(--card); border:1px solid var(--line); }
+  /* 고객 요청사항 칸 */
+  .req { padding:9px 0; border-top:1px solid var(--line); }
+  .req:first-of-type { border-top:0; padding-top:2px; }
+  .reqhead { display:flex; align-items:center; gap:7px; flex-wrap:wrap;
+             margin-bottom:4px; }
+  .reqwho { font-size:11.5px; color:var(--muted); }
+  .reqquote { font-size:13.5px; line-height:1.6; word-break:break-word; }
+  /* 복사용 원문은 숨긴다 — 화면엔 위 목록만 보이면 된다 */
+  #reqText { position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
+  .reqdone { display:none; font-size:12px; color:var(--ok); margin-top:6px;
+             text-align:center; }
 </style>
 </head>
 <body>
@@ -115,6 +126,30 @@
   </div>
   {% endif %}
 
+  {# 고객이 남긴 요청·불편 — 답글은 잘 나가는데 정작 '매장에서 바꿀 이야기'는
+     아무도 모르고 지나갔다(사장님 요청 2026-08-28). 여기 모아 두고, 한 번에
+     복사해 매장 단톡방에 올릴 수 있게 한다. AI 없이 규칙으로 고른다. #}
+  {% if requests %}
+  <div class="panel">
+    <div class="lbl" style="margin-bottom:8px;">
+      🗣️ 고객 요청사항 · 최근 {{ requests_days }}일 <b>{{ requests|length }}건</b>
+    </div>
+    {% for r in requests %}
+    <div class="req">
+      <div class="reqhead">
+        <span class="chip">{{ r.icon }} {{ r.topic }}</span>
+        <span class="reqwho">{{ r.date[5:] }} · {{ r.platform }} {{ r.author }}님{% if r.rating %} ★{{ r.rating }}{% endif %}</span>
+      </div>
+      <div class="reqquote">{{ r.quote }}</div>
+    </div>
+    {% endfor %}
+    <button class="btn wide" type="button" id="reqCopy"
+            onclick="copyRequests()">📋 단톡방 공유용 복사</button>
+    <div class="reqdone" id="reqCopied">복사됐어요 — 단톡방에 붙여넣기 하세요</div>
+    <textarea id="reqText" readonly>{{ requests_text }}</textarea>
+  </div>
+  {% endif %}
+
   {# AI 답글 학습 현황 — '언제 우리 모델로 갈아탈 수 있나'의 눈금.
      직원이 초안을 고친 비율이 낮아지고 표본이 쌓일수록 자체 모델이 가까워진다. #}
   {% if learning and learning.pairs %}
@@ -165,3 +200,23 @@
 </div>
 </body>
 </html>
+
+<script>
+// ── 고객 요청사항 단톡방 공유 ─────────────────────────────────
+// 화면에 보이는 목록과 **같은 글**을 복사한다(서버가 미리 만들어 둔 것).
+// 두 곳에서 따로 조립하면 언젠가 어긋난다.
+function copyRequests() {
+  const t = document.getElementById('reqText');
+  const done = () => {
+    const d = document.getElementById('reqCopied');
+    d.style.display = 'block';
+    setTimeout(() => { d.style.display = 'none'; }, 2500);
+  };
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(t.value).then(done)
+      .catch(() => { t.select(); document.execCommand('copy'); done(); });
+  } else {
+    t.select(); document.execCommand('copy'); done();
+  }
+}
+</script>

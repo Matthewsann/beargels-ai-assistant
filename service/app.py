@@ -461,8 +461,10 @@ def _customer_requests(limit=20):
     try:
         rows, _ = db.search_reviews(days=REQUEST_DAYS, limit=300, sort="new")
         return cr.find_requests(rows, limit=limit)
-    except Exception:  # noqa: BLE001 — 이 칸 때문에 현황 화면이 죽으면 안 된다
-        logger.exception("고객 요청사항 추출 실패")
+    except Exception as e:  # noqa: BLE001 — 이 칸 때문에 현황 화면이 죽으면 안 된다
+        db.log_error("service", f"고객 요청사항 추출 실패: {e}",
+                     kind=type(e).__name__, path="_customer_requests",
+                     detail=traceback.format_exc())
         return []
 
 
