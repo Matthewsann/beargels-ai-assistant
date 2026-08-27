@@ -444,17 +444,17 @@ function renderDup(tbl){
   const groups = CATF==="이름중복" ? dupGroups() : nearGroups();
   tbl.className="";
   if(!groups.length){
-    tbl.innerHTML=`<tr><td class="empty">${
+    tbl.innerHTML=`<tr><td class="empty" colspan="6">${
       CATF==="이름중복"?"이름이 겹치는 자재가 없습니다 👍"
                       :"헷갈릴 만한 이름이 없습니다 👍"}</td></tr>`;
     const c=document.getElementById("cnt"); if(c) c.textContent="";
     bBar(); return;
   }
   let html=`<tr><th class="l">자재</th><th class="l">분류·발주처</th><th>단위단가</th>
-    <th>사용<br>메뉴</th><th>이걸로<br>합치기</th></tr>`;
+    <th>사용<br>메뉴</th><th>이걸로<br>합치기</th><th>삭제</th></tr>`;
   groups.forEach((g,gi)=>{
     const title=CATF==="이름중복"?g[0].name:`${g[0].name} / ${g[1].name}`;
-    html+=`<tr class="cat"><td colspan="5">${gi+1}. ${title}
+    html+=`<tr class="cat"><td colspan="6">${gi+1}. ${title}
       <span class="sub">— ${g.length}개</span></td></tr>`;
     // 많이 쓰는 쪽을 위로: 대개 그쪽이 '진짜'다
     const sorted=[...g].sort((a,b)=>usedCount(b.id)-usedCount(a.id));
@@ -468,6 +468,9 @@ function renderDup(tbl){
         <td>${n?`${n}개`:'<span class="sub">안 씀</span>'}</td>
         <td>${others.map(o=>`<button class="okbtn" style="margin:1px 0"
           onclick="mergeIng(${i.id},${o.id})">← #${o.id} 흡수</button>`).join("<br>")}</td>
+        <td><span class="del" onclick="delIng(${i.id})"
+          title="${n?`${n}개 메뉴가 쓰는 중 — 누르면 어느 메뉴인지 보여주고 한 번 더 묻습니다`
+                    :"어떤 레시피에도 안 쓰는 자재입니다"}">삭제${n?`<sup>${n}</sup>`:""}</span></td>
       </tr>`;
     }
   });
