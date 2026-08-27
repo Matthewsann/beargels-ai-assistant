@@ -93,6 +93,12 @@
   .result.ok { display:block; background:var(--ok-bg); color:var(--ok); }
   .result.bad { display:block; background:var(--bad-bg); color:var(--bad); }
   .result a { color:inherit; font-weight:600; }
+  /* 등록 완료 칸 안에 '실제로 나간 답글' 본문 */
+  /* 경계선은 회색 반투명 — 밝은 화면·나이트모드 양쪽에서 다 보인다 */
+  .posted { margin-top:9px; border-top:1px solid rgba(127,127,127,.35); padding-top:8px; }
+  .posted-h { font-size:11.5px; font-weight:700; opacity:.75; margin-bottom:4px; }
+  .posted-b { white-space:pre-wrap; word-break:break-word; line-height:1.62;
+              font-size:13px; max-height:260px; overflow:auto; }
   .pick { width:17px; height:17px; margin-right:6px; vertical-align:-2px; }
   .listbar { display:flex; align-items:center; justify-content:space-between;
              gap:10px; margin-bottom:9px; flex-wrap:wrap; }
@@ -487,7 +493,22 @@ function copyIt(id) {
 // 사라지면 "정말 됐나?" 확인할 길이 없고 하던 자리를 잃는다(사장님 지적).
 const LAMP = {ready:'등록 전', queued:'등록 대기', posting:'등록 중…',
               done:'등록 완료', failed:'등록 실패'};
-function setState(id, state, msg, okLink) {
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+
+// 등록이 끝나면 **실제로 나간 답글 본문**까지 보여준다 — "등록됐어요" 한 줄만
+// 있으면 무엇이 올라갔는지 확인하러 배민·쿠팡을 열어봐야 했다(사장님 요청
+// 2026-08-27). 위쪽 입력칸은 그 뒤에도 고칠 수 있으니, 여기 글이 '보낸 그대로'다.
+function postedBlock(text) {
+  if (!text) return '';
+  return '<div class="posted"><div class="posted-h">실제 등록된 답글</div>'
+       + '<div class="posted-b">' + escHtml(text) + '</div></div>';
+}
+
+function setState(id, state, msg, okLink, postedText) {
   const card = document.getElementById('r' + id);
   if (card) card.dataset.state = state;
   const lamp = document.getElementById('l' + id);
@@ -497,7 +518,8 @@ function setState(id, state, msg, okLink) {
     box.className = 'result' + (state === 'done' ? ' ok'
                               : state === 'failed' ? ' bad' : '');
     box.innerHTML = msg ? (msg + (okLink ? ' <a href="' + okLink +
-                    '" target="_blank" rel="noopener">실제 답글 보기 →</a>' : '')) : '';
+                    '" target="_blank" rel="noopener">실제 답글 보기 →</a>' : '')
+                    + postedBlock(state === 'done' ? postedText : '')) : '';
   }
   const btn = document.getElementById('ok' + id);
   if (btn) btn.disabled = (state === 'posting' || state === 'done');
@@ -524,7 +546,8 @@ function runPost(id) {
           fetch(urlOf(id, 'State')).then(r => r.json()).then(st => {
             if (st.reply_status === 'posted') {
               clearInterval(poll);
-              setState(id, 'done', '고객에게 답글이 등록됐어요.', st.platform_url || '');
+              setState(id, 'done', '고객에게 답글이 등록됐어요.',
+                       st.platform_url || '', st.posted_reply || '');
               resolve(true);
             } else if (st.reply_status === 'drafted') {
               clearInterval(poll);
