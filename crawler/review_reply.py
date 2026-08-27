@@ -599,6 +599,15 @@ class ReplyToReviewAction(WriteAction):
                 f"화면에서 본 번호 {', '.join(seen[:6]) or '없음'}"
                 f"{' …' if len(seen) > 6 else ''}]")
 
+        # 찾은 카드를 화면 안으로 끌어온다 — 가상 목록에서는 화면 밖 카드가
+        # DOM 에서 지워져, 아래에서 텍스트를 읽거나 버튼을 누를 때 사라진
+        # 요소를 붙잡고 있게 된다(2026-08-27 nth(12) 타임아웃).
+        try:
+            card.scroll_into_view_if_needed(timeout=5000)
+            human_pause(0.3, 0.6)
+        except Exception:  # noqa: BLE001 — 못 끌어와도 아래에서 다시 확인한다
+            logger.debug("카드 스크롤 실패(무시)")
+
         # 안전: 엉뚱한 리뷰에 답글이 달리지 않게 본문을 대조한다.
         #
         # ⚠️ 공백을 무시하고 비교해야 한다. 화면 카드 텍스트에는 줄바꿈이
@@ -701,7 +710,14 @@ class ReplyToReviewAction(WriteAction):
         author_only_hits = []
         for i in range(cards.count()):
             c = cards.nth(i)
-            txt = c.inner_text()
+            # ⚠️ 가상 목록이라 훑는 도중에 카드가 화면 밖으로 밀려 DOM 에서
+            #    사라진다. 그러면 inner_text() 가 15초를 기다리다 통째로
+            #    실패한다(사장님 제보 2026-08-27: nth(12) 타임아웃).
+            #    사라진 카드는 조용히 건너뛴다 — 다음 라운드에 다시 만난다.
+            try:
+                txt = c.inner_text(timeout=2000)
+            except Exception:  # noqa: BLE001
+                continue
             # 공백을 모두 지우고 번호만 본다 — '리뷰번호'와 숫자가 다른
             # 요소로 쪼개져 줄바꿈·이중공백·비단절공백이 끼면 'f"리뷰번호 {rid}"'
             # 형태의 매칭이 조용히 빗나간다(리뷰번호는 16자리라 단독으로도
