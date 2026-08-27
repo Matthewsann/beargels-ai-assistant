@@ -445,3 +445,26 @@ def test_returns_to_list_when_click_navigates_away(monkeypatch):
         pass                      # 카드를 못 찾는 건 여기선 관심 밖
     assert page.url == rr.BAEMIN_REVIEWS_URL, "목록으로 돌아와야 한다"
     assert page.gotos >= 2, "벗어난 걸 알아채고 다시 열어야 한다"
+
+
+# ---------------------------------------------------------------------------
+# 본문 대조는 공백에 흔들리면 안 된다 (2026-08-27 리뷰 2358 등록 차단)
+# ---------------------------------------------------------------------------
+# 화면 카드는 "맛있어요 항상..[줄바꿈]리뷰이벤트 …" 인데 DB 본문은 수집
+# 단계에서 공백이 하나로 눌려 있다. 글자 그대로 비교하니 같은 리뷰인데도
+# "본문이 일치하지 않습니다"로 게시가 막혔다.
+
+def test_content_match_ignores_whitespace():
+    from crawler.review_reply import _squash
+    card = ("알뜰배달\n한입에와앙\n2026년 8월 8일\n리뷰번호 2026080801895071\n"
+            "맛있어요 항상..\n리뷰이벤트 베이글 러스크 돌려주시면 안되나요")
+    stored = "맛있어요 항상.. 리뷰이벤트 베이글 러스크 돌려주시면 안되나요"
+    assert _squash(stored)[:15] in _squash(card)
+
+
+def test_content_match_still_rejects_a_different_review():
+    """공백만 무시할 뿐, 다른 리뷰는 여전히 걸러내야 한다."""
+    from crawler.review_reply import _squash
+    card = "알뜰배달\n다른손님\n전혀 다른 내용의 리뷰입니다"
+    stored = "맛있어요 항상.. 리뷰이벤트 베이글 러스크"
+    assert _squash(stored)[:15] not in _squash(card)

@@ -133,6 +133,15 @@ def _click_baemin_more(page):
         return False
 
 
+def _squash(text):
+    """공백·줄바꿈을 모두 없앤 비교용 문자열.
+
+    화면 카드 텍스트와 DB 본문은 공백 처리가 달라서, 그대로 비교하면 같은
+    리뷰도 다르다고 나온다(2026-08-27).
+    """
+    return re.sub(r"\s+", "", text or "")
+
+
 def _baemin_seen_review_nos(page):
     """지금 화면에 로드된 리뷰 카드들의 '리뷰번호'를 모은다(진단용).
 
@@ -590,9 +599,14 @@ class ReplyToReviewAction(WriteAction):
                 f"화면에서 본 번호 {', '.join(seen[:6]) or '없음'}"
                 f"{' …' if len(seen) > 6 else ''}]")
 
-        # 안전: 대상 리뷰가 정확히 1건인지 + 본문 일치 확인
-        content = (self.review.get("content") or "").strip()
-        card_txt = card.inner_text()
+        # 안전: 엉뚱한 리뷰에 답글이 달리지 않게 본문을 대조한다.
+        #
+        # ⚠️ 공백을 무시하고 비교해야 한다. 화면 카드 텍스트에는 줄바꿈이
+        #    들어가 있는데, DB 에 저장된 본문은 수집 단계에서 공백이 하나로
+        #    눌려 있다. 글자 그대로 비교하면 같은 리뷰인데도 어긋난다
+        #    (사장님 제보 2026-08-27: 리뷰 2358 등록이 이 검사에서 막혔다).
+        content = _squash(self.review.get("content"))
+        card_txt = _squash(card.inner_text())
         if content and content[:15] not in card_txt:
             raise ReplyPostError("대상 리뷰 본문이 일치하지 않습니다 — 게시 중단.")
 
