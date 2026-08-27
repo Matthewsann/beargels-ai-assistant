@@ -388,22 +388,28 @@ async function mkDay(dateStr) {
     if (d.error) { box.textContent = d.error; return; }
     const chName = {store: '매장', baemin: '배민', coupang: '쿠팡이츠',
                     yogiyo: '요기요', ddangyo: '땡겨요'};
-    let h = `<div class="day-title">${dateStr} 매출
-      ${d.pct != null ? pctTxt(d.pct) + ' <small style="color:var(--muted);font-weight:400">(요일 평균 대비)</small>' : ''}</div>`;
-    h += `<div style="font-size:19px;font-weight:800;margin-bottom:8px">${won(d.total)}</div>`;
-    if (d.channels.length) {
-      h += '<table>';
-      for (const c of d.channels)
-        h += `<tr><td>${chName[c.channel] || c.channel}</td><td>${won(c.amount)}</td></tr>`;
-      h += '</table>';
-    }
-    if (d.top.length) {
-      h += '<div class="day-title" style="margin-top:12px">많이 팔린 상품</div><table>';
-      for (const t of d.top)
-        h += `<tr><td>${t.product}</td><td>${t.qty}개 · ${won(t.amount)}</td></tr>`;
-      h += '</table>';
+    let h = `<div class="day-title">${dateStr}</div>`;
+    if (d.no_data) {
+      // 장부 반영 전인 날 — 0원·▼100% 같은 무의미한 숫자를 띄우지 않는다
+      h += '<p class="eff-note">아직 매출 데이터가 없어요 — 장부 반영 전이거나 휴무예요.</p>';
     } else {
-      h += '<p class="eff-note">이날 상품별 데이터가 없어요 (장부 반영 전이거나 휴무).</p>';
+      h += `<div class="day-title">매출
+        ${d.pct != null ? pctTxt(d.pct) + ' <small style="color:var(--muted);font-weight:400">(요일 평균 대비)</small>' : ''}</div>`;
+      h += `<div style="font-size:19px;font-weight:800;margin-bottom:8px">${won(d.total)}</div>`;
+      if (d.provisional)
+        h += '<p class="eff-note">장부 반영 전 — 배달(배민·쿠팡) 잠정치만 잡혀요.</p>';
+      if (d.channels.length) {
+        h += '<table>';
+        for (const c of d.channels)
+          h += `<tr><td>${chName[c.channel] || c.channel}</td><td>${won(c.amount)}</td></tr>`;
+        h += '</table>';
+      }
+      if (d.top.length) {
+        h += '<div class="day-title" style="margin-top:12px">많이 팔린 상품</div><table>';
+        for (const t of d.top)
+          h += `<tr><td>${t.product}</td><td>${t.qty}개 · ${won(t.amount)}</td></tr>`;
+        h += '</table>';
+      }
     }
     h += `<div class="acts" style="margin-top:12px">
       <button type="button" class="btn2" onclick="mkOpenForm('${dateStr}');document.getElementById('mkDayBg').classList.remove('on')">이날 기록 추가</button>

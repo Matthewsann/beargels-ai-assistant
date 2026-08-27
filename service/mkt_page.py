@@ -103,7 +103,10 @@ def build_month_view(y: int, m: int, today: date | None = None) -> dict:
             has_data = row is not None and total > 0
             closed = (row is None or total == 0) and day <= today \
                 and (last_pos and day <= last_pos)
-            sig = mkt_store.day_signal(daily, day) if has_data else 0
+            # 신호점은 장부가 반영된 날까지만 — 잠정(배달만) 구간은 총매출이
+            # 원래 작아서 전부 '▼'로 물들어 버린다 (사장님 지적 2026-08-27)
+            sig = (mkt_store.day_signal(daily, day)
+                   if has_data and last_pos and day <= last_pos else 0)
             week_days.append({
                 "date": str(day), "num": day.day,
                 "in_month": day.month == m,
@@ -224,14 +227,23 @@ def build_month_view(y: int, m: int, today: date | None = None) -> dict:
 
 
 def day_detail(day: str) -> dict:
-    """날짜 클릭 → 채널별 매출 + 상품 TOP."""
+    """날짜 클릭 → 채널별 매출 + 상품 TOP.
+
+    장부 미반영(잠정) 구간은 배달 크롤러치뿐이라 요일 평균과 비교하면
+    무조건 '▼' — pct 를 아예 주지 않는다. 데이터가 전혀 없으면 no_data.
+    """
     d = date.fromisoformat(day)
     sales = _sales_with_provisional(d - timedelta(days=56), d)
     daily = mkt_store.totals_by_date(sales)
+    last_pos, _ = _safe(mkt_store.last_pos_date, None)
+    provisional = (last_pos is None) or (d > last_pos)
     row = daily.get(day) or {}
-    base = mkt_store.weekday_baseline(daily, d)
     total = row.get("total", 0)
-    pct = (total / base - 1) if base else None
+    if provisional:
+        pct = None
+    else:
+        base = mkt_store.weekday_baseline(daily, d)
+        pct = (total / base - 1) if base else None
     channels = [{"channel": ch, "amount": v}
                 for ch, v in sorted(row.items(), key=lambda x: -x[1])
                 if ch not in ("total", "store", "delivery") or ch == "store"]
@@ -251,6 +263,8 @@ def day_detail(day: str) -> dict:
     top = sorted(({"product": p, **v} for p, v in agg.items()),
                  key=lambda x: -x["amount"])[:10]
     return {"date": day, "total": total, "pct": pct,
+            "provisional": provisional,
+            "no_data": total <= 0 and not chan_out,
             "channels": chan_out, "top": top}
 
 
