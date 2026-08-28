@@ -14,4 +14,14 @@ set PY=C:\Users\%USERNAME%\AppData\Local\Programs\Python\Python312\python.exe
 if not exist "%PY%" set PY=python
 
 if not exist logs mkdir logs
+
+rem Rotate the log before starting. The file is appended to by this shell,
+rem so it can only be rotated here (not while the worker runs). It reached
+rem 76 MB by 2026-08-28 and nothing ever trimmed it. Keep one older copy.
+rem 10 MB threshold = several weeks now that the HTTP noise is silenced.
+for %%F in (logs\worker.log) do if %%~zF GTR 10485760 (
+  if exist logs\worker.log.1 del logs\worker.log.1
+  move /y logs\worker.log logs\worker.log.1 >nul
+)
+
 "%PY%" worker\agent.py >> logs\worker.log 2>&1

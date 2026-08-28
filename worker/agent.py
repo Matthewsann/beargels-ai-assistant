@@ -1155,15 +1155,52 @@ def run_job(job) -> None:
 # 메인 루프
 # ---------------------------------------------------------------------------
 
+def prune_old_files(days=30) -> int:
+    """오래된 진단 파일을 지운다(지운 개수).
+
+    크롤이 빈 화면을 만나면 debug/ 에 그때 화면(html+png)을 통째로 남긴다.
+    원인을 볼 땐 요긴하지만 며칠만 지나면 쓸모가 없는데 아무도 안 지운다
+    (2026-08-28 정리: 1.6MB, 가장 오래된 게 8월 10일 것). 새벽 점검 로그도
+    같이 정리한다.
+    """
+    cutoff = time.time() - days * 86400
+    gone = 0
+    for pat in ((ROOT / "debug").glob("*"),
+                (ROOT / "logs").glob("nightly-*.log"),
+                (ROOT / "logs").glob("menu-diff-*.log")):
+        for f in pat:
+            try:
+                if f.is_file() and f.stat().st_mtime < cutoff:
+                    f.unlink()
+                    gone += 1
+            except Exception:  # noqa: BLE001 — 청소가 일을 막으면 안 된다
+                continue
+    if gone:
+        logger.info("오래된 진단 파일 %d개를 정리했습니다(%d일 지난 것)", gone, days)
+    return gone
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s: %(message)s",
                         datefmt="%H:%M:%S")
+    # ⚠️ Supabase 클라이언트(httpx)가 **모든 요청을 INFO 로** 찍는다. 일꾼은
+    #    15초마다 4번씩 물어보므로 하루 2만 줄이 쌓인다 — 실측 2026-08-28:
+    #    worker.log 472,958줄 중 465,957줄(98.5%)이 이 한 줄짜리 HTTP 기록,
+    #    파일은 76MB. 정작 봐야 할 '수집 완료·등록 실패'가 그 사이에 묻힌다.
+    #    문제 생겼을 때 필요한 건 실패(WARNING 이상)뿐이라 그것만 남긴다.
+    for noisy in ("httpx", "httpcore", "hpack", "urllib3"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     print("=" * 56)
     print(" 베어글스 집 PC 일꾼 — 대기 중")
     print(f" {POLL_SECONDS}초마다 수집 요청을 확인합니다.")
     print(" 이 창을 열어두세요. (끄려면 Ctrl+C)")
     print("=" * 56)
+
+    try:
+        prune_old_files()
+    except Exception as e:  # noqa: BLE001 — 청소 실패가 일꾼을 막으면 안 된다
+        logger.warning("오래된 파일 정리 실패(무시): %s", str(e)[:100])
 
     try:
         db.worker_ping("idle", "시작됨")

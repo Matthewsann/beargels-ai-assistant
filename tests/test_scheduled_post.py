@@ -170,3 +170,42 @@ def test_alert_times_are_shown_in_store_time():
     # 값이 없거나 형식이 달라도 화면은 떠야 한다
     assert app._kst_label(None) == ""
     assert app._kst_label("이상한값") == "이상한값"
+
+
+# --- 로그·진단 파일 정리 (2026-08-28) -------------------------------------
+
+def test_polling_noise_is_silenced():
+    """Supabase 클라이언트의 요청 로그가 INFO 로 쏟아지면 안 된다.
+
+    실측: worker.log 472,958줄 중 465,957줄(98.5%)이 그 한 줄짜리 기록이었고
+    파일이 76MB 였다. 정작 봐야 할 실패가 그 사이에 묻힌다.
+    """
+    import inspect
+
+    from worker import agent
+    src = inspect.getsource(agent.main)
+    assert "httpx" in src and "WARNING" in src
+
+
+def test_old_diagnostic_files_are_pruned(tmp_path, monkeypatch):
+    """오래된 진단 파일은 지우고, 최근 것은 남긴다."""
+    import os
+    import time as _t
+
+    from worker import agent
+    (tmp_path / "debug").mkdir()
+    (tmp_path / "logs").mkdir()
+    old = tmp_path / "debug" / "reviews-empty-old.html"
+    new = tmp_path / "debug" / "reviews-empty-new.html"
+    keep_log = tmp_path / "logs" / "worker.log"
+    for f in (old, new, keep_log):
+        f.write_text("x", encoding="utf-8")
+    long_ago = _t.time() - 40 * 86400
+    os.utime(old, (long_ago, long_ago))
+    os.utime(keep_log, (long_ago, long_ago))   # worker.log 는 대상이 아니다
+
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    assert agent.prune_old_files(days=30) == 1
+    assert not old.exists()
+    assert new.exists()
+    assert keep_log.exists(), "돌고 있는 로그를 지우면 안 된다"
