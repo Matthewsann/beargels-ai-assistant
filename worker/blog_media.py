@@ -343,8 +343,10 @@ def catalog(index: dict | None = None, include_bad: bool = False,
     idx = index if index is not None else load_index()
 
     def last_used(rel):
-        us = [u.get("date", "") for u in media_ledger.uses(rel)
-              if u.get("channel") == channel]
+        # 채널 구분 없이 본다 — 사장님이 막고 싶은 건 '콘텐츠 1·2·3 에 같은
+        # 사진이 반복해서 나오는 것'(시간축)이지 채널 간 동시 사용이 아니다
+        # (2026-08-28 확정). 어제 인스타에 쓴 상시 컷은 오늘 블로그에서도 뒤로.
+        us = [u.get("date", "") for u in media_ledger.uses(rel)]
         return max(us) if us else ""
 
     items = []
