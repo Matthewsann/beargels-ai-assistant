@@ -64,6 +64,13 @@
   #reqText { position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
   .reqdone { display:none; font-size:12px; color:var(--ok); margin-top:6px;
              text-align:center; }
+  .reqpick { width:16px; height:16px; margin:0 2px 0 0; vertical-align:-2px;
+             flex-shrink:0; }
+  .reqhint { font-size:11.5px; color:var(--muted); margin-top:7px;
+             text-align:center; }
+  .reqhint a { color:var(--accent); }
+  /* 체크를 푼 항목은 흐리게 — 무엇이 남는지 눈에 보이게 */
+  .req.off .reqquote, .req.off .reqwho { opacity:.45; }
 </style>
 </head>
 <body>
@@ -132,11 +139,15 @@
   {% if requests %}
   <div class="panel">
     <div class="lbl" style="margin-bottom:8px;">
-      🗣️ 고객 요청사항 · 최근 {{ requests_days }}일 <b>{{ requests|length }}건</b>
+      🗣️ 고객 요청사항 · {{ requests_period }} <b>{{ requests|length }}건</b>
     </div>
     {% for r in requests %}
-    <div class="req">
+    <div class="req" id="q{{ r.id }}">
       <div class="reqhead">
+        {# 체크한 것만 공유 완료로 내린다 — 기본은 전부 켜 둔다(대개 통째로
+           단톡방에 올리므로). 아직 처리 못 한 건 체크를 풀면 남는다. #}
+        <input type="checkbox" class="reqpick" value="{{ r.id }}" checked
+               onchange="syncReqBar()" aria-label="공유 완료에 포함">
         <span class="chip">{{ r.icon }} {{ r.topic }}</span>
         <span class="reqwho">{{ r.date[5:] }} · {{ r.platform }} {{ r.author }}님{% if r.rating %} ★{{ r.rating }}{% endif %}</span>
       </div>
@@ -146,6 +157,14 @@
     <button class="btn wide" type="button" id="reqCopy"
             onclick="copyRequests()">📋 단톡방 공유용 복사</button>
     <div class="reqdone" id="reqCopied">복사됐어요 — 단톡방에 붙여넣기 하세요</div>
+    {# 복사한 뒤에 나타난다 — 올리지도 않고 내려버리는 걸 막는 순서다.
+       (그래도 이미 올리신 게 있으면 복사 없이 쓸 수 있게 아래에 안내) #}
+    <button class="btn wide primary" type="button" id="reqDoneBtn"
+            style="display:none; margin-top:8px;"
+            onclick="markRequestsShared()">✅ 공유 완료 — 목록에서 내리기</button>
+    <div class="reqhint" id="reqHint">
+      단톡방에 올리셨다면 <a href="#" onclick="showReqDone();return false;">공유 완료</a>로 체크해 두세요.
+    </div>
     <textarea id="reqText" readonly>{{ requests_text }}</textarea>
   </div>
   {% endif %}
@@ -205,12 +224,62 @@
 // ── 고객 요청사항 단톡방 공유 ─────────────────────────────────
 // 화면에 보이는 목록과 **같은 글**을 복사한다(서버가 미리 만들어 둔 것).
 // 두 곳에서 따로 조립하면 언젠가 어긋난다.
+
+// 복사를 마쳐야 '공유 완료'가 나타난다 — 올리지도 않고 목록에서
+// 내려버리는 순서 사고를 막는다. 이미 올린 경우엔 안내 링크로 바로 열 수 있다.
+const REQ_SHARED_URL = '{{ url_for("requests_shared", path_key=key) }}';
+
+function showReqDone() {
+  const b = document.getElementById('reqDoneBtn');
+  if (b) b.style.display = 'flex';
+  const h = document.getElementById('reqHint');
+  if (h) h.style.display = 'none';
+  syncReqBar();
+}
+
+function reqPicks() {
+  return [...document.querySelectorAll('.reqpick')].filter(c => c.checked);
+}
+
+function syncReqBar() {
+  document.querySelectorAll('.reqpick').forEach(c => {
+    const card = document.getElementById('q' + c.value);
+    if (card) card.classList.toggle('off', !c.checked);
+  });
+  const b = document.getElementById('reqDoneBtn');
+  if (!b) return;
+  const n = reqPicks().length;
+  b.disabled = (n === 0);
+  b.textContent = n ? `✅ 공유 완료 ${n}건 — 목록에서 내리기`
+                    : '체크된 항목이 없어요';
+}
+
+function markRequestsShared() {
+  const ids = reqPicks().map(c => Number(c.value));
+  if (!ids.length) return;
+  const b = document.getElementById('reqDoneBtn');
+  b.disabled = true; b.textContent = '처리 중…';
+  fetch(REQ_SHARED_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ids: ids}),
+  }).then(r => r.json()).then(res => {
+    if (!res.ok) throw new Error(res.error || '');
+    location.reload();          // 목록이 줄어든 화면을 그대로 보여준다
+  }).catch(e => {
+    b.disabled = false;
+    b.textContent = '✅ 공유 완료 — 목록에서 내리기';
+    alert('공유 완료 처리를 못 했어요: ' + (e.message || '통신 실패'));
+  });
+}
+
 function copyRequests() {
   const t = document.getElementById('reqText');
   const done = () => {
     const d = document.getElementById('reqCopied');
     d.style.display = 'block';
     setTimeout(() => { d.style.display = 'none'; }, 2500);
+    showReqDone();
   };
   if (navigator.clipboard) {
     navigator.clipboard.writeText(t.value).then(done)

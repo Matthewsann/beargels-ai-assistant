@@ -102,3 +102,31 @@ def test_kakao_text_is_ready_to_paste():
 
 def test_kakao_text_when_there_is_nothing():
     assert "없어요" in format_for_kakao([])
+
+
+# --- 공유 완료 체크 (2026-08-28) ------------------------------------------
+# 단톡방에 올린 이야기가 목록에 계속 남아 있으면 무엇이 새것인지 알 수 없다.
+
+def test_period_label_reads_like_a_person_wrote_it():
+    import service.app as app
+    assert app._period_label(7) == "최근 1주일"
+    assert app._period_label(14) == "최근 2주일"
+    assert app._period_label(30) == "최근 1개월"
+    assert app._period_label(5) == "최근 5일"
+
+
+def test_shared_items_drop_off_the_list(monkeypatch):
+    """공유 완료한 건은 목록에서 빠진다."""
+    import service.app as app
+    monkeypatch.setattr(app.db, "search_reviews", lambda **k: (_REVIEWS, len(_REVIEWS)))
+    monkeypatch.setattr(app.db, "get_setting", lambda key, default=None: [1])
+    app._customer_requests.cache_clear()
+    got = app._customer_requests()
+    assert [i["id"] for i in got] == [2], "공유한 1번은 빠지고 2번만 남아야 한다"
+    app._customer_requests.cache_clear()
+
+
+def test_cache_can_be_cleared_so_the_screen_updates_at_once():
+    """체크 직후엔 캐시가 남아 '안 바뀐 것처럼' 보이면 안 된다."""
+    import service.app as app
+    assert callable(getattr(app._customer_requests, "cache_clear", None))
