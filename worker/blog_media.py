@@ -341,14 +341,29 @@ def catalog(index: dict | None = None, include_bad: bool = False,
     """
     import media_ledger
     idx = index if index is not None else load_index()
-    items = [(rel, v) for rel, v in idx.items()
-             if v.get("kind") == "photo"
-             and (include_bad or v.get("quality") != "bad")
-             and not media_ledger.used_in(rel, channel)]
-    # 주제 폴더 이름순(상시 소재 _* 를 앞에), 대표사진 후보 우선
-    items.sort(key=lambda kv: (0 if kv[1].get("slot", "").startswith("_") else 1,
-                               kv[1].get("slot", ""),
-                               0 if kv[1].get("hero") else 1, kv[0]))
+
+    def last_used(rel):
+        us = [u.get("date", "") for u in media_ledger.uses(rel)
+              if u.get("channel") == channel]
+        return max(us) if us else ""
+
+    items = []
+    for rel, v in idx.items():
+        if v.get("kind") != "photo":
+            continue
+        if not include_bad and v.get("quality") == "bad":
+            continue
+        evergreen = (v.get("slot") or "").startswith("_")
+        if not evergreen and media_ledger.used_in(rel, channel):
+            continue    # 주제 소재는 채널당 1회 — 소진되면 끝(주제 단위 소진 모델)
+        items.append((rel, v, last_used(rel) if evergreen else ""))
+    # 정렬: 상시(_*)를 앞에 두되 **안 쓴 것·오래전에 쓴 것 우선**(회전),
+    # 주제 소재는 주제 이름순 + 대표사진 후보 우선.
+    items.sort(key=lambda t: (0 if t[1].get("slot", "").startswith("_") else 1,
+                              t[2],                       # LRU — 빈 문자열(미사용)이 맨 앞
+                              t[1].get("slot", ""),
+                              0 if t[1].get("hero") else 1, t[0]))
+    items = [(rel, v) for rel, v, _ in items]
     out = {}
     for i, (rel, v) in enumerate(items, 1):
         out[f"P{i:02d}"] = {**v, "rel": rel}

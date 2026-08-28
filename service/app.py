@@ -209,6 +209,12 @@ def cached(seconds: float):
                 return box["v"]
             box["v"], box["t"] = fn(), now
             return box["v"]
+        # 화면에서 뭔가를 바꾼 직후엔 캐시가 남아 '안 바뀐 것처럼' 보인다.
+        # 그럴 때 부르라고 비우는 문을 열어 둔다(2026-08-28).
+        def cache_clear():
+            box["t"], box["v"] = 0.0, None
+
+        wrap.cache_clear = cache_clear
         wrap.__name__ = fn.__name__
         wrap.__doc__ = fn.__doc__
         return wrap
@@ -442,9 +448,14 @@ def scheduled_post_when() -> str:
 
 # 고객 요청사항을 훑는 기간. 매장에서 "요즘 이런 얘기가 나온다"를 보는
 # 용도라 너무 길면 이미 고친 이야기가 계속 남는다.
-# 30일 — 사장님 확정(2026-08-28). 처음 60일로 뒀더니 몇 달 전 이야기까지
-# 올라와 '지금 챙길 것'이 흐려졌다.
-REQUEST_DAYS = int(os.getenv("REQUEST_DAYS", "30"))
+# 7일 — 사장님 확정(2026-08-28). 60일 → 30일 → 1주일로 좁혀 왔다.
+# 공유 완료 체크가 생겨서 오래된 걸 붙잡아 둘 이유도 없어졌다.
+REQUEST_DAYS = int(os.getenv("REQUEST_DAYS", "7"))
+
+# 단톡방에 공유를 끝낸 요청 — 목록에서 내린다. 새 표를 만들려면 사장님이
+# SQL 을 직접 실행해야 해서, 범용 kv 창고(menu_settings)를 재사용한다
+# (홈 화면 담당자 'home_owners' 와 같은 방식).
+REQUEST_SHARED_KEY = "request_shared"
 
 
 def _kst_label(ts) -> str:
@@ -464,22 +475,44 @@ def _kst_label(ts) -> str:
         return s[:16].replace("T", " ")
 
 
+def _period_label(days: int) -> str:
+    """기간을 사람 말로 — '최근 1주일' 이 '최근 7일' 보다 눈에 잘 들어온다."""
+    if days % 7 == 0 and days <= 28:
+        return f"최근 {days // 7}주일" if days > 7 else "최근 1주일"
+    if days % 30 == 0:
+        return f"최근 {days // 30}개월"
+    return f"최근 {days}일"
+
+
 def _today_label() -> str:
     """단톡방 글 머리에 넣을 날짜 — 매장 시간(KST) 기준 'M/D'."""
     now = datetime.now(KST)
     return f"{now.month}/{now.day}"
 
 
+def _shared_request_ids() -> set:
+    """이미 단톡방에 공유를 끝낸 리뷰 id 들."""
+    try:
+        return {int(x) for x in (db.get_setting(REQUEST_SHARED_KEY, []) or [])}
+    except Exception:  # noqa: BLE001 — 못 읽으면 '아직 공유 안 함'으로 본다
+        return set()
+
+
 @cached(120)
 def _customer_requests(limit=20):
     """최근 리뷰에서 고객 요청사항만 골라낸다(AI 없이 규칙으로).
+
+    공유를 끝낸 건은 빼고 준다 — 단톡방에 이미 올린 이야기가 계속 남아 있으면
+    무엇이 새것인지 알 수 없다(사장님 요청 2026-08-28).
 
     화면을 열 때마다 리뷰를 훑으므로 캐시를 둔다 — 규칙 계산 자체는 순간이지만
     Supabase 왕복이 화면당 0.3~1.3초라 그게 아깝다(2026-08-21 서버 실측).
     """
     try:
         rows, _ = db.search_reviews(days=REQUEST_DAYS, limit=300, sort="new")
-        return cr.find_requests(rows, limit=limit)
+        done = _shared_request_ids()
+        items = cr.find_requests(rows, limit=limit + len(done))
+        return [i for i in items if i.get("id") not in done][:limit]
     except Exception as e:  # noqa: BLE001 — 이 칸 때문에 현황 화면이 죽으면 안 된다
         db.log_error("service", f"고객 요청사항 추출 실패: {e}",
                      kind=type(e).__name__, path="_customer_requests",
@@ -742,7 +775,7 @@ def review_home(path_key):
         # 단톡방에 붙여 넣을 글은 서버에서 미리 만들어 둔다 — 화면 JS 가
         # 다시 조립하면 두 곳이 어긋난다.
         requests_text=cr.format_for_kakao(reqs, today=_today_label()),
-        requests_days=REQUEST_DAYS,
+        requests_period=_period_label(REQUEST_DAYS),
     )
 
 
@@ -1061,6 +1094,31 @@ def post_reply(path_key, review_id):
         return jsonify({"ok": True, "job": (job or {}).get("id")})
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"답글 등록 요청 실패(review {review_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:150]}), 200
+
+
+@app.route("/<path_key>/requests/shared", methods=["POST"])
+def requests_shared(path_key):
+    """'공유 완료' — 단톡방에 올린 요청사항을 목록에서 내린다.
+
+    body: {"ids": [리뷰 id, ...]}  (한 건만 체크해도 같은 경로를 쓴다)
+    기록은 kv 창고에 쌓는다(표를 새로 만들려면 사장님이 SQL 을 돌려야 해서).
+    """
+    check(path_key)
+    try:
+        want = (request.get_json(force=True, silent=True) or {}).get("ids") or []
+        ids = {int(x) for x in want}
+        if not ids:
+            return jsonify({"ok": False, "error": "체크된 항목이 없어요"}), 200
+        # 오래된 기록이 무한히 쌓이지 않게 최근 300건만 남긴다.
+        keep = sorted(_shared_request_ids() | ids)[-300:]
+        db.menu_set_setting(REQUEST_SHARED_KEY, keep)
+        _customer_requests.cache_clear()     # 화면이 바로 줄어들게
+        return jsonify({"ok": True, "count": len(ids)})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"요청사항 공유 완료 처리 실패: {e}",
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
         return jsonify({"ok": False, "error": str(e)[:150]}), 200
@@ -1460,6 +1518,29 @@ def blog_react(path_key):
 def blog_rank(path_key):
     check(path_key)
     return _ask_worker(path_key, "blog_rank")
+
+
+@app.route("/<path_key>/blog/draft-from-plan/<int:plan_id>", methods=["POST"])
+def blog_draft_from_plan(path_key, plan_id):
+    """승인된 배분안의 '블로그 몫'(사진·제목 힌트)으로 초안을 요청한다."""
+    check(path_key)
+    try:
+        pl = blog.get_plan(plan_id) or {}
+        ch = ((pl.get("plan") or {}).get("channels") or {}).get("blog") or {}
+        photos = list(ch.get("photos") or [])
+        if ch.get("clip"):
+            photos.append(ch["clip"])
+        payload = {
+            "topic": pl.get("topic") or "",
+            "title": ch.get("title_hint") or pl.get("topic") or "",
+            "post_type": "신메뉴",
+            "photos": photos,
+        }
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"배분안 초안 준비 실패({plan_id}): {e}",
+                     kind=type(e).__name__, path=request.path)
+        payload = {}
+    return _ask_worker(path_key, "blog_draft", payload)
 
 
 @app.route("/<path_key>/blog/draft", methods=["POST"])

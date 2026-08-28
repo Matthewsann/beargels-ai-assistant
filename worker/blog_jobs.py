@@ -87,6 +87,7 @@ def do_draft(payload: dict) -> tuple[int, str]:
         title=payload.get("title") or topic,
         main_keyword=payload.get("main_keyword") or "",
         sub_keywords=payload.get("sub_keywords") or [],
+        only_rels=payload.get("photos") or None,   # 승인된 배분안의 블로그 몫
     )
     body = data.get("body") or ""
     photo_note = ""
@@ -113,10 +114,19 @@ def do_draft(payload: dict) -> tuple[int, str]:
     except Exception as e:  # noqa: BLE001 — 평가 실패가 저장을 막으면 안 된다
         logger.warning("품질 평가 실패: %s", str(e)[:120])
 
+    # ★ 해시태그를 본문 맨 끝에 문단으로 넣는다(사장님 지적 2026-08-28 —
+    #   태그가 DB에만 있고 네이버엔 안 들어가고 있었다). 네이버 공식 태그칸은
+    #   발행 레이어에만 있어 임시저장 흐름에선 못 채우므로, 본문 태그로 노출을
+    #   잡고 예약발행 때는 태그칸에도 넣는다(reserve_one).
+    tags = [t.strip().lstrip("#").replace(" ", "") for t in (data.get("tags") or [])]
+    tags = [t for t in tags if t][:10]
+    if tags and "#" + tags[0] not in body:
+        body = body.rstrip() + "\n\n" + " ".join("#" + t for t in tags)
+
     post_id = store.save_post(
         title=data.get("title"), body=body, post_type=post_type,
         main_keyword=data.get("main_keyword"), sub_keywords=data.get("sub_keywords"),
-        tags=data.get("tags"),
+        tags=tags,
     )
     if quality is not None:
         try:
@@ -208,7 +218,8 @@ def do_publish(payload: dict) -> tuple[int, str]:
     pw, ctx, page = na.launch(cfg, headful=headful)
     reserve_note = ""
     try:
-        doc = {"title": post.get("title"), "body": body, "blocks": blocks or None}
+        doc = {"title": post.get("title"), "body": body, "blocks": blocks or None,
+               "tags": post.get("tags") or []}
         if when is not None:
             ok, msg = na.reserve_one(page, cfg, doc, when)
             reserve_note = f" · {msg}" if ok else f" · 예약 실패({msg}) — 임시저장됨"

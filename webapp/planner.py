@@ -43,7 +43,7 @@ def load_knowledge() -> tuple[str, str]:
     return "\n\n".join(parts), seo
 
 
-def load_photos() -> tuple[str, dict]:
+def load_photos(only_rels: list[str] | None = None) -> tuple[str, dict]:
     """사진함에 **지금 실제로 있는** 사진 목록을 읽어온다.
 
     글을 먼저 쓰고 사진을 나중에 끼워 넣으면 글과 사진이 따로 논다. 그래서
@@ -53,6 +53,11 @@ def load_photos() -> tuple[str, dict]:
     try:
         import blog_media
         cat = blog_media.catalog()
+        if only_rels:
+            # 승인된 배분안의 '블로그 몫'만 남긴다(+ 상시 소재는 보조로 허용)
+            keep = set(only_rels)
+            cat = {k: v for k, v in cat.items()
+                   if v.get("rel") in keep or (v.get("slot") or "").startswith("_")}
         return (blog_media.catalog_text(cat) if cat else ""), cat
     except Exception as e:  # noqa: BLE001 — 사진이 없다고 글쓰기가 멈추면 안 된다
         import logging
@@ -228,14 +233,15 @@ def make_recommendations() -> list[dict]:
 
 
 def make_draft_data(topic: str, post_type: str = "정보성", title: str = "",
-                    main_keyword: str = "", sub_keywords: list[str] | None = None) -> dict:
+                    main_keyword: str = "", sub_keywords: list[str] | None = None,
+                    only_rels: list[str] | None = None) -> dict:
     """확정 기획 + 금고 전체를 근거로 초안 '데이터'만 만들어 돌려준다(저장은 호출자 몫).
 
     로컬 라이브러리에 넣을지, Supabase 에 넣을지는 부르는 쪽이 정한다.
     """
     client, cfg, gp = _client_cfg()
     knowledge, seo = load_knowledge()
-    photos, _cat = load_photos()
+    photos, _cat = load_photos(only_rels=only_rels)
     subs = sub_keywords or []
     prompt = DRAFT_PROMPT.format(
         knowledge=knowledge, seo=seo, photos=photos or "(사진함이 비어 있음)",

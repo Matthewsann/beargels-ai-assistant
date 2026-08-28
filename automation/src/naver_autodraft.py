@@ -778,6 +778,24 @@ def reserve_one(page: Page, cfg: dict, post: dict, when) -> tuple[bool, str]:
     except Exception as e:  # noqa: BLE001
         return fallback(f"발행 버튼 클릭 실패 {str(e)[:40]}")
 
+    # ①-b 태그 입력(발행 레이어의 '태그 편집' 칸) — 실패해도 발행은 계속
+    tags = [t for t in (post.get("tags") or [])][:10]
+    if tags:
+        try:
+            tag_box = first_working(frame, [
+                "input[placeholder*='태그']", ".tag_input", "input.tag_input__rvo3J"])
+            if tag_box is not None:
+                tag_box.click(timeout=3000)
+                for t in tags:
+                    page.keyboard.type(str(t).lstrip("#"), delay=15)
+                    page.keyboard.press("Enter")
+                    page.wait_for_timeout(150)
+                print(f"    · 태그 {len(tags)}개 입력")
+            else:
+                print("    · 태그 입력칸을 못 찾았습니다(본문 해시태그로 대체)")
+        except Exception as e:  # noqa: BLE001
+            print(f"    · 태그 입력 실패({str(e)[:40]}) — 계속 진행")
+
     # ② '예약' 선택
     radio = first_working(frame, selectors["reserve_radio"])
     if radio is None:

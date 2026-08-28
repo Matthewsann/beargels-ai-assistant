@@ -89,13 +89,9 @@
       </form>
     </div>
     {% elif pl.status == 'approved' and pl.plan.channels.blog %}
-    <form method="post" action="{{ url_for('blog_draft', path_key=key) }}" style="margin-top:9px;">
-      <input type="hidden" name="title" value="{{ pl.plan.channels.blog.title_hint or pl.topic }}">
-      <input type="hidden" name="post_type" value="신메뉴">
-      <input type="hidden" name="main_keyword" value="">
-      <input type="hidden" name="sub_keywords" value="">
+    <form method="post" action="{{ url_for('blog_draft_from_plan', path_key=key, plan_id=pl.id) }}" style="margin-top:9px;">
       <button class="btn sm wide" type="submit"
-              {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>✍️ 블로그 몫으로 초안 만들기</button>
+              {{ 'disabled' if (job and job.busy) or not worker.alive else '' }}>✍️ 블로그 몫(배분된 사진들)으로 초안 만들기</button>
     </form>
     {% endif %}
   </div>
