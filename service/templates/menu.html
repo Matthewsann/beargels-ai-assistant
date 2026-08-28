@@ -940,11 +940,12 @@ function render(){
                  <th data-sort="rate" title="재료원가 ÷ 판매가 (매장/배달)">원가율${arr("rate")}</th>
                  <th title="이 원가율로 주문이 채워질 때 배달비를 감당하는 최소 주문금액 (쿠팡 기준)">배달<br>손익분기</th>
                  <th>판매</th>`
-              :`<th title="포스·키오스크 노출 (store_active)">매장<br>키오스크</th>
+              :`<th data-sort="rate" title="재료원가 ÷ 매장가. 분류별 목표를 넘으면 빨간색">원가율<br><span style="font-weight:400">매장가</span>${arr("rate")}</th>
+                <th title="포스·키오스크 노출 (store_active)">매장<br>키오스크</th>
                 <th title="배민·쿠팡 공통 (delivery_active) — 두 앱은 같은 값을 쓴다">배달</th>
                 <th title="네이버 스마트플레이스 등록 여부 — 자동 감지가 아니라 직접 표시하는 체크입니다">네이버</th>`}</tr>`;
-  const span = BULK ? 6 : (COLS ? 9 : 6);
-  document.getElementById("tbl").style.minWidth = BULK ? "760px" : (COLS ? "900px" : (isMobile()?"560px":"700px"));
+  const span = BULK ? 6 : (COLS ? 9 : 7);
+  document.getElementById("tbl").style.minWidth = BULK ? "760px" : (COLS ? "900px" : (isMobile()?"620px":"760px"));
   document.getElementById("tbl").className = BULK ? "fixed" : "";
 
   // 일괄 모드는 메뉴 하나에 입력칸 4개를 만든다. 190개면 760개가 되어 폰에서
@@ -1027,7 +1028,8 @@ function render(){
           onchange="toggleActive('${it.sku}','store_active',this.checked)">매장</label>
         <label class="sw"><input type="checkbox" ${it.delivery_active?"checked":""}
           onchange="toggleActive('${it.sku}','delivery_active',this.checked)">배달</label></td>`
-      :`<td class="chdot"><button class="dot ${it.store_active?"on":""}" title="매장·키오스크 노출"
+      :`<td class="rates"><span class="rt ${rs!=null&&rs>tg?"bad":""}">${pct(rs)}</span></td>
+       <td class="chdot"><button class="dot ${it.store_active?"on":""}" title="매장·키오스크 노출"
           onclick="toggleActive('${it.sku}','store_active',${!it.store_active})"><i></i></button></td>
        <td class="chdot"><button class="dot ${it.delivery_active?"on":""}" title="배민·쿠팡 노출"
           onclick="toggleActive('${it.sku}','delivery_active',${!it.delivery_active})"><i></i></button></td>
