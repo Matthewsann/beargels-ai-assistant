@@ -156,3 +156,17 @@ def test_morning_batch_shows_up_in_the_owner_alert_box():
     """세션이 꺼져 있어도 사장님이 결과를 볼 수 있어야 한다."""
     import service.app as app
     assert "ScheduledPostStarted" in app.OWNER_ALERT_KINDS
+
+
+def test_alert_times_are_shown_in_store_time():
+    """알림함 시각은 매장 시간(KST)으로 — DB 는 UTC 다.
+
+    2026-08-28 아침 점검에서 발견: 9시에 시작한 일괄 등록이 알림함에
+    '00:00'(UTC)으로 떠서, 사장님이 새벽에 돈 걸로 읽을 뻔했다.
+    """
+    import service.app as app
+    assert app._kst_label("2026-08-28T00:00:18.936066+00:00") == "08-28 09:00"
+    assert app._kst_label("2026-08-27T15:30:00+00:00") == "08-28 00:30"
+    # 값이 없거나 형식이 달라도 화면은 떠야 한다
+    assert app._kst_label(None) == ""
+    assert app._kst_label("이상한값") == "이상한값"

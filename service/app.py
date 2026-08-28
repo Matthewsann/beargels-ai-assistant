@@ -373,7 +373,7 @@ def _owner_alerts(limit=5) -> list[dict]:
             continue
         out.append({"id": r.get("id"),
                     "kind": r.get("kind"),
-                    "at": (r.get("at") or "")[:16].replace("T", " "),
+                    "at": _kst_label(r.get("at")),
                     "message": (r.get("message") or "").strip()})
         if len(out) >= limit:
             break
@@ -445,6 +445,23 @@ def scheduled_post_when() -> str:
 # 30일 — 사장님 확정(2026-08-28). 처음 60일로 뒀더니 몇 달 전 이야기까지
 # 올라와 '지금 챙길 것'이 흐려졌다.
 REQUEST_DAYS = int(os.getenv("REQUEST_DAYS", "30"))
+
+
+def _kst_label(ts) -> str:
+    """DB 시각(UTC)을 매장 시간으로 바꿔 'MM-DD HH:MM' 으로.
+
+    ⚠️ DB 는 UTC 로 저장한다. 그대로 잘라서 보여주면 9시간 어긋난다 —
+       아침 9시에 시작한 일괄 등록이 알림함에 '00:00' 으로 떴다
+       (2026-08-28 아침 점검에서 발견). 시각을 사람에게 보여줄 땐 KST 로.
+    """
+    s = (ts or "").strip()
+    if not s:
+        return ""
+    try:
+        return (datetime.fromisoformat(s.replace("Z", "+00:00"))
+                .astimezone(KST).strftime("%m-%d %H:%M"))
+    except Exception:  # noqa: BLE001 — 형식이 달라도 화면은 떠야 한다
+        return s[:16].replace("T", " ")
 
 
 def _today_label() -> str:
