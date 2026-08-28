@@ -4,9 +4,9 @@
 
 | 축 | 하는 일 | 폴더 | 문서 |
 |----|---------|------|------|
-| 📊 **매출·리뷰 봇** | 배민·쿠팡 주문/리뷰 수집 → AI 분석 → 리포트 파일 + 리뷰 답글(웹) | `assistant/ crawler/ database/ scheduler/ service/ worker/ scripts/` | 아래 "매출·리뷰 봇" |
+| 📊 **매출·리뷰 봇** | 배민·쿠팡 주문/리뷰 수집 → AI 분석 → 리포트 파일 + 리뷰 답글(웹) | `assistant/ crawler/ database/ service/ worker/ scripts/` | 아래 "매출·리뷰 봇" |
 | ✍️ **블로그 자동화** | 네이버 SEO 규칙대로 글·이미지 자동 적재 → 골라서 예약 발행 | `automation/` | [`automation/README.md`](automation/README.md) |
-| 📷 **인스타 파이프라인** | 구글드라이브 폴더 → 캡션·해시태그 생성 → 텔레그램 승인 → Buffer 발행 | `sns_automation/ main.py` | 아래 "인스타 파이프라인" |
+| 📷 **인스타 파이프라인** | 촬영 원본 → 릴스 자동편집 → 브라우저에서 확인·발행 | `sns_automation/ run_web.py web/` | 아래 "인스타 파이프라인" |
 
 > 공통 원칙: **발행·게시 등 대외 작업은 사장님 승인 후에만.** 로그인은 사람이 직접(계정 안전).
 
