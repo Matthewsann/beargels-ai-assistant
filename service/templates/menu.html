@@ -1558,54 +1558,29 @@ function setEditor(sku){
   // 세트가 아니고 구성도 없으면 굳이 보여주지 않는다 — 화면이 시끄러워진다.
   if (it.category !== "세트" && !rows.length) return "";
 
+  // 보기 전용 요약 — 편집은 자재/레시피 화면의 '메뉴 엮기'에서 한다.
+  // (예전의 200개 드롭다운 + 택1 글자 입력은 폰에서 못 쓴다는 지적으로 은퇴)
   const line = c => {
     const cost = costOf(c.component_sku);
     const nm = (DATA.items.find(i=>i.sku===c.component_sku)||{}).name || c.component_sku;
-    return `<tr><td style="text-align:left">${esc(nm)}
+    return `<tr><td style="text-align:left">${esc(nm)}${c.qty>1?` ×${c.qty}`:""}
         ${c.choice_group?`<span class="badge ovr">택1 · ${esc(c.choice_group)}</span>`:""}</td>
-      <td>${c.qty>1?c.qty+"개":""}</td>
-      <td>${cost==null?'<span class="warn">원가 미상</span>':won(cost*(c.qty||1))}</td>
-      <td><button style="min-height:32px" onclick="delComp(${c.id})">삭제</button></td></tr>`;
+      <td>${cost==null?'<span class="warn">원가 미상</span>':won(cost*(c.qty||1))}</td></tr>`;
   };
-
-  // 고를 수 있는 메뉴 — 자기 자신과 이미 담은 것은 뺀다.
-  const taken = new Set(rows.map(r=>r.component_sku));
-  const opts = DATA.items.filter(i=>i.sku!==sku && !taken.has(i.sku))
-    .map(i=>`<option value="${i.sku}">${esc(i.name)}${i.ingredient_cost==null?" (원가 미상)":""}</option>`).join("");
-
   const miss = rows.filter(c=>costOf(c.component_sku)==null).length;
   return `<div class="dsec">
     <b>🎁 세트 구성</b>
-    <span class="note">구성 메뉴 원가를 합칩니다. '택1'은 같은 이름끼리 묶이고 <b>가장 비싼 것</b>으로 계산합니다.</span>
-    ${rows.length?`<table style="width:100%;min-width:0;margin-top:4px"><tbody>${rows.map(line).join("")}</tbody></table>`:'<div class="note">아직 구성이 없습니다.</div>'}
-    ${miss?`<div class="note warn" style="padding:4px 6px">구성 중 ${miss}개가 원가 미상이라 세트 원가를 못 냅니다 — 그 메뉴 레시피를 먼저 채워주세요.</div>`:""}
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">
-      <select id="cp-sku-${sku}" style="max-width:230px;font-size:14px;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)">${opts}</select>
-      <input type="number" id="cp-qty-${sku}" value="1" min="1" step="1" style="width:60px;font-size:16px;padding:8px;border:1px solid var(--line);border-radius:6px" title="수량">
-      <input type="text" id="cp-grp-${sku}" placeholder="택1 묶음(선택)" style="width:120px;font-size:16px;padding:8px;border:1px solid var(--line);border-radius:6px" title="예: 음료 — 같은 값끼리 택1로 묶입니다">
-      <button onclick="addComp('${sku}')">구성 추가</button>
+    <span class="note">메뉴를 엮어 만드는 세트입니다 — 구성 메뉴 원가가 바뀌면 세트 원가도 따라갑니다.</span>
+    ${rows.length?`<table style="width:100%;min-width:0;margin-top:4px"><tbody>${rows.map(line).join("")}</tbody></table>`
+                 :'<div class="note">아직 구성이 없습니다 — 아래 버튼으로 엮어 주세요.</div>'}
+    ${miss?`<div class="note warn" style="padding:4px 6px">구성 중 ${miss}개가 원가 미상이라 세트 원가를 못 냅니다.</div>`:""}
+    <div style="margin-top:6px">
+      <a href="/{{ key }}/menu/ingredients?sku=${sku}"
+         style="display:inline-block;background:var(--brown);color:#fff;border-radius:8px;
+                padding:9px 16px;font-size:13.5px;text-decoration:none">🧩 구성 엮기 →</a>
     </div></div>`;
 }
 
-async function addComp(sku){
-  const pick = document.getElementById(`cp-sku-${sku}`).value;
-  const qty = +document.getElementById(`cp-qty-${sku}`).value || 1;
-  const grp = document.getElementById(`cp-grp-${sku}`).value.trim();
-  if(!pick){ toast("구성 메뉴를 골라주세요"); return; }
-  const j = await api("/component", {sku, component_sku:pick, qty, choice_group:grp||null});
-  if(!j) return;
-  await reloadData();
-  toast("구성 추가 ✓");
-  refreshDetail(sku);
-}
-async function delComp(id){
-  const sku = (DATA.components.find(c=>c.id===id)||{}).sku;
-  const j = await api(`/component/${id}/delete`);
-  if(!j) return;
-  await reloadData();
-  toast("삭제 ✓");
-  if(sku) refreshDetail(sku); else render();
-}
 async function reloadData(){
   const d = await fetch(BASE+"/data").then(r=>r.json());
   if(!d.error){ DATA = d; DIFF_CACHE = null; }

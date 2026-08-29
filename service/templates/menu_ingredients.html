@@ -75,6 +75,23 @@ display:flex;justify-content:space-between;gap:8px}
 .acnone{padding:10px 11px;font-size:12px;color:var(--sub)}
 .ewrap{display:inline-flex;gap:4px;align-items:center}
 .supsel{font-size:12px;padding:3px 5px;border:1px solid var(--brown);border-radius:5px;background:var(--card);color:var(--ink)}
+/* 세트 구성(메뉴 엮기) */
+.sgrp{border:1px solid var(--line);border-radius:10px;margin:8px 0;overflow:hidden;background:var(--card)}
+.sgrp .gh{display:flex;gap:8px;align-items:center;font-size:12px;font-weight:700;
+padding:6px 10px;background:var(--brownbg);color:var(--brown)}
+.sgrp .gh .sub{font-weight:400;margin-left:auto}
+.sgrp .gh button{border:1px solid var(--brown);background:var(--card);color:var(--brown);
+border-radius:6px;font-size:11px;padding:2px 8px;cursor:pointer}
+.srow{display:flex;align-items:center;gap:8px;padding:7px 10px;border-top:1px solid var(--line);font-size:13px}
+.srow .pr{margin-left:auto;color:var(--sub);font-variant-numeric:tabular-nums;white-space:nowrap}
+.srow .del{white-space:nowrap}
+.stp{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;flex:0 0 auto}
+.stp button{border:none;background:var(--card);color:var(--ink);width:28px;height:26px;cursor:pointer;font-size:14px}
+.stp span{min-width:26px;text-align:center;line-height:26px;font-size:13px;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+.ssum{display:flex;gap:14px;align-items:center;padding:9px 12px;margin:8px 0;border:1px solid var(--line);
+border-radius:10px;background:var(--card);font-size:13px;font-variant-numeric:tabular-nums}
+.ssum b{color:var(--green)}
+.maxpill{font-size:10px;background:var(--amberbg);color:var(--amber);border-radius:4px;padding:0 5px;margin-left:4px}
 /* 분류별 펼쳐 보기 */
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:2px 0}
 .seg button{border:none;background:var(--card);color:var(--sub);font-size:12.5px;
@@ -137,6 +154,7 @@ let EDITS={};            // {자재id: {필드: 값}}  — 저장 전 변경분
 let SEL=new Set();       // 일괄 적용용 선택 줄
 let RBULK=false, REDITS={};   // 레시피 탭 일괄편집
 let PICK=false, PQ='', PSEL=new Set();   // 재료 여러 개 고르기
+let MPQ='', MPSEL=new Set(), MPTARGET=null;  // 세트 구성용 메뉴 고르기(대상 묶음)
 let RVIEW='list';        // 레시피 탭 보기: list=메뉴목록 / menu=메뉴별 펼침 / ing=자재별
 let DRAFT=[];                            // 아직 저장 안 한 새 재료 [{ingredient_id, qty}]
 const won=n=>n==null?"–":Math.round(n).toLocaleString("ko-KR");
@@ -981,10 +999,187 @@ function renderRecList(){
          <th>쓰는 메뉴</th><th></th></tr>${recRowsByIng(withRec)}`;
 }
 
+// ── 세트 구성 편집기 — 자재가 아니라 '메뉴'를 엮는다 ────────────
+// 세트는 아메리카노 4잔, 디저트+음료, 베이글 2종 택2(묶음 복제) 등 아무
+// 조합이든 된다. 원가는 고정 구성 합 + 택1 묶음마다 가장 비싼 것(서버와
+// 같은 규칙). 저장은 매 조작마다 즉시 — 서버가 세트 원가도 같이 재계산한다.
+const scomps=()=>(DATA.components||[]).filter(c=>c.sku===SKU);
+const mcost=sku=>{const m=DATA.items.find(i=>i.sku===sku);
+  return m&&m.ingredient_cost!=null?+m.ingredient_cost:null;};
+function setCostCalc(){
+  let total=0, miss=0;
+  const groups={};
+  for(const c of scomps()){
+    if(c.choice_group){ (groups[c.choice_group]=groups[c.choice_group]||[]).push(c); continue; }
+    const v=mcost(c.component_sku);
+    if(v==null){miss++;continue;}
+    total+=(+c.qty||1)*v;
+  }
+  for(const rows of Object.values(groups)){
+    const vals=rows.map(c=>{const v=mcost(c.component_sku);
+      return v==null?null:(+c.qty||1)*v;});
+    if(vals.some(v=>v==null)){miss++;continue;}
+    total+=Math.max(...vals);
+  }
+  return {total, miss};
+}
+async function scAdd(componentSku, group, qty){
+  const j=await api("/component",{sku:SKU, component_sku:componentSku,
+    qty:qty||1, choice_group:group||null});
+  return !!j;
+}
+async function scReload(msg){
+  const d=await fetch(BASE+"/data").then(r=>r.json());
+  DATA=d; DATA.ingredients=d.ingredients||[]; DATA.recipes=d.recipes||[]; _mcMap=null;
+  if(msg) toast(msg);
+  render();
+}
+async function scQty(rowId, delta){
+  const c=(DATA.components||[]).find(x=>x.id===rowId); if(!c) return;
+  const q=Math.max(1,(+c.qty||1)+delta);
+  if(q===(+c.qty||1)) return;
+  if(await scAdd(c.component_sku, c.choice_group, q)) scReload(`수량 ${q}개 ✓`);
+}
+async function scDel(rowId){
+  const j=await api(`/component/${rowId}/delete`); if(!j) return;
+  scReload("뺐습니다 ✓");
+}
+// 묶음 복제 — '베이글 2종' 같은 택2 자리는 같은 묶음을 하나 더 만든다
+async function scDupGroup(g){
+  const rows=scomps().filter(c=>c.choice_group===g);
+  const nn=scNextName(g.replace(/[②③④⑤]$/,""));
+  for(const c of rows) await scAdd(c.component_sku, nn, c.qty||1);
+  scReload(`'${nn}' 묶음 복제 ✓ — 손님이 하나 더 고르는 자리`);
+}
+function scNextName(base){
+  const used=new Set(scomps().map(c=>c.choice_group).filter(Boolean));
+  if(!used.has(base)) return base;
+  for(const s of ["②","③","④","⑤"]) if(!used.has(base+s)) return base+s;
+  return base+"+";
+}
+let MPICKON=false;
+function scOpenPick(target){ MPTARGET=target??null; MPQ=""; MPSEL=new Set();
+  MPICKON=true; render();          // 켜고 나서 그린다 — 순서 바뀌면 피커가 안 뜬다
+  setTimeout(()=>document.getElementById("mpq")?.focus(),50); }
+function scClosePick(){ MPICKON=false; render(); }
+function scCands(){
+  const used=new Set(scomps().map(c=>c.component_sku));
+  const nq=nname(MPQ), isCho=nq&&[...nq].every(c=>CHO.includes(c));
+  return DATA.items.filter(m=>{
+    // 세트 안에 세트(순환)와 반제품(파는 메뉴가 아님)은 후보에서 뺀다
+    if(m.sku===SKU||m.category==="세트"||m.category==="반제품"||used.has(m.sku)) return false;
+    if(!nq) return true;
+    const n=nname(m.name);
+    return n.includes(nq)||(isCho&&chosung(n).includes(nq));
+  }).sort((a,b)=>(a.category||"").localeCompare(b.category||"","ko")||a.name.localeCompare(b.name,"ko"));
+}
+function scPickList(){
+  const box=document.getElementById("mpbox"); if(!box) return;
+  const list=scCands();
+  box.innerHTML=list.length?list.map(m=>
+    `<label class="acitem" style="cursor:pointer">
+      <span><input type="checkbox" ${MPSEL.has(m.sku)?"checked":""}
+        onchange="MPSEL.has('${m.sku}')?MPSEL.delete('${m.sku}'):MPSEL.add('${m.sku}');scPickList()"
+        style="margin-right:8px;width:16px;height:16px;vertical-align:-2px">
+        ${m.name}</span>
+      <span class="sub">${m.category||""} · ${m.ingredient_cost!=null?w1(m.ingredient_cost)+"원":"원가 미상"}</span></label>`).join("")
+    :`<div class="acnone">해당 메뉴가 없습니다</div>`;
+  const c=document.getElementById("mpcnt");
+  if(c) c.textContent=`${MPSEL.size}개 선택 · 목록 ${list.length}개`;
+  const gb=document.getElementById("mpgrp");
+  if(gb) gb.textContent = MPTARGET
+    ? `'${MPTARGET}' 묶음에 담기`
+    : `🔀 택1 묶음으로 담기${MPSEL.size?` (${MPSEL.size}개)`:""}`;
+}
+async function scPickAdd(asGroup){
+  if(!MPSEL.size){toast("메뉴를 하나 이상 골라주세요");return;}
+  let group=null;
+  if(MPTARGET) group=MPTARGET;
+  else if(asGroup){
+    // 묶음 이름은 고른 메뉴들의 분류에서 — 글자 입력 없이 자동으로 붙인다
+    const cats={};
+    for(const sku of MPSEL){const m=DATA.items.find(i=>i.sku===sku);
+      if(m) cats[m.category]=(cats[m.category]||0)+1;}
+    const base=Object.entries(cats).sort((a,b)=>b[1]-a[1])[0]?.[0]||"택1";
+    group=scNextName(base);
+  }
+  for(const sku of MPSEL) await scAdd(sku, group, 1);
+  const n=MPSEL.size; MPICKON=false; MPSEL=new Set();
+  scReload(group?`'${group}' 택1 묶음에 ${n}개 ✓`:`${n}개 담음 ✓`);
+}
+function scPickerHTML(){
+  return `<div class="wrap" style="padding:10px;margin-top:8px">
+    <div class="bar" style="margin:0 0 6px">
+      <input id="mpq" placeholder="메뉴 검색 (초성도 가능)…" value="${MPQ}"
+        oninput="MPQ=this.value;scPickList()" autocomplete="off">
+      <button class="bulkbtn" onclick="scClosePick()">닫기</button>
+    </div>
+    <div id="mpbox" style="max-height:44vh;overflow:auto;border:1px solid var(--line);border-radius:8px"></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+      <span class="sub" id="mpcnt" style="margin-right:auto"></span>
+      ${MPTARGET?"":`<button class="okbtn" style="padding:8px 14px;font-size:13px" onclick="scPickAdd(false)">➕ 각각 담기</button>`}
+      <button class="bulkbtn" id="mpgrp" style="padding:8px 14px;font-size:13px" onclick="scPickAdd(true)"></button>
+    </div>
+    <p class="note" style="margin:8px 0 0">· <b>각각 담기</b> = 전부 들어가는 고정 구성 · <b>택1 묶음</b> = 손님이 그중 하나 고르는 자리(원가는 제일 비싼 것 기준).<br>
+    · 묶음 이름은 고른 메뉴의 분류로 자동. '베이글 2종'처럼 두 개 고르는 자리는 묶음의 <b>하나 더</b> 버튼으로 복제하세요.</p></div>`;
+}
+function renderSetComposer(it){
+  const comps=scomps();
+  const fixed=comps.filter(c=>!c.choice_group);
+  const groups={};
+  for(const c of comps) if(c.choice_group) (groups[c.choice_group]=groups[c.choice_group]||[]).push(c);
+  const row=(c,inGroup)=>{
+    const m=DATA.items.find(i=>i.sku===c.component_sku);
+    const v=mcost(c.component_sku);
+    const line=v==null?null:(+c.qty||1)*v;
+    return `<div class="srow"><span>${m?m.name:c.component_sku}</span>
+      <span class="stp"><button onclick="scQty(${c.id},-1)">−</button><span>${c.qty||1}</span><button onclick="scQty(${c.id},1)">＋</button></span>
+      <span class="pr">${v==null?'<span class="pill" style="background:var(--amberbg);color:var(--amber)">원가 미상</span>':w1(line)+"원"}</span>
+      <span class="del" onclick="scDel(${c.id})">빼기</span></div>`;
+  };
+  const gBlock=(g,rows)=>{
+    const vals=rows.map(c=>{const v=mcost(c.component_sku);return v==null?null:(+c.qty||1)*v;});
+    const ok=vals.every(v=>v!=null); const mx=ok?Math.max(...vals):null;
+    return `<div class="sgrp"><div class="gh">🔀 ${g} <span style="font-weight:400">택1</span>
+        <button onclick="scOpenPick('${g.replace(/'/g,"\\'")}')">＋ 담기</button>
+        <button onclick="scDupGroup('${g.replace(/'/g,"\\'")}')" title="같은 선택지를 하나 더 — 2종 고르는 세트용">묶음 하나 더</button>
+        <span class="sub">${ok?`원가 ${w1(mx)}원 (최고가 기준)`:"원가 미상 포함"}</span></div>
+      ${rows.map((c,i)=>{
+        const v=mcost(c.component_sku); const line=v==null?null:(+c.qty||1)*v;
+        const star=ok&&line===mx?'<span class="maxpill">★최고가</span>':"";
+        const m=DATA.items.find(x=>x.sku===c.component_sku);
+        return `<div class="srow"><span>${m?m.name:c.component_sku}${star}</span>
+          <span class="pr">${v==null?'<span class="pill" style="background:var(--amberbg);color:var(--amber)">원가 미상</span>':w1(line)+"원"}</span>
+          <span class="del" onclick="scDel(${c.id})">빼기</span></div>`;}).join("")}</div>`;
+  };
+  const {total,miss}=setCostCalc();
+  const sp=it.store_price;
+  const sum = comps.length
+    ? (miss?`구성 ${miss}곳이 <b style="color:var(--amber)">원가 미상</b>이라 세트 원가를 못 냅니다 — 그 메뉴 레시피부터`
+          :`세트 원가 <b>${w1(total)}원</b>${sp?` · 원가율 ${(total/sp*100).toFixed(1)}% <span class="sub">(매장가 ${won(sp)}원)</span>`:' · <span class="sub">매장가가 없어 원가율 계산 불가</span>'}`)
+    : `아직 구성이 없습니다 — 아래에서 메뉴를 담아 주세요`;
+  document.getElementById("main").innerHTML=`
+  <div class="bar" style="margin-bottom:8px">
+    <button onclick="backToList()">← 메뉴 목록</button>
+    <div style="flex:1;font-weight:700;align-self:center">🎁 ${it.name}
+      <span class="sub">${it.sku} · 세트</span></div>
+  </div>
+  <p class="note" style="margin:0 0 8px">세트는 자재가 아니라 <b>메뉴를 엮어서</b> 만듭니다.
+    구성 메뉴의 원가가 오르내리면 세트 원가도 자동으로 따라갑니다. 저장은 자동.</p>
+  ${fixed.length?`<div class="sgrp"><div class="gh">📌 항상 들어감</div>${fixed.map(c=>row(c,false)).join("")}</div>`:""}
+  ${Object.entries(groups).map(([g,rows])=>gBlock(g,rows)).join("")}
+  <div class="ssum">${sum}</div>
+  ${MPICKON?scPickerHTML():`<button class="bulkbtn" style="padding:10px 18px;font-size:14px" onclick="scOpenPick(null)">➕ 메뉴 담기</button>`}`;
+  if(MPICKON) scPickList();
+}
+
 function renderRec(){
   if(!SKU){ renderRecList(); return; }
   const it=DATA.items.find(i=>i.sku===SKU);
   if(!it){ SKU=null; renderRecList(); return; }
+  // 세트는 자재 레시피가 아니라 메뉴 엮기 — 빈 자재 편집기를 보여주면
+  // 세트에 재료를 넣으라는 말로 읽힌다(실제로 세트 22개 레시피가 전부 0이었다)
+  if(it.category==="세트"){ renderSetComposer(it); return; }
   let html=`<div class="bar" style="margin-bottom:8px">
     <button onclick="backToList()">← 메뉴 목록</button>
     <div style="flex:1;font-weight:700;align-self:center">${it.name}

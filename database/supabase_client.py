@@ -1723,11 +1723,25 @@ def component_upsert(sku, component_sku, qty=1, choice_group=None):
         raise ValueError("세트와 구성 메뉴를 모두 골라주세요")
     if sku == component_sku:
         raise ValueError("자기 자신은 구성으로 넣을 수 없습니다")
-    get_client().table("menu_components").upsert({
-        "sku": sku, "component_sku": component_sku,
-        "qty": float(qty or 1), "choice_group": choice_group or None,
-        "updated_at": datetime.utcnow().isoformat() + "Z",
-    }, on_conflict="sku,component_sku,choice_group").execute()
+    sb = get_client()
+    # choice_group 이 비면(고정 구성) unique 제약이 안 걸린다 — Postgres 에서
+    # NULL 은 서로 다른 값이라 upsert 가 조용히 중복 행을 만든다(수량을 바꾸면
+    # 같은 메뉴 줄이 하나 더 생기는 실사고, 2026-08-29). 직접 찾아 가른다.
+    q = (sb.table("menu_components").select("id")
+         .eq("sku", sku).eq("component_sku", component_sku))
+    q = (q.is_("choice_group", "null") if not choice_group
+         else q.eq("choice_group", choice_group))
+    cur = q.execute().data
+    payload = {"sku": sku, "component_sku": component_sku,
+               "qty": float(qty or 1), "choice_group": choice_group or None,
+               "updated_at": datetime.utcnow().isoformat() + "Z"}
+    if cur:
+        sb.table("menu_components").update(payload).eq("id", cur[0]["id"]).execute()
+        # 같은 줄이 이미 여럿이면(과거 upsert 가 만든 중복) 나머지는 지운다
+        for extra in cur[1:]:
+            sb.table("menu_components").delete().eq("id", extra["id"]).execute()
+    else:
+        sb.table("menu_components").insert(payload).execute()
     return recompute_costs([sku], force=True)
 
 
