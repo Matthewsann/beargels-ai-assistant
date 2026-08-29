@@ -10,6 +10,7 @@
     --p-jieun:#5a6b8c; --p-minsu:#2f8f83; --p-haneul:#7b68ae; --p-soyeon:#c2587e; --p-junho:#8a6d3b;
   }
   * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
   html { background:var(--bg); }
   body {
     margin:0; background:var(--bg); color:var(--ink);
@@ -170,7 +171,7 @@
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
 
-  /* ── 직원·급여 ───────────────────────────────────────────── */
+  /* ── 직원·데이터 ─────────────────────────────────────────── */
   .list { border:1px solid var(--line); border-radius:12px; background:var(--card); overflow:hidden; }
   .row { display:flex; align-items:center; gap:10px; padding:12px 14px; border-bottom:1px solid var(--line); font-size:14px; flex-wrap:wrap; }
   .row:last-child { border-bottom:none; }
@@ -178,13 +179,6 @@
   .row .pdot { width:9px; height:9px; border-radius:50%; flex:0 0 auto; }
   .row .sub { color:var(--muted); font-size:12px; }
   .row .right { margin-left:auto; text-align:right; }
-  .paytable { width:100%; border-collapse:collapse; font-size:13px; }
-  .paytable th { text-align:right; font-weight:700; color:var(--muted); font-size:12px; padding:7px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
-  .paytable th:first-child, .paytable td:first-child { text-align:left; }
-  .paytable td { text-align:right; padding:8px; border-bottom:1px solid var(--line); white-space:nowrap; }
-  .paytable tr:last-child td { border-bottom:none; }
-  .paytable .tot td { font-weight:700; background:var(--stat); }
-  .tblbox { overflow-x:auto; }
   details.export { margin-top:12px; }
   details.export summary { cursor:pointer; font-size:13px; color:var(--accent); }
   details.export pre {
@@ -265,7 +259,7 @@
   <main class="wrap">
     <div class="top">
       <div class="brand">🕒</div>
-      <div><b>근무표</b><br><small>주간 스케줄 작성 · 데일리 시간표 · 급여 정산</small></div>
+      <div><b>근무표</b><br><small>주간 스케줄 작성 · 데일리 시간표 · 데이터 내보내기</small></div>
     </div>
 
     <div class="tabs no-print">
@@ -574,7 +568,7 @@
 
     <!-- ── 탭 3: 직원 관리 ── -->
     <section id="tab-staff" hidden>
-      <div class="sec"><b>직원</b><small>이름·시급·기본 근무 패턴</small></div>
+      <div class="sec"><b>직원</b><small>이름 · 역할 · 기본 근무 패턴</small></div>
       <div class="list">
         <div class="row"><i class="pdot" style="background:var(--p-jieun)"></i><b>지은</b><span class="sub">점장 · 월급제</span>
           <span class="right sub">기본 패턴: 월·화·목·토 오픈</span></div>
