@@ -262,10 +262,18 @@ def day_detail(day: str) -> dict:
         cur["amount"] += r.get("amount") or 0
     top = sorted(({"product": p, **v} for p, v in agg.items()),
                  key=lambda x: -x["amount"])[:10]
+    # 이날 진행 중이던 마케팅 — 매출을 보다가 "왜 이랬지?"에 바로 답하려면
+    # 기록(캠페인)과 이 화면이 연결돼 있어야 한다(기록→가시화 목표 그 자체).
+    camps, _ = _safe(lambda: mkt_store.campaigns_overlapping(d, d), [])
+    campaigns = [{"id": c["id"], "title": c["title"],
+                  "category": c["category"],
+                  "cls": CAT_CLASS.get(c["category"], c["category"]),
+                  "label": CAT_LABEL.get(c["category"], c["category"])}
+                 for c in camps]
     return {"date": day, "total": total, "pct": pct,
             "provisional": provisional,
             "no_data": total <= 0 and not chan_out,
-            "channels": chan_out, "top": top}
+            "channels": chan_out, "top": top, "campaigns": campaigns}
 
 
 def campaign_effect(cid: int) -> dict:

@@ -106,6 +106,12 @@ h1 a{color:var(--muted); font-size:12.5px; font-weight:400; text-decoration:none
 .eff-warn{font-size:12px; color:var(--warn); margin-top:5px}
 .row-actions{margin-top:7px; display:flex; gap:6px}
 .empty{padding:14px; font-size:13px; color:var(--muted); text-align:center}
+.day-camps{display:flex; flex-wrap:wrap; gap:5px; margin:2px 0 10px}
+.camp-chip{font-size:12px; font-weight:600; border-radius:999px; padding:3px 10px;
+  cursor:pointer; border:1px solid transparent;}
+.camp-chip.c1{background:var(--c1-bg); color:var(--c1)} .camp-chip.c2{background:var(--c2-bg); color:var(--c2)}
+.camp-chip.c3{background:var(--c3-bg); color:var(--c3)} .camp-chip.c4{background:var(--c4-bg); color:var(--c4)}
+.camp-chip.var{background:var(--warn-bg); color:var(--warn)}
 
 /* 모달 */
 .modal-bg{display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:80}
@@ -217,7 +223,8 @@ td{padding:3px 0; border-top:1px solid var(--line)} td:last-child{text-align:rig
   <section class="cat">
     <div class="cat-h"><span class="sw" style="background:var(--{{ cat.cls }})"></span>{{ cat.label }}</div>
     {% for c in cat['items'] %}
-    <div class="row" id="camp-{{ c.id }}" onclick="mkToggleEffect({{ c.id }})">
+    <div class="row" id="camp-{{ c.id }}" onclick="mkToggleEffect({{ c.id }})"
+         data-camp='{{ c|tojson }}'>
       <div class="top">
         <span class="name">{{ c.title }}</span>
         {% if c.status == 'live' %}<span class="st live">진행중</span>
@@ -234,7 +241,8 @@ td{padding:3px 0; border-top:1px solid var(--line)} td:last-child{text-align:rig
   <section class="cat">
     <div class="cat-h"><span class="sw" style="background:var(--warn)"></span>변수 기록</div>
     {% for c in v.var_items %}
-    <div class="row" id="camp-{{ c.id }}" onclick="mkToggleEffect({{ c.id }})">
+    <div class="row" id="camp-{{ c.id }}" onclick="mkToggleEffect({{ c.id }})"
+         data-camp='{{ c|tojson }}'>
       <div class="top"><span class="name">◆ {{ c.title }}</span>
         <span class="period">{{ c.start_date[5:] }}</span></div>
       <div class="eff-box" onclick="event.stopPropagation()">불러오는 중…</div>
@@ -247,7 +255,7 @@ td{padding:3px 0; border-top:1px solid var(--line)} td:last-child{text-align:rig
 <!-- ＋ 기록 모달 -->
 <div class="modal-bg" id="mkFormBg" onclick="if(event.target===this)this.classList.remove('on')">
   <div class="modal">
-    <h3>마케팅 기록</h3>
+    <h3 id="mkFormTitle">마케팅 기록</h3>
     <input class="f-in" id="mkTitle" type="text" placeholder="무엇을 했나요? (예: 버터떡 인스타 릴스)">
     <div class="f-row">
       <input class="f-in" id="mkStart" type="date">
@@ -286,6 +294,7 @@ td{padding:3px 0; border-top:1px solid var(--line)} td:last-child{text-align:rig
 const KEY = {{ key|tojson }};
 const CAT_DEFAULT = 'store';
 let mkCat = CAT_DEFAULT;
+let mkEditId = null;   // null=새 기록, 아니면 이 id 를 수정 중
 
 document.getElementById('mkCats').addEventListener('click', e => {
   const el = e.target.closest('.f-cat'); if (!el) return;
@@ -293,11 +302,41 @@ document.getElementById('mkCats').addEventListener('click', e => {
   el.classList.add('on'); mkCat = el.dataset.k;
 });
 
+function mkSetCat(k) {
+  mkCat = k;
+  document.querySelectorAll('#mkCats .f-cat').forEach(
+    x => x.classList.toggle('on', x.dataset.k === k));
+}
+
 function mkOpenForm(dateStr) {
-  const bg = document.getElementById('mkFormBg');
+  mkEditId = null;
+  document.getElementById('mkFormTitle').textContent = '마케팅 기록';
+  document.getElementById('mkTitle').value = '';
   document.getElementById('mkStart').value = dateStr || {{ v.today|tojson }};
   document.getElementById('mkEndD').value = '';
-  bg.classList.add('on');
+  document.getElementById('mkCost').value = '';
+  document.getElementById('mkTargets').value = '';
+  document.getElementById('mkMemo').value = '';
+  mkSetCat(CAT_DEFAULT);
+  document.getElementById('mkFormBg').classList.add('on');
+  document.getElementById('mkTitle').focus();
+}
+
+function mkEditOpen(id) {
+  const row = document.getElementById('camp-' + id);
+  if (!row || !row.dataset.camp) return;
+  const c = JSON.parse(row.dataset.camp);
+  mkEditId = id;
+  document.getElementById('mkFormTitle').textContent = '마케팅 수정';
+  document.getElementById('mkTitle').value = c.title || '';
+  document.getElementById('mkStart').value = c.start_date || '';
+  document.getElementById('mkEndD').value = c.end_date || '';
+  document.getElementById('mkCost').value = c.cost != null ? c.cost : '';
+  document.getElementById('mkTargets').value = (c.target_products || []).join(', ');
+  document.getElementById('mkMemo').value = c.memo || '';
+  mkSetCat(c.category || CAT_DEFAULT);
+  document.getElementById('mkDetail').classList.add('on');
+  document.getElementById('mkFormBg').classList.add('on');
   document.getElementById('mkTitle').focus();
 }
 
@@ -308,17 +347,27 @@ async function mkSave(btn) {
   btn.disabled = true;
   const targets = document.getElementById('mkTargets').value
       .split(',').map(s => s.trim()).filter(Boolean);
+  const costRaw = document.getElementById('mkCost').value;
+  const cost = costRaw ? parseInt(String(costRaw).replace(/[,원\s]/g, ''), 10) : null;
+  const end = document.getElementById('mkEndD').value;
+  const memo = document.getElementById('mkMemo').value;
   try {
-    const r = await fetch(`/${KEY}/mkt/campaign`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        title, start, end: document.getElementById('mkEndD').value,
-        category: mkCat, targets,
-        cost: document.getElementById('mkCost').value,
-        memo: document.getElementById('mkMemo').value,
-      })});
+    let r;
+    if (mkEditId) {
+      r = await fetch(`/${KEY}/mkt/campaign/${mkEditId}/update`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          title, start_date: start, category: mkCat,
+          target_products: targets, cost, memo,
+          ...(end ? {end_date: end} : {}),
+        })});
+    } else {
+      r = await fetch(`/${KEY}/mkt/campaign`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({title, start, end, category: mkCat, targets, cost, memo})});
+    }
     const j = await r.json();
-    if (!j.ok) { alert(j.error || '저장 실패'); btn.disabled = false; return; }
+    if (j.ok === false) { alert(j.error || '저장 실패'); btn.disabled = false; return; }
     location.reload();
   } catch (e) { alert('저장 실패: ' + e); btn.disabled = false; }
 }
@@ -360,6 +409,7 @@ async function mkToggleEffect(id) {
       h += '<p class="eff-note">📂 아직 장부가 반영되기 전이에요 — 이 기간의 매출이 올라오면 자동으로 분석돼요.</p>';
       if (e.memo) h += `<div class="eff-note">메모: ${e.memo}</div>`;
       h += `<div class="row-actions">
+        <button type="button" class="btn2" onclick="mkEditOpen(${id})">수정</button>
         <button type="button" class="btn2" onclick="mkEnd(${id})">종료</button>
         <button type="button" class="btn2" onclick="mkDelete(${id})">삭제</button></div>`;
       box.innerHTML = h;
@@ -383,6 +433,7 @@ async function mkToggleEffect(id) {
       h += `<div class="eff-warn">⚠ 이 기간에 ${e.overlap.map(o => `'${o.title}'`).join(', ')} 도 진행 — 효과가 섞여 있을 수 있어요.</div>`;
     if (e.memo) h += `<div class="eff-note">메모: ${e.memo}</div>`;
     h += `<div class="row-actions">
+      <button type="button" class="btn2" onclick="mkEditOpen(${id})">수정</button>
       <button type="button" class="btn2" onclick="mkEnd(${id})">종료</button>
       <button type="button" class="btn2" onclick="mkDelete(${id})">삭제</button></div>`;
     box.innerHTML = h;
@@ -401,6 +452,11 @@ async function mkDay(dateStr) {
     const chName = {store: '매장', baemin: '배민', coupang: '쿠팡이츠',
                     yogiyo: '요기요', ddangyo: '땡겨요'};
     let h = `<div class="day-title">${dateStr}</div>`;
+    if (d.campaigns && d.campaigns.length) {
+      h += '<div class="day-camps">' + d.campaigns.map(c =>
+        `<span class="camp-chip ${c.cls}" onclick="mkJumpToCampaign(${c.id})">${c.category === 'var' ? '◆ ' : ''}${c.title}</span>`
+      ).join('') + '</div>';
+    }
     if (d.no_data) {
       // 장부 반영 전인 날 — 0원·▼100% 같은 무의미한 숫자를 띄우지 않는다
       h += '<p class="eff-note">아직 매출 데이터가 없어요 — 장부 반영 전이거나 휴무예요.</p>';
@@ -428,6 +484,14 @@ async function mkDay(dateStr) {
       <button type="button" class="btn2" onclick="document.getElementById('mkDayBg').classList.remove('on')">닫기</button></div>`;
     box.innerHTML = h;
   } catch (e) { box.textContent = '불러오기 실패: ' + e; }
+}
+
+function mkJumpToCampaign(id) {
+  document.getElementById('mkDayBg').classList.remove('on');
+  const row = document.getElementById('camp-' + id);
+  if (!row) return;
+  row.scrollIntoView({behavior: 'smooth', block: 'center'});
+  if (!row.classList.contains('open')) mkToggleEffect(id);
 }
 
 async function mkImport(btn) {
