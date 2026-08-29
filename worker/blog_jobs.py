@@ -116,8 +116,8 @@ def do_draft(payload: dict) -> tuple[int, str]:
 
     # ★ 해시태그를 본문 맨 끝에 문단으로 넣는다(사장님 지적 2026-08-28 —
     #   태그가 DB에만 있고 네이버엔 안 들어가고 있었다). 네이버 공식 태그칸은
-    #   발행 레이어에만 있어 임시저장 흐름에선 못 채우므로, 본문 태그로 노출을
-    #   잡고 예약발행 때는 태그칸에도 넣는다(reserve_one).
+    #   발행(예약) 레이어에만 있는데 그건 이제 사람이 직접 다루므로, 태그
+    #   노출은 본문 해시태그로 잡는다. 태그칸은 사람이 발행할 때 직접 채운다.
     tags = [t.strip().lstrip("#").replace(" ", "") for t in (data.get("tags") or [])]
     tags = [t for t in tags if t][:10]
     if tags and "#" + tags[0] not in body:
@@ -189,10 +189,12 @@ def build_blocks(body: str) -> tuple[list[dict], int]:
 
 
 def do_publish(payload: dict) -> tuple[int, str]:
-    """글 하나를 네이버 임시저장(초안)으로 넣는다. 발행은 사장님이 직접.
+    """글 하나를 네이버 임시저장(초안)으로 넣는다. 발행 예약은 사장님이 직접.
 
     본문에 박아 둔 사진도 이때 같이 올라간다 — 사장님이 에디터에서
-    사진을 찾아 넣을 일이 없다는 게 이 기능의 핵심이다.
+    사진을 찾아 넣을 일이 없다는 게 이 기능의 핵심이다. 여기서 하는 건
+    딱 임시저장까지 — 실제 '예약 발행' 버튼을 누르는 최종 행위는 사람이
+    네이버에서 직접 한다(사장님 확정 2026-08-29: 자동 예약은 하지 않는다).
     """
     import naver_autodraft as na
     post_id = payload.get("post_id")
@@ -203,29 +205,13 @@ def do_publish(payload: dict) -> tuple[int, str]:
     body = post.get("body") or ""
     blocks, n_media = build_blocks(body)
 
-    reserve_at = payload.get("reserve_at")
-    when = None
-    if reserve_at:
-        from datetime import datetime, timedelta
-        when = datetime.fromisoformat(str(reserve_at).replace("Z", "+00:00"))
-        when = when.astimezone()          # 네이버 UI 는 한국 시간
-        floor = datetime.now().astimezone() + timedelta(minutes=15)
-        if when < floor:                   # 과거/임박이면 15분 뒤로 밀어 예약
-            when = floor
-
     cfg = na.load_config()
     headful = bool(cfg.get("naver", {}).get("headful", True))
     pw, ctx, page = na.launch(cfg, headful=headful)
-    reserve_note = ""
     try:
         doc = {"title": post.get("title"), "body": body, "blocks": blocks or None,
                "tags": post.get("tags") or []}
-        if when is not None:
-            ok, msg = na.reserve_one(page, cfg, doc, when)
-            reserve_note = f" · {msg}" if ok else f" · 예약 실패({msg}) — 임시저장됨"
-            ok = True                      # 폴백 임시저장까지 됐으면 잡은 성공으로
-        else:
-            ok = na.draft_one(page, cfg, doc)
+        ok = na.draft_one(page, cfg, doc)
     finally:
         try:
             ctx.close()
@@ -251,8 +237,7 @@ def do_publish(payload: dict) -> tuple[int, str]:
 
     with_photo = f" (사진 {n_media}장 포함)" if n_media else ""
     used_note = f" · 사진 {moved}개 사용완료 처리" if moved else ""
-    head = "네이버 예약 처리" if when is not None else "네이버 임시저장 완료"
-    return 1, (f"{head}{with_photo}{reserve_note}{used_note}"
+    return 1, (f"네이버 임시저장 완료{with_photo}{used_note}"
                f" — {post.get('title', '')[:40]}")
 
 

@@ -118,24 +118,23 @@ DEFAULT_SELECTORS = {
         "button:has-text('저장')",
         ".btn_save",
     ],
-    # 발행(게시) 버튼 — 발행 설정 레이어를 연다
+    # ↓ 아래 4개는 현재 웹 파이프라인(blog_jobs.py)은 안 쓴다(예약 자동화는
+    # 2026-08-29 폐지 — 실제 예약은 사람이 네이버에서 직접). 구버전 CLI 도구
+    # automation/src/schedule_publish.py 가 여전히 참조하므로 값만 남겨 둔다.
     "publish_open": [
         "button.publish_btn__m9KHH",
         "button:has-text('발행')",
         ".btn_publish",
     ],
-    # 발행 설정 레이어의 '예약' 라디오/탭
     "reserve_radio": [
         "label:has-text('예약')",
         "input[type='radio'][value='reserve']",
         ".radio_time:has-text('예약')",
     ],
-    # 예약 레이어의 날짜 입력
     "reserve_date": [
         "input.input_date",
         ".se-popup input[placeholder*='날짜']",
     ],
-    # 최종 확정(예약 발행) 버튼
     "reserve_confirm": [
         "button.confirm_btn__WEaBq",
         "button:has-text('예약 발행')",
@@ -741,102 +740,6 @@ def draft_one(page: Page, cfg: dict, post: dict) -> bool:
         save_debug(page, "save_fail")
         print(f"    ✗ 임시저장 클릭 실패: {e}")
         return False
-
-
-def reserve_one(page: Page, cfg: dict, post: dict, when) -> tuple[bool, str]:
-    """글 하나를 입력하고 네이버 '예약 발행'까지 설정한다.
-
-    when: datetime — 예약 시각(분은 네이버가 10분 단위만 받으므로 내림).
-    실패하면 임시저장으로 폴백하고 (False, 사유) 를 돌려준다.
-    """
-    selectors = cfg["_selectors"]
-    frame = fill_editor(page, cfg, post)
-    if frame is None:
-        return False, "에디터 입력 실패"
-    clear_popups(page, frame, selectors)
-
-    def fallback(reason: str) -> tuple[bool, str]:
-        print(f"    · 예약 설정 실패({reason}) → 임시저장으로 폴백")
-        save_debug(page, "reserve_fail")
-        clear_popups(page, frame, selectors)
-        loc = first_working(frame, selectors["save"])
-        if loc is not None:
-            try:
-                loc.click(timeout=5000)
-                frame.wait_for_timeout(1500)
-            except Exception:  # noqa: BLE001
-                pass
-        return False, reason
-
-    # ① 발행 설정 레이어 열기
-    open_btn = first_working(frame, selectors["publish_open"])
-    if open_btn is None:
-        return fallback("발행 버튼 없음")
-    try:
-        open_btn.click(timeout=5000)
-        frame.wait_for_timeout(1200)
-    except Exception as e:  # noqa: BLE001
-        return fallback(f"발행 버튼 클릭 실패 {str(e)[:40]}")
-
-    # ①-b 태그 입력(발행 레이어의 '태그 편집' 칸) — 실패해도 발행은 계속
-    tags = [t for t in (post.get("tags") or [])][:10]
-    if tags:
-        try:
-            tag_box = first_working(frame, [
-                "input[placeholder*='태그']", ".tag_input", "input.tag_input__rvo3J"])
-            if tag_box is not None:
-                tag_box.click(timeout=3000)
-                for t in tags:
-                    page.keyboard.type(str(t).lstrip("#"), delay=15)
-                    page.keyboard.press("Enter")
-                    page.wait_for_timeout(150)
-                print(f"    · 태그 {len(tags)}개 입력")
-            else:
-                print("    · 태그 입력칸을 못 찾았습니다(본문 해시태그로 대체)")
-        except Exception as e:  # noqa: BLE001
-            print(f"    · 태그 입력 실패({str(e)[:40]}) — 계속 진행")
-
-    # ② '예약' 선택
-    radio = first_working(frame, selectors["reserve_radio"])
-    if radio is None:
-        return fallback("예약 옵션 없음")
-    try:
-        radio.click(timeout=4000)
-        frame.wait_for_timeout(800)
-    except Exception as e:  # noqa: BLE001
-        return fallback(f"예약 선택 실패 {str(e)[:40]}")
-
-    # ③ 날짜·시각 — 날짜 입력칸 + 시/분 select (네이버는 분이 10분 단위)
-    try:
-        date_loc = first_working(frame, selectors["reserve_date"])
-        if date_loc is not None:
-            date_loc.click(timeout=3000)
-            date_loc.fill(when.strftime("%Y-%m-%d"))
-            page.keyboard.press("Enter")
-            frame.wait_for_timeout(400)
-        hour = f"{when.hour:02d}"
-        minute = f"{(when.minute // 10) * 10:02d}"
-        sels = frame.locator(".se-popup select, [class*='publish'] select")
-        if sels.count() >= 2:
-            sels.nth(0).select_option(value=hour)
-            sels.nth(1).select_option(value=minute)
-        elif sels.count() == 1:
-            sels.nth(0).select_option(label=f"{hour}:{minute}")
-        frame.wait_for_timeout(400)
-    except Exception as e:  # noqa: BLE001
-        return fallback(f"시각 설정 실패 {str(e)[:50]}")
-
-    # ④ 최종 '예약 발행' 클릭
-    confirm = first_working(frame, selectors["reserve_confirm"])
-    if confirm is None:
-        return fallback("예약 발행 버튼 없음")
-    try:
-        confirm.click(timeout=5000)
-        frame.wait_for_timeout(2500)
-    except Exception as e:  # noqa: BLE001
-        return fallback(f"예약 발행 클릭 실패 {str(e)[:40]}")
-    print(f"    ✓ 예약 발행 설정 완료 — {when.strftime('%m/%d %H:%M')}")
-    return True, f"{when.strftime('%Y-%m-%d %H:%M')} 예약 발행 설정"
 
 
 def launch(cfg: dict, headful: bool):

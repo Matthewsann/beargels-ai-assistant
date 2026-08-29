@@ -22,7 +22,10 @@
     {% endif %}
     {% if post.prepared_at %}
     <div class="note" style="margin-top:9px;">✅ 네이버에 임시저장돼 있어요{% if photos %} (사진 {{ photos|length }}장 포함){% endif %}.
-      네이버 → 글쓰기 → 저장 목록에서 확인하고 <b>발행</b>을 눌러주세요.</div>
+      아래 <b>네이버 블로그 바로가기</b>에서 확인하고, 사진·태그까지 보신 뒤
+      직접 <b>발행</b> 또는 <b>예약 발행</b>을 눌러주세요.</div>
+    <a href="https://blog.naver.com/beargels_songdo?Redirect=Write&" target="_blank" rel="noopener"
+       class="btn wide" style="margin-top:8px;">🔗 네이버 블로그 바로가기</a>
     {% endif %}
   </div>
 
@@ -62,14 +65,15 @@
   <div class="sec">관리</div>
   <div class="panel">
     <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">
-      날짜·시간을 고르면 집 PC가 그 시각 40분 전에 글+사진을 네이버에 넣고
-      <b>예약 발행까지 자동 설정</b>합니다. (분은 10분 단위)
+      실제 예약은 <b>네이버에서 사장님이 직접</b> 겁니다(자동 아님). 걸어두신
+      뒤 여기서는 확인용으로 시각을 남겨두는 것뿐이에요.
     </div>
     <form method="post" action="{{ url_for('blog_post_status', path_key=key, post_id=post.id) }}"
           style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
       <input type="hidden" name="status" value="scheduled">
-      <input type="datetime-local" name="scheduled_at" style="flex:1;">
-      <button class="btn sm" type="submit">📅 예약 발행</button>
+      <input type="datetime-local" name="scheduled_at" style="flex:1;"
+             value="{{ post.scheduled_at[:16] if post.scheduled_at else '' }}">
+      <button class="btn sm" type="submit">📝 예약 등록함</button>
     </form>
     <div class="row">
       {% if post.status != 'published' %}

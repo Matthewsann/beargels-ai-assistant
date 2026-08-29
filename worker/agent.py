@@ -498,29 +498,6 @@ def maybe_blog_react() -> None:
         logger.warning("블로그 자동 수집 판단 실패: %s", e)
 
 
-def maybe_blog_scheduled() -> None:
-    """예약된 블로그 글이 있으면 시각에 맞춰 네이버 '예약 발행'을 스스로 건다.
-
-    사장님이 웹 관리에서 날짜·시간만 고르면 끝(2026-08-28 확정) —
-    발행 40분 전에 집 PC가 글+사진을 넣고 네이버 예약발행까지 설정한다.
-    """
-    try:
-        from database import blog_store
-        from datetime import datetime, timedelta
-        now = datetime.now().astimezone()
-        for p in blog_store.list_posts(status="scheduled", limit=20):
-            if p.get("prepared_at") or not p.get("scheduled_at"):
-                continue                  # 이미 네이버에 넣었거나 시각 미정
-            at = datetime.fromisoformat(
-                p["scheduled_at"].replace("Z", "+00:00")).astimezone()
-            if at - now > timedelta(minutes=40):
-                continue                  # 아직 이르다
-            blog_store.request_blog_job("blog_publish", {
-                "post_id": p["id"], "reserve_at": p["scheduled_at"],
-            }, by="예약자동")
-            logger.info("예약 발행 잡 요청: 글#%s (%s)", p["id"], at)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("예약 발행 판단 실패: %s", e)
 
 
 def maybe_auto_collect() -> None:
@@ -1228,7 +1205,6 @@ def main() -> int:
                 maybe_complaint_report()
                 maybe_pos_import()
                 maybe_blog_react()
-                maybe_blog_scheduled()
                 maybe_rescue_stuck()
                 db.worker_ping("idle", "대기 중")
         except KeyboardInterrupt:
