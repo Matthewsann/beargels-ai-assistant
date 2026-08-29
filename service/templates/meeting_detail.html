@@ -40,6 +40,8 @@
   .trow input[type=checkbox] { width:18px; height:18px; margin:3px 0 0; flex-shrink:0;
           accent-color:var(--ok); cursor:pointer; }
   .trow .tx { flex:1; word-break:break-word; }
+  .trow .memo { display:block; font-size:12px; color:var(--muted); margin-top:2px;
+          white-space:pre-wrap; }
   .trow .who { font-size:11.5px; color:var(--muted); white-space:nowrap; margin-top:3px;
           font-variant-numeric:tabular-nums; }
   .trow .who.late { color:var(--bad); font-weight:700; }
@@ -86,7 +88,7 @@
         <label class="trow {{ 'done' if t.done else '' }}" data-id="{{ t.id }}">
           <input type="checkbox" {{ 'checked' if t.done else '' }}
                  onchange="toggleTask(this)">
-          <span class="tx">{{ t.content }}</span>
+          <span class="tx">{{ t.content }}{% if t.memo %}<span class="memo">📝 {{ t.memo }}</span>{% endif %}</span>
           {# 기한은 D-Day 로만 보여준다(사장님 지시 2026-08-28).
              실제 날짜는 마우스를 올리면 뜨고, 수정 화면 달력에도 그대로 있다. #}
           {% if t.owner or t.dday %}
@@ -145,7 +147,8 @@
     lines.push("", "◆ 할 일");
     {% for t in tasks %}
     lines.push(({{ 'true' if t.done else 'false' }} ? "[v] " : "[ ] ") + {{ t.content | tojson }}
-      + "{% if t.owner %} ({{ t.owner }}{% if t.dday %} · {{ t.dday }}{% endif %}){% elif t.dday %} ({{ t.dday }}){% endif %}");
+      + "{% if t.owner %} ({{ t.owner }}{% if t.dday %} · {{ t.dday }}{% endif %}){% elif t.dday %} ({{ t.dday }}){% endif %}"
+      + {{ ((' — ' ~ t.memo) if t.memo else '') | tojson }});
     {% endfor %}
     {% endif %}
     var text = lines.join("\n");

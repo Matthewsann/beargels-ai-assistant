@@ -2287,6 +2287,7 @@ def _meeting_form_tasks() -> list[dict]:
     contents = f.getlist("task_content")
     owners = f.getlist("task_owner")
     dues = f.getlist("task_due")
+    memos = f.getlist("task_memo")
     # 완료 여부는 상세 화면에서 체크한다. 폼에는 숨은 값으로 실려 오가므로
     # (줄마다 하나씩) 수정하다가 완료 표시가 풀리지 않는다.
     dones = f.getlist("task_done")
@@ -2299,6 +2300,7 @@ def _meeting_form_tasks() -> list[dict]:
             "content": content,
             "owner": owners[i] if i < len(owners) else "",
             "due_date": dues[i] if i < len(dues) else "",
+            "memo": memos[i] if i < len(memos) else "",
             "done": (dones[i] if i < len(dones) else "") in ("1", "true", "on"),
         })
     return out

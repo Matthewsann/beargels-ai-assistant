@@ -32,35 +32,30 @@
   .row2 { display:flex; gap:8px; }
   .row2 .field { flex:1; min-width:0; }
 
-  /* ⚠️ 할 일 줄의 칸 너비는 위 '.field input[type=text]' 의 width:100% 를
-     반드시 이겨야 한다. 클래스만으로 쓰면(.trow .o) 특이도가 모자라 져서,
-     할 일 칸이 24px 로 찌그러지고 담당·날짜가 화면 밖으로 밀려났다
-     (사장님 보고 2026-08-28). 그래서 '.tasks .trow input[...]' 로 적는다. */
-  .tasks { border:1px solid var(--line); border-radius:10px; padding:8px 10px 10px; }
-  .tasks .trow { display:flex; gap:6px; align-items:center; padding:6px 0;
-          border-bottom:1px solid var(--line); }
-  .tasks .trow:last-of-type { border-bottom:none; }
-  .tasks .trow input[type=text], .tasks .trow input[type=date] {
+  /* ⚠️ 칸 너비는 위 '.field input[type=text]' 의 width:100% 를 반드시
+     이겨야 한다. 클래스만으로 쓰면 특이도가 모자라져서 칸이 찌그러지고
+     옆 칸이 화면 밖으로 밀려났다(사장님 보고 2026-08-28). 그래서
+     '.tasks .tcard input[...]' 로, 두 클래스 이상을 걸어 적는다. */
+  .tasks { display:flex; flex-direction:column; gap:9px; }
+  .tcard { border:1px solid var(--line); border-radius:10px;
+          padding:9px 10px 10px; background:var(--bg); }
+  .tasks .tcard input[type=text], .tasks .tcard input[type=date] {
           border:1px solid var(--line); background:var(--card); color:var(--ink);
           border-radius:8px; padding:9px 10px; font-size:13.5px; font-family:inherit;
           min-width:0; }
-  .tasks .trow input.c { flex:1 1 auto; width:auto; }
-  .tasks .trow input.o { flex:0 0 84px; width:84px; }
-  .tasks .trow input.u { flex:0 0 150px; width:150px; }   /* '연도-월-일' 이 들어갈 만큼 */
-  .tasks .trow .x { border:none; background:none; color:var(--muted); font-size:18px;
+  .trow1 { display:flex; gap:8px; align-items:center; margin-bottom:7px; }
+  .tasks .tcard input.c { flex:1 1 auto; width:auto; font-weight:600; }
+  .trow1 .x { border:none; background:none; color:var(--muted); font-size:18px;
           line-height:1; cursor:pointer; padding:6px 4px; flex-shrink:0;
           font-family:inherit; }
-  .tasks .trow.isdone input.c { color:var(--muted); text-decoration:line-through; }
+  .trow2 { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:7px; }
+  .tasks .tcard input.o { flex:1 1 120px; width:auto; }
+  .tasks .tcard input.u { flex:1 1 140px; width:auto; }
+  .tasks .tcard input.me { width:100%; color:var(--muted); }
+  .tasks .tcard.isdone input.c { color:var(--muted); text-decoration:line-through; }
   .addrow { border:1px dashed var(--line); background:none; color:var(--accent);
           border-radius:8px; padding:9px; font-size:13px; width:100%; margin-top:8px;
           font-family:inherit; cursor:pointer; }
-  /* 휴대폰: 할 일은 한 줄 통째로, 담당·기한은 그 아래 나란히 */
-  @media (max-width:520px) {
-    .tasks .trow { flex-wrap:wrap; }
-    .tasks .trow input.c { flex:1 1 100%; width:auto; }
-    .tasks .trow input.o { flex:1 1 84px; width:auto; }
-    .tasks .trow input.u { flex:2 1 140px; width:auto; }
-  }
 
   .save { display:block; width:100%; background:var(--accent); color:#fff; border:none;
           border-radius:10px; padding:13px; font-size:15px; font-weight:700;
@@ -122,23 +117,29 @@
     </div>
 
     <div class="field">
-      <label>할 일</label>
+      <label>진행할 업무</label>
       <div class="tasks" id="tasks">
         {% for t in tasks %}
-        <div class="trow {{ 'isdone' if t.done else '' }}">
+        <div class="tcard {{ 'isdone' if t.done else '' }}">
           <input type="hidden" name="task_id" value="{{ t.id }}">
           <input type="hidden" name="task_done" value="{{ '1' if t.done else '0' }}">
-          <input class="c" type="text" name="task_content" maxlength="300"
-                 value="{{ t.content }}" placeholder="할 일">
-          <input class="o" type="text" name="task_owner" maxlength="30"
-                 value="{{ t.owner or '' }}" placeholder="담당">
-          <input class="u" type="date" name="task_due" value="{{ t.due_date or '' }}">
-          <button class="x" type="button" onclick="dropRow(this)" title="이 줄 지우기">×</button>
+          <div class="trow1">
+            <input class="c" type="text" name="task_content" maxlength="300"
+                   value="{{ t.content }}" placeholder="업무 내용">
+            <button class="x" type="button" onclick="dropRow(this)" title="이 업무 지우기">×</button>
+          </div>
+          <div class="trow2">
+            <input class="o" type="text" name="task_owner" maxlength="30"
+                   value="{{ t.owner or '' }}" placeholder="담당자">
+            <input class="u" type="date" name="task_due" value="{{ t.due_date or '' }}">
+          </div>
+          <input class="me" type="text" name="task_memo" maxlength="500"
+                 value="{{ t.memo or '' }}" placeholder="기타 메모 (선택)">
         </div>
         {% endfor %}
       </div>
-      <button class="addrow" type="button" onclick="addRow()">＋ 할 일 추가</button>
-      <div class="hint">담당·기한은 비워도 됩니다. 완료 체크는 회의 상세 화면에서 해요.</div>
+      <button class="addrow" type="button" onclick="addRow()">＋ 업무 추가</button>
+      <div class="hint">담당자·마감일·메모는 비워도 됩니다. 완료 체크는 회의 상세 화면에서 해요.</div>
     </div>
 
     <button class="save" type="submit">저장하기</button>
@@ -158,22 +159,27 @@
 
   function addRow() {
     var row = document.createElement("div");
-    row.className = "trow";
+    row.className = "tcard";
     row.innerHTML =
       '<input type="hidden" name="task_id" value="">' +
       '<input type="hidden" name="task_done" value="0">' +
-      '<input class="c" type="text" name="task_content" maxlength="300" placeholder="할 일">' +
-      '<input class="o" type="text" name="task_owner" maxlength="30" placeholder="담당">' +
+      '<div class="trow1">' +
+      '<input class="c" type="text" name="task_content" maxlength="300" placeholder="업무 내용">' +
+      '<button class="x" type="button" onclick="dropRow(this)" title="이 업무 지우기">×</button>' +
+      '</div>' +
+      '<div class="trow2">' +
+      '<input class="o" type="text" name="task_owner" maxlength="30" placeholder="담당자">' +
       '<input class="u" type="date" name="task_due">' +
-      '<button class="x" type="button" onclick="dropRow(this)" title="이 줄 지우기">×</button>';
+      '</div>' +
+      '<input class="me" type="text" name="task_memo" maxlength="500" placeholder="기타 메모 (선택)">';
     document.getElementById("tasks").appendChild(row);
     row.querySelector(".c").focus();
   }
 
-  function dropRow(btn) { btn.closest(".trow").remove(); }
+  function dropRow(btn) { btn.closest(".tcard").remove(); }
 
-  // 처음 열었을 때 빈 줄 하나는 있어야 바로 적을 수 있다.
-  if (!document.querySelectorAll("#tasks .trow").length) addRow();
+  // 처음 열었을 때 빈 업무 하나는 있어야 바로 적을 수 있다.
+  if (!document.querySelectorAll("#tasks .tcard").length) addRow();
 </script>
 </body>
 </html>

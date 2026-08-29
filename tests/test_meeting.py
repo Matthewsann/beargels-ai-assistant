@@ -185,3 +185,28 @@ def test_done_task_is_not_marked_late(app_mod, monkeypatch):
     rows = app_mod._meeting_tasks_view(1)
     assert rows[0]["dday"] == "D+8 지남" and rows[0]["overdue"] is False
     assert rows[1]["dday"] == "D+8 지남" and rows[1]["overdue"] is True
+
+
+# ── 업무 메모 (담당자/마감일/업무내용/기타메모) ──────────────────
+# 사장님 지시 2026-08-30: 회의에서 나온 업무는 네 항목을 다 받는다.
+
+def test_form_tasks_include_memo(app_mod):
+    form = [
+        ("task_id", ""), ("task_done", "0"), ("task_content", "원가 계산"),
+        ("task_owner", "사장님"), ("task_due", "2026-08-29"),
+        ("task_memo", "엑셀에 단가표 있음"),
+    ]
+    with _post(app_mod, form):
+        rows = app_mod._meeting_form_tasks()
+    assert rows[0]["memo"] == "엑셀에 단가표 있음"
+
+
+def test_form_tasks_memo_optional(app_mod):
+    """메모 줄이 아예 안 와도(구버전 폼) 죽지 않는다."""
+    form = [
+        ("task_id", ""), ("task_done", "0"), ("task_content", "근무표"),
+        ("task_owner", ""), ("task_due", ""),
+    ]
+    with _post(app_mod, form):
+        rows = app_mod._meeting_form_tasks()
+    assert rows[0]["memo"] == ""

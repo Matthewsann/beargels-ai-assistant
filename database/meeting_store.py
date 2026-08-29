@@ -4,7 +4,7 @@ service/app.py 의 /meeting 화면들이 쓴다. 연결은 supabase_client.get_c
 
 구성:
   · meetings       — 회의 한 건 (날짜/제목/분류/참석자/논의 내용/결정한 것)
-  · meeting_tasks  — 그 회의에서 나온 할 일 (담당·기한·완료)
+  · meeting_tasks  — 그 회의에서 나온 할 일 (담당·기한·메모·완료)
 
 분류(category)는 **자유 입력**이다. 기본 5종을 보여주되 직원이 새 이름을
 직접 넣을 수 있고, 한 번 쓰인 이름은 그다음부터 목록에 함께 뜬다
@@ -196,7 +196,7 @@ def get_tasks(meeting_id):
 def save_tasks(meeting_id, items):
     """회의의 할 일 목록을 화면에서 온 그대로 맞춘다.
 
-    items: [{id?, content, owner, due_date, done}]
+    items: [{id?, content, owner, due_date, memo, done}]
     - id 가 있으면 수정, 없으면 새로 추가
     - 화면에 없는 기존 항목은 삭제
     완료 여부(done)는 상세 화면 체크박스가 따로 관리하지만, 수정 화면에서도
@@ -215,6 +215,7 @@ def save_tasks(meeting_id, items):
             "content": content,
             "owner": _clean(it.get("owner"), 30) or None,
             "due_date": _d(it.get("due_date")),
+            "memo": _clean(it.get("memo"), 500) or None,
             "sort": i,
         }
         tid = it.get("id")
@@ -257,7 +258,7 @@ def open_tasks(limit=20):
     회의 제목·날짜는 관계 조회로 같이 가져온다.
     """
     rows = (get_client().table(TASKS)
-            .select("id,content,owner,due_date,meeting_id,"
+            .select("id,content,owner,due_date,memo,meeting_id,"
                     "meetings(title,meeting_date)")
             .eq("done", False)
             .order("due_date", desc=False, nullsfirst=False)
@@ -273,6 +274,7 @@ def open_tasks(limit=20):
             "id": r["id"],
             "content": r.get("content") or "",
             "owner": r.get("owner") or "",
+            "memo": r.get("memo") or "",
             "due": due,
             "dday": dday_label(due, today),
             "overdue": overdue,
