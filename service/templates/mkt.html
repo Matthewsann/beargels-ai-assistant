@@ -355,6 +355,16 @@ async function mkToggleEffect(id) {
     if (e.error) { box.textContent = '분석 실패: ' + e.error; return; }
     let h = '';
     if (e.short) h += `<span class="st ref">참고용</span> <span class="eff-note">기간 ${e.days}일 — 표본이 짧아 운일 수 있어요</span><br>`;
+    if (e.provisional_days >= e.days) {
+      // 기간 전체가 장부 미반영 — 0원/▼100% 같은 허수 대신 상태만 안내
+      h += '<p class="eff-note">📂 아직 장부가 반영되기 전이에요 — 이 기간의 매출이 올라오면 자동으로 분석돼요.</p>';
+      if (e.memo) h += `<div class="eff-note">메모: ${e.memo}</div>`;
+      h += `<div class="row-actions">
+        <button type="button" class="btn2" onclick="mkEnd(${id})">종료</button>
+        <button type="button" class="btn2" onclick="mkDelete(${id})">삭제</button></div>`;
+      box.innerHTML = h;
+      return;
+    }
     h += '<div class="eff-grid">';
     for (const t of (e.targets || [])) {
       h += `<div class="st1 hero"><div class="k">🎯 ${t.product} 판매</div>
@@ -367,6 +377,8 @@ async function mkToggleEffect(id) {
       <div class="v">${e.roas == null ? '—' : e.roas}</div></div>`;
     h += '</div>';
     h += `<div class="eff-note">비교: 같은 요일 최근 4주 평균(휴무 제외) 대비 · 기대치 ${won(e.total.expected)}</div>`;
+    if (e.provisional_days > 0)
+      h += `<div class="eff-note">📂 ${e.provisional_days}일은 아직 장부 미반영이라 집계에서 뺐어요.</div>`;
     if (e.overlap && e.overlap.length)
       h += `<div class="eff-warn">⚠ 이 기간에 ${e.overlap.map(o => `'${o.title}'`).join(', ')} 도 진행 — 효과가 섞여 있을 수 있어요.</div>`;
     if (e.memo) h += `<div class="eff-note">메모: ${e.memo}</div>`;

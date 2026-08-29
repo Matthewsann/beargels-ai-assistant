@@ -280,7 +280,8 @@ def campaign_effect(cid: int) -> dict:
     targets = camp.get("target_products") or []
     prows = mkt_store.product_sales_between(fetch_from, end, targets) \
         if targets else []
-    eff = mkt_store.campaign_effect(camp, sales, prows)
+    last_pos, _ = _safe(mkt_store.last_pos_date, None)
+    eff = mkt_store.campaign_effect(camp, sales, prows, last_pos=last_pos)
     # 겹침 경고
     others = mkt_store.campaigns_overlapping(camp["start_date"],
                                              camp.get("end_date") or str(end))

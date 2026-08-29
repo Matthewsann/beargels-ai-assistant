@@ -123,6 +123,45 @@ def test_campaign_effect_uplift_and_short_flag():
     assert eff2["short"]                        # 2일짜리는 참고용
 
 
+def test_campaign_effect_hides_bogus_pct_for_provisional_days():
+    """장부 미반영(잠정) 구간은 0원 대비 ▼100% 같은 허수를 내면 안 된다.
+
+    실사고(2026-08-27/29): day_detail은 고쳤는데 campaign_effect가 그대로라,
+    사장님이 오늘 만든 실제 캠페인(8/28, 장부는 7/31까지 반영)을 열어보니
+    total.pct=-1.0(=▼100%)이 나왔다. last_pos 이후 날짜는 실제/기대 양쪽
+    합계에서 통째로 빼야 한다.
+    """
+    rows = _make_daily(weeks=9, start=date(2026, 6, 1))
+    camp = {"id": 3, "title": "오늘 시작한 캠페인", "start_date": "2026-08-28",
+            "end_date": "2026-08-28", "cost": None, "target_products": []}
+    # 8/28 매출 행이 아예 없다(당일 크롤러 미수집) — 장부는 7/31까지만.
+    eff = mkt_store.campaign_effect(camp, rows, [], today=date(2026, 8, 28),
+                                    last_pos=date(2026, 7, 31))
+    assert eff["provisional_days"] == 1
+    assert eff["total"]["pct"] is None           # -1.0 이 아니라 None
+    assert eff["total"]["actual"] == 0
+    assert eff["total"]["expected"] == 0         # 기대치도 같이 빠져야 함
+    assert eff["uplift"] == 0
+
+
+def test_campaign_effect_partial_provisional_only_counts_ledger_days():
+    """캠페인 기간 일부만 장부 반영됐으면 반영된 날만 비교한다."""
+    rows = _make_daily(weeks=9, start=date(2026, 6, 1))
+    boosted = []
+    for r in rows:
+        if r["sale_date"] == "2026-07-30":
+            r = dict(r, amount=1300000)          # +30%
+        boosted.append(r)
+    camp = {"id": 4, "title": "월말 캠페인", "start_date": "2026-07-30",
+            "end_date": "2026-08-01", "cost": None, "target_products": []}
+    eff = mkt_store.campaign_effect(camp, boosted, [], today=date(2026, 8, 1),
+                                    last_pos=date(2026, 7, 31))
+    assert eff["days"] == 3
+    assert eff["provisional_days"] == 1          # 8/1 만 제외 (7/30·7/31은 반영)
+    assert eff["total"]["pct"] is not None
+    assert eff["total"]["pct"] > 0.1              # 7/30 부스트가 반영된 값(7/31은 평상시)
+
+
 def test_campaign_effect_target_products():
     sales = _make_daily(weeks=9, start=date(2026, 6, 1))
     daily_dates = sorted({r["sale_date"] for r in sales})

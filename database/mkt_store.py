@@ -289,10 +289,13 @@ def _period_days(start, end):
     return [start + timedelta(days=i) for i in range((end - start).days + 1)]
 
 
-def campaign_effect(camp, sales_rows, product_rows, today=None):
+def campaign_effect(camp, sales_rows, product_rows, today=None, last_pos=None):
     """캠페인 효과 요약 (요일 보정).
 
     sales_rows / product_rows 는 [시작-56일, 종료] 범위를 담아 호출한다.
+    last_pos: 장부(TOS/IMU)가 반영된 마지막 날짜. 그 이후 날짜는 배달
+    잠정치뿐이라 '매출 0 → ▼100%' 같은 허수가 나온다(2026-08-27 발견) —
+    실제/기대 양쪽 집계에서 통째로 뺀다(day_signal/day_detail과 같은 원칙).
     반환: dict(기간, 실제/기대 매출, 채널, 타겟 상품, 증분, ROAS, 주의 플래그)
     """
     today = _d(today or date.today())
@@ -303,13 +306,15 @@ def campaign_effect(camp, sales_rows, product_rows, today=None):
         end = start
     days = _period_days(start, end)
     n_days = len(days)
+    last_pos = _d(last_pos) if last_pos else None
+    ledger_days = [d for d in days if last_pos is None or d <= last_pos]
 
     daily = totals_by_date(sales_rows)
 
     def sum_actual_expected(key):
         actual = expected = 0
         covered = 0
-        for d in days:
+        for d in ledger_days:
             row = daily.get(str(d))
             v = (row or {}).get(key, 0)
             base = weekday_baseline(daily, d, key=key)
@@ -323,7 +328,8 @@ def campaign_effect(camp, sales_rows, product_rows, today=None):
 
     out = {"id": camp["id"], "title": camp["title"],
            "start": str(start), "end": str(end), "days": n_days,
-           "short": n_days < 7}
+           "short": n_days < 7,
+           "provisional_days": n_days - len(ledger_days)}
 
     for key, name in (("total", "total"), ("store", "store"),
                       ("delivery", "delivery")):
@@ -338,15 +344,17 @@ def campaign_effect(camp, sales_rows, product_rows, today=None):
     out["uplift"] = uplift
     out["roas"] = round(uplift / cost, 1) if cost > 0 else None
 
-    # 타겟 상품 — 기간 일평균 vs 직전 4주 일평균 (0판매일 포함, 휴무 제외)
+    # 타겟 상품 — 기간 일평균 vs 직전 4주 일평균 (0판매일 포함, 휴무 제외,
+    # 잠정 구간 제외 — 크롤러엔 상품별 데이터가 없어 평균이 희석된다)
     targets = camp.get("target_products") or []
     out["targets"] = []
     if targets:
-        open_days = {str(d) for d in days
+        open_days = {str(d) for d in ledger_days
                      if (daily.get(str(d)) or {}).get("total", 0) > 0}
         pre_start, pre_end = start - timedelta(days=28), start - timedelta(days=1)
         pre_open = {str(d) for d in _period_days(pre_start, pre_end)
-                    if (daily.get(str(d)) or {}).get("total", 0) > 0}
+                    if (last_pos is None or d <= last_pos)
+                    and (daily.get(str(d)) or {}).get("total", 0) > 0}
         agg = defaultdict(lambda: [0, 0, 0, 0])   # product -> [qty, amt, pre_qty, pre_amt]
         for r in product_rows:
             p = r["product"]
