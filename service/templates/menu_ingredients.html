@@ -137,7 +137,7 @@ td.ck input{width:16px;height:16px}
 <body>
 {% include "_sidebar.html" %}
 <header>
-  <h1>🧺 자재 · 레시피 <a href="/{{ key }}/menu">← 메뉴/원가</a></h1>
+  <h1>🧺 자재 · 레시피 <a id="backToMenu" href="/{{ key }}/menu">← 메뉴/원가</a></h1>
   <div class="tabs">
     <div class="tab on" id="tabIng" onclick="TAB='ing';render()">🧺 자재 목록</div>
     <div class="tab" id="tabRec" onclick="TAB='rec';render()">📖 메뉴 레시피</div>
@@ -1520,6 +1520,15 @@ async function runSeed(){
   render();
 }
 
+// '← 메뉴/원가' 가 지금 보고 있는 메뉴를 물고 간다 — 레시피·세트를 엮고
+// 돌아왔을 때 208줄 목록 맨 위가 아니라 그 메뉴 자리로 가게.
+function syncBackLink(){
+  const a = document.getElementById("backToMenu");
+  if (!a) return;
+  a.href = (TAB === "rec" && SKU)
+    ? `${BASE}?sku=${encodeURIComponent(SKU)}` : BASE;
+}
+
 function render(){
   if(TAB!=='ing'&&BULK){BULK=false;EDITS={};SEL.clear();}
   if((TAB!=='rec'||!SKU)&&RBULK){RBULK=false;REDITS={};}
@@ -1540,6 +1549,7 @@ function render(){
   }
   if(TAB==='ing') renderIng();
   else renderRec();
+  syncBackLink();
 }
 fetch(BASE+"/data").then(r=>r.json()).then(d=>{
   if(d.error){document.getElementById("main").innerHTML=`<div class="empty">⚠ ${d.error}</div>`;return;}
@@ -1547,6 +1557,7 @@ fetch(BASE+"/data").then(r=>r.json()).then(d=>{
   const p=new URLSearchParams(location.search); SKU=p.get("sku")||null;
   if(SKU) TAB='rec';
   render();
+  syncBackLink();
 });
 </script>
 </body>

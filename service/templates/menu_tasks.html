@@ -359,7 +359,7 @@ function render(){
         const cp = v => `<button class="cpbtn" onclick="copyVal(event,'${String(v).replace(/'/g,"\\'")}')">📋 복사</button>`;
         // '왜' 한 줄 + 고칠 값. 정본이 틀린 경우도 있으므로 반대로 고치는
         // 길(웹 /menu)을 항상 같이 준다 — 없으면 채널을 잘못 맞추게 된다.
-        const master = t.sku ? `<a class="fix" href="/{{ key }}/menu?sku=${t.sku}"
+        const master = t.sku ? `<a class="fix" href="/{{ key }}/menu?sku=${encodeURIComponent(t.sku)}"
             onclick="event.stopPropagation()">정본이 틀렸어요 → 정본 고치기</a>` : "";
         if(t.type==="price") desc=`<div class="why">${eunNeun(LABEL[CH])} ${won(t.cur)},
             정본은 ${won(t.to)} 입니다.</div>
@@ -371,7 +371,7 @@ function render(){
             <b>${t.name}</b>(${won(t.cur)})과 정본의 <b>${t.guess}</b>(${won(t.guessPrice)})가
             비슷합니다. <b>같은 메뉴면</b> 이름·가격만 맞추면 되고,
             <b>다른 메뉴면</b> 정본에 새로 추가해야 합니다.</div>
-          <a class="fix" href="/{{ key }}/menu?sku=${t.guessSku}"
+          <a class="fix" href="/{{ key }}/menu?sku=${encodeURIComponent(t.guessSku)}"
              onclick="event.stopPropagation()">정본에서 ${t.guess} 열기</a>`;
         if(t.type==="extra") desc=`<div class="why">${LABEL[CH]}에 ${won(t.cur)}로 올라와
             있는데 정본에 비슷한 메뉴도 없습니다. 안 파는 메뉴면 ${LABEL[CH]}에서 내리고,

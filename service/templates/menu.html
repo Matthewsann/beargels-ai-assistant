@@ -2107,6 +2107,23 @@ fetch(BASE+"/data").then(r=>r.json()).then(d=>{
     Supabase에 테이블이 없다면 <code>supabase/migrations/005_menu_master.sql</code> 실행 후
     <code>python scripts/seed_menu_master.py</code> 를 집 PC에서 실행하세요.</td></tr>`; return; }
   DATA = d; render();
+  // 다른 화면에서 '이 메뉴' 를 지목해 넘어온 경우(작업지시서의 '정본 고치기',
+  // 자재/레시피의 '← 메뉴/원가') 그 줄로 데려다 놓는다. 이게 없으면 208줄
+  // 목록 맨 위에 떨어져 눈으로 다시 찾아야 했다.
+  const want = new URLSearchParams(location.search).get("sku");
+  if (want){
+    if (DATA.items.some(i => i.sku === want)){
+      // 필터에 가려 안 보이는 일이 없게 분류·검색을 푼 뒤 그 줄로.
+      CAT = "전체"; PROB = null; STATE = null; LFILTER = false;
+      document.getElementById("q").value = "";
+      render();
+      revealRow(want);
+      toggleDetail(want);     // 폰이면 시트, PC면 상세 행 (안에서 갈린다)
+    } else {
+      // 정본에서 지워졌거나 SKU 가 바뀐 경우 — 빈 화면 대신 사정을 알린다
+      toast(`'${want}' 메뉴를 정본에서 찾지 못했습니다 — 지워졌을 수 있어요`);
+    }
+  }
 });
 </script>
 </body>
