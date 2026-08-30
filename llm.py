@@ -382,7 +382,7 @@ def _cool_down(name: str, model: str | None) -> None:
 def complete(system: str = "", user: str = "", max_tokens: int = 1500,
              model: str | None = None, images: list | None = None,
              prefer: str | None = None, only: tuple[str, ...] | None = None,
-             quality: bool = False) -> str:
+             quality: bool = False, paid: bool = False) -> str:
     """AI 에게 물어 답 텍스트를 받는다. 공급자는 자동 선택 · 실패 시 다음 것으로 넘어간다.
 
     model: 이번 호출에만 쓸 Claude 모델(없으면 CLAUDE_MODEL). 불만 리뷰처럼
@@ -405,6 +405,11 @@ def complete(system: str = "", user: str = "", max_tokens: int = 1500,
           상위 한도를 먼저 태워, 정작 답글이 무딘 하위 모델로 밀렸다
           (2026-08-30, 초안 무수정률 85%→13% 붕괴의 배경. 사장님 지시:
           유료에 의지하지 말고 유지비 최소화로 목적 달성).
+    paid: True = **이 호출은 유료 클로드를 써도 된다**는 호출부의 명시적 옵트인.
+          전역 LLM_PAID_OK 와 달리 이 호출에만 적용된다. 인스타 릴스처럼
+          "유료만 쓰고 무료 한도는 답글 몫으로 남긴다"(사장님 확정 2026-08-30)가
+          정해진 기능이 only=("claude",) 와 함께 쓴다. 무료 사다리(답글·블로그)는
+          건드리지 않는다.
     """
     steps = available_steps()
     if not quality:
@@ -412,6 +417,10 @@ def complete(system: str = "", user: str = "", max_tokens: int = 1500,
         gem = [s for s in steps if s[0] == "gemini"]
         steps = (sorted(gem, key=lambda s: 0 if s[1] == GEMINI_FALLBACK_MODEL
                         else 1) or steps)   # 제미나이 키가 없으면 원래대로
+    if paid and claude_keys() and not any(s[0] == "claude" for s in steps):
+        # 호출 단위 유료 옵트인 — 전역 게이트(PAID_OK)를 이 호출에만 연다.
+        # quality 분기 뒤에 두어 '대량 작업' 정리에 지워지지 않게 한다.
+        steps.append(("claude", None))
     if only:
         steps = [s for s in steps if s[0] in only]
     if prefer:

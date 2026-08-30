@@ -294,13 +294,20 @@ def _json_from(text: str) -> dict:
     return json.loads(text[a:b + 1])
 
 
+#: 인스타 AI 전용 Claude 모델 (사장님 확정 2026-08-30: 인스타는 유료만).
+#: 기본은 Opus 5 — 자막·훅 품질이 노출을 좌우해서 최상급을 쓴다.
+#: 비용을 낮추려면 .env 에 INSTA_CLAUDE_MODEL=claude-sonnet-5 등으로 교체.
+INSTA_CLAUDE_MODEL = os.getenv("INSTA_CLAUDE_MODEL", "claude-opus-5")
+
+
 async def _ask(system: str, user: str, schema: dict,
                images: list[tuple[str, bytes]] | None = None) -> dict:
     """AI에게 물어 schema 모양의 JSON을 받는다.
 
-    유료 Claude API 는 쓰지 않는다(사장님 지시 2026-08-30) —
-    llm.complete(only=("gemini",)) 라 무료 Gemini 가 없으면 그대로 실패하고,
-    각 호출부의 폴백(기본 풀/템플릿)으로 떨어진다.
+    **유료 Claude 전용**(사장님 확정 2026-08-30): 무료 Gemini 한도는 리뷰
+    답글 몫으로 남긴다. only=("claude",) + paid=True 라 Gemini 는 절대
+    두드리지 않고, Claude 가 실패하면 각 호출부의 폴백(기본 풀/템플릿)으로
+    떨어진다 — 기능이 죽지는 않는다.
     """
     import llm
 
@@ -312,7 +319,8 @@ async def _ask(system: str, user: str, schema: dict,
     )
     text = await asyncio.to_thread(
         llm.complete, system=sys_full, user=user, max_tokens=2048,
-        images=images or None, only=("gemini",),
+        images=images or None, only=("claude",), paid=True,
+        model=INSTA_CLAUDE_MODEL,
     )
     return _json_from(text)
 
