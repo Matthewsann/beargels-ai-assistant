@@ -128,7 +128,13 @@ def as_prompt_context(data: dict | None = None, *, max_hooks: int = 12) -> str:
         for p in s.get("top_posts", [])[:3]:
             if p.get("hook"):
                 lines.append(f"    - \"{p['hook']}\" (♥{p.get('likes') or 0})")
-    hooks = [h for s in data["hashtags"].values() for h in s.get("hooks", [])][:max_hooks]
+    # 태그별로 번갈아 뽑는다 — 첫 태그가 자리를 독식하지 않게
+    pools = [list(s.get("hooks", [])) for s in data["hashtags"].values()]
+    hooks: list[str] = []
+    while len(hooks) < max_hooks and any(pools):
+        for p in pools:
+            if p and len(hooks) < max_hooks:
+                hooks.append(p.pop(0))
     if hooks:
         lines.append("[실제 훅 문장들]")
         lines += [f"    · {h}" for h in hooks]
