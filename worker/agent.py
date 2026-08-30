@@ -1238,6 +1238,29 @@ PLACE_STATS_WEEKDAY = int(os.getenv("WORKER_PLACE_STATS_WEEKDAY", "0"))  # 0=월
 _last_stats_week = None
 
 
+def _attach_store_sales(result: dict, previous: dict | None) -> None:
+    """유입 스냅샷에 같은 기간의 **매장 매출**을 붙인다(목표 3단계 '매출 상승').
+
+    ⚠️ 배달(배민·쿠팡)은 뺀다 — 네이버 플레이스는 매장 방문을 만드는 채널이라
+    배달 매출을 섞으면 노출과 매출의 관계가 희석된다(사장님 확정 2026-08-30).
+    """
+    period = result.get("period") or ""
+    if " ~ " not in period:
+        return
+    d1, d2 = (p.strip() for p in period.split(" ~ "))
+    try:
+        from database import mkt_store
+        totals = mkt_store.totals_by_date(mkt_store.sales_between(d1, d2))
+        cur = mkt_store.store_only_sum(totals, d1, d2)
+    except Exception as e:  # noqa: BLE001 — 매출이 없어도 유입 기록은 남긴다
+        logger.warning("매장 매출 붙이기 실패: %s", e)
+        return
+    result["storeSales"] = cur
+    prev_amt = ((previous or {}).get("storeSales") or {}).get("amount")
+    result["storeSalesDelta"] = (cur["amount"] - prev_amt
+                                 if isinstance(prev_amt, int) else None)
+
+
 def run_place_stats() -> dict:
     """스마트플레이스 유입 키워드를 수집해 저장한다(목표 2단계 '노출 상승').
 
@@ -1248,6 +1271,7 @@ def run_place_stats() -> dict:
 
     prev = db.get_setting("place_keywords")
     result = collect(previous=prev if isinstance(prev, dict) else None)
+    _attach_store_sales(result, prev if isinstance(prev, dict) else None)
     if isinstance(prev, dict):
         db.menu_set_setting("place_keywords_prev", prev)
     db.menu_set_setting("place_keywords", result)

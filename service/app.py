@@ -947,8 +947,75 @@ def place_guide(path_key):
         '<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"<body>\n{sidebar}\n{_place_status_panel()}\n{_place_keyword_panel()}\n"
-        f"{body}\n</body>\n</html>"
+        f"{_place_sales_panel()}\n{body}\n</body>\n</html>"
     )
+
+
+def _won(n):
+    return f"{int(n):,}원"
+
+
+def _place_sales_panel() -> str:
+    """'노출이 매출로 이어졌나' 패널 — 목표 3단계('매출 상승').
+
+    ⚠️ **배달 매출은 뺀다.** 네이버 플레이스는 매장 방문을 만드는 채널이라
+    배민·쿠팡 매출을 섞으면 노출과 매출의 관계가 희석된다(사장님 확정
+    2026-08-30). sales_daily 의 channel='store'(포스) 만 센다.
+
+    장부(포스)는 월 1회 반영이라 최근 주는 매출이 비어 있을 수 있다. 그 경우
+    0원으로 보이면 폭락으로 오해하므로 '장부 미반영'이라고 밝힌다.
+    """
+    try:
+        weekly = db.get_setting("place_weekly") or []
+    except Exception:  # noqa: BLE001
+        return ""
+    if not weekly:
+        return ""
+
+    rows = ""
+    for w in weekly[-10:]:
+        ss = w.get("storeSales") or {}
+        if ss.get("days"):
+            sales = _won(ss.get("amount", 0))
+            note = (f'<em>장부 미반영 {ss["missingDays"]}일 제외</em>'
+                    if ss.get("missingDays") else "")
+        else:
+            sales, note = '<em class="none">장부 미반영</em>', ""
+        rows += (f'<tr><td>{escape(str(w.get("period","")))}</td>'
+                 f'<td class="num">{escape(str(w.get("mapPv","-")))}</td>'
+                 f'<td class="num">{sales}{note}</td></tr>')
+
+    return f"""
+<style>
+ .ps-wrap{{max-width:860px;margin:12px auto 0;padding:0 16px;
+   font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}}
+ .ps-card{{background:#fff;border:1px solid #E5DCCB;border-radius:14px;padding:16px 18px}}
+ .ps-card h3{{margin:0 0 2px;font-size:16px;color:#292019}}
+ .ps-note{{margin:0 0 12px;font-size:12px;color:#6E5F4E}}
+ .ps-tbl{{width:100%;border-collapse:collapse;font-size:13px}}
+ .ps-tbl th{{text-align:left;font-size:12px;color:#6E5F4E;font-weight:600;
+   padding:6px 8px;border-bottom:1px solid #E5DCCB}}
+ .ps-tbl td{{padding:7px 8px;border-bottom:1px solid #F1EADD;color:#292019}}
+ .ps-tbl .num{{text-align:right;white-space:nowrap}}
+ .ps-tbl em{{display:block;font-style:normal;font-size:11px;color:#8A6D1F}}
+ .ps-tbl em.none{{color:#8A6D1F}}
+ @media (prefers-color-scheme:dark){{
+   .ps-card{{background:#262019;border-color:#3A3128}}
+   .ps-card h3{{color:#EFE7DA}} .ps-note,.ps-tbl th{{color:#A79781}}
+   .ps-tbl td{{color:#EFE7DA;border-bottom-color:#3A3128}}
+   .ps-tbl em,.ps-tbl em.none{{color:#D9B95C}}
+ }}
+</style>
+<div class="ps-wrap"><div class="ps-card">
+  <h3>💰 노출이 매출로 이어졌나</h3>
+  <p class="ps-note"><b>매장 매출만</b> 봅니다 — 배달(배민·쿠팡)은 플레이스와
+     무관하게 움직여서 뺐어요. 장부(포스)는 월 1회 반영이라 최근 주는 비어 있을 수 있어요.</p>
+  <table class="ps-tbl">
+    <tr><th>주간</th><th class="num">네이버지도 유입</th><th class="num">매장 매출</th></tr>
+    {rows}
+  </table>
+</div></div>
+"""
 
 
 def _place_keyword_panel() -> str:

@@ -184,6 +184,93 @@ def find_site_id(page) -> str | None:
         return None
 
 
+def prepare(session):
+    """통계 API 를 부를 준비 — 로그인 확인 + siteId + Bearer 토큰.
+
+    토큰은 통계 화면이 스스로 보내는 요청에서 빌린다. 여러 주를 훑을 때
+    이 준비를 한 번만 하고 재사용한다.
+    """
+    page = session.page
+    tokens: list[str] = []
+
+    def _grab_token(req):
+        if "bizadvisor" not in req.url:
+            return
+        auth = (req.headers or {}).get("authorization")
+        if auth and auth not in tokens:
+            tokens.append(auth)
+
+    page.on("request", _grab_token)
+    page.goto(BIZES_URL, wait_until="domcontentloaded")
+    page.wait_for_timeout(6000)
+    if not is_logged_in(page):
+        raise NaverLoginRequired(
+            "크롤러 크롬에 네이버 로그인이 없습니다 — "
+            "scripts/launch_chrome.bat 로 띄운 창에서 네이버에 한 번 "
+            "로그인해 주세요(세션은 프로필에 남습니다).")
+
+    m = re.search(r"/bizes/place/(\d+)", page.content())
+    biz = m.group(1) if m else None
+    if biz:
+        page.goto(f"https://new.smartplace.naver.com/bizes/place/{biz}/statistics",
+                  wait_until="domcontentloaded")
+        page.wait_for_timeout(10000)
+
+    site = find_site_id(page)
+    if not site:
+        raise RuntimeError(
+            "통계 siteId(sp_...)를 찾지 못했습니다 — "
+            ".env 에 NAVER_PLACE_SITE_ID 를 넣어 고정할 수 있습니다.")
+    # find_site_id 가 공개 플레이스까지 다녀왔을 수 있다. API 는 같은 출처에서.
+    if "new.smartplace.naver.com" not in (page.url or ""):
+        page.goto(f"https://new.smartplace.naver.com/bizes/place/{biz}/statistics"
+                  if biz else BIZES_URL, wait_until="domcontentloaded")
+        page.wait_for_timeout(5000)
+    if not tokens:
+        raise RuntimeError(
+            "통계 인증 토큰을 못 받았습니다 — 통계 화면이 안 열렸을 수 있습니다.")
+    return site, tokens[-1]
+
+
+def week_starts(weeks: int, today: date | None = None) -> list[tuple[str, str]]:
+    """최근 `weeks` 개의 완결된 주(월~일)를 과거→최근 순으로."""
+    _, last_end = week_range(today)
+    end = date.fromisoformat(last_end)
+    out = []
+    for i in range(weeks - 1, -1, -1):
+        e = end - timedelta(days=7 * i)
+        out.append(((e - timedelta(days=6)).isoformat(), e.isoformat()))
+    return out
+
+
+def collect_series(session, site: str, token: str,
+                   periods: list[tuple[str, str]]) -> list[dict]:
+    """여러 주의 유입을 한 세션에서 모은다(주별 추이용, 키워드는 안 가져온다).
+
+    목표 3단계에서 쓴다 — 노출과 매장 매출이 **같이 움직였는지** 보려면 한 주가
+    아니라 여러 주가 필요하다.
+    """
+    page = session.page
+    rows = []
+    for start, end in periods:
+        ch = _report(page, site, "mapped_channel_name", start, end, IDX_ALL, token)
+        dt = _report(page, site, "date_time", start, end, IDX_ALL, token)
+        if isinstance(ch, dict) and ch.get("__error"):
+            logger.warning("주간 유입 실패 %s~%s (HTTP %s)", start, end, ch["__error"])
+            continue
+        channels = parse_rows(ch, "mapped_channel_name")
+        daily = parse_rows(dt, "date_time")
+        rows.append({
+            "period": f"{start} ~ {end}",
+            "start": start, "end": end,
+            "mapPv": next((r["count"] for r in channels
+                           if r["name"] == MAP_CHANNEL), None),
+            "total": sum(r["count"] for r in daily) if daily
+                     else sum(r["count"] for r in channels),
+        })
+    return rows
+
+
 def collect(session=None, previous=None, today: date | None = None) -> dict:
     """지난주 유입(채널·키워드·일별)을 수집해 정규화한다.
 

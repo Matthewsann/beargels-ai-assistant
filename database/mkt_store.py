@@ -357,6 +357,30 @@ def totals_by_date(sales_rows):
     return out
 
 
+def store_only_sum(daily_totals, d1, d2):
+    """[d1,d2] 구간의 **매장(포스) 매출만** 합산한다. 순수 로직.
+
+    네이버 플레이스는 **매장 방문**을 만드는 채널이다. 배달(배민·쿠팡)은
+    플레이스와 무관하게 움직이므로 섞으면 신호가 희석된다 — 그래서 store 만
+    본다(사장님 확정 2026-08-30).
+
+    `partial`(배달만 잡히고 매장이 0인 날 = 장부 미반영)은 **빼고** 센다.
+    그 날을 0원으로 세면 매출이 급락한 것처럼 보이기 때문이다. 대신 며칠을
+    뺐는지 함께 돌려줘, 화면이 "장부 미반영 N일 제외"를 밝힐 수 있게 한다.
+    """
+    d1, d2 = str(_d(d1)), str(_d(d2))
+    amount = days = missing = 0
+    for d, row in (daily_totals or {}).items():
+        if not (d1 <= d <= d2):
+            continue
+        if row.get("partial"):
+            missing += 1
+            continue
+        amount += row.get("store", 0) or 0
+        days += 1
+    return {"amount": amount, "days": days, "missingDays": missing}
+
+
 def weekday_baseline(daily_totals, target_day, weeks=4, key="total"):
     """target_day 와 같은 요일의 직전 `weeks`주 평균.
     표본 자격: 매출 > 0 이고, 부분 데이터(partial — 매장 장부 없이 배달만
