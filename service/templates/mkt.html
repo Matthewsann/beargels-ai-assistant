@@ -55,9 +55,13 @@ h1 a{color:var(--muted); font-size:12.5px; font-weight:400; text-decoration:none
 .day .d{font-size:12.5px; color:var(--muted)}
 .day.today .d{background:var(--accent); color:#fff; border-radius:6px; padding:0 5px; font-weight:700}
 .day.out{cursor:default} .day.out .d{opacity:.3}
-.day .sig{display:inline-block; width:7px; height:7px; border-radius:50%; margin-left:4px; vertical-align:1px}
-.day .sig.hi{background:var(--ok)} .day .sig.lo{background:var(--bad)}
 .day .closed{font-size:11px; color:var(--muted)}
+/* 일매출 — 만 단위 한 덩어리만, 채도 낮게(사장님: 잡다 금지). 잠정은 더 연하게.
+   크게 튄 날(같은 요일 평균 ±18%)만 숫자에 색 — 별도 점 없이 요소 하나로. */
+.day .amt{font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums}
+.day .amt.prov{opacity:.55}
+.day .amt.hi{color:var(--ok); font-weight:700}
+.day .amt.lo{color:var(--bad); font-weight:700}
 .bar{align-self:center; height:16px; margin:1px 3px; padding:0 7px; font-size:11px;
   font-weight:700; line-height:16px; white-space:nowrap; overflow:hidden;
   border-radius:8px; cursor:pointer;}
@@ -140,6 +144,7 @@ td{padding:3px 0; border-top:1px solid var(--line)} td:last-child{text-align:rig
 @media (max-width:600px){
   .day{min-height:40px; padding:3px 4px 2px}
   .day .d{font-size:11px} .day .closed{font-size:0}
+  .day .amt{font-size:10px}
   .bar{height:5px; font-size:0; padding:0; margin:1px 2px; border-radius:3px}
   .marker{font-size:0; height:5px; width:5px; padding:0; border-radius:50%}
 }
@@ -185,8 +190,9 @@ td{padding:3px 0; border-top:1px solid var(--line)} td:last-child{text-align:rig
       {% for d in w.days %}
       <div class="day {{ 'out' if not d.in_month }} {{ 'today' if d.today }}"
            {% if d.in_month %}onclick="mkDay('{{ d.date }}')"{% endif %}>
-        <span class="d">{{ d.num }}</span>{% if d.sig > 0 %}<span class="sig hi"></span>{% elif d.sig < 0 %}<span class="sig lo"></span>{% endif %}
-        {% if d.closed %}<div class="closed">휴무</div>{% endif %}
+        <span class="d">{{ d.num }}</span>
+        {% if d.closed %}<div class="closed">휴무</div>
+        {% elif d.amt %}<div class="amt{{ ' prov' if d.prov }}{{ ' hi' if d.sig > 0 }}{{ ' lo' if d.sig < 0 }}">{{ d.amt }}</div>{% endif %}
       </div>
       {% endfor %}
       {% for b in w.bars %}
@@ -210,7 +216,7 @@ td{padding:3px 0; border-top:1px solid var(--line)} td:last-child{text-align:rig
     <span><span class="sw" style="background:var(--{{ cls }})"></span>{{ label }}</span>
     {% endfor %}
     <span>◆ 변수(신메뉴·상시 변경)</span>
-    <span><b class="hi">●</b>/<b class="lo">●</b> 같은 요일 평균 ±10% 이상 (날짜를 누르면 상세)</span>
+    <span><b class="hi">초록</b>/<b class="lo">빨강</b> 금액 = 평소(같은 요일)보다 크게 튄 날 · 날짜를 누르면 상세</span>
   </div>
 
   <div class="list-head">

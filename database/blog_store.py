@@ -85,6 +85,23 @@ def set_status(post_id, status, scheduled_at=None):
         fields["scheduled_at"] = None
     get_client().table(POSTS).update(fields).eq("id", post_id).execute()
 
+    if status == "published":
+        # 발행 = 마케팅 실행 — MKT 캘린더에 자동으로 한 줄 남긴다 (사장님
+        # 지시 2026-08-30: 같은 내용을 손으로 다시 치지 않게). 어떤 경로로
+        # published 가 되든(화면 버튼·blog_perf 자동감지) 여기 한 곳을
+        # 지나므로 호출처마다 심지 않는다. 실패해도 발행을 막지 않는다.
+        try:
+            from . import mkt_store
+            row = (get_client().table(POSTS).select("title")
+                   .eq("id", post_id).execute().data)
+            title = (row[0].get("title") or "").strip() if row else ""
+            mkt_store.auto_record(
+                title=f"블로그: {title}" if title else "블로그 발행",
+                source_ref=f"blog#{post_id}",
+                memo="블로그 발행 시 자동 기록")
+        except Exception:  # noqa: BLE001
+            logger.warning("블로그 발행 → MKT 자동 기록 실패 (post=%s)", post_id)
+
 
 def trash_post(post_id):
     """삭제는 소프트 삭제(복원 가능)."""

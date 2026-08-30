@@ -92,6 +92,41 @@ def update_campaign(cid, **fields):
         get_client().table(CAMPAIGNS).update(patch).eq("id", cid).execute()
 
 
+def auto_record(title, source_ref, day=None, category="sns", memo=None):
+    """앱이 이미 아는 마케팅(블로그 발행·릴스 업로드)을 캘린더에 자동 기록.
+
+    왜: 블로그를 이 앱에서 발행하고 33분 뒤 같은 내용을 사장님이 손으로
+    다시 치고 있었다(2026-08-30 감사 — '기록이 안 쌓이는 근본 원인').
+    발행하는 순간 여기서 한 줄 만들어 두면, 기록의 절반은 저절로 쌓인다.
+
+    · source_ref("blog#12", "reel#abc")가 memo 마커로 남아 중복 생성을 막는다
+    · 타겟 상품은 제목에서 자동 인식(실패해도 기록은 남긴다)
+    · 당일 1일짜리 — 기간을 늘리고 싶으면 사장님이 [수정]으로
+    반환: 새 캠페인 id, 이미 있으면 None. 예외를 밖으로 던지지 않는다 —
+    발행 흐름을 기록 실패가 막으면 안 된다(호출부는 이 함수만 부르면 됨).
+    """
+    try:
+        marker = f"[자동:{source_ref}]"
+        dup = (get_client().table(CAMPAIGNS).select("id")
+               .like("memo", f"%{marker}%").limit(1).execute().data)
+        if dup:
+            return None
+        targets = []
+        try:
+            targets = extract_targets(title, distinct_products(days=120))
+        except Exception:  # noqa: BLE001 — 타겟 인식 실패가 기록을 막지 않게
+            pass
+        day = str(_d(day)) if day else str(_today_kst())
+        return create_campaign(
+            title=(title or "").strip() or "제목 없음",
+            category=category, start_date=day, end_date=day,
+            target_products=targets or None,
+            memo=f"{marker} {memo or ''}".strip())
+    except Exception as e:  # noqa: BLE001
+        logger.warning("마케팅 자동 기록 실패(%s): %s", source_ref, e)
+        return None
+
+
 def delete_campaign(cid):
     get_client().table(CAMPAIGNS).delete().eq("id", cid).execute()
 

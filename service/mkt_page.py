@@ -103,16 +103,26 @@ def build_month_view(y: int, m: int, today: date | None = None) -> dict:
             has_data = row is not None and total > 0
             closed = (row is None or total == 0) and day <= today \
                 and (last_pos and day <= last_pos)
-            # 신호점은 장부가 반영된 날까지만 — 잠정(배달만) 구간은 총매출이
-            # 원래 작아서 전부 '▼'로 물들어 버린다 (사장님 지적 2026-08-27)
-            sig = (mkt_store.day_signal(daily, day)
+            # 매출 강조는 장부가 반영된 날까지만 — 잠정(배달만) 구간은 총매출이
+            # 원래 작아서 전부 '▼'로 물들어 버린다 (사장님 지적 2026-08-27).
+            # 임계 ±25%: ±10%는 달력의 3분의 2, ±18%도 1/3이 물들었다
+            # (2026-08-30 실측 — 이 가게 일매출은 요일 보정 뒤에도 변동이 크다).
+            # '기억해낼 만큼 튄 날'만 색이 들게 한다. 별도 점은 없애고
+            # 금액 숫자 자체에 색을 준다(요소 하나로 두 정보).
+            sig = (mkt_store.day_signal(daily, day, threshold=0.25)
                    if has_data and last_pos and day <= last_pos else 0)
+            # 일매출 한 덩어리("112만") — 사장님 조건: 잡다해 보이면 안 됨.
+            # 만 단위 숫자 하나뿐, 잠정(배달만)·부분 데이터 날은 색만 연하게.
+            prov = bool((row or {}).get("partial")
+                        or (last_pos and day > last_pos))
+            amt = (f"{round(total / 10000)}만"
+                   if has_data and total >= 10000 and day.month == m else None)
             week_days.append({
                 "date": str(day), "num": day.day,
                 "in_month": day.month == m,
                 "today": day == today,
                 "closed": bool(closed and day.month == m),
-                "sig": sig,
+                "sig": sig, "amt": amt, "prov": prov,
             })
         # 캠페인 막대 lane 배치 (시작일 순 → 겹치면 다음 줄)
         week_end = d + timedelta(days=6)

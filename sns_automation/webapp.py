@@ -678,6 +678,17 @@ def create_app() -> FastAPI:
         p["published_at"] = int(time.time())
         _save_project(p)
         planner.mark_published(pid)
+        # 릴스 발행 = 마케팅 실행 — MKT 캘린더에 자동 기록 (사장님 지시
+        # 2026-08-30). 실패해도 발행 완료 처리를 막지 않는다.
+        try:
+            from database import mkt_store
+            title = (p.get("title") or p.get("menu") or p.get("name") or "").strip()
+            mkt_store.auto_record(
+                title=f"릴스: {title}" if title else "릴스 발행",
+                source_ref=f"reel#{pid}",
+                memo="릴스 발행 완료 시 자동 기록")
+        except Exception:  # noqa: BLE001
+            pass
         return {"ok": True}
 
     # ═══ ④ 주간 리뷰 (성과 피드백 루프) ═══
