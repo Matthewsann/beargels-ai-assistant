@@ -73,12 +73,16 @@ def test_empty_input_is_safe():
 
 # --- 목록·단톡방 양식 -----------------------------------------------------
 
+from datetime import datetime as _dt
+
+_TODAY = _dt.now().strftime("%Y-%m-%d")
+
 _REVIEWS = [
     {"id": 1, "platform": "baemin", "author": "한입에와앙", "rating": 5,
-     "written_date": "2026-08-22",
+     "written_date": "2026-08-22", "collected_at": _TODAY,
      "content": "스테이플러로 포장해주시는 것보단 스티커가 조아요 열 때 위험해요"},
     {"id": 2, "platform": "coupang", "author": "김*슬", "rating": 4,
-     "written_date": "2026-04-25",
+     "written_date": "2026-04-25", "collected_at": _TODAY,
      "content": "배달오면서 많이 샜는데 뚜껑 마개같은게 있으면 더 좋을것 같아요"},
     {"id": 3, "platform": "baemin", "author": "행복이", "rating": 5,
      "written_date": "2026-08-25", "content": "너무 맛있어요 잘 먹었습니다"},
@@ -121,8 +125,27 @@ def test_shared_items_drop_off_the_list(monkeypatch):
     monkeypatch.setattr(app.db, "search_reviews", lambda **k: (_REVIEWS, len(_REVIEWS)))
     monkeypatch.setattr(app.db, "get_setting", lambda key, default=None: [1])
     app._customer_requests.cache_clear()
-    got = app._customer_requests()
+    got, more = app._customer_requests()
     assert [i["id"] for i in got] == [2], "공유한 1번은 빠지고 2번만 남아야 한다"
+    assert more == 0
+    app._customer_requests.cache_clear()
+
+
+def test_late_collected_reviews_still_get_their_turn(monkeypatch):
+    """작성일이 창 밖이어도 **방금 수집**됐으면 한 번은 화면에 뜬다.
+
+    작성일로만 자르면 늦게 수집된 리뷰의 요청은 화면에 한 번도 못 뜨고
+    영구 소멸했다(2026-08-30 감사)."""
+    import service.app as app
+    rows = [{"id": 9, "platform": "baemin", "author": "손님", "rating": 5,
+             "written_date": "2026-01-01",          # 옛 작성일
+             "collected_at": _TODAY,                 # 방금 수집
+             "content": "포장 스테이플러 대신 스티커로 해주세요"}]
+    monkeypatch.setattr(app.db, "search_reviews", lambda **k: (rows, 1))
+    monkeypatch.setattr(app.db, "get_setting", lambda key, default=None: [])
+    app._customer_requests.cache_clear()
+    got, _ = app._customer_requests()
+    assert [i["id"] for i in got] == [9]
     app._customer_requests.cache_clear()
 
 

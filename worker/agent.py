@@ -938,6 +938,30 @@ def release_scheduled() -> int:
         if rid is None:
             continue
         try:
+            # ⚠️ 예약은 밤새 묵는다 — 풀기 전에 밤사이 바뀐 것을 재확인한다
+            #    (2026-08-30 감사). 등록 경로는 이미 답글이 있으면 지우고
+            #    덮는데, 그게 사장님이 앱에서 직접 단 답글일 수 있다.
+            if row.get("platform_replied"):
+                db.mark_skipped(rid)
+                notify_owner(
+                    f"[{row.get('platform')}] {row.get('author')} 님 리뷰는 "
+                    f"밤사이 이미 답글이 달려 있어(앱에서 직접?) 아침 등록을 "
+                    f"건너뛰었어요. 예약해 둔 초안은 등록되지 않았습니다.",
+                    kind="Notice", source="worker")
+                continue
+            # 손님이 밤사이 리뷰를 고쳐 민감(이물질 등) 내용이 됐을 수도
+            # 있다 — content 는 재수집 때 갱신되지만 분류는 예약 시점 것이다.
+            if classify_review(row) == "escalate":
+                db.mark_drafted(rid)
+                notify_owner(
+                    f"[{row.get('platform')}] {row.get('author')} 님 리뷰가 "
+                    f"민감 내용으로 재분류돼 아침 자동 등록에서 뺐어요 — "
+                    f"직접 확인해 주세요.",
+                    kind="SeriousReview", source="worker")
+                continue
+            if _too_old_to_reply(row):
+                db.mark_skipped(rid)      # 기한 지남 — 등록해도 거절된다
+                continue
             db.mark_approved(rid)       # 이제부터는 평소의 '등록 대기'
             db.request_post(rid, by="아침예약")
             queued += 1
@@ -961,6 +985,45 @@ def maybe_release_scheduled() -> None:
             release_scheduled()
     except Exception as e:  # noqa: BLE001
         logger.warning("아침 일괄 등록 판단 실패: %s", e)
+
+
+# 전파 안 된 고객 요청 알림 — 11시 이후, 하루 한 번만(중복 방지는 kv 대장).
+REQUEST_NAG_AFTER_HOUR = int(os.getenv("WORKER_REQUEST_NAG_HOUR", "11"))
+REQUEST_NAG_STALE_DAYS = int(os.getenv("WORKER_REQUEST_NAG_DAYS", "3"))
+
+
+def maybe_request_nag() -> None:
+    """전파 안 된 고객 요청이 3일 넘게 묵으면 알림함으로 알린다(하루 1회).
+
+    '놓치지 않게'(CLAUDE.md 목표 3)의 마지막 안전망 — 요청 패널은 /review 를
+    열어야만 보이는데, 아무도 안 열면 그걸로 끝이었다(2026-08-30 감사).
+    새 요청마다 울리면 알림함이 시끄러워져 진짜 위험 신호(민감 리뷰·세션
+    만료)가 묻히므로, **묵은 건이 있을 때 하루 한 번**으로 제한한다.
+    """
+    now = datetime.now()
+    if now.hour < REQUEST_NAG_AFTER_HOUR:
+        return
+    today = now.strftime("%Y-%m-%d")
+    try:
+        if db.get_setting("request_nag_day") == today:
+            return
+        from assistant.customer_requests import find_requests
+        rows, _total = db.search_reviews(days=30, limit=300, sort="new")
+        shared = {int(x) for x in (db.get_setting("request_shared", []) or [])}
+        cut = (now - timedelta(days=REQUEST_NAG_STALE_DAYS)).strftime("%Y-%m-%d")
+        stale = [i for i in find_requests(rows, limit=999)
+                 if i.get("id") not in shared
+                 and max(i.get("date") or "", i.get("collected") or "") <= cut]
+        if not stale:
+            return
+        db.menu_set_setting("request_nag_day", today)
+        tops = " · ".join(f"[{i['topic']}] {i['quote'][:24]}…" for i in stale[:3])
+        notify_owner(
+            f"단톡방에 전파 안 된 고객 요청 {len(stale)}건이 {REQUEST_NAG_STALE_DAYS}일 "
+            f"넘게 묵고 있어요 — {tops} (리뷰 현황 화면에서 [복사]→[공유 완료])",
+            kind="Notice", source="worker")
+    except Exception as e:  # noqa: BLE001 — 알림 실패가 루프를 막으면 안 된다
+        logger.warning("고객 요청 알림 판단 실패: %s", str(e)[:120])
 
 
 # ---------------------------------------------------------------------------
@@ -1297,6 +1360,7 @@ def main() -> int:
                     maybe_auto_collect()
                     maybe_release_scheduled()
                     maybe_complaint_report()
+                    maybe_request_nag()
                     maybe_pos_import()
                     maybe_blog_react()
                     maybe_rescue_stuck()

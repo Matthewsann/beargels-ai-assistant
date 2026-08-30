@@ -75,6 +75,10 @@
   .acts.mini .btn.go { background:var(--accent); border-color:var(--accent);
                        color:#fff; font-weight:600; }
   textarea { min-height:150px; }
+  /* 상한에 잘린 초안의 '끝 문장' 미리보기 */
+  .tatail { display:none; font-size:12px; color:var(--muted); margin-top:4px;
+            padding:5px 9px; background:var(--bg); border-radius:7px;
+            word-break:break-word; }
   /* 상태 신호등 — 등록 전/대기/중/완료/실패 */
   .lamp { display:inline-flex; align-items:center; gap:5px; font-size:11px;
           padding:2px 9px; border-radius:20px; background:var(--bg);
@@ -469,15 +473,53 @@ function regenIt(id, regenUrl, draftUrl) {
 // 초안 칸 자동 높이 — 긴 답글(300자 가까이)이 6줄 칸에 잘려 스크롤해야 했다.
 // 내용에 맞춰 늘리되 상한을 둔다 — 300자 답글을 전부 펼치면 17건에
 // 아이폰 25화면 길이가 돼 목록을 훑기 어려웠다(2026-08-13 점검).
+// ⚠️ 다만 상한에 잘리면 **마지막 문장**이 안쪽 스크롤 아래 숨는데, 직원이
+//    제일 자주 고치는 게 바로 그 마무리 문장이다(새벽 점검 실측: 수정 22건
+//    중 15건이 끝의 업셀 문장 삭제 — 2026-08-30 감사). 그래서 잘린 카드는
+//    아래에 '끝 문장'을 따로 보여주고, 칸을 누르면 전체를 펼친다.
 const TA_MAX = 300;
+
+function lastSentence(text) {
+  const parts = (text || '').trim().split(/(?<=[.!?…~요다])\s+/).filter(Boolean);
+  const last = parts.length ? parts[parts.length - 1].trim() : '';
+  return last.length > 80 ? '…' + last.slice(-78) : last;
+}
+function firstSentence(text) {
+  const m = (text || '').trim().split(/(?<=[.!?…~요다])\s+/).filter(Boolean);
+  const first = m.length ? m[0].trim() : '';
+  return first.length > 60 ? first.slice(0, 58) + '…' : first;
+}
+
 function fitTextarea(t) {
   t.style.height = 'auto';
+  const overflow = t.scrollHeight > TA_MAX;
   t.style.height = Math.min(t.scrollHeight + 2, TA_MAX) + 'px';
-  t.style.overflowY = t.scrollHeight > TA_MAX ? 'auto' : 'hidden';
+  t.style.overflowY = overflow ? 'auto' : 'hidden';
+  // 잘린 카드 아래 '끝 문장' 미리보기 — 스크롤 없이 마무리를 확인한다.
+  let tail = t.nextElementSibling;
+  if (!tail || !tail.classList || !tail.classList.contains('tatail')) {
+    tail = document.createElement('div');
+    tail.className = 'tatail';
+    t.parentNode.insertBefore(tail, t.nextSibling);
+  }
+  if (overflow && document.activeElement !== t) {
+    tail.textContent = '⤵ 끝: ' + lastSentence(t.value);
+    tail.style.display = 'block';
+  } else {
+    tail.style.display = 'none';
+  }
 }
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('textarea').forEach(t => {
     t.addEventListener('input', () => fitTextarea(t));
+    // 고치러 들어가면 전체를 펼친다 — 안쪽 스크롤을 더듬지 않게.
+    t.addEventListener('focus', () => {
+      t.style.height = 'auto';
+      t.style.height = (t.scrollHeight + 2) + 'px';
+      t.style.overflowY = 'hidden';
+      fitTextarea(t);
+    });
+    t.addEventListener('blur', () => fitTextarea(t));
     fitTextarea(t);
   });
 });
@@ -643,8 +685,12 @@ function runPost(id) {
 
 function postOne(id) {
   const t = ta(id);
+  // 앞 70자만 보여주던 확인창은 관문 역할을 못 했다 — 정작 사고가 나는 건
+  // **마무리 문장**(멋대로 붙는 업셀 등)이다(2026-08-30 감사). 시작과 끝을
+  // 같이 보여준다.
   if (!confirm('이 내용 그대로 지금 등록할까요? (고객에게 바로 공개됩니다)\n\n'
-               + t.value.slice(0, 70) + '…')) return;
+               + '시작: ' + firstSentence(t.value) + '\n'
+               + '끝: ' + lastSentence(t.value))) return;
   runPost(id);
 }
 
@@ -722,7 +768,12 @@ function toggleAll(on) {
 async function postSelected() {
   const ids = picks().map(c => c.value);
   if (!ids.length) return;
-  if (!confirm(ids.length + '건을 지금 등록할까요? (고객에게 바로 공개됩니다)')) return;
+  const tails = ids.slice(0, 5).map(id => '· ' + lastSentence(ta(id).value));
+  if (ids.length > 5) tails.push('… 외 ' + (ids.length - 5) + '건');
+  // 건수만 묻던 확인창은 관문 역할을 못 했다 — 사고가 나는 건 각 답글의
+  // **마무리 문장**이다(2026-08-30 감사). 최대 5건까지 끝 문장을 보여준다.
+  if (!confirm(ids.length + '건을 지금 등록할까요? (고객에게 바로 공개됩니다)\n\n'
+               + '각 답글의 마무리 문장:\n' + tails.join('\n'))) return;
   const go = document.getElementById('batchGo');
   const prog = document.getElementById('batchProg');
   go.disabled = true;

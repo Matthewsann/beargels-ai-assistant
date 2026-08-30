@@ -350,14 +350,25 @@ TRUST_MIN_SAMPLES = 10
 TRUST_MAX_EDIT_RATE = 0.05
 
 
+@cached(300)
 def _trusted_kinds() -> set:
-    """수정률이 충분히 낮은 리뷰 유형 집합. 민감/불만은 무조건 제외."""
+    """수정률이 충분히 낮은 리뷰 유형 집합. 민감/불만은 무조건 제외.
+
+    캐시 5분 — 하루 단위로나 변하는 값인데 /todo 를 열 때마다 500행 조회를
+    직렬로 한 번 더 하고 있었다(2026-08-30 감사). 배지 표시에만 쓰여
+    최대 5분 늦게 켜질 뿐, 게시 경로엔 관여하지 않는다.
+    """
     try:
         stats = db.edit_rate_by_kind()
     except Exception:  # noqa: BLE001 — 통계 실패가 화면을 막으면 안 된다
         return set()
+    # 민감 유형 정의는 beargels 한 곳만 본다 — 여기 따로 적어 두면 어긋난다.
+    # 실제로 어긋나 있었다: beargels 는 question 을 민감(큰 모델감)이라
+    # 선언하는데, 배지는 escalate·complaint 만 빼서 question 에 '그대로
+    # 등록해도 좋아요'가 붙을 수 있었다(2026-08-30 감사).
+    from assistant.beargels import _SENSITIVE_KINDS
     return {k for k, s in stats.items()
-            if k not in ("escalate", "complaint")
+            if k not in _SENSITIVE_KINDS
             and s["n"] >= TRUST_MIN_SAMPLES
             and s["rate"] <= TRUST_MAX_EDIT_RATE}
 
@@ -553,15 +564,25 @@ def _customer_requests(limit=20):
     Supabase 왕복이 화면당 0.3~1.3초라 그게 아깝다(2026-08-21 서버 실측).
     """
     try:
-        rows, _ = db.search_reviews(days=REQUEST_DAYS, limit=300, sort="new")
+        # ⚠️ 창은 '작성일 또는 수집일' 중 최근 것 기준이다(2026-08-30 감사).
+        #    작성일로만 자르면 늦게 수집된 리뷰(예: 전체 백필)는 화면에 한
+        #    번도 못 뜨고 사라진다. 그래서 조회는 넉넉히(30일) 가져와 여기서
+        #    거른다 — 공유 완료가 정상 퇴장이고, 창 만료는 어쩔 수 없을 때만.
+        rows, _ = db.search_reviews(days=30, limit=300, sort="new")
         done = _shared_request_ids()
-        items = cr.find_requests(rows, limit=limit + len(done))
-        return [i for i in items if i.get("id") not in done][:limit]
+        cut = (datetime.now(KST) - timedelta(days=REQUEST_DAYS)) \
+            .strftime("%Y-%m-%d")
+        items = [i for i in cr.find_requests(rows, limit=999)
+                 if i.get("id") not in done
+                 and max(i.get("date") or "", i.get("collected") or "") >= cut]
+        # 잘라냈으면 몇 건이 더 있는지 함께 준다 — 조용히 자르면 화면 숫자만
+        # 믿고 '다 봤다'고 오해한다.
+        return items[:limit], max(0, len(items) - limit)
     except Exception as e:  # noqa: BLE001 — 이 칸 때문에 현황 화면이 죽으면 안 된다
         db.log_error("service", f"고객 요청사항 추출 실패: {e}",
                      kind=type(e).__name__, path="_customer_requests",
                      detail=traceback.format_exc())
-        return []
+        return [], 0
 
 
 PLATFORM_REVIEW_URL = {
@@ -708,6 +729,10 @@ def home(path_key):
             escalate=lambda: db.count_pending(with_draft=True, escalate=True),
             oldest=db.oldest_pending_date,
             blog_ready=lambda: blog.count_posts("ready"),
+            # 전파 안 된 고객 요청 — /review 안에만 있으면 아무도 화면을 안
+            # 열었을 때 그대로 묻힌다(2026-08-30 감사). 홈에도 건수를 띄운다.
+            # _customer_requests 는 2분 캐시라 홈에 얹어도 왕복이 늘지 않는다.
+            req_n=lambda: len(_customer_requests()[0]),
             learning=_learning_cached,
             alerts=_owner_alerts,
             owners=lambda: db.get_setting("home_owners", {}) or {},
@@ -734,6 +759,7 @@ def home(path_key):
         g = {}
     return render_template(
         "home.html", key=path_key, stat=stat, greet=greet, today=today,
+        req_n=g.get("req_n") or 0,
         blog_ready=blog_ready, owners=owners,
         learning=g.get("learning"), error=error, alerts=g.get("alerts") or [],
         meet_tasks=g.get("meet_tasks") or [], meet_open=g.get("meet_open") or 0,
@@ -811,13 +837,13 @@ def review_home(path_key):
     except Exception as e:  # noqa: BLE001
         error = f"현황을 불러오지 못했어요: {str(e)[:150]}"
         job, g = None, {}
-    reqs = g.get("requests") or []
+    reqs, reqs_more = g.get("requests") or ([], 0)
     return render_template(
         "dashboard.html", key=path_key, stat=stat,
         learning=g.get("learning"),
         worker=g.get("worker") or _worker_view(),
         job=job, error=error, alerts=g.get("alerts") or [],
-        requests=reqs,
+        requests=reqs, requests_more=reqs_more,
         # 단톡방에 붙여 넣을 글은 서버에서 미리 만들어 둔다 — 화면 JS 가
         # 다시 조립하면 두 곳이 어긋난다.
         requests_text=cr.format_for_kakao(reqs, today=_today_label()),
@@ -1159,6 +1185,13 @@ def post_reply(path_key, review_id):
     """
     check(path_key)
     try:
+        # 초안이 빈 리뷰는 받지 않는다 — 비어 있으면 게시 단계에서 AI 가
+        # 즉석 생성한 문장(아무도 못 본)이 나갈 뻔했다(2026-08-30 감사).
+        # 게시 액션(_apply)에도 같은 차단이 있지만, 여기서 막아야 직원이
+        # 그 자리에서 사유를 본다.
+        if not ((db.get_review(review_id) or {}).get("reply_draft") or "").strip():
+            return jsonify({"ok": False,
+                            "error": "초안이 비어 있어요 — 🔄 AI 로 먼저 만들어 주세요"}), 200
         db.mark_approved(review_id)
         job = db.request_post(review_id)
         # 잡 id 를 넘겨 화면이 '그 잡'의 실패 사유까지 읽게 한다 — 사유 없이
@@ -1206,6 +1239,13 @@ def schedule_reply(path_key, review_id):
     """
     check(path_key)
     try:
+        # 초안이 빈 리뷰는 받지 않는다 — 비어 있으면 게시 단계에서 AI 가
+        # 즉석 생성한 문장(아무도 못 본)이 나갈 뻔했다(2026-08-30 감사).
+        # 게시 액션(_apply)에도 같은 차단이 있지만, 여기서 막아야 직원이
+        # 그 자리에서 사유를 본다.
+        if not ((db.get_review(review_id) or {}).get("reply_draft") or "").strip():
+            return jsonify({"ok": False,
+                            "error": "초안이 비어 있어요 — 🔄 AI 로 먼저 만들어 주세요"}), 200
         db.mark_scheduled(review_id)
         return jsonify({"ok": True, "at": SCHEDULED_POST_LABEL})
     except Exception as e:  # noqa: BLE001

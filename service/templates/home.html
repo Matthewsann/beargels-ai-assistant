@@ -189,7 +189,9 @@
       {% if stat.todo %}<span class="badge">{{ stat.todo }}</span>{% endif %}
       <div class="ico">💬</div>
       <div class="nm">리뷰 답글</div>
-      <div class="ds">현황 · 등록할 답글 · 등록한 답글</div>
+      {# 전파 안 된 고객 요청이 있으면 여기서부터 보인다 — /review 안에만
+         있으면 아무도 안 열었을 때 그대로 묻힌다(2026-08-30 감사). #}
+      <div class="ds">{% if req_n %}🗣️ 전파할 고객 요청 {{ req_n }}건{% else %}현황 · 등록할 답글 · 등록한 답글{% endif %}</div>
       <button class="owner {{ '' if owners.review else 'none' }}" type="button"
               onclick="setOwner(event, 'review')" data-name="{{ owners.review or '' }}">
         👤 {{ owners.review or '담당자 지정' }}</button>

@@ -84,10 +84,26 @@ def test_state_reports_worker_alive(client, monkeypatch):
 
 def test_post_reply_returns_job_id(client, monkeypatch):
     app_mod, c = client
+    # 등록은 초안이 있는 리뷰만 받는다(2026-08-30 빈 초안 게시 차단).
+    monkeypatch.setattr(app_mod.db, "get_review",
+                        lambda rid: {"reply_draft": "확인된 초안"})
     monkeypatch.setattr(app_mod.db, "mark_approved", lambda *a: None)
     monkeypatch.setattr(app_mod.db, "request_post",
                         lambda rid, by=None: {"id": 77})
     assert c.post("/testkey/review/5/post").get_json() == {"ok": True, "job": 77}
+
+
+def test_post_reply_rejects_empty_draft(client, monkeypatch):
+    """초안이 비면 등록을 받지 않는다 — 게시 순간에 AI 가 즉석 생성한
+    (아무도 못 본) 문장이 실고객에게 나가는 걸 막는다(2026-08-30 감사)."""
+    app_mod, c = client
+    monkeypatch.setattr(app_mod.db, "get_review", lambda rid: {"reply_draft": ""})
+    called = []
+    monkeypatch.setattr(app_mod.db, "mark_approved",
+                        lambda *a: called.append("approved"))
+    res = c.post("/testkey/review/5/post").get_json()
+    assert res["ok"] is False and "초안" in res["error"]
+    assert not called, "거절했으면 approved 로 바꾸면 안 된다"
 
 
 def test_draft_state_reports_failure_reason(client, monkeypatch):

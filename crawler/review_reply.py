@@ -458,6 +458,14 @@ class ReplyToReviewAction(WriteAction):
             raise ReplyPostError(
                 "에스컬레이션(민감) 리뷰는 자동 게시 불가 — 사장님이 직접 대응하세요.")
 
+        # ⚠️ 실게시는 **사람이 본 초안**만. reply_text 가 비어 있으면 draft()
+        #    가 그 자리에서 AI 초안을 새로 만드는데, 그 문장은 아무도 확인한
+        #    적이 없다 — 그대로 실고객에게 나가면 안 된다(2026-08-30 감사).
+        #    자동 생성은 preview(미리보기) 전용으로만 남긴다.
+        if self.reply_text is None:
+            raise ReplyPostError(
+                "확인된 답글 초안이 없습니다 — 화면에서 초안을 보고 등록해 주세요.")
+
         reply = self.draft()
         if not reply or reply.strip().startswith("⚠️"):
             raise ReplyPostError("게시할 답글 초안이 유효하지 않습니다.")

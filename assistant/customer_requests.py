@@ -58,7 +58,7 @@ _ASK = re.compile(
     r"주세요|주시면|주실\s*수|바랍니다|부탁|건의|요청드|"
     r"면\s*좋겠|면\s*좋을|으면\s*합니다|했으면|하면\s*안|하면\s*될까|"
     r"가능할까|안\s*될까|안\s*댈까|않을까|어떨까|추천드|바꿔|바뀌었으면|"
-    r"낫(?:다|아요|을|겠)|나을|더\s*좋|"
+    r"낫(?:다|아요|을|겠)|나을|더\s*좋(?:겠|을)|"
     r"위험|불편|아쉬|아깝|힘들었|곤란|주의"
 )
 
@@ -79,11 +79,31 @@ _PREFER = (re.compile(r"(?<!무엇)(?<!누구)(?<!그)보단|"
 
 # 이 말이 같은 문장에 있으면 요청이 아니라 **칭찬·감사**다.
 # ("요청사항 들어주셔서 감사합니다" 같은 문장을 통째로 거른다)
+# ⚠️ '신경 써 주'는 감사 어미(셔/셨)로만 — '포장 좀 신경써주세요'는 감사가
+#    아니라 **요청**인데 100% 버려지고 있었다(2026-08-30 감사 실측).
 _THANKS = re.compile(r"감사|고맙|덕분|잘\s*먹었|맛있게\s*먹|최고|짱|훌륭|"
-                     r"들어주셔|챙겨주셔|신경\s*써\s*주")
+                     r"들어주셔|챙겨주셔|신경\s*써\s*주(?:셔|셨|시어)")
 
-# 문장 나누기 — 마침표가 거의 없는 리뷰가 많아 줄바꿈·이모지도 경계로 본다.
-_SPLIT = re.compile(r"[.!?~\n]+|(?<=[다요])\s{2,}")
+# 감사 표현이 섞여 있어도 이건 **명시적 부탁**이다 — 손님 리뷰는 마침표 없이
+# "항상 감사해요 근데 포장은 스티커로 해주세요"처럼 한 덩어리로 오는 일이
+# 많아, 감사어가 보인다고 문장을 통째로 버리면 바로 그 문형(모듈이 잡겠다고
+# 선언한)을 놓친다(2026-08-30 감사 실측 3건 전부 유실).
+_ASK_EXPLICIT = re.compile(
+    r"주세요|주세용|주시면|해주셨으면|부탁|건의|요청드|"
+    r"면\s*좋겠|았으면|었으면|안\s*될까|안\s*댈까|바꿔|낮춰|내려\s*주|올려\s*주")
+
+# 문장 나누기 — 마침표가 거의 없는 리뷰가 많아 줄바꿈·접속어도 경계로 본다.
+# '다/요' 뒤 공백 1칸과 접속어(근데·그리고…) 앞을 경계로 삼아 칭찬절과
+# 요청절을 실제로 떼어 놓는다 — 안 떼면 감사어 하나에 요청까지 같이 버려진다
+# (2026-08-30 감사: "잘 먹었습니다 최소주문금액 좀 낮춰주세요" 통유실).
+# ⚠️ '요' 뒤는 공백 1칸이면 경계지만 '다' 뒤는 2칸을 요구한다 — '다'는
+#    "생각보다 작다"의 조사 '보다'처럼 문장 중간에도 흔해서, 1칸에 자르면
+#    인용문이 엉뚱한 데서 끊긴다(2026-08-30 실측).
+_SPLIT = re.compile(r"[.!?~\n]+|(?<=요)\s+|(?<=다)\s{2,}|"
+                    r"\s+(?=(?:그리고|그리구|글구|그런데|근데|다만|하지만))")
+# 잘린 절이 접속어로 시작하면 떼어 낸다("그리고 확실히 …" → "확실히 …").
+_LEAD_CONN = re.compile(r"^(?:그리고|그리구|글구|그런데|근데|다만|하지만|"
+                        r"그래도|대신|단|한\s*가지|한가지)\s*")
 
 _PLAT = {"baemin": "배민", "coupang": "쿠팡"}
 
@@ -115,7 +135,14 @@ def _trim_quote(sentence: str, topic_pat: str) -> str:
 
 
 def _sentences(text: str) -> list[str]:
-    return [s.strip() for s in _SPLIT.split(text or "") if s and s.strip()]
+    out = []
+    for chunk in _SPLIT.split(text or ""):
+        if not chunk:
+            continue
+        chunk = _LEAD_CONN.sub("", chunk.strip()).strip()
+        if chunk:
+            out.append(chunk)
+    return out
 
 
 def _topic_of(sentence: str) -> tuple[str, str, str] | None:
@@ -132,17 +159,29 @@ def request_in(text: str) -> tuple[str, str, str] | None:
     문장 단위로 본다. 리뷰 하나에 칭찬과 요청이 섞여 있는 게 보통이라,
     글 전체를 뭉쳐서 보면 '감사'가 섞여 요청이 묻힌다.
     """
+    found = requests_in(text)
+    return found[0] if found else None
+
+
+def requests_in(text: str) -> list[tuple[str, str, str]]:
+    """리뷰 전체에서 요청을 **모두** 찾는다 — [(분류, 아이콘, 문장), ...].
+
+    예전엔 첫 매칭에서 멈춰, 포장+온도처럼 요청이 둘인 리뷰는 두 번째가
+    조용히 사라졌다(2026-08-30 감사). 같은 분류는 첫 건만 남긴다.
+    """
+    out, seen = [], set()
     for s in _sentences(text):
         asked = bool(_ASK.search(s)) or all(p.search(s) for p in _PREFER)
         if not asked:
             continue
-        if _THANKS.search(s):
-            continue                    # 이미 만족한 이야기다
+        if _THANKS.search(s) and not _ASK_EXPLICIT.search(s):
+            continue                    # 만족한 이야기 — 명시적 부탁이면 남긴다
         hit = _topic_of(s)
-        if hit:
+        if hit and hit[0] not in seen:
             name, icon, pat = hit
-            return name, icon, _trim_quote(s, pat)
-    return None
+            seen.add(name)
+            out.append((name, icon, _trim_quote(s, pat)))
+    return out[:3]                       # 한 리뷰에서 최대 3건이면 충분하다
 
 
 def find_requests(reviews, limit=20) -> list[dict]:
@@ -154,15 +193,22 @@ def find_requests(reviews, limit=20) -> list[dict]:
     """
     out = []
     for r in reviews or []:
-        found = request_in(r.get("content") or "")
+        found = requests_in(r.get("content") or "")
         if not found:
             continue
-        topic, icon, quote = found
+        topic, icon, quote = found[0]
+        if len(found) > 1:
+            # 요청이 둘 이상이면 한 항목에 병기한다 — 항목(공유 기록)은 리뷰
+            # 단위 그대로 두는 게 안전하다(기록 키를 쪼개면 새 누락이 생긴다).
+            quote = " ".join(f"{'①②③'[i]} {q}" for i, (_, _, q)
+                             in enumerate(found))
+            topic = "·".join(dict.fromkeys(t for t, _, _ in found))
         out.append({
             "id": r.get("id"),
             "topic": topic,
             "icon": icon,
             "quote": " ".join(quote.split()),
+            "collected": (r.get("collected_at") or "")[:10],
             "author": r.get("author") or "손님",
             "rating": r.get("rating"),
             "platform": _PLAT.get(r.get("platform"), r.get("platform") or ""),

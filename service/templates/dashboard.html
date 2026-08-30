@@ -154,6 +154,12 @@
       <div class="reqquote">{{ r.quote }}</div>
     </div>
     {% endfor %}
+    {% if requests_more %}
+    <div class="reqhint" style="margin:2px 0 8px;">
+      ⚠️ 이 아래로 {{ requests_more }}건이 더 있어요 — 위 건들을 공유 완료로
+      내리면 이어서 보여요.
+    </div>
+    {% endif %}
     <button class="btn wide" type="button" id="reqCopy"
             onclick="copyRequests()">📋 단톡방 공유용 복사</button>
     <div class="reqdone" id="reqCopied">복사됐어요 — 단톡방에 붙여넣기 하세요</div>
@@ -257,6 +263,9 @@ function syncReqBar() {
 function markRequestsShared() {
   const ids = reqPicks().map(c => Number(c.value));
   if (!ids.length) return;
+  // 되돌리는 화면이 아직 없다 — 내리기 전에 한 번 묻는다(2026-08-30 감사).
+  if (!confirm(ids.length + '건을 목록에서 내릴까요?\n' +
+               '(단톡방에 올리셨을 때만 눌러주세요 — 내린 뒤엔 되돌릴 수 없어요)')) return;
   const b = document.getElementById('reqDoneBtn');
   b.disabled = true; b.textContent = '처리 중…';
   fetch(REQ_SHARED_URL, {
