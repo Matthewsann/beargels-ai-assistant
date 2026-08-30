@@ -93,9 +93,14 @@ def ensure_chrome(wait_seconds=60) -> bool:
     logger.info("크롤링용 Chrome 이 꺼져 있어 직접 켭니다...")
     db.worker_ping("working", "크롬 켜는 중")
     try:
+        # ⚠️ 콘솔 창을 새로 띄우지 않는다(CREATE_NO_WINDOW) — 예전엔
+        # CREATE_NEW_CONSOLE 이라 일꾼 창 옆에 이 배치파일용 cmd 창이
+        # 하나 더 떴다(사장님 보고 2026-08-30, "cmd 두개 뜨는데 뭐야").
+        # 크롬 자체는 콘솔이 필요 없어서 숨겨도 로그인용 크롬 창은 그대로
+        # 뜬다 — 없어지는 건 그 크롬을 실행만 하고 마는 껍데기 cmd 뿐이다.
         subprocess.Popen(
             [str(CHROME_BAT)], cwd=str(CHROME_BAT.parent),
-            creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except Exception as e:  # noqa: BLE001
         logger.warning("Chrome 실행 실패: %s", e)
