@@ -45,6 +45,10 @@ from database import supabase_client as db  # noqa: E402
 logger = logging.getLogger("worker")
 
 POLL_SECONDS = int(os.getenv("WORKER_POLL_SECONDS", "15"))
+# 빠른 박자 — 직원이 화면 앞에서 기다리는 잡(등록 등)을 살피는 주기.
+# 15초에서 1.5초로: 실측(2026-08-29)에서 등록 1건당 큐 대기가 15.3초로
+# 실행(11.7초)보다 길었다. main() 의 '두 박자 루프' 주석 참고.
+FAST_POLL_SECONDS = float(os.getenv("WORKER_FAST_POLL_SECONDS", "1.5"))
 COUPANG_DAYS = int(os.getenv("WORKER_COUPANG_DAYS", "14"))
 BAEMIN_SCROLL = int(os.getenv("WORKER_BAEMIN_SCROLL", "3"))
 MAX_DRAFTS_PER_RUN = int(os.getenv("WORKER_MAX_DRAFTS", "20"))
@@ -655,12 +659,13 @@ def maybe_auto_collect() -> None:
 # 자동 답글 등록 — 직원이 '수정 완료'한 답글을 정해진 시간에 일괄 게시
 # ---------------------------------------------------------------------------
 
-# 하루 중 게시 시각(HH:MM, 쉼표 구분). 빈 값이면 끔.
-# 2026-08-10 사장님 결정: 정시 일괄 대신 '답글 등록' 버튼 즉시 게시(run_post_job)
-# 가 기본 — 정시 일괄은 꺼 둔다(.env 로 재활성 가능).
-AUTO_POST_TIMES = os.getenv("WORKER_AUTO_POST_TIMES", "")
-_last_post_slot = None   # 같은 슬롯을 두 번 돌지 않게(메모리 — 재시작해도
-                         # 이미 게시된 건 posted 라 재게시는 없다)
+# (2026-08-29 정리) 옛 '정시 일괄 게시'(AUTO_POST_TIMES·run_auto_post)는
+# 지웠다. 2026-08-10 이후 기본값이 꺼짐("")이라 부팅된 적 없는 죽은 경로였고,
+# 무엇보다 되켜는 순간 사고가 난다 — approved 전부를 잡 큐의 중복 방지
+# (_request_review_job)를 거치지 않고 직접 게시해서, 아침 예약(release_
+# scheduled)·버튼 등록(run_post_job)과 **같은 리뷰를 두 번** 게시할 수 있다
+# (2026-08-27 실제로 겪은 중복 답글 사고와 같은 유형). 정시 일괄이 다시
+# 필요하면 release_scheduled 처럼 '잡을 줄 세우는' 방식으로 만들 것.
 
 
 def slot_due(times, now, last_slot, window_minutes=10):
@@ -685,87 +690,6 @@ def slot_due(times, now, last_slot, window_minutes=10):
             key = slot.strftime("%Y-%m-%d %H:%M")
             return None if key == last_slot else key
     return None
-
-
-def post_slot_due(now, last_slot):
-    """(호환 유지) 자동 일괄 게시 슬롯 판정 — AUTO_POST_TIMES 기준."""
-    return slot_due(AUTO_POST_TIMES, now, last_slot)
-
-
-def run_auto_post() -> None:
-    """'수정 완료(approved)' 답글을 배민·쿠팡에 실제 게시한다.
-
-    안전 계약(crawler/review_reply.ReplyToReviewAction):
-      · .env WRITE_DRY_RUN=true 면 게시하지 않고 미리보기 로그만 남긴다.
-      · 에스컬레이션 리뷰는 액션이 스스로 거부한다(직원 화면에서도 승인 불가).
-    성공한 건만 posted 로 바꾸고, 실패한 건은 approved 로 남아 다음
-    슬롯에 재시도된다. 결과는 로그와 화면(오류기록)에 남는다.
-    """
-    approved = db.get_approved_reviews()
-    if not approved:
-        return
-    from crawler.browser import BrowserSession
-    from crawler.review_reply import ReplyToReviewAction
-
-    dry = (os.getenv("WRITE_DRY_RUN", "true").strip().lower()
-           not in ("false", "0", "no"))
-    logger.info("자동 등록 시작 — 대기 %d건 (dry_run=%s)", len(approved), dry)
-    db.worker_ping("working", f"답글 자동 등록 중 ({len(approved)}건)")
-    ensure_chrome()
-    posted, failed = [], []
-    try:
-        with BrowserSession() as session:
-            for row in approved:
-                review = {
-                    "platform": row.get("platform"),
-                    "review_no": row.get("review_no"),
-                    "author": row.get("author"),
-                    "rating": row.get("rating"),
-                    "content": row.get("content"),
-                    "menus": row.get("menus") or [],
-                    "raw": row.get("raw"),  # 사진 유무 판별용(classify_review)
-                }
-                try:
-                    res = ReplyToReviewAction(
-                        review, reply_text=row.get("reply_draft"),
-                        session=session).run(confirm=True)
-                    if res.get("applied"):
-                        db.mark_replied(row["id"])
-                        posted.append(row)
-                    else:   # dry-run — 게시 안 됨, approved 유지
-                        logger.info("[DRY-RUN] 리뷰 %s 게시 생략", row["id"])
-                except Exception as e:  # noqa: BLE001 — 한 건 실패가 배치를 안 막게
-                    failed.append((row, str(e)[:150]))
-                    db.log_error("worker", f"자동 등록 실패(리뷰 {row['id']}): {e}",
-                                 kind=type(e).__name__, path="run_auto_post",
-                                 detail=traceback.format_exc())
-                time.sleep(2)   # 연속 게시 간 사람같은 간격
-    except Exception as e:  # noqa: BLE001 — 브라우저 자체가 안 열리는 경우 등
-        db.log_error("worker", f"자동 등록 배치 실패: {e}",
-                     kind=type(e).__name__, path="run_auto_post",
-                     detail=traceback.format_exc())
-    finally:
-        db.worker_ping("idle", "대기 중")
-
-    if dry:
-        # ⚠️ 조용히 끝내지 않는다: 연습 모드면 대기열이 영영 줄지 않는데
-        #    화면에 아무 표시가 없어 '왜 등록이 안 되지'로 이어진다
-        #    (사장님 제보 2026-08-11). 상태와 오류로그(화면)에 남긴다.
-        msg = (f"자동 등록이 '연습 모드(WRITE_DRY_RUN=true)'라 {len(approved)}건이 "
-               f"등록되지 않고 대기로 남았습니다. 집 PC .env 에서 "
-               f"WRITE_DRY_RUN=false 로 바꾸고 일꾼을 재시작하세요.")
-        logger.warning(msg)
-        db.worker_ping("idle", f"⚠️ {msg}")
-        db.log_error("worker", msg, kind="DryRunSkipped", path="run_auto_post")
-        return
-    logger.info("답글 자동 등록 결과 — 성공 %d건, 실패 %d건",
-                len(posted), len(failed))
-    if failed:
-        notify_owner(
-            f"답글 자동 등록 {len(failed)}건 실패 — "
-            + " · ".join(f"[{r.get('platform')}] {r.get('author')}: {m}"
-                         for r, m in failed[:5]),
-            kind="AutoPostFailed", path="run_auto_post")
 
 
 def _notify_replaced(row, removed=0) -> None:
@@ -977,15 +901,6 @@ def run_post_edit_job(job) -> None:
         db.worker_ping("idle", "대기 중")
 
 
-def maybe_auto_post() -> None:
-    global _last_post_slot
-    try:
-        slot = post_slot_due(datetime.now(), _last_post_slot)
-        if slot:
-            _last_post_slot = slot
-            run_auto_post()
-    except Exception as e:  # noqa: BLE001
-        logger.warning("자동 등록 판단 실패: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -1205,8 +1120,7 @@ def rescue_stuck_approved() -> int:
 
     왜 필요한가: '답글 등록' 버튼은 mark_approved 후 request_post 를 부르는데,
     그 사이에 통신이 끊기면 잡 없이 approved 로 남는다. 옛 '정시 일괄 등록'
-    시절에 쌓인 approved 도 마찬가지다(지금은 AUTO_POST_TIMES 가 비어 있어
-    일괄 등록이 돌지 않으므로 영영 방치된다). 화면엔 '등록 진행 중'으로
+    시절에 쌓인 approved 도 마찬가지다(그 경로는 2026-08-29 에 지웠다). 화면엔 '등록 진행 중'으로
     보이지만 실제로는 아무도 처리하지 않는 상태다.
 
     안전: **잡이 아예 없는 건만** 다시 넣는다. 대기·진행 중인 잡이 있으면
@@ -1357,10 +1271,36 @@ def main() -> int:
         print("    그리고 database/schema_v2.sql 을 SQL Editor 에서 실행했는지 확인.")
         return 1
 
+    # ── 두 박자 루프 (2026-08-29) ──────────────────────────────────
+    # 예전엔 한 박자(15초)뿐이라, 직원이 [등록]을 누르면 잡이 큐에 들어가고도
+    # 일꾼이 낮잠에서 깰 때까지 기다렸다. 그것도 하필 직원의 클릭 리듬과
+    # 어긋나서 실측 대기가 평균 15.3초/건 — 등록 실행(11.7초)보다 길었다
+    # (2026-08-29 실측: 잡 200건, 화면 일괄 등록 10건에 4.5분의 57%가 이 대기).
+    #
+    # 그래서 박자를 쪼갠다:
+    #   빠른 박자(1.5초) — 직원이 화면 앞에서 기다리는 잡(등록·수정·재생성·
+    #       깨우기)만 확인. 인덱스 조회 1회(실측 60ms)라 자주 물어도 싸다.
+    #   느린 박자(15초) — 배경 잡(수집·블로그 등) + 정기 점검 묶음 + 상태
+    #       보고. 여기엔 무거운 조회(get_approved_reviews 등)가 있어 예전
+    #       리듬을 그대로 지킨다 — 빠른 박자에 얹으면 왕복이 몇 배로 튄다.
+    last_slow = 0.0
     while True:
         busy = False
         try:
-            job = db.claim_next_job()
+            # 빠른 박자 — 직원이 기다리는 잡부터.
+            job = db.claim_next_job(interactive_only=True)
+            if job is None and time.monotonic() - last_slow >= POLL_SECONDS:
+                # 느린 박자 — 배경 잡과 정기 점검.
+                last_slow = time.monotonic()
+                job = db.claim_next_job()
+                if job is None:
+                    maybe_auto_collect()
+                    maybe_release_scheduled()
+                    maybe_complaint_report()
+                    maybe_pos_import()
+                    maybe_blog_react()
+                    maybe_rescue_stuck()
+                    db.worker_ping("idle", "대기 중")
             if job:
                 # 일감이 있으면 쉬지 않고 바로 다음 것을 집는다. 예전엔 한 건
                 # 끝낼 때마다 15초를 그냥 쉬어서, 27건 재생성에 생성 시간
@@ -1368,22 +1308,13 @@ def main() -> int:
                 # (사장님 "왤케 오래 걸려?" 2026-08-26).
                 busy = True
                 run_job(job)
-            else:
-                maybe_auto_collect()
-                maybe_auto_post()
-                maybe_release_scheduled()
-                maybe_complaint_report()
-                maybe_pos_import()
-                maybe_blog_react()
-                maybe_rescue_stuck()
-                db.worker_ping("idle", "대기 중")
         except KeyboardInterrupt:
             raise
         except Exception as e:  # noqa: BLE001 — 일시적 네트워크 오류로 멈추지 않게
             logger.warning("확인 실패(무시하고 계속): %s", str(e)[:150])
         try:
             if not busy:                 # 할 일이 없을 때만 쉰다
-                time.sleep(POLL_SECONDS)
+                time.sleep(FAST_POLL_SECONDS)
         except KeyboardInterrupt:
             raise
 

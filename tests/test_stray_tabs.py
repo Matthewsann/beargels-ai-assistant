@@ -132,9 +132,32 @@ def test_worker_does_not_idle_between_jobs():
     """큐에 일이 남아 있으면 쉬지 않고 바로 다음 건을 집는다.
 
     예전엔 한 건 끝낼 때마다 15초를 쉬어서, 27건 재생성에서 전체 시간의
-    43%가 대기였다(2026-08-26).
+    43%가 대기였다(2026-08-26). 2026-08-29 부터는 쉬더라도 **빠른 박자**
+    (1.5초)만 쉰다 — 직원이 [등록]을 누르고 15초를 기다리던 큐 대기를
+    없애기 위해서다(실측 15.3초/건, 실행 11.7초보다 길었다).
     """
     import inspect
     from worker import agent
     src = inspect.getsource(agent.main)
-    assert "if not busy:" in src and "time.sleep(POLL_SECONDS)" in src
+    assert "if not busy:" in src and "time.sleep(FAST_POLL_SECONDS)" in src
+    # 15초 통짜 낮잠으로 돌아가면 안 된다
+    assert "time.sleep(POLL_SECONDS)" not in src
+
+
+def test_worker_two_beat_loop():
+    """빠른 박자는 직원 잡만, 느린 박자(15초)는 배경 잡+정기 점검.
+
+    무거운 점검(get_approved_reviews 등)이 빠른 박자에 얹히면 Supabase
+    왕복이 몇 배로 튄다 — 반드시 느린 박자 안에만 있어야 한다.
+    """
+    import inspect
+    from worker import agent
+    src = inspect.getsource(agent.main)
+    assert "claim_next_job(interactive_only=True)" in src
+    assert "last_slow" in src and "POLL_SECONDS" in src
+    # 정기 점검 묶음은 느린 박자 분기 안에 있다
+    slow = src.split("time.monotonic() - last_slow")[1]
+    for name in ("maybe_auto_collect", "maybe_release_scheduled",
+                 "maybe_rescue_stuck", "worker_ping"):
+        assert name in slow
+    assert agent.FAST_POLL_SECONDS <= 3, "빠른 박자가 다시 느려지면 목표(1분)가 깨진다"

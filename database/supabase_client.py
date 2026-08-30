@@ -368,17 +368,22 @@ def last_collect_at():
 INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "wake")
 
 
-def claim_next_job():
+def claim_next_job(interactive_only=False):
     """집 PC 일꾼이 부른다: 대기 중인 요청 1건을 잡아 running 으로 바꾼다.
 
-    직원이 기다리는 작업(등록·수정·재생성·깨우기)을 먼저 집고, 없을 때만
+    직원이 기다리는 작업(등록·수집·재생성·깨우기)을 먼저 집고, 없을 때만
     나머지(리뷰수집·메뉴수집·블로그)를 오래된 순으로 처리한다. 없으면 None.
     (일꾼이 1대뿐이라 경합은 고려하지 않는다.)
+
+    interactive_only: True 면 **직원이 화면 앞에서 기다리는 잡만** 본다 —
+        일꾼의 빠른 박자(1~2초 주기)용. 조회 1회짜리 가벼운 확인이라 자주
+        불러도 부담이 없다. 수집·블로그 같은 배경 잡은 느린 박자(15초)가
+        집는다(급하지 않고, 그쪽까지 자주 물으면 왕복이 배로 는다).
     """
     rows = (get_client().table("jobs").select("*").eq("status", "pending")
             .in_("kind", list(INTERACTIVE_JOB_KINDS))
             .order("requested_at").limit(1).execute().data)
-    if not rows:
+    if not rows and not interactive_only:
         rows = (get_client().table("jobs").select("*").eq("status", "pending")
                 .order("requested_at").limit(1).execute().data)
     if not rows:

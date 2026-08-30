@@ -46,33 +46,14 @@ def test_disabled_by_env(monkeypatch):
     assert agent.auto_collect_due(_t(10), None) is False
 
 
-# --- 자동 답글 등록 슬롯 판정 ------------------------------------------------
-# 기본값은 꺼짐("") — 2026-08-10부터 '답글 등록' 버튼 즉시 게시가 기본.
-# 슬롯 로직은 .env 로 재활성할 수 있어 회귀 테스트는 유지한다.
+# --- 자동 답글 등록 슬롯(AUTO_POST_TIMES) ---------------------------------
+# 그 경로는 2026-08-29 에 지웠다 — 죽은 코드였고, 되켜면 잡 큐의 중복 방지를
+# 우회해 같은 리뷰에 답글이 두 번 달릴 수 있었다. 슬롯 로직 자체(slot_due)는
+# 아침 예약·문제리뷰 보고가 계속 쓰므로 test_scheduled_post.py 가 지킨다.
 
-def test_post_slot_disabled_by_default():
-    assert agent.AUTO_POST_TIMES == ""
-    assert agent.post_slot_due(_t(11, 3).replace(tzinfo=None), None) is None
-
-
-def test_post_slot_fires_within_window(monkeypatch):
-    monkeypatch.setattr(agent, "AUTO_POST_TIMES", "11:00,17:00,22:00")
-    # 11:00 슬롯: 11:00~11:09 사이에만, 슬롯 키를 반환.
-    key = agent.post_slot_due(_t(11, 3).replace(tzinfo=None), None)
-    assert key and key.endswith("11:00")
-
-
-def test_post_slot_not_twice(monkeypatch):
-    monkeypatch.setattr(agent, "AUTO_POST_TIMES", "11:00,17:00,22:00")
-    now = _t(11, 3).replace(tzinfo=None)
-    key = agent.post_slot_due(now, None)
-    assert agent.post_slot_due(now, key) is None   # 같은 슬롯 재실행 금지
-
-
-def test_post_slot_outside_window(monkeypatch):
-    monkeypatch.setattr(agent, "AUTO_POST_TIMES", "11:00,17:00,22:00")
-    assert agent.post_slot_due(_t(11, 20).replace(tzinfo=None), None) is None
-    assert agent.post_slot_due(_t(9, 0).replace(tzinfo=None), None) is None
+def test_auto_post_path_is_gone():
+    assert not hasattr(agent, "run_auto_post")
+    assert not hasattr(agent, "AUTO_POST_TIMES")
 
 
 # --- 답글 기한 지난 옛 리뷰 정리 ---------------------------------------------
