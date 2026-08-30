@@ -76,3 +76,42 @@ def test_값은_이스케이프된다(client):
     html = c.get("/testkey/place").get_data(as_text=True)
     assert "<script>alert(1)</script>" not in html
     assert "<img src=x onerror=1>" not in html
+
+
+KW = {
+    "checkedAt": "2026-08-31T09:00:00",
+    "prevAt": "2026-08-24T09:00:00",
+    "keywords": [
+        {"keyword": "송도 베이글", "count": 130, "delta": 30},
+        {"keyword": "인천대입구역 카페", "count": 40, "delta": -5},
+        {"keyword": "송도 브런치", "count": 20, "delta": None},
+    ],
+    "total": 190,
+}
+
+
+def test_유입_키워드가_증감과_함께_보인다(client):
+    A, c = client
+    A.db.get_setting = lambda k, d=None: KW if k == "place_keywords" else d
+    html = c.get("/testkey/place").get_data(as_text=True)
+    assert "어떤 검색어로 들어오나" in html
+    assert "송도 베이글" in html and "130" in html
+    assert "▲ 30" in html          # 늘어난 것
+    assert "▼ 5" in html           # 줄어든 것
+    assert "새로 등장" in html      # 이번에 처음 잡힌 것
+
+
+def test_키워드_수집_전이면_패널이_안_뜬다(client):
+    A, c = client
+    A.db.get_setting = lambda k, d=None: d
+    html = c.get("/testkey/place").get_data(as_text=True)
+    assert "어떤 검색어로 들어오나" not in html
+    assert "베어글스 플레이스 루틴" in html
+
+
+def test_키워드도_이스케이프된다(client):
+    A, c = client
+    evil = dict(KW, keywords=[{"keyword": "<script>x</script>", "count": 1, "delta": 1}])
+    A.db.get_setting = lambda k, d=None: evil if k == "place_keywords" else d
+    html = c.get("/testkey/place").get_data(as_text=True)
+    assert "<script>x</script>" not in html

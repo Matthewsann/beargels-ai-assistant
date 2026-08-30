@@ -1234,6 +1234,56 @@ def maybe_place_audit() -> None:
         logger.warning("플레이스 진단 실패: %s", e)
 
 
+PLACE_STATS_WEEKDAY = int(os.getenv("WORKER_PLACE_STATS_WEEKDAY", "0"))  # 0=월
+_last_stats_week = None
+
+
+def run_place_stats() -> dict:
+    """스마트플레이스 유입 키워드를 수집해 저장한다(목표 2단계 '노출 상승').
+
+    지난번 스냅샷을 함께 넘겨 **변화량**까지 계산해 둔다 — 지금 순위보다
+    "최적화 뒤에 늘었나"가 이 단계의 질문이라서다.
+    """
+    from crawler.place_stats import collect
+
+    prev = db.get_setting("place_keywords")
+    result = collect(previous=prev if isinstance(prev, dict) else None)
+    if isinstance(prev, dict):
+        db.menu_set_setting("place_keywords_prev", prev)
+    db.menu_set_setting("place_keywords", result)
+    logger.info("플레이스 유입 키워드: %d개(합 %d)",
+                len(result.get("keywords") or []), result.get("total") or 0)
+    return result
+
+
+def maybe_place_stats() -> None:
+    """주 1회(기본 월요일) 유입 키워드를 수집한다.
+
+    로그인이 풀린 것과 '키워드가 0개'인 것은 완전히 다른 사건이라, 로그인
+    문제는 알림함(SessionExpired)으로 따로 띄운다 — 조용히 0으로 보이면
+    노출이 떨어진 걸로 오해한다.
+    """
+    global _last_stats_week
+    try:
+        from crawler.place_stats import NaverLoginRequired
+        now = datetime.now()
+        if now.weekday() != PLACE_STATS_WEEKDAY:
+            return
+        week = now.strftime("%G-W%V")            # 주 1회 키
+        if week == _last_stats_week:
+            return
+        _last_stats_week = week
+        try:
+            run_place_stats()
+        except NaverLoginRequired as e:
+            notify_owner(
+                f"스마트플레이스 통계를 못 읽었습니다 — {e}",
+                kind="SessionExpired", source="worker", path="maybe_place_stats")
+            logger.warning("플레이스 통계: 네이버 로그인 필요")
+    except Exception as e:  # noqa: BLE001 — 수집 실패가 일꾼을 멈추면 안 된다
+        logger.warning("플레이스 통계 수집 실패: %s", e)
+
+
 def maybe_pos_import() -> None:
     """하루 한 번(기본 10:20 이후 첫 한가한 때) 매출을 반영한다 —
     배달 주문 + 포스 장부.
@@ -1478,6 +1528,7 @@ def main() -> int:
                     maybe_request_nag()
                     maybe_pos_import()
                     maybe_place_audit()
+                    maybe_place_stats()
                     maybe_pa_expiry_check()
                     maybe_blog_react()
                     maybe_rescue_stuck()
