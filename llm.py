@@ -415,8 +415,13 @@ def complete(system: str = "", user: str = "", max_tokens: int = 1500,
     if not quality:
         # 대량 작업: 하위 무료 먼저, 상위 무료는 예비, 유료는 제외.
         gem = [s for s in steps if s[0] == "gemini"]
-        steps = (sorted(gem, key=lambda s: 0 if s[1] == GEMINI_FALLBACK_MODEL
-                        else 1) or steps)   # 제미나이 키가 없으면 원래대로
+        # 제미나이가 없으면 **그냥 비운다**(예전엔 `or steps` 로 원래 사다리로
+        # 되돌아갔다). 그 폴백은 유료 옵트인이 켜진 기기에서 제미나이 키만
+        # 빠지면 블로그·사진 태깅 같은 대량 작업이 통째로 유료로 새는 구멍이었다
+        # (2026-08-30 비용 감사). 무료가 없으면 내부 작업은 멈추고 알린다.
+        # 인스타처럼 유료를 쓰기로 정한 호출은 아래 paid 분기가 다시 채운다.
+        steps = sorted(gem, key=lambda s: 0 if s[1] == GEMINI_FALLBACK_MODEL
+                       else 1)
     if paid and claude_keys() and not any(s[0] == "claude" for s in steps):
         # 호출 단위 유료 옵트인 — 전역 게이트(PAID_OK)를 이 호출에만 연다.
         # quality 분기 뒤에 두어 '대량 작업' 정리에 지워지지 않게 한다.

@@ -352,3 +352,34 @@ def test_gemini_all_keys_dry_raises_for_the_ladder(monkeypatch):
     monkeypatch.setattr(llm, "_gemini_once", once)
     with pytest.raises(RuntimeError):
         llm._call_gemini("", "안녕", 100)
+
+
+def test_bulk_work_never_falls_to_paid_without_gemini(monkeypatch):
+    """제미나이 키가 없으면 내부 대량 작업(블로그·사진 태깅)은 **멈춘다** —
+    유료로 새지 않는다.
+
+    실사고 구멍(2026-08-30 비용 감사): quality=False 분기가 제미나이 단이
+    비면 `or steps` 로 원래 사다리(유료 포함)로 되돌아갔다. 유료 옵트인이
+    켜진 기기에서 제미나이 키만 빠지면 블로그 한 번에 ~7회, 사진 태깅은
+    묶음마다 유료 호출이 조용히 나갔다.
+    """
+    monkeypatch.setattr(llm, "PAID_OK", True)          # 유료 옵트인 켜진 상태
+    monkeypatch.setattr(llm, "gemini_keys", lambda: [])  # 제미나이 키 없음
+    monkeypatch.setattr(llm, "claude_keys", lambda: [("ANTHROPIC_API_KEY", "a")])
+    monkeypatch.setattr(llm, "_key", lambda n: "a" if n.startswith("ANTHROPIC") else "")
+    called = []
+    monkeypatch.setitem(llm._CALLERS, "claude",
+                        lambda *a, **k: called.append("claude") or "x")
+    with pytest.raises(llm.NoProviderError):
+        llm.complete(user="블로그 초안", max_tokens=100)   # quality=False 기본
+    assert called == [], "무료가 없는데 유료를 두드렸다"
+
+
+def test_paid_optin_call_still_works_without_gemini(monkeypatch):
+    """반대로, 유료를 쓰기로 정한 호출(인스타)은 제미나이가 없어도 돌아야 한다."""
+    monkeypatch.setattr(llm, "PAID_OK", True)
+    monkeypatch.setattr(llm, "gemini_keys", lambda: [])
+    monkeypatch.setattr(llm, "claude_keys", lambda: [("ANTHROPIC_API_KEY", "a")])
+    monkeypatch.setattr(llm, "_key", lambda n: "a" if n.startswith("ANTHROPIC") else "")
+    monkeypatch.setitem(llm._CALLERS, "claude", lambda *a, **k: "자막")
+    assert llm.complete(user="릴스 자막", only=("claude",), paid=True) == "자막"
