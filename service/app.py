@@ -43,6 +43,7 @@ from flask import (  # noqa: E402
     Flask, Request, abort, jsonify, redirect, render_template, request,
     url_for,
 )
+from markupsafe import escape  # noqa: E402
 from werkzeug.utils import cached_property  # noqa: E402
 
 # 설정은 service/.env 를 먼저 본다(클라우드 서버에는 이 파일만 올린다 —
@@ -945,8 +946,81 @@ def place_guide(path_key):
         '<!doctype html>\n<html lang="ko">\n'
         '<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-        f"<body>\n{sidebar}\n{body}\n</body>\n</html>"
+        f"<body>\n{sidebar}\n{_place_status_panel()}\n{body}\n</body>\n</html>"
     )
+
+
+def _place_status_panel() -> str:
+    """가이드 맨 위에 붙는 '지금 우리 플레이스 현황' 패널.
+
+    일꾼이 하루 한 번 저장해 둔 진단(menu_settings 'place_audit')을 읽어 그린다.
+    목표 1단계('최적화')를 사람이 네이버를 뒤져 확인하는 대신 화면이 알려주게
+    하는 자리다. 진단이 아직 없으면 조용히 아무것도 안 그린다(가이드는 그대로).
+    """
+    try:
+        a = db.get_setting("place_audit") or {}
+    except Exception:  # noqa: BLE001 — 현황 패널이 가이드를 막으면 안 된다
+        return ""
+    checks = a.get("checks") or []
+    if not checks:
+        return ""
+
+    sc = a.get("score") or {}
+    st = a.get("stats") or {}
+    when = str(a.get("checkedAt") or "")[:16].replace("T", " ")
+    todo = a.get("todo") or []
+
+    rows = "".join(
+        f'<li class="{"bad" if not c.get("ok") else "ok"}">'
+        f'<b>{escape(str(c.get("label","")))}</b>'
+        f'<span>{escape(str(c.get("value","")))}</span></li>'
+        for c in checks
+    )
+    head = (f"고칠 것 {len(todo)}개 — " + escape(", ".join(todo))) if todo \
+        else "전부 통과"
+    stats = ""
+    if st.get("visitorReviews") is not None:
+        stats = (f'<p class="pa-stat">평점 {escape(str(st.get("rating")))} · '
+                 f'방문자 리뷰 {escape(str(st.get("visitorReviews")))} · '
+                 f'블로그 리뷰 {escape(str(st.get("blogReviews")))}</p>')
+
+    return f"""
+<style>
+ .pa-wrap{{max-width:860px;margin:18px auto 0;padding:0 16px;
+   font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}}
+ .pa-card{{background:#fff;border:1px solid #E5DCCB;border-radius:14px;padding:16px 18px}}
+ .pa-h{{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;margin:0 0 4px}}
+ .pa-h b{{font-size:16px;color:#292019}}
+ .pa-h .when{{font-size:12px;color:#6E5F4E;margin-left:auto}}
+ .pa-sum{{margin:0 0 10px;font-size:14px;color:#B23A32;font-weight:600}}
+ .pa-sum.all-ok{{color:#059B52}}
+ .pa-stat{{margin:0 0 10px;font-size:13px;color:#6E5F4E}}
+ .pa-list{{list-style:none;margin:0;padding:0;display:grid;
+   grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px}}
+ .pa-list li{{display:flex;gap:8px;align-items:baseline;font-size:13px;
+   padding:7px 10px;border-radius:9px;background:#F1EADD}}
+ .pa-list li b{{font-weight:600;color:#292019}}
+ .pa-list li span{{margin-left:auto;color:#6E5F4E}}
+ .pa-list li.bad{{background:#F9E9E7}}
+ .pa-list li.bad b{{color:#B23A32}}
+ .pa-list li.bad span{{color:#B23A32;font-weight:600}}
+ @media (prefers-color-scheme:dark){{
+   .pa-card{{background:#262019;border-color:#3A3128}}
+   .pa-h b{{color:#EFE7DA}} .pa-h .when,.pa-stat{{color:#A79781}}
+   .pa-list li{{background:#2E2720}} .pa-list li b{{color:#EFE7DA}}
+   .pa-list li span{{color:#A79781}}
+   .pa-list li.bad{{background:#3C2422}}
+   .pa-list li.bad b,.pa-list li.bad span{{color:#E0716A}}
+ }}
+</style>
+<div class="pa-wrap"><div class="pa-card">
+  <p class="pa-h"><b>📍 지금 우리 플레이스 현황</b>
+     <span class="when">{escape(when)} 자동 점검 · {sc.get('done')}/{sc.get('total')} 통과</span></p>
+  <p class="pa-sum{'' if todo else ' all-ok'}">{head}</p>
+  {stats}
+  <ul class="pa-list">{rows}</ul>
+</div></div>
+"""
 
 
 @app.route("/<path_key>/instagram")

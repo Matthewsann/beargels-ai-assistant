@@ -1187,6 +1187,53 @@ def maybe_pa_expiry_check() -> None:
         logger.warning("PA 만료 확인 실패: %s", e)
 
 
+PLACE_AUDIT_TIME = os.getenv("WORKER_PLACE_AUDIT_TIME", "09:40")
+_last_place_slot = None
+
+
+def run_place_audit() -> dict:
+    """네이버 플레이스 현황을 진단해 DB 에 저장한다(웹 /place 가 읽는다).
+
+    스마트플레이스 목표 1단계('최적화')를 사람 눈 대신 화면이 하게 만드는 장치.
+    읽기 전용 크롤이라 플레이스에는 아무것도 쓰지 않는다.
+    """
+    from crawler.place_audit import audit
+
+    result = audit()
+    db.menu_set_setting("place_audit", result)
+    todo = result.get("todo") or []
+    logger.info("플레이스 진단: %d/%d 통과%s",
+                result["score"]["done"], result["score"]["total"],
+                f" — 고칠 것: {', '.join(todo)}" if todo else "")
+    return result
+
+
+def maybe_place_audit() -> None:
+    """하루 한 번 플레이스를 진단한다.
+
+    slot_due(10분 창)를 쓰지 않는 이유는 maybe_pos_import 와 같다 — 그 10분에
+    일꾼이 바쁘면 그날 진단이 통째로 밀린다.
+    """
+    global _last_place_slot
+    if not os.getenv("NAVER_PLACE_ID", "").strip():
+        return
+    try:
+        now = datetime.now()
+        try:
+            hh, mm = (int(x) for x in PLACE_AUDIT_TIME.split(":"))
+        except ValueError:
+            hh, mm = 9, 40
+        if now < now.replace(hour=hh, minute=mm, second=0, microsecond=0):
+            return
+        slot = now.strftime("%Y-%m-%d")          # 하루 1회 키
+        if slot == _last_place_slot:
+            return
+        _last_place_slot = slot
+        run_place_audit()
+    except Exception as e:  # noqa: BLE001 — 진단 실패가 일꾼을 멈추면 안 된다
+        logger.warning("플레이스 진단 실패: %s", e)
+
+
 def maybe_pos_import() -> None:
     """하루 한 번(기본 10:20 이후 첫 한가한 때) 매출을 반영한다 —
     배달 주문 + 포스 장부.
@@ -1430,6 +1477,7 @@ def main() -> int:
                     maybe_complaint_report()
                     maybe_request_nag()
                     maybe_pos_import()
+                    maybe_place_audit()
                     maybe_pa_expiry_check()
                     maybe_blog_react()
                     maybe_rescue_stuck()
