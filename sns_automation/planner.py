@@ -10,14 +10,14 @@
   data/insights_log.json  ← 인사이트 분석 기록
 """
 
+import asyncio
 import json
 import logging
 import os
+import re
 import time
 
 logger = logging.getLogger(__name__)
-
-MODEL = "claude-opus-4-8"
 
 _ROOT = os.path.dirname(os.path.dirname(__file__))
 DATA_DIR = os.getenv("PIPELINE_DATA_DIR") or os.path.join(_ROOT, "data")
@@ -283,27 +283,38 @@ def _market() -> str:
         return ""
 
 
-def _client():
-    key = os.getenv("ANTHROPIC_API_KEY")
-    if not key:
-        return None
-    from anthropic import AsyncAnthropic
-    return AsyncAnthropic(api_key=key)
+def _json_from(text: str) -> dict:
+    """모델이 준 답에서 JSON 을 관대하게 꺼낸다 (```json 울타리·앞뒤 설명 무시)."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text)
+    a, b = text.find("{"), text.rfind("}")
+    if a < 0 or b <= a:
+        raise ValueError("응답에 JSON이 없습니다: " + text[:120])
+    return json.loads(text[a:b + 1])
 
 
-async def _ask(system: str, user: str, schema: dict, images: list[dict] | None = None) -> dict:
-    client = _client()
-    if client is None:
-        raise RuntimeError("ANTHROPIC_API_KEY 없음")
-    content: list[dict] = list(images or [])
-    content.append({"type": "text", "text": user})
-    resp = await client.messages.create(
-        model=MODEL, max_tokens=2048, system=system,
-        output_config={"format": schema},
-        messages=[{"role": "user", "content": content}],
+async def _ask(system: str, user: str, schema: dict,
+               images: list[tuple[str, bytes]] | None = None) -> dict:
+    """AI에게 물어 schema 모양의 JSON을 받는다.
+
+    유료 Claude API 는 쓰지 않는다(사장님 지시 2026-08-30) —
+    llm.complete(only=("gemini",)) 라 무료 Gemini 가 없으면 그대로 실패하고,
+    각 호출부의 폴백(기본 풀/템플릿)으로 떨어진다.
+    """
+    import llm
+
+    sys_full = (
+        f"{system}\n\n"
+        "반드시 아래 JSON 스키마에 맞는 **JSON 하나만** 출력한다. "
+        "설명·인사말·코드펜스 금지.\n"
+        f"{json.dumps(schema, ensure_ascii=False)}"
     )
-    text = next(b.text for b in resp.content if b.type == "text")
-    return json.loads(text)
+    text = await asyncio.to_thread(
+        llm.complete, system=sys_full, user=user, max_tokens=2048,
+        images=images or None, only=("gemini",),
+    )
+    return _json_from(text)
 
 
 async def generate_weekly_plan(count: int = 3) -> dict:

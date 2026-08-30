@@ -1,21 +1,22 @@
-"""Claude API 이미지 분석 + 릴스/알고리즘 최적화 캡션·해시태그 생성."""
+"""이미지 분석 + 릴스/알고리즘 최적화 캡션·해시태그 생성.
 
-import base64
+유료 Claude API 는 쓰지 않는다(사장님 지시 2026-08-30). AI 호출은 전부
+루트 `llm.complete(only=("gemini",))` — 무료 Gemini 가 없으면 그대로 실패하고
+webapp 의 템플릿 폴백(_fallback_caption)으로 떨어진다.
+"""
+
+import asyncio
 import io
-import json
 import logging
 import os
 from dataclasses import dataclass
 
-from anthropic import AsyncAnthropic
 from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-opus-4-8"
-
-# Claude API 이미지 제한에 맞춰 리사이즈
-MAX_DIMENSION = 2000
+# 요청이 무거워지지 않게 리사이즈 (무료 한도도 아낀다)
+MAX_DIMENSION = 1280
 JPEG_QUALITY = 85
 
 # 브랜드·전략·템플릿 지식 폴더 (안의 모든 .md를 프롬프트에 붙인다)
@@ -56,31 +57,28 @@ SYSTEM_PROMPT = """\
 """
 
 OUTPUT_SCHEMA = {
-    "type": "json_schema",
-    "schema": {
-        "type": "object",
-        "properties": {
-            "menu": {
-                "type": "string",
-                "description": "파악한 메뉴/소재 이름 (파악 불가 시 '미상')",
-            },
-            "caption": {
-                "type": "string",
-                "description": "인스타 캡션 본문. 첫 문장은 훅. 해시태그는 넣지 말 것.",
-            },
-            "hashtags": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "해시태그 3~5개, 각 항목은 #으로 시작",
-            },
-            "overlay_text": {
-                "type": "string",
-                "description": "릴스 화면에 넣으면 좋은 짧은 자막 문구 제안 (사진이면 빈 문자열)",
-            },
+    "type": "object",
+    "properties": {
+        "menu": {
+            "type": "string",
+            "description": "파악한 메뉴/소재 이름 (파악 불가 시 '미상')",
         },
-        "required": ["menu", "caption", "hashtags", "overlay_text"],
-        "additionalProperties": False,
+        "caption": {
+            "type": "string",
+            "description": "인스타 캡션 본문. 첫 문장은 훅. 해시태그는 넣지 말 것.",
+        },
+        "hashtags": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "해시태그 3~5개, 각 항목은 #으로 시작",
+        },
+        "overlay_text": {
+            "type": "string",
+            "description": "릴스 화면에 넣으면 좋은 짧은 자막 문구 제안 (사진이면 빈 문자열)",
+        },
     },
+    "required": ["menu", "caption", "hashtags", "overlay_text"],
+    "additionalProperties": False,
 }
 
 
@@ -96,24 +94,20 @@ class CaptionResult:
         return f"{self.caption}\n\n{' '.join(self.hashtags)}"
 
 
-def _prepare_image(image_bytes: bytes) -> dict:
-    """리사이즈 + JPEG 변환 후 Claude 이미지 블록으로 반환."""
+def _prepare_image(image_bytes: bytes) -> tuple[str, bytes]:
+    """리사이즈 + JPEG 변환. llm.complete 의 images 형식인 (mime, 바이트)로 반환."""
     img = Image.open(io.BytesIO(image_bytes))
     if img.mode not in ("RGB", "L"):
         img = img.convert("RGB")
     img.thumbnail((MAX_DIMENSION, MAX_DIMENSION))
     buffer = io.BytesIO()
     img.save(buffer, format="JPEG", quality=JPEG_QUALITY)
-    data = base64.standard_b64encode(buffer.getvalue()).decode("utf-8")
-    return {
-        "type": "image",
-        "source": {"type": "base64", "media_type": "image/jpeg", "data": data},
-    }
+    return ("image/jpeg", buffer.getvalue())
 
 
 class CaptionGenerator:
-    def __init__(self, api_key: str):
-        self.client = AsyncAnthropic(api_key=api_key)
+    def __init__(self, api_key: str | None = None):
+        # api_key 인자는 예전 호출부와의 호환용 — 더 이상 쓰지 않는다.
         self._system = SYSTEM_PROMPT.format(knowledge=_load_knowledge() or "(지침 파일 없음)")
 
     async def generate(
@@ -148,18 +142,21 @@ class CaptionGenerator:
                 "수정 요청을 반영해서 다시 작성해줘."
             )
 
-        content.append({"type": "text", "text": instruction})
+        from .planner import _json_from
+        import json as _json
+        import llm
 
-        response = await self.client.messages.create(
-            model=MODEL,
-            max_tokens=1024,
-            system=self._system,
-            output_config={"format": OUTPUT_SCHEMA},
-            messages=[{"role": "user", "content": content}],
+        sys_full = (
+            f"{self._system}\n\n"
+            "반드시 아래 JSON 스키마에 맞는 **JSON 하나만** 출력한다. "
+            "설명·인사말·코드펜스 금지.\n"
+            f"{_json.dumps(OUTPUT_SCHEMA, ensure_ascii=False)}"
         )
-
-        text = next(b.text for b in response.content if b.type == "text")
-        data = json.loads(text)
+        text = await asyncio.to_thread(
+            llm.complete, system=sys_full, user=instruction, max_tokens=1024,
+            images=content or None, only=("gemini",),
+        )
+        data = _json_from(text)
         hashtags = [t if t.startswith("#") else f"#{t}" for t in data["hashtags"]]
         return CaptionResult(
             menu=data["menu"],

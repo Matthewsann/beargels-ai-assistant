@@ -225,14 +225,21 @@ _caption_gen = None
 
 
 def _get_caption_gen():
-    """ANTHROPIC_API_KEY가 있으면 캡션 생성기를 준비(지연 초기화). 없으면 None."""
+    """무료 AI(Gemini)가 있으면 캡션 생성기를 준비(지연 초기화). 없으면 None.
+
+    유료 Claude API 는 쓰지 않는다(사장님 지시 2026-08-30) — 캡션 생성은
+    GEMINI_API_KEY 하나로 돌고, 없으면 템플릿 폴백이 대신한다.
+    """
     global _caption_gen
-    key = os.getenv("ANTHROPIC_API_KEY")
-    if not key:
+    try:
+        import llm
+        if "gemini" not in llm.available_providers():
+            return None
+    except Exception:
         return None
     if _caption_gen is None:
         from .caption_generator import CaptionGenerator
-        _caption_gen = CaptionGenerator(key)
+        _caption_gen = CaptionGenerator()
     return _caption_gen
 
 
