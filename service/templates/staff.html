@@ -555,45 +555,65 @@ function setState(id, state, msg, okLink, postedText) {
   applyHideDone();
 }
 
-// ── 등록(한 건) ─────────────────────────────────────────────────
-// 서버에 요청한 뒤 상태를 확인해 신호등만 바꾼다. 알림창을 띄우지 않는다.
-function runPost(id) {
+// ── 등록 ────────────────────────────────────────────────────────
+// **제출**과 **지켜보기**를 나눠 둔다. 여러 건을 등록할 때 한 건씩
+// 제출→완료까지 기다리면, 일꾼이 다음 잡을 집으러 15초를 또 쉰다
+// (WORKER_POLL_SECONDS). 10건이면 그 대기만 2분 넘게 쌓였다
+// (2026-08-29 실측: 10건 4.5분, 그중 큐 대기가 건당 15.3초).
+// 먼저 다 넣어 두면 일꾼이 쉬지 않고 연달아 처리한다.
+const POLL_MS = 1500;      // 등록 자체가 ~12초라 3초 간격은 감지가 굼떴다
+const POLL_MAX = 160;      // 1.5초 × 160 = 4분
+
+// 초안 저장 + 등록 요청까지만. 결과는 기다리지 않는다.
+function submitPost(id) {
   setState(id, 'posting', '집 PC가 등록하는 중이에요…');
   return saveDraft(id)
     .then(() => fetch(urlOf(id, 'Post'), {method: 'POST'}))
     .then(r => r.json())
     .then(res => {
-      if (!res.ok) { setState(id, 'failed', '요청 실패: ' + (res.error || '')); return false; }
-      return new Promise(resolve => {
-        let tries = 0;
-        const poll = setInterval(() => {
-          tries += 1;
-          fetch(urlOf(id, 'State')).then(r => r.json()).then(st => {
-            if (st.reply_status === 'posted') {
-              clearInterval(poll);
-              setState(id, 'done', '고객에게 답글이 등록됐어요.',
-                       st.platform_url || '', st.posted_reply || '');
-              resolve(true);
-            } else if (st.reply_status === 'drafted') {
-              clearInterval(poll);
-              setState(id, 'failed',
-                (st.why || '등록되지 않았어요.') +
-                ((st.why || '').indexOf('closed') >= 0
-                  ? '\n\n브라우저 연결이 잠깐 끊긴 거예요. 한 번 더 눌러주시면 대개 됩니다.'
-                  : ' 다시 눌러보세요.'));
-              resolve(false);
-            } else if (tries >= 60) {          // 3분
-              clearInterval(poll);
-              setState(id, 'failed',
-                (st.worker_alive ? '아직 확인이 안 돼요. 잠시 뒤 새로고침해 보세요.'
-                                 : '집 PC가 꺼져 있어요 — 위 [집 PC 깨우기]를 눌러주세요.'));
-              resolve(false);
-            }
-          }).catch(() => {});
-        }, 3000);
-      });
+      if (!res.ok) {
+        setState(id, 'failed', '요청 실패: ' + (res.error || ''));
+        return false;
+      }
+      return true;
     })
     .catch(() => { setState(id, 'failed', '통신에 실패했어요.'); return false; });
+}
+
+// 결과가 나올 때까지 지켜보며 신호등만 바꾼다. 알림창을 띄우지 않는다.
+function watchPost(id) {
+  return new Promise(resolve => {
+    let tries = 0;
+    const poll = setInterval(() => {
+      tries += 1;
+      fetch(urlOf(id, 'State')).then(r => r.json()).then(st => {
+        if (st.reply_status === 'posted') {
+          clearInterval(poll);
+          setState(id, 'done', '고객에게 답글이 등록됐어요.',
+                   st.platform_url || '', st.posted_reply || '');
+          resolve(true);
+        } else if (st.reply_status === 'drafted') {
+          clearInterval(poll);
+          setState(id, 'failed',
+            (st.why || '등록되지 않았어요.') +
+            ((st.why || '').indexOf('closed') >= 0
+              ? '\n\n브라우저 연결이 잠깐 끊긴 거예요. 한 번 더 눌러주시면 대개 됩니다.'
+              : ' 다시 눌러보세요.'));
+          resolve(false);
+        } else if (tries >= POLL_MAX) {
+          clearInterval(poll);
+          setState(id, 'failed',
+            (st.worker_alive ? '아직 확인이 안 돼요. 잠시 뒤 새로고침해 보세요.'
+                             : '집 PC가 꺼져 있어요 — 위 [집 PC 깨우기]를 눌러주세요.'));
+          resolve(false);
+        }
+      }).catch(() => {});
+    }, POLL_MS);
+  });
+}
+
+function runPost(id) {
+  return submitPost(id).then(ok => ok ? watchPost(id) : false);
 }
 
 function postOne(id) {
@@ -678,12 +698,24 @@ async function postSelected() {
   const prog = document.getElementById('batchProg');
   go.disabled = true;
   ids.forEach(id => setState(id, 'queued', '등록을 기다리는 중이에요.'));
-  let ok = 0, fail = 0;
-  for (let i = 0; i < ids.length; i++) {
-    prog.textContent = `${i + 1}/${ids.length}번째 등록 중… (완료 ${ok} · 실패 ${fail})`;
-    const r = await runPost(ids[i]);
+
+  // ① 먼저 **전부** 큐에 넣는다. 한 건씩 끝날 때까지 기다렸다 넣으면
+  //    일꾼이 매번 다음 잡을 집으러 15초를 쉬어, 그 대기만 건당 15초씩
+  //    쌓인다(2026-08-29 실측: 10건에 4.5분). 다 넣어 두면 일꾼이
+  //    쉬지 않고 연달아 처리한다.
+  prog.textContent = `${ids.length}건을 집 PC에 넘기는 중…`;
+  const sent = await Promise.all(ids.map(id => submitPost(id)));
+  const live = ids.filter((_, i) => sent[i]);
+  let fail = ids.length - live.length;
+
+  // ② 그다음 다 같이 지켜본다. 일꾼은 한 건씩 처리하므로 순서대로 끝난다.
+  let ok = 0, done = 0;
+  prog.textContent = `등록 중… 0/${live.length} (실패 ${fail})`;
+  await Promise.all(live.map(id => watchPost(id).then(r => {
     r ? ok++ : fail++;
-  }
+    done++;
+    prog.textContent = `등록 중… ${done}/${live.length} (완료 ${ok} · 실패 ${fail})`;
+  })));
   prog.textContent = `끝났어요 — 완료 ${ok}건, 실패 ${fail}건` +
                      (fail ? ' (실패한 카드는 빨간 신호로 남아 있어요)' : '');
   document.getElementById('pickAll').checked = false;
