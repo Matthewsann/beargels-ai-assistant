@@ -27,7 +27,7 @@ import time
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from . import planner, video_editor
+from . import planner, shot_plan, source_watch, video_editor
 from .templates import TEMPLATES, get_template
 
 logger = logging.getLogger(__name__)
@@ -124,16 +124,100 @@ def _save_project(data: dict) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def _raw_files(pid: str) -> list[dict]:
-    raw = os.path.join(_proj_dir(pid), "raw")
-    if not os.path.isdir(raw):
+def _new_project(title: str, *, hook: str = "", menu: str = "", guide: str = "",
+                 template: str = "T1", source_dir: str = "") -> dict:
+    """프로젝트 하나를 만들고 저장한 뒤 그 dict를 돌려준다.
+
+    create_project(웹 폼) / start_plan_item(주간계획) / 폴더 감시 세 곳이 같은
+    규칙을 써야 목록·상세 라우트가 전부 인식한다. 예전엔 복붙이었다.
+    """
+    pid = f"{int(time.time())}-{_slug(title)}"
+    data = {
+        "id": pid, "title": title, "hook": hook, "menu": menu,
+        "guide": guide, "template": template, "status": ST_SHOOT,
+        "created": int(time.time()),
+    }
+    if source_dir:
+        # 소재를 복사하지 않고 창고 폴더를 그대로 읽는다 (4K라 복사가 무겁다)
+        data["source_dir"] = source_dir
+    os.makedirs(os.path.join(_proj_dir(pid), "raw"), exist_ok=True)
+    _save_project(data)
+    return data
+
+
+def _media_dir(p: dict) -> str:
+    """이 프로젝트의 소재가 실제로 있는 폴더. 창고 연결분이면 창고를 본다."""
+    src = p.get("source_dir")
+    if src and os.path.isdir(src):
+        return src
+    return os.path.join(_proj_dir(p["id"]), "raw")
+
+
+def _raw_files(pid: str, p: dict | None = None) -> list[dict]:
+    p = p or _load_project(pid) or {"id": pid}
+    folder = _media_dir(p)
+    if not os.path.isdir(folder):
         return []
     out = []
-    for name in sorted(os.listdir(raw)):
+    for name in sorted(os.listdir(folder)):
+        if not os.path.isfile(os.path.join(folder, name)):
+            continue
         ext = os.path.splitext(name)[1].lower()
         kind = "video" if ext in _VIDEO_EXT else ("image" if ext in _IMAGE_EXT else "other")
         out.append({"name": name, "kind": kind})
     return out
+
+
+#: 방문 유도 장치 — 목표가 "노출 → 매장 방문 → 매출"이라 규칙으로 박는다.
+#: 지역명이 없으면 송도 사람이 자기 동네 가게로 인식하지 못한다(실제 인기글 공통 문법).
+BRAND_LABEL = os.getenv("REEL_BRAND_LABEL", "송도 베어글스")
+DEFAULT_CTA = os.getenv("REEL_CTA", "저장해두셨다가 놀러 오세요")
+
+
+def _ensure_plan(p: dict, files: list[dict]) -> dict | None:
+    """구성표를 돌려준다. 사장님이 고친 게 있으면 그것, 없으면 자동 생성.
+
+    자동 생성도 '자르는 순간 → 단면' 뼈대를 따르므로, 손대지 않아도
+    통짜 이어붙이기보다는 낫다.
+    """
+    saved = p.get("shot_plan")
+    if saved:
+        try:
+            return shot_plan.normalize(saved)
+        except shot_plan.ShotPlanError:
+            logger.warning("저장된 구성표가 깨져 자동 생성으로 대체: %s", p.get("id"))
+    dur = _durations(p, files)
+    clips = [{"name": f["name"], "duration": dur.get(f["name"], 0.0)}
+             for f in files if f["kind"] == "video"]
+    try:
+        return shot_plan.from_clips(
+            clips,
+            hook=p.get("hook", ""),
+            menu=p.get("menu", ""),
+            label=BRAND_LABEL,
+            cta=DEFAULT_CTA,
+            template=p.get("template", "T1"),
+        )
+    except shot_plan.ShotPlanError as e:
+        logger.warning("구성표 자동 생성 실패(%s) → 예전 방식으로 편집", e)
+        return None
+
+
+def _durations(p: dict, files: list[dict]) -> dict[str, float]:
+    """영상 길이(초). 4K 프로빙이 느려 project.json에 캐시한다."""
+    cache = dict(p.get("durations") or {})
+    folder = _media_dir(p)
+    changed = False
+    for f in files:
+        if f["kind"] != "video" or f["name"] in cache:
+            continue
+        cache[f["name"]] = round(
+            video_editor.probe_seconds(os.path.join(folder, f["name"])), 2)
+        changed = True
+    if changed:
+        p["durations"] = cache
+        _save_project(p)
+    return cache
 
 
 # ── AI 캡션 생성 (Claude) — 텔레그램 없이 웹에서 ──
@@ -244,15 +328,7 @@ def create_app() -> FastAPI:
         guide: str = Form(""),
         template: str = Form("T1"),
     ):
-        pid = f"{int(time.time())}-{_slug(title)}"
-        data = {
-            "id": pid, "title": title, "hook": hook, "menu": menu,
-            "guide": guide, "template": template, "status": ST_SHOOT,
-            "created": int(time.time()),
-        }
-        os.makedirs(os.path.join(_proj_dir(pid), "raw"), exist_ok=True)
-        _save_project(data)
-        return data
+        return _new_project(title, hook=hook, menu=menu, guide=guide, template=template)
 
     # 프로젝트 상세
     @app.get("/api/projects/{pid}")
@@ -260,10 +336,11 @@ def create_app() -> FastAPI:
         p = _load_project(pid)
         if not p:
             raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
-        p["files"] = _raw_files(pid)
+        p["files"] = _raw_files(pid, p)
+        p["durations"] = _durations(p, p["files"])
         p["has_reel"] = os.path.exists(os.path.join(_proj_dir(pid), "reel.mp4"))
         # 폴더 위치 표시용 (사진/영상 넣는 곳 · 완성본 저장 곳)
-        p["raw_dir"] = os.path.abspath(os.path.join(_proj_dir(pid), "raw"))
+        p["raw_dir"] = os.path.abspath(_media_dir(p))
         p["final_dir"] = os.path.abspath(os.path.join(FINAL_DIR, _slug(p.get("title", ""))))
         return p
 
@@ -294,8 +371,9 @@ def create_app() -> FastAPI:
         p = _load_project(pid)
         if not p:
             raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
-        raw = os.path.join(_proj_dir(pid), "raw")
-        videos = [os.path.join(raw, f["name"]) for f in _raw_files(pid) if f["kind"] == "video"]
+        files = _raw_files(pid, p)
+        folder = _media_dir(p)
+        videos = [os.path.join(folder, f["name"]) for f in files if f["kind"] == "video"]
         if not videos:
             raise HTTPException(400, "영상 파일이 없어요. 릴스는 영상이 필요해요 (사진만으론 불가).")
 
@@ -304,8 +382,14 @@ def create_app() -> FastAPI:
         tmpl = get_template(p.get("template"))
         out = os.path.join(_proj_dir(pid), "reel.mp4")
         music = os.getenv("REEL_MUSIC_PATH") or None
+        plan = _ensure_plan(p, files)   # 구성표가 있으면(또는 만들 수 있으면) 그걸로
 
         def _build():
+            if plan:
+                # 기획안대로 편집 — 구간 컷·샷별 자막·페이오프 슬로우·부분 소리
+                video_editor.build_reel_from_plan(plan, folder, out)
+                return
+            # 구성표를 못 만든 경우에만 예전 방식(통짜 이어붙이기)로 폴백
             video_editor.build_reel(
                 videos, out,
                 target_seconds=tmpl.target_seconds,
@@ -438,15 +522,10 @@ def create_app() -> FastAPI:
         if not (0 <= index < len(items)):
             raise HTTPException(400, "잘못된 항목입니다.")
         t = items[index]
-        pid = f"{int(time.time())}-{_slug(t['title'])}"
-        data = {
-            "id": pid, "title": t["title"], "hook": t.get("hook", ""),
-            "menu": t.get("menu", ""), "guide": t.get("guide", ""),
-            "template": t.get("template", "T1"), "status": ST_SHOOT,
-            "created": int(time.time()),
-        }
-        os.makedirs(os.path.join(_proj_dir(pid), "raw"), exist_ok=True)
-        _save_project(data)
+        data = _new_project(
+            t["title"], hook=t.get("hook", ""), menu=t.get("menu", ""),
+            guide=t.get("guide", ""), template=t.get("template", "T1"))
+        pid = data["id"]
         planner.mark_plan_item(index, pid)
         return data
 
@@ -461,6 +540,115 @@ def create_app() -> FastAPI:
         p["hook_variants"] = r["hooks"]
         _save_project(p)
         return r
+
+    # ═══ 샷 구성표 — 기획안이자 편집 명세 ═══
+    @app.get("/api/projects/{pid}/shots")
+    async def get_shots(pid: str):
+        """현재 구성표. 저장된 게 없으면 클립을 보고 만들어서 보여준다."""
+        p = _load_project(pid)
+        if not p:
+            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
+        files = _raw_files(pid, p)
+        plan = _ensure_plan(p, files)
+        if not plan:
+            raise HTTPException(400, "영상이 없어 구성표를 만들 수 없어요.")
+        return {
+            "plan": plan,
+            "seconds": shot_plan.total_seconds(plan),
+            "checklist": shot_plan.checklist(plan),
+            "durations": _durations(p, files),
+            "saved": bool(p.get("shot_plan")),
+        }
+
+    @app.post("/api/projects/{pid}/shots")
+    async def save_shots(pid: str, plan: str = Form(...)):
+        """사장님이 웹에서 고친 구성표를 저장. 다음 편집부터 이걸 쓴다."""
+        p = _load_project(pid)
+        if not p:
+            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
+        try:
+            norm = shot_plan.normalize(json.loads(plan))
+        except (ValueError, shot_plan.ShotPlanError) as e:
+            raise HTTPException(400, f"구성표가 올바르지 않아요: {e}")
+        p["shot_plan"] = norm
+        _save_project(p)
+        return {"ok": True, "plan": norm, "seconds": shot_plan.total_seconds(norm)}
+
+    @app.post("/api/projects/{pid}/shots/reset")
+    async def reset_shots(pid: str):
+        """자동 생성으로 되돌리기."""
+        p = _load_project(pid)
+        if not p:
+            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
+        p.pop("shot_plan", None)
+        _save_project(p)
+        return {"ok": True}
+
+    @app.get("/api/projects/{pid}/clip/{name}")
+    async def clip_frame(pid: str, name: str, t: float = 0.0):
+        """샷 구성표 표에 쓸 미리보기 프레임 (해당 시점 1장)."""
+        p = _load_project(pid)
+        if not p:
+            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
+        src = os.path.join(_media_dir(p), os.path.basename(name))
+        if not os.path.exists(src):
+            raise HTTPException(404, "클립을 찾을 수 없습니다.")
+        ff = video_editor.ffmpeg_exe()
+        fd, tmp = tempfile.mkstemp(suffix=".jpg")
+        os.close(fd)
+        try:
+            subprocess.run(
+                [ff, "-y", "-ss", f"{max(0.0, t):.2f}", "-i", src, "-frames:v", "1",
+                 "-vf", "scale=240:-2", "-q:v", "6", tmp],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+        except (subprocess.SubprocessError, OSError):
+            raise HTTPException(500, "미리보기를 만들지 못했어요.")
+        if not os.path.getsize(tmp):
+            raise HTTPException(404, "그 시점에는 화면이 없어요.")
+        return FileResponse(tmp, media_type="image/jpeg")
+
+    # ═══ 소재 창고 — "폴더에 올리면 시작된다" ═══
+    @app.get("/api/source")
+    async def source_topics():
+        """드라이브 원본소재 폴더의 주제 목록. 이미 프로젝트가 있으면 표시."""
+        root = source_watch.source_root()
+        if not root:
+            return {"root": None, "topics": [],
+                    "hint": ".env 의 REEL_SOURCE_DIR 에 소재 폴더 경로를 넣어주세요."}
+        linked = {}
+        if os.path.isdir(PROJECTS_DIR):
+            for pid in os.listdir(PROJECTS_DIR):
+                q = _load_project(pid)
+                if q and q.get("source_dir"):
+                    linked[os.path.normcase(q["source_dir"])] = {
+                        "id": q["id"], "status": q.get("status")}
+        topics = source_watch.list_topics(root)
+        for t in topics:
+            t["project"] = linked.get(os.path.normcase(t["path"]))
+        return {"root": root, "topics": topics}
+
+    @app.post("/api/source/import")
+    async def source_import(topic: str = Form(...)):
+        """주제 폴더 하나를 릴스 프로젝트로 연결한다(원본은 복사하지 않음)."""
+        root = source_watch.source_root()
+        if not root:
+            raise HTTPException(400, "소재 폴더를 찾지 못했어요.")
+        folder = os.path.join(root, os.path.basename(topic))
+        if not os.path.isdir(folder):
+            raise HTTPException(404, "그런 주제 폴더가 없어요.")
+        media = source_watch.scan_media(folder)
+        if not media["videos"]:
+            raise HTTPException(400, "그 폴더엔 영상이 없어요. 릴스는 영상이 필요해요.")
+        for pid in os.listdir(PROJECTS_DIR) if os.path.isdir(PROJECTS_DIR) else []:
+            q = _load_project(pid)
+            if q and os.path.normcase(q.get("source_dir", "")) == os.path.normcase(folder):
+                return q          # 이미 연결됨 — 중복 생성하지 않는다
+        name = os.path.basename(folder)
+        data = _new_project(name, menu=name, guide=source_watch.guide_text(folder),
+                            source_dir=folder)
+        data["status"] = ST_UPLOADED     # 소재가 이미 있으니 촬영대기가 아니다
+        _save_project(data)
+        return data
 
     # ═══ ③ 발행 대기 큐 ═══
     @app.get("/api/queue")
