@@ -231,6 +231,11 @@ def _latest_job_cached():
     return db.latest_job()
 
 
+@cached(30)     # 수집은 2시간에 한 번 — 30초쯤 묵은 답이어도 아무 차이 없다
+def _last_collect_cached():
+    return db.last_collect_at()
+
+
 @cached(15)
 def _tab_counts() -> dict:
     """리뷰 답글 탭 바(할 일·문제·등록함·전체)의 배지 숫자.
@@ -407,6 +412,45 @@ def ack_alert(path_key, alert_id):
 # '오늘/내일 아침' 안내도 전부 틀린다(사장님 지적 2026-08-28).
 # 시간을 사람에게 보여주거나 시간대로 판단할 때는 반드시 KST 로 본다.
 KST = timezone(timedelta(hours=9))
+
+
+# 화면의 숫자가 '얼마나 오래되면 낡은 것인가'. 낮에는 2시간마다 자동 수집이
+# 돌지만 심야(0-7시)에는 쉬므로, 아침 첫 접속에서 8시간쯤 뜨는 건 정상이다.
+# 그보다 더 벌어지면 집 PC 가 꺼져 있었을 가능성이 커서 눈에 띄게 표시한다.
+STALE_AFTER_MIN = 10 * 60
+
+
+def _updated_view(iso) -> dict | None:
+    """마지막 수집 시각을 화면용으로 — 매장 시간(KST) + '몇 시간 전'.
+
+    홈은 열 때마다 크롤링하지 않는다(수 분 걸린다). 그래서 답글 건수·알림이
+    언제 기준인지 적어 주지 않으면, 직원이 방금 들어온 리뷰가 없다고 오해한다
+    (사장님 지적 2026-08-28).
+    """
+    if not iso:
+        return None
+    try:
+        t = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if t.tzinfo is None:                       # 옛 기록엔 시간대가 없다
+        t = t.replace(tzinfo=timezone.utc)
+    t = t.astimezone(KST)
+    now = datetime.now(KST)
+    mins = max(0, int((now - t).total_seconds() // 60))
+    if mins < 1:
+        ago = "방금"
+    elif mins < 60:
+        ago = f"{mins}분 전"
+    elif mins < 60 * 24:
+        ago = f"{mins // 60}시간 전"
+    else:
+        ago = f"{mins // (60 * 24)}일 전"
+    # 같은 날이면 시각만 — 짧을수록 읽힌다.
+    at = f"{t.hour:02d}:{t.minute:02d}"
+    if t.date() != now.date():
+        at = f"{t.month}/{t.day} {at}"
+    return {"at": at, "ago": ago, "stale": mins >= STALE_AFTER_MIN}
 
 
 # 일꾼이 예약분을 올리는 시각(worker.agent.SCHEDULED_POST_TIMES 와 같은 값을
@@ -667,6 +711,7 @@ def home(path_key):
             learning=_learning_cached,
             alerts=_owner_alerts,
             owners=lambda: db.get_setting("home_owners", {}) or {},
+            updated=_last_collect_cached,
             # 회의에서 정한 할 일도 홈에서 챙긴다(사장님 결정 2026-08-27).
             # 표가 아직 없으면 gather 가 None 으로 돌려주고 홈은 그대로 뜬다.
             meet_tasks=lambda: mt.open_tasks(limit=6),
@@ -692,6 +737,7 @@ def home(path_key):
         blog_ready=blog_ready, owners=owners,
         learning=g.get("learning"), error=error, alerts=g.get("alerts") or [],
         meet_tasks=g.get("meet_tasks") or [], meet_open=g.get("meet_open") or 0,
+        updated=_updated_view(g.get("updated")),
     )
 
 

@@ -348,6 +348,21 @@ def latest_job():
     return rows[0] if rows else None
 
 
+def last_collect_at():
+    """마지막으로 리뷰 수집이 **성공한** 시각(ISO 문자열) 또는 None.
+
+    홈 화면이 "이 숫자는 언제 기준인가"를 알려줄 때 쓴다. 화면을 열 때마다
+    크롤링할 수는 없어서(수 분 걸린다) 숫자는 항상 마지막 수집 시점의 것이다.
+    실패한 수집은 데이터를 갱신하지 못했으므로 세지 않는다.
+    """
+    rows = (get_client().table("jobs").select("finished_at")
+            .in_("kind", ["collect", "collect_all"])
+            .eq("status", "done")
+            .not_.is_("finished_at", "null")
+            .order("finished_at", desc=True).limit(1).execute().data)
+    return rows[0].get("finished_at") if rows else None
+
+
 # 직원이 화면 앞에서 결과를 기다리는 작업 — 리뷰수집(수 분) 뒤에 밀리면
 # 3분 폴링 안에 끝나지 않아 '아직 확인이 안 돼요'로 보인다. 먼저 집는다.
 INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "wake")

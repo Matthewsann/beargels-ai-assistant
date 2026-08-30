@@ -47,6 +47,13 @@
   .sec-lbl { font-size:12px; color:var(--muted); margin:16px 2px 8px; font-weight:600;
              letter-spacing:.04em; }
 
+  /* 언제 기준인가 — 홈은 열 때마다 크롤링하지 않는다(수 분 걸린다).
+     탭하면 리뷰 현황(수집 버튼이 있는 화면)으로 간다. */
+  .updated { display:inline-flex; align-items:center; gap:5px; margin:-8px 2px 12px;
+             font-size:11.5px; color:var(--muted); text-decoration:none; }
+  .updated b { font-weight:600; font-variant-numeric:tabular-nums; }
+  .updated.stale { color:var(--warn); }
+
   /* 회의에서 정한 할 일 — 답글 카드 바로 아래. 없으면 통째로 안 보인다. */
   .mtasks { background:var(--card); border:1px solid var(--line); border-radius:13px;
             padding:4px 12px; margin-top:8px; }
@@ -99,6 +106,15 @@
     <b>{{ greet }}</b>
     <small>{{ today }}</small>
   </div>
+
+  {# 아래 숫자·알림이 언제 기준인지 — 화면을 열 때마다 새로 수집하지는 않는다
+     (수 분 걸린다). 오래 벌어지면 색으로 눈에 띈다. #}
+  {% if updated %}
+  <a class="updated {{ 'stale' if updated.stale }}" href="{{ url_for('review_home', path_key=key) }}"
+     title="아래 답글 건수·알림은 이 시각에 수집한 결과예요. 탭하면 리뷰 현황에서 다시 수집할 수 있어요.">
+    🔄 마지막 수집 <b>{{ updated.at }}</b> · {{ updated.ago }}
+  </a>
+  {% endif %}
 
   {% if error %}<div class="note">{{ error }}</div>{% endif %}
 
