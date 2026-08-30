@@ -633,6 +633,7 @@ async function loadReview(){
         <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
           <b style="font-size:.88rem">${esc(h.title)}</b>
           <span class="muted" style="font-size:.8rem"> · 훅: ${esc(h.hook||'(없음)')}</span>
+          ${salesLine(h.sales)}
           <div class="row" style="margin-top:8px">
             ${[["reach","도달"],["saves","저장"],["shares","공유"],["likes","좋아요"]].map(([k,l])=>
               `<input type="text" inputmode="numeric" placeholder="${l}" value="${h[k]??''}" id="m_${h.id}_${k}" style="width:84px">`).join("")}
@@ -644,6 +645,17 @@ async function loadReview(){
   if(r.insights.length && !$("#insResult").textContent){
     $("#insResult").textContent = "지난 분석 ▸ " + r.insights[0].summary;
   }
+}
+function salesLine(s){
+  if(!s) return "";
+  const f = n => (n||0).toLocaleString("ko-KR");
+  const up = s.pct!=null && s.pct>=0;
+  const pct = s.pct==null ? "" :
+    `<b style="color:${up?'var(--good)':'var(--warn)'}">${up?'▲':'▼'} ${Math.abs(s.pct)}%</b>`;
+  return `<div class="muted" style="font-size:.78rem;margin-top:5px">
+    💰 매출: 발행 전 7일 평균 ${f(s.before_avg)}원 → 발행 후 ${s.after_days}일 평균 ${f(s.after_avg)}원 ${pct}
+    ${s.partial?'<span style="opacity:.7">(관찰 중)</span>':''}
+    <span style="opacity:.7">— 날씨·요일 다 섞인 참고용이에요</span></div>`;
 }
 async function saveResult(hid){
   const fd=new FormData();

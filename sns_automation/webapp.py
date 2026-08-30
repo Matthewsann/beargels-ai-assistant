@@ -756,9 +756,23 @@ def create_app() -> FastAPI:
         hooks = planner.get_hook_library()
         hooks = [h for h in hooks if h.get("published")]
         hooks.reverse()
+        hooks = hooks[:20]
+
+        # 발행 전후 매출 비교 (목표의 '매출' 고리 — 상관관계 참고용).
+        # DB 를 못 읽어도 리뷰 화면은 떠야 하므로 실패는 조용히 넘어간다.
+        def _attach_sales():
+            from . import sales_link
+            for h in hooks:
+                try:
+                    h["sales"] = sales_link.effect(h.get("published_at") or 0)
+                except Exception as e:
+                    logger.debug("매출 연결 실패(%s): %s", h.get("id"), e)
+                    h["sales"] = None
+        await asyncio.to_thread(_attach_sales)
+
         insights = planner.get_insights_log()
         insights.reverse()
-        return {"hooks": hooks[:20], "insights": insights[:5]}
+        return {"hooks": hooks, "insights": insights[:5]}
 
     @app.post("/api/hooks/{hid}/result")
     async def hook_result(

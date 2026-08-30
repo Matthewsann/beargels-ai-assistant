@@ -1,8 +1,9 @@
 """이미지 분석 + 릴스/알고리즘 최적화 캡션·해시태그 생성.
 
-유료 Claude API 는 쓰지 않는다(사장님 지시 2026-08-30). AI 호출은 전부
-루트 `llm.complete(only=("gemini",))` — 무료 Gemini 가 없으면 그대로 실패하고
-webapp 의 템플릿 폴백(_fallback_caption)으로 떨어진다.
+**유료 Claude 전용**(사장님 확정 2026-08-30 저녁): 인스타 AI 는 유료만 쓰고
+무료 Gemini 한도는 리뷰 답글 몫으로 남긴다. `llm.complete(only=("claude",),
+paid=True)` 라 Gemini 는 두드리지 않고, Claude 가 실패하면 webapp 의
+템플릿 폴백(_fallback_caption)으로 떨어진다.
 """
 
 import asyncio
@@ -142,7 +143,7 @@ class CaptionGenerator:
                 "수정 요청을 반영해서 다시 작성해줘."
             )
 
-        from .planner import _json_from
+        from .planner import INSTA_CLAUDE_MODEL, _json_from
         import json as _json
         import llm
 
@@ -154,7 +155,8 @@ class CaptionGenerator:
         )
         text = await asyncio.to_thread(
             llm.complete, system=sys_full, user=instruction, max_tokens=1024,
-            images=content or None, only=("gemini",),
+            images=content or None, only=("claude",), paid=True,
+            model=INSTA_CLAUDE_MODEL,
         )
         data = _json_from(text)
         hashtags = [t if t.startswith("#") else f"#{t}" for t in data["hashtags"]]
