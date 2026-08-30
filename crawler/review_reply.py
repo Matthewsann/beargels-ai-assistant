@@ -294,6 +294,34 @@ def _baemin_reply_texts(page, review_no):
         return None
 
 
+def _baemin_wait_posted(page, review_no, reply, timeout_s=6.0):
+    """등록/저장을 누른 뒤 **새 답글이 실제로 카드에 달렸는지** 확인한다.
+
+    왜 필요한가(2026-08-29 감사): 예전엔 제출 클릭 후 2~3초 자고 무조건
+    '게시 완료'를 반환했다. 그런데 _baemin_click 은 클릭이 조용히 안 먹어도
+    예외 없이 지나가므로(:DOM click 폴백), 실패가 '등록 완료(posted)'로
+    집계돼 카드가 화면에서 사라졌다 — 손님 리뷰에 답글이 안 달렸는데 아무도
+    모르고, 30일 기한이 지나면 영영 못 단다. 쿠팡은 응답 코드를 보는데
+    배민만 안 보고 있었다.
+
+    ⚠️ '답글박스가 있다'로는 안 된다 — 기존 답글을 '수정'으로 덮는 경로에선
+       옛 답글이 이미 박스에 있어 오통과한다. 반드시 **이번에 넣은 본문**이
+       박스에 들어왔는지를 본다(공백 무시 비교, 앞 30자).
+    """
+    import time as _t
+    want = _squash(reply)[:30]
+    if not review_no or not want:
+        _t.sleep(2.0)               # 번호가 없으면 확인 불가 — 옛 방식 유지
+        return True
+    deadline = _t.monotonic() + timeout_s
+    while _t.monotonic() < deadline:
+        texts = _baemin_reply_texts(page, review_no)
+        if texts and any(want in _squash(t) for t in texts):
+            return True
+        _t.sleep(0.4)
+    return False
+
+
 def _baemin_confirm_delete(page, timeout_ms=5000):
     """'삭제' 뒤에 뜨는 확인창의 [삭제/확인]을 눌러 준다(없으면 False).
 
@@ -586,14 +614,25 @@ class ReplyToReviewAction(WriteAction):
            게시로 검증됨(2026-07-24).
         """
         page.goto(BAEMIN_REVIEWS_URL, wait_until="domcontentloaded")
-        human_pause(2.0, 3.0)
+        # ⚠️ 통짜 sleep 이 아니라 **카드가 뜰 때까지** 기다린다(상한 8초).
+        #    예전엔 무조건 2~3초를 잤다 — 클릭도 입력도 없는 구간이라 봇
+        #    탐지와 무관한 순수 대기였고, 느린 날엔 3초로 모자라 '리뷰 목록이
+        #    아예 안 열렸어요'라는 엉뚱한 사유로 끝났다(2026-08-29 실측:
+        #    배민 등록 11.7초 중 8.2초가 이런 sleep — 목표 '10건 1분'의 최대
+        #    걸림돌). 로그인 리다이렉트면 카드가 영영 안 떠 timeout 으로
+        #    떨어지고, 아래 세션 검사가 사유를 바로잡는다.
+        try:
+            page.wait_for_selector('[class*="ReviewContent-module__"]',
+                                   timeout=8000)
+        except Exception:  # noqa: BLE001 — 못 떠도 아래 검사·탐색이 이어받는다
+            pass
         if is_session_expired(page):
             raise SessionExpiredError("[배민] 세션 만료 — 재로그인 필요.")
         # 공지 팝업이 떠 있으면 '더보기'·버튼 클릭을 가로챈다 — 수집기와
         # 똑같이 먼저 닫는다. 이걸 안 해서 목록이 안 펼쳐졌다(2026-08-16).
         try:
             page.keyboard.press("Escape")
-            human_pause(0.8, 1.2)
+            page.wait_for_timeout(200)   # 닫힘 렌더만 잠깐 — 사람 흉내 불필요
         except Exception:  # noqa: BLE001
             pass
         # 지연 로딩 대비: 카드를 찾을 때까지 목록을 넓혀간다.
@@ -635,7 +674,11 @@ class ReplyToReviewAction(WriteAction):
             if "self.baemin.com" not in url or "reviews" not in url:
                 logger.warning("리뷰 목록을 벗어남(%s) — 돌아갑니다", url[:60])
                 page.goto(BAEMIN_REVIEWS_URL, wait_until="domcontentloaded")
-                human_pause(2.0, 3.0)
+                try:    # 진입부와 같은 조건 대기 — 카드가 뜰 때까지만
+                    page.wait_for_selector(
+                        '[class*="ReviewContent-module__"]', timeout=8000)
+                except Exception:  # noqa: BLE001
+                    pass
                 try:
                     page.keyboard.press("Escape")
                 except Exception:  # noqa: BLE001
@@ -725,7 +768,9 @@ class ReplyToReviewAction(WriteAction):
             btn = card.get_by_role("button", name=BAEMIN_REPLY_BTN_RE)
             _baemin_click(btn.first if btn.count() else open_btn.first,
                           f"'{BAEMIN_REPLY_BTN_TEXT}' 버튼")
-        human_pause(0.8, 1.5)
+        # (여기 있던 0.8~1.5초 통짜 대기는 지웠다 — 바로 아래
+        #  _baemin_find_editor 가 입력칸이 뜰 때까지 8초를 폴링하므로 순수
+        #  중복이었다. 클릭·입력이 없는 구간이라 봇 탐지와도 무관.)
 
         # 입력칸은 카드 밖에 열릴 수 있고 textarea 가 아닐 수도 있다.
         editor, kind = _baemin_find_editor(page, card)
@@ -747,7 +792,16 @@ class ReplyToReviewAction(WriteAction):
             raise ReplyPostError(
                 f"'{submit_name}' 버튼을 찾지 못했습니다(텍스트 확인 필요).")
         _baemin_click(submit.first, f"'{submit_name}' 버튼")
-        human_pause(1.8, 2.8)
+
+        # 눌렀다고 끝이 아니다 — **새 답글이 카드에 실제로 달렸는지** 본다.
+        # 정상이면 1초 안팎에 확인돼 예전 통짜 sleep(1.8~2.8초)보다 빠르고,
+        # 조용한 클릭 실패는 여기서 잡혀 카드가 직원 화면에 되살아난다
+        # (agent 가 ReplyPostError → drafted 복귀 → 재시도 가능).
+        if not _baemin_wait_posted(page, self.review.get("review_no"), reply):
+            raise ReplyPostError(
+                f"'{submit_name}'을 눌렀지만 답글이 화면에 나타나지 않았어요 — "
+                "게시가 안 됐을 수 있습니다. 한 번 더 등록해 주세요"
+                "(이미 달렸다면 재시도 시 자동으로 '수정'으로 처리됩니다).")
 
         logger.info("배민 답글 게시 완료 (리뷰 #%s)",
                     self.review.get("review_no"))
