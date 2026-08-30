@@ -154,10 +154,19 @@ def build_month_view(y: int, m: int, today: date | None = None) -> dict:
                       "lanes": max(len(lanes), 1 if week_markers else 0)})
         d += timedelta(days=7)
 
-    # 이달 목록 (카테고리별, 빈 카테고리 숨김) — 이 달과 겹치는 것만
+    # 이달 목록 (카테고리별, 빈 카테고리 숨김) — 이 달과 겹치는 것만.
+    # 뱃지는 저장된 status 가 아니라 날짜로 판정한다 — 종료일을 미리 적으면
+    # 시작도 전에 '종료'로 찍히던 버그(2026-08-30 감사).
     month_camps = [c for c in camps
                    if c["start_date"] <= str(last)
                    and (not c.get("end_date") or c["end_date"] >= str(first))]
+    for c in month_camps:
+        if c["start_date"] > str(today):
+            c["st"] = "planned"
+        elif c.get("end_date") and c["end_date"] < str(today):
+            c["st"] = "done"
+        else:
+            c["st"] = "live"
     by_cat = []
     for key, label, cls in CATEGORIES:
         items = [c for c in month_camps if c["category"] == key]
@@ -180,9 +189,12 @@ def build_month_view(y: int, m: int, today: date | None = None) -> dict:
                          f" (반영: ~{last_pos} )" if last_pos else
                          "📂 장부가 아직 없어요 — schema_v7 적용 후 [지금 반영]을 눌러주세요."),
             })
-        # ② 진행중 2주 넘은 캠페인
+        # ② 진행중 2주 넘은 캠페인 — 종료일을 미리 적어둔 것은 제외
+        #    (종료일이 있으면 그 날짜에 알아서 끝난다. '종료 처리하라'고
+        #     조르면 잘 쓴 사람에게 잔소리가 된다.)
         for c in camps:
-            if c.get("status") == "live" and c["category"] != "var":
+            if (c.get("status") == "live" and c["category"] != "var"
+                    and not c.get("end_date")):
                 started = date.fromisoformat(c["start_date"])
                 if (today - started).days >= 14:
                     reminders.append({
@@ -190,23 +202,38 @@ def build_month_view(y: int, m: int, today: date | None = None) -> dict:
                         "text": (f"⏳ '{c['title']}' 이(가) {(today - started).days}일째 "
                                  f"진행중이에요 — 끝났으면 종료 처리해주세요."),
                     })
-        # ③ 최근 급등락인데 기록 없는 날 (최근 21일)
-        check_from = max(today - timedelta(days=21), first - timedelta(days=7))
-        d = check_from
-        flagged = 0
-        while d <= min(today, grid_end) and flagged < 2:
+        # ③ 매출이 크게 튀었는데 기록이 없는 날 — "그날 뭐 하셨어요?"
+        #
+        # 범위는 **지금 보고 있는 달**이다(예전엔 today-21일로 묶여 있어,
+        # 사장님이 지난달을 펼쳐 봐도 아무것도 안 떴다 — 정작 그때가 빠진
+        # 기록을 보충할 시점인데. 2026-08-30 테스트로 발견).
+        # ⚠️ 장부가 반영된 날까지만 본다. 잠정(배달 크롤러만) 구간은 총매출이
+        #    매장 몫만큼 작아 장부가 든 지난주와 비교하면 전부 '급락'으로 잡혀
+        #    매일 허위 경보가 뜬다(캘린더 신호점은 이미 게이트돼 있었는데
+        #    여기만 빠져 있었다).
+        # 월초부터 앞의 2건이 아니라 **변동이 큰 순** 2건을 고른다 — 사장님이
+        # 기억해낼 만한 날은 '가장 크게 움직인 날'이지 '달력에서 먼저 오는 날'이
+        # 아니다.
+        check_to = min(today, last, last_pos) if last_pos else None
+        spikes = []
+        d = first
+        while check_to and d <= check_to:
             row = daily.get(str(d))
             if row and row.get("total", 0) > 0 and not covered(d):
-                sig = mkt_store.day_signal(daily, d, threshold=0.18)
-                if sig:
-                    updown = "크게 올랐어요" if sig > 0 else "많이 내렸어요"
-                    reminders.append({
-                        "kind": "unexplained", "date": str(d),
-                        "text": (f"❓ {d.month}/{d.day} 매출이 평소보다 {updown} — "
-                                 f"그날 한 일이 있으면 기록해두면 나중에 분석에 남아요."),
-                    })
-                    flagged += 1
+                base = mkt_store.weekday_baseline(daily, d)
+                if base:
+                    diff = row["total"] / base - 1
+                    if abs(diff) >= 0.18:
+                        spikes.append((abs(diff), diff, d))
             d += timedelta(days=1)
+        for _, diff, day in sorted(spikes, key=lambda x: -x[0])[:2]:
+            updown = "크게 올랐어요" if diff > 0 else "많이 내렸어요"
+            reminders.append({
+                "kind": "unexplained", "date": str(day),
+                "text": (f"❓ {day.month}/{day.day} 매출이 평소보다 "
+                         f"{abs(diff) * 100:.0f}% {updown} — 그날 한 일이 있으면 "
+                         f"기록해두면 나중에 분석에 남아요."),
+            })
 
     products, _ = _safe(lambda: mkt_store.distinct_products(days=120), [])
 
@@ -245,12 +272,14 @@ def day_detail(day: str) -> dict:
         base = mkt_store.weekday_baseline(daily, d)
         pct = (total / base - 1) if base else None
     channels = [{"channel": ch, "amount": v}
-                for ch, v in sorted(row.items(), key=lambda x: -x[1])
-                if ch not in ("total", "store", "delivery") or ch == "store"]
-    # store 는 row 에 채널로도 있으니 중복 제거
+                for ch, v in sorted(row.items(),
+                                    key=lambda x: -(x[1] if isinstance(x[1], int) else 0))
+                if ch not in ("total", "store", "delivery", "partial")
+                or ch == "store"]
+    # store 는 row 에 채널로도 있으니 중복 제거 (partial 은 플래그라 제외)
     seen, chan_out = set(), []
     for c in channels:
-        if c["channel"] in seen or c["channel"] in ("total", "delivery"):
+        if c["channel"] in seen or c["channel"] in ("total", "delivery", "partial"):
             continue
         seen.add(c["channel"])
         chan_out.append(c)
@@ -285,9 +314,12 @@ def campaign_effect(cid: int) -> dict:
         else date.today()
     fetch_from = start - timedelta(days=56)
     sales = _sales_with_provisional(fetch_from, end)
-    targets = camp.get("target_products") or []
-    prows = mkt_store.product_sales_between(fetch_from, end, targets) \
-        if targets else []
+    # 타겟 유무와 무관하게 상품 매출을 통째로 가져온다 — 타겟이 있으면
+    # 부분일치 매칭에 전체 상품명이 필요하고("버터떡" ↔ "상하이 버터떡 1BOX"),
+    # 없으면 '이 기간 뭐가 팔렸나' TOP 을 보여줘야 하니까(사장님의 유일한
+    # 첫 기록이 정확히 타겟 없는 경우였다, 2026-08-30).
+    prows, _ = _safe(
+        lambda: mkt_store.product_sales_between(fetch_from, end), [])
     last_pos, _ = _safe(mkt_store.last_pos_date, None)
     eff = mkt_store.campaign_effect(camp, sales, prows, last_pos=last_pos)
     # 겹침 경고

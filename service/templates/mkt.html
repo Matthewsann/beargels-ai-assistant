@@ -227,7 +227,8 @@ td{padding:3px 0; border-top:1px solid var(--line)} td:last-child{text-align:rig
          data-camp='{{ c|tojson }}'>
       <div class="top">
         <span class="name">{{ c.title }}</span>
-        {% if c.status == 'live' %}<span class="st live">진행중</span>
+        {% if c.st == 'planned' %}<span class="st ref">예정</span>
+        {% elif c.st == 'live' %}<span class="st live">진행중</span>
         {% else %}<span class="st done">종료</span>{% endif %}
         <span class="period">{{ c.start_date[5:] }} ~ {{ c.end_date[5:] if c.end_date else '' }}</span>
       </div>
@@ -359,7 +360,7 @@ async function mkSave(btn) {
         body: JSON.stringify({
           title, start_date: start, category: mkCat,
           target_products: targets, cost, memo,
-          ...(end ? {end_date: end} : {}),
+          end_date: end || null,   // 비우면 '진행중'으로 되돌린다
         })});
     } else {
       r = await fetch(`/${KEY}/mkt/campaign`, {
@@ -406,7 +407,9 @@ async function mkToggleEffect(id) {
     if (e.short) h += `<span class="st ref">참고용</span> <span class="eff-note">기간 ${e.days}일 — 표본이 짧아 운일 수 있어요</span><br>`;
     if (e.provisional_days >= e.days) {
       // 기간 전체가 장부 미반영 — 0원/▼100% 같은 허수 대신 상태만 안내
-      h += '<p class="eff-note">📂 아직 장부가 반영되기 전이에요 — 이 기간의 매출이 올라오면 자동으로 분석돼요.</p>';
+      h += '<p class="eff-note">📂 아직 이 기간의 장부(포스 매출)가 안 올라왔어요 — '
+        + '월초에 장부가 반영되면 효과가 자동으로 분석돼요. '
+        + '배달 잠정치는 매일 아침 반영됩니다.</p>';
       if (e.memo) h += `<div class="eff-note">메모: ${e.memo}</div>`;
       h += `<div class="row-actions">
         <button type="button" class="btn2" onclick="mkEditOpen(${id})">수정</button>
@@ -416,19 +419,36 @@ async function mkToggleEffect(id) {
       return;
     }
     h += '<div class="eff-grid">';
+    // 사장님이 제일 궁금한 것부터: 이 마케팅으로 얼마 더 벌었나 (증분)
+    if (e.uplift != null)
+      h += `<div class="st1 hero"><div class="k">평소 대비 더 번 돈 (증분)</div>
+        <div class="v"><span class="${e.uplift >= 0 ? 'up' : 'dn'}">${e.uplift >= 0 ? '+' : '−'}${won(Math.abs(e.uplift))}</span> ${pctTxt(e.total.pct)}</div></div>`;
     for (const t of (e.targets || [])) {
       h += `<div class="st1 hero"><div class="k">🎯 ${t.product} 판매</div>
         <div class="v">일 ${t.pre_qty_per_day} → ${t.qty_per_day}개 ${pctTxt(t.qty_pct)}</div></div>`;
     }
-    h += `<div class="st1"><div class="k">기간 총매출</div><div class="v">${won(e.total.actual)} ${pctTxt(e.total.pct)}</div></div>`;
+    h += `<div class="st1"><div class="k">기간 총매출</div><div class="v">${won(e.gross)}</div></div>`;
     h += `<div class="st1"><div class="k">매장</div><div class="v">${won(e.store.actual)} ${pctTxt(e.store.pct)}</div></div>`;
     h += `<div class="st1"><div class="k">배달</div><div class="v">${won(e.delivery.actual)} ${pctTxt(e.delivery.pct)}</div></div>`;
     if (e.cost) h += `<div class="st1"><div class="k">증분 ROAS (비용 ${won(e.cost)})</div>
       <div class="v">${e.roas == null ? '—' : e.roas}</div></div>`;
     h += '</div>';
-    h += `<div class="eff-note">비교: 같은 요일 최근 4주 평균(휴무 제외) 대비 · 기대치 ${won(e.total.expected)}</div>`;
-    if (e.provisional_days > 0)
-      h += `<div class="eff-note">📂 ${e.provisional_days}일은 아직 장부 미반영이라 집계에서 뺐어요.</div>`;
+    // 타겟이 없으면 '이 기간 뭐가 팔렸나'라도 — 다음 캠페인의 타겟 후보가 된다
+    if ((!e.targets || !e.targets.length) && e.top_products && e.top_products.length) {
+      h += '<div class="eff-note" style="margin-top:8px"><b>이 기간 많이 팔린 상품</b> (일평균, 직전 4주 대비)</div><table>';
+      for (const t of e.top_products)
+        h += `<tr><td>${t.product}</td><td>일 ${t.pre_qty_per_day} → ${t.qty_per_day}개 ${pctTxt(t.qty_pct)}</td></tr>`;
+      h += '</table>';
+    }
+    {
+      const cov = e.total.covered_days || 0;
+      let ex = [];
+      if (e.closed_days) ex.push(`휴무 ${e.closed_days}일`);
+      if (e.provisional_days) ex.push(`장부 미반영 ${e.provisional_days}일`);
+      if (e.total.uncovered_days) ex.push(`비교 이력 없음 ${e.total.uncovered_days}일`);
+      h += `<div class="eff-note">±%는 같은 요일 최근 4주 평균과 비교한 값 — 비교 가능한 ${cov}일 기준`
+        + (ex.length ? ` (${ex.join(' · ')} 제외)` : '') + `</div>`;
+    }
     if (e.overlap && e.overlap.length)
       h += `<div class="eff-warn">⚠ 이 기간에 ${e.overlap.map(o => `'${o.title}'`).join(', ')} 도 진행 — 효과가 섞여 있을 수 있어요.</div>`;
     if (e.memo) h += `<div class="eff-note">메모: ${e.memo}</div>`;

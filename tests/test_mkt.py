@@ -141,7 +141,7 @@ def test_campaign_effect_hides_bogus_pct_for_provisional_days():
     assert eff["total"]["pct"] is None           # -1.0 이 아니라 None
     assert eff["total"]["actual"] == 0
     assert eff["total"]["expected"] == 0         # 기대치도 같이 빠져야 함
-    assert eff["uplift"] == 0
+    assert eff["uplift"] is None                 # 비교 자체가 없으면 증분도 없음
 
 
 def test_campaign_effect_partial_provisional_only_counts_ledger_days():
@@ -185,8 +185,165 @@ def test_campaign_effect_target_products():
 # ---------------------------------------------------------------------------
 
 def test_extract_targets_from_title():
-    products = ["버터떡", "두쫀쿠", "플레인 베이글", "아메리카노"]
+    """반환값은 '사장님이 적은 키워드'다 — 상품명 원문이 아니라.
+    (집계는 product_matches 가 키워드↔상품명을 부분일치로 잇는다.)"""
+    products = ["상하이 버터떡 1BOX", "두쫀쿠", "플레인 베이글",
+                "E)아메리카노", "베이글-풀드포크 샌드위치"]
     assert mkt_store.extract_targets("버터떡 인스타 릴스", products) == ["버터떡"]
-    # 공백 무시 부분일치
-    assert mkt_store.extract_targets("플레인베이글 1+1", products) == ["플레인 베이글"]
-    assert mkt_store.extract_targets("가을 신메뉴 홍보", products) == []
+    assert mkt_store.extract_targets("플레인베이글 1+1", products) == ["플레인베이글"]
+    got = mkt_store.extract_targets("풀드포크 샌드위치 릴스 밀기", products)
+    assert got == ["풀드포크 샌드위치"]
+    assert mkt_store.extract_targets("가을 대비 매장 정비", products) == []
+
+
+def test_product_matches_bridges_owner_words_and_pos_names():
+    """'버터떡' ↔ '상하이 버터떡 1BOX' 같은 표기 차이를 넘는다 (실사고:
+    완전일치라 실상품 115종 기준 거의 전부 미스, 타겟 칸이 거짓 0)."""
+    assert mkt_store.product_matches("버터떡", "상하이 버터떡 1BOX")
+    assert mkt_store.product_matches("풀드포크 샌드위치", "베이글-풀드포크 샌드위치")
+    assert mkt_store.product_matches("아메리카노", "E)아메리카노")
+    assert not mkt_store.product_matches("버터떡", "플레인 베이글")
+
+
+def test_partial_day_excluded_from_baseline_and_signal():
+    """매장 장부 없이 배달만 잡힌 날(partial)은 표본도, 신호점도 안 된다.
+    실사고: 2025-12 가 통째로 배달-only 라 2026-01 캘린더가 ▲27개 도배."""
+    rows = []
+    # 4주간 정상(매장+배달 = 120만), 그 다음 주 같은 요일은 배달만(70만)
+    for w in range(4):
+        d = date(2026, 6, 3) + timedelta(days=7 * w)   # 수요일들
+        rows.append({"sale_date": str(d), "channel": "store",
+                     "amount": 500000, "source": "tos"})
+        rows.append({"sale_date": str(d), "channel": "baemin",
+                     "amount": 700000, "source": "tos"})
+    partial_day = date(2026, 7, 1)
+    rows.append({"sale_date": str(partial_day), "channel": "baemin",
+                 "amount": 700000, "source": "baemin_xls"})
+    daily = mkt_store.totals_by_date(rows)
+    assert daily[str(partial_day)]["partial"] is True
+    # partial 날 자신은 신호점 없음 (▼ 허수 방지)
+    assert mkt_store.day_signal(daily, partial_day) == 0
+    # partial 날은 다음 주의 표본에서도 빠진다 (기준선 오염 방지)
+    next_wed = partial_day + timedelta(days=7)
+    assert mkt_store.weekday_baseline(daily, next_wed) == 1200000
+
+
+def test_campaign_effect_like_for_like_with_adhoc_closure():
+    """평소 열던 요일의 임시휴무가 껴도 효과가 깎이지 않는다 (실사고:
+    +20% 캠페인이 +0.0%로, 극단에선 부호 반전)."""
+    rows = []
+    d = date(2026, 6, 1)
+    while d <= date(2026, 7, 31):
+        if d.weekday() != 0 and str(d) != "2026-07-22":   # 7/22(수) 임시휴무
+            amt = 1200000 if "2026-07-21" <= str(d) <= "2026-07-27" else 1000000
+            rows.append({"sale_date": str(d), "channel": "store",
+                         "amount": amt, "source": "tos"})
+        d += timedelta(days=1)
+    camp = {"id": 9, "title": "임시휴무 낀 캠페인", "start_date": "2026-07-21",
+            "end_date": "2026-07-27", "cost": None, "target_products": []}
+    eff = mkt_store.campaign_effect(camp, rows, [], today=date(2026, 8, 5))
+    assert abs(eff["total"]["pct"] - 0.20) < 0.01
+    assert eff["closed_days"] == 2                  # 정기휴무(월) + 임시휴무(수)
+    assert eff["gross"] == eff["total"]["actual"] + 0   # 이 시나리오에선 동일
+
+
+def test_campaign_effect_no_baseline_means_no_uplift():
+    """비교 이력이 전혀 없으면 uplift/ROAS 를 만들지 않는다 (실사고:
+    actual 만 합산돼 '증분 700만원'처럼 보이는 뻥튀기)."""
+    rows = [{"sale_date": str(date(2026, 7, 1) + timedelta(days=i)),
+             "channel": "store", "amount": 1000000, "source": "tos"}
+            for i in range(7)]
+    camp = {"id": 10, "title": "이력 없는 첫 주", "start_date": "2026-07-01",
+            "end_date": "2026-07-07", "cost": 100000, "target_products": []}
+    eff = mkt_store.campaign_effect(camp, rows, [], today=date(2026, 8, 5))
+    assert eff["total"]["pct"] is None
+    assert eff["uplift"] is None
+    assert eff["roas"] is None
+    assert eff["gross"] == 7000000                  # 총액은 그대로 참고용
+
+
+def test_campaign_effect_top_products_when_no_target():
+    """타겟이 없으면 기간 판매 TOP 을 보여준다 — 사장님의 실제 첫 기록이
+    타겟 없는 캠페인이었다."""
+    sales = _make_daily(weeks=9, start=date(2026, 6, 1))
+    prows = []
+    for r in sales:
+        prows.append({"sale_date": r["sale_date"], "product": "상하이 버터떡 1BOX",
+                      "qty": 5, "amount": 25000, "source": "tos"})
+        prows.append({"sale_date": r["sale_date"], "product": "E)아메리카노",
+                      "qty": 10, "amount": 30000, "source": "tos"})
+    camp = {"id": 11, "title": "타겟 없는 기록", "start_date": "2026-07-20",
+            "end_date": "2026-07-26", "cost": None, "target_products": []}
+    eff = mkt_store.campaign_effect(camp, sales, prows, today=date(2026, 8, 5))
+    names = [t["product"] for t in eff["top_products"]]
+    assert "E)아메리카노" in names and "상하이 버터떡 1BOX" in names
+    assert eff["top_products"][0]["product"] == "E)아메리카노"   # 금액순
+
+
+# ---------------------------------------------------------------------------
+# 화면 조립 — 리마인드가 허위로 뜨지 않는가 (DB 는 monkeypatch 로 대체)
+# ---------------------------------------------------------------------------
+
+def _stub_store(monkeypatch, sales, last_pos, camps=()):
+    """mkt_page 가 부르는 DB 함수만 갈아끼운다(순수 계산은 진짜를 그대로 쓴다)."""
+    from service import mkt_page
+    monkeypatch.setattr(mkt_store, "sales_between",
+                        lambda d1, d2: list(sales))
+    monkeypatch.setattr(mkt_store, "last_pos_date", lambda: last_pos)
+    monkeypatch.setattr(mkt_store, "crawler_daily_sales",
+                        lambda d1, d2: [])      # 잠정치는 sales 에 이미 섞어 넣는다
+    monkeypatch.setattr(mkt_store, "campaigns_overlapping",
+                        lambda d1, d2: list(camps))
+    monkeypatch.setattr(mkt_store, "distinct_products", lambda days=120: [])
+    return mkt_page
+
+
+def _ledger_plus_provisional():
+    """장부는 7/31까지 매장+배달, 8월은 배달만(크롤러 잠정치) — 실제 운영 모양."""
+    rows = []
+    d = date(2026, 6, 1)
+    while d <= date(2026, 7, 31):
+        if d.weekday() != 0:                  # 월요일 휴무
+            rows.append({"sale_date": str(d), "channel": "store",
+                         "amount": 500000, "source": "tos"})
+            rows.append({"sale_date": str(d), "channel": "baemin",
+                         "amount": 700000, "source": "tos"})
+        d += timedelta(days=1)
+    d = date(2026, 8, 1)
+    while d <= date(2026, 8, 29):
+        if d.weekday() != 0:
+            rows.append({"sale_date": str(d), "channel": "baemin",
+                         "amount": 700000, "source": "crawler"})
+        d += timedelta(days=1)
+    return rows
+
+
+def test_unexplained_reminder_skips_provisional_days(monkeypatch):
+    """잠정(장부 미반영) 구간은 '매출 급락' 리마인드를 띄우면 안 된다.
+
+    실사고 경로(2026-08-30): 배달 주문 수집을 켜자 8월 총매출이 '배달만'이
+    되는데, 기준선은 매장까지 든 7월 값이라 8월 거의 모든 날이 -40%로 잡혀
+    "❓ 매출이 평소보다 많이 내렸어요"가 매일 떴다. 캘린더 신호점은 이미
+    last_pos 로 게이트돼 있었는데 리마인드만 빠져 있었다.
+    """
+    mkt_page = _stub_store(monkeypatch, _ledger_plus_provisional(),
+                           date(2026, 7, 31))
+    v = mkt_page.build_month_view(2026, 8, today=date(2026, 8, 30))
+    unexplained = [r for r in v["reminders"] if r["kind"] == "unexplained"]
+    assert unexplained == [], f"잠정 구간에 허위 리마인드: {unexplained}"
+
+
+def test_unexplained_reminder_still_fires_on_ledger_days(monkeypatch):
+    """장부가 든 날의 진짜 급등은 여전히 잡아야 한다(게이트가 과하지 않은가)."""
+    rows = _ledger_plus_provisional()
+    spike = "2026-07-29"                      # 수요일, 장부 구간
+    rows = [r for r in rows if r["sale_date"] != spike]
+    rows.append({"sale_date": spike, "channel": "store",
+                 "amount": 500000, "source": "tos"})
+    rows.append({"sale_date": spike, "channel": "baemin",
+                 "amount": 1400000, "source": "tos"})   # 총 1.9M vs 기대 1.2M
+    mkt_page = _stub_store(monkeypatch, rows, date(2026, 7, 31))
+    v = mkt_page.build_month_view(2026, 7, today=date(2026, 8, 30))
+    unexplained = [r for r in v["reminders"] if r["kind"] == "unexplained"]
+    assert any(r["date"] == spike for r in unexplained), \
+        f"장부 구간의 진짜 급등을 놓쳤다: {unexplained}"

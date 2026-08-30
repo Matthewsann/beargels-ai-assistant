@@ -466,6 +466,15 @@ def scan_ledger(force=False) -> dict:
                 mkt_store.log_pos_file(name, mtime, st.st_size, kind="skip")
                 continue
             info = import_file(path)
+            if info["kind"] != "skip" and not info["sales"] and not info["products"]:
+                # 포스 파일로 판별됐는데 매출을 한 줄도 못 읽었다 — '반영 완료'로
+                # 남기면 사장님이 [지금 반영]을 다시 눌러도 영영 안 읽힌다
+                # (2026-08-30 감사). error 로 남겨 다음 스캔에 재시도되게 한다.
+                mkt_store.log_pos_file(
+                    name, mtime, st.st_size, kind=info["kind"],
+                    status="error", note="파싱 결과 0행 — 장부 양식 확인 필요")
+                errors.append(f"{name}: 매출을 한 줄도 못 읽음(양식 변경?)")
+                continue
             mkt_store.log_pos_file(
                 name, mtime, st.st_size, kind=info["kind"],
                 date_from=info.get("from"), date_to=info.get("to"),

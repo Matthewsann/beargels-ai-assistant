@@ -57,7 +57,10 @@ def create_campaign(title, category, start_date, end_date=None,
         "target_products": target_products or None,
         "cost": cost,
         "memo": (memo or "").strip() or None,
-        "status": "done" if end_date else "live",
+        # 종료일이 있어도 미래면 아직 진행중이다 — 가이드가 권하는 "기간을
+        # 미리 적는" 사용법에서 시작 전부터 '종료'로 찍히던 버그(2026-08-30).
+        "status": ("done" if end_date and _d(end_date) < date.today()
+                   else "live"),
     }
     res = get_client().table(CAMPAIGNS).insert(row).execute()
     return res.data[0]["id"] if res.data else None
@@ -67,9 +70,17 @@ def update_campaign(cid, **fields):
     allowed = {"title", "category", "start_date", "end_date",
                "target_products", "cost", "memo", "status"}
     patch = {k: v for k, v in fields.items() if k in allowed}
-    if "end_date" in patch and patch["end_date"]:
-        patch["end_date"] = str(_d(patch["end_date"]))
-        patch.setdefault("status", "done")
+    if "end_date" in patch:
+        if patch["end_date"]:
+            patch["end_date"] = str(_d(patch["end_date"]))
+            # 미래 종료일은 '예정된 끝'이지 종료가 아니다
+            patch.setdefault(
+                "status",
+                "done" if _d(patch["end_date"]) < date.today() else "live")
+        else:
+            # 종료일을 지우면 진행중으로 되돌린다 (수정 모달에서 비운 경우)
+            patch["end_date"] = None
+            patch.setdefault("status", "live")
     if patch:
         get_client().table(CAMPAIGNS).update(patch).eq("id", cid).execute()
 
@@ -103,21 +114,40 @@ def live_campaigns():
 # 매출 (읽기)
 # ---------------------------------------------------------------------------
 
+_PAGE = 1000
+
+
+def _fetch_all(make_query):
+    """PostgREST 는 요청 limit 과 무관하게 **서버가 1000행에서 자른다** —
+    실측(2026-08-30): 5~7월 상품 매출 7,015행을 limit(50000)으로 요청해도
+    앞 1,000행(5/1~5/14)만 왔고, 그 부분값으로 캠페인 효과가 계산되고
+    있었다. range 페이지네이션으로 끝까지 받는다."""
+    out, off = [], 0
+    while True:
+        rows = (make_query().range(off, off + _PAGE - 1).execute().data) or []
+        out.extend(rows)
+        if len(rows) < _PAGE:
+            return out
+        off += _PAGE
+
+
 def sales_between(d1, d2):
     """[d1,d2] sales_daily 원본 행들."""
-    res = (get_client().table(SALES).select("sale_date,channel,amount,orders_count,source")
-           .gte("sale_date", str(_d(d1))).lte("sale_date", str(_d(d2)))
-           .limit(20000).execute())
-    return res.data or []
+    return _fetch_all(lambda: (
+        get_client().table(SALES)
+        .select("sale_date,channel,amount,orders_count,source")
+        .gte("sale_date", str(_d(d1))).lte("sale_date", str(_d(d2)))
+        .order("sale_date")))
 
 
 def product_sales_between(d1, d2, products=None):
-    q = (get_client().table(PRODUCTS)
-         .select("sale_date,product,qty,amount,source")
-         .gte("sale_date", str(_d(d1))).lte("sale_date", str(_d(d2))))
-    if products:
-        q = q.in_("product", list(products))
-    return q.limit(50000).execute().data or []
+    def q():
+        base = (get_client().table(PRODUCTS)
+                .select("sale_date,product,qty,amount,source")
+                .gte("sale_date", str(_d(d1))).lte("sale_date", str(_d(d2)))
+                .order("sale_date"))
+        return base.in_("product", list(products)) if products else base
+    return _fetch_all(q)
 
 
 def last_pos_date():
@@ -131,21 +161,23 @@ def last_pos_date():
 def distinct_products(days=180):
     """최근 N일 판매된 상품명 목록 (타겟 자동 인식·자동완성용)."""
     since = str(date.today() - timedelta(days=days))
-    res = (get_client().table(PRODUCTS).select("product,qty")
-           .gte("sale_date", since).limit(50000).execute())
+    rows = _fetch_all(lambda: (
+        get_client().table(PRODUCTS).select("product,qty")
+        .gte("sale_date", since).order("sale_date")))
     agg = defaultdict(int)
-    for r in (res.data or []):
+    for r in rows:
         agg[r["product"]] += r.get("qty") or 0
     return [p for p, _ in sorted(agg.items(), key=lambda x: -x[1])]
 
 
 def crawler_daily_sales(d1, d2):
     """orders(크롤러) 기반 일별 채널 매출 — 장부 미반영 기간의 잠정치."""
-    res = (get_client().table("orders").select("ordered_date,platform,price")
-           .gte("ordered_date", str(_d(d1))).lte("ordered_date", str(_d(d2)))
-           .limit(20000).execute())
+    rows = _fetch_all(lambda: (
+        get_client().table("orders").select("ordered_date,platform,price")
+        .gte("ordered_date", str(_d(d1))).lte("ordered_date", str(_d(d2)))
+        .order("ordered_date")))
     agg = defaultdict(lambda: [0, 0])   # (date, platform) -> [amount, count]
-    for r in (res.data or []):
+    for r in rows:
         if not r.get("ordered_date"):
             continue
         key = (r["ordered_date"], r.get("platform") or "etc")
@@ -250,28 +282,39 @@ def totals_by_date(sales_rows):
                                if _SOURCE_RANK.get(s, 0) == best)
         total = sum(flat.values())
         delivery = sum(v for c, v in flat.items() if c in _DELIVERY_CHANNELS)
+        # partial: 배달만 잡히고 매장이 0인 날 — 장부(매장 포스)가 빠진 날이다.
+        # (이 가게는 휴무면 배달도 같이 쉬므로 '매장만 휴무'와 혼동은 없다.)
+        # 2025-12 가 통째로 이랬는데, 이 부분값 날들이 요일 평균 표본에 들어가
+        # 2026-01 캘린더가 ▲ 27개로 도배됐다(2026-08-30 실측). 비교 계산은
+        # 이 플래그가 선 날을 표본·집계 양쪽에서 빼야 한다.
         out[d] = {"total": total, "store": flat.get("store", 0),
-                  "delivery": delivery, **flat}
+                  "delivery": delivery,
+                  "partial": flat.get("store", 0) == 0 and delivery > 0,
+                  **flat}
     return out
 
 
 def weekday_baseline(daily_totals, target_day, weeks=4, key="total"):
-    """target_day 와 같은 요일의 직전 `weeks`주 평균 (0원=휴무 제외).
-    daily_totals: totals_by_date() 결과. target_day: date."""
+    """target_day 와 같은 요일의 직전 `weeks`주 평균.
+    표본 자격: 매출 > 0 이고, 부분 데이터(partial — 매장 장부 없이 배달만
+    잡힌 날)가 아닐 것. daily_totals: totals_by_date() 결과."""
     target_day = _d(target_day)
     vals = []
     for w in range(1, weeks + 1):
         d = target_day - timedelta(days=7 * w)
-        v = (daily_totals.get(str(d)) or {}).get(key, 0)
-        if v > 0:
+        row = daily_totals.get(str(d)) or {}
+        v = row.get(key, 0)
+        if v > 0 and not row.get("partial"):
             vals.append(v)
     return (sum(vals) / len(vals)) if vals else None
 
 
 def day_signal(daily_totals, day, threshold=0.10):
-    """그날 총매출이 요일 평균 대비 ±threshold 이상이면 +1/-1, 아니면 0."""
-    v = (daily_totals.get(str(_d(day))) or {}).get("total", 0)
-    if v <= 0:
+    """그날 총매출이 요일 평균 대비 ±threshold 이상이면 +1/-1, 아니면 0.
+    당일이 부분 데이터(partial)면 비교 자체가 무의미하므로 0."""
+    row = daily_totals.get(str(_d(day))) or {}
+    v = row.get("total", 0)
+    if v <= 0 or row.get("partial"):
         return 0
     base = weekday_baseline(daily_totals, day)
     if not base:
@@ -290,13 +333,19 @@ def _period_days(start, end):
 
 
 def campaign_effect(camp, sales_rows, product_rows, today=None, last_pos=None):
-    """캠페인 효과 요약 (요일 보정).
+    """캠페인 효과 요약 (요일 보정, like-for-like).
 
     sales_rows / product_rows 는 [시작-56일, 종료] 범위를 담아 호출한다.
-    last_pos: 장부(TOS/IMU)가 반영된 마지막 날짜. 그 이후 날짜는 배달
-    잠정치뿐이라 '매출 0 → ▼100%' 같은 허수가 나온다(2026-08-27 발견) —
-    실제/기대 양쪽 집계에서 통째로 뺀다(day_signal/day_detail과 같은 원칙).
-    반환: dict(기간, 실제/기대 매출, 채널, 타겟 상품, 증분, ROAS, 주의 플래그)
+    last_pos: 장부(TOS/IMU)가 반영된 마지막 날짜.
+
+    비교 원칙 — **비교할 수 없는 날은 실제·기대 양쪽에서 통째로 뺀다**:
+      · 장부 미반영(잠정) 날            → '매출 0 ▼100%' 허수 (2026-08-27)
+      · 휴무/매출 0/부분 데이터 날      → 기대치만 청구돼 효과가 깎임·부호 반전
+      · 요일 기준선이 없는 날           → 실제만 더해져 ▲166% 뻥튀기 (2026-08-30)
+    그래서 pct 는 '비교 가능한 날(covered_days)'끼리의 정직한 비율이고,
+    gross 가 기간 전체 실제 매출 합(참고용)이다.
+    반환: dict(기간, gross, 채널별 actual/expected/pct/covered_days,
+              uplift, roas, targets, top_products, 제외 일수 카운트)
     """
     today = _d(today or date.today())
     start = _d(camp["start_date"])
@@ -311,84 +360,164 @@ def campaign_effect(camp, sales_rows, product_rows, today=None, last_pos=None):
 
     daily = totals_by_date(sales_rows)
 
+    def comparable(d):
+        """이날을 비교 집합에 넣어도 되나 — 휴무·부분 데이터 제외."""
+        row = daily.get(str(d))
+        return (row is not None and row.get("total", 0) > 0
+                and not row.get("partial"))
+
+    closed_days = sum(1 for d in ledger_days if not comparable(d))
+
     def sum_actual_expected(key):
         actual = expected = 0
-        covered = 0
+        covered = uncovered = 0
         for d in ledger_days:
-            row = daily.get(str(d))
-            v = (row or {}).get(key, 0)
+            if not comparable(d):
+                continue
+            v = daily[str(d)].get(key, 0)
             base = weekday_baseline(daily, d, key=key)
-            if row is None and base is None:
+            if not base:
+                uncovered += 1      # 이력이 없어 비교 불가 — 양쪽 제외
                 continue
             actual += v
-            if base:
-                expected += base
-                covered += 1
-        return actual, expected, covered
+            expected += base
+            covered += 1
+        return actual, expected, covered, uncovered
 
     out = {"id": camp["id"], "title": camp["title"],
            "start": str(start), "end": str(end), "days": n_days,
            "short": n_days < 7,
-           "provisional_days": n_days - len(ledger_days)}
+           "provisional_days": n_days - len(ledger_days),
+           "closed_days": closed_days,
+           # 기간 전체 실제 매출 합 (비교 여부와 무관 — '총 얼마 팔았나')
+           "gross": sum((daily.get(str(d)) or {}).get("total", 0)
+                        for d in ledger_days)}
 
     for key, name in (("total", "total"), ("store", "store"),
                       ("delivery", "delivery")):
-        actual, expected, covered = sum_actual_expected(key)
+        actual, expected, covered, uncovered = sum_actual_expected(key)
         pct = (actual / expected - 1) if expected else None
         out[name] = {"actual": actual, "expected": round(expected),
-                     "pct": pct, "covered_days": covered}
+                     "pct": pct, "covered_days": covered,
+                     "uncovered_days": uncovered}
 
-    # 증분 ROAS (총매출 기준)
+    # 증분 매출/ROAS — 비교 가능한 날 기준(정직한 값)
     cost = camp.get("cost") or 0
     uplift = out["total"]["actual"] - out["total"]["expected"]
-    out["uplift"] = uplift
-    out["roas"] = round(uplift / cost, 1) if cost > 0 else None
+    out["uplift"] = uplift if out["total"]["expected"] else None
+    out["roas"] = (round(uplift / cost, 1)
+                   if cost > 0 and out["total"]["expected"] else None)
 
-    # 타겟 상품 — 기간 일평균 vs 직전 4주 일평균 (0판매일 포함, 휴무 제외,
-    # 잠정 구간 제외 — 크롤러엔 상품별 데이터가 없어 평균이 희석된다)
-    targets = camp.get("target_products") or []
-    out["targets"] = []
-    if targets:
-        open_days = {str(d) for d in ledger_days
-                     if (daily.get(str(d)) or {}).get("total", 0) > 0}
-        pre_start, pre_end = start - timedelta(days=28), start - timedelta(days=1)
-        pre_open = {str(d) for d in _period_days(pre_start, pre_end)
-                    if (last_pos is None or d <= last_pos)
-                    and (daily.get(str(d)) or {}).get("total", 0) > 0}
-        agg = defaultdict(lambda: [0, 0, 0, 0])   # product -> [qty, amt, pre_qty, pre_amt]
+    # ---- 상품 효과 --------------------------------------------------------
+    # 분모는 '상품 데이터가 실제로 있는 날'만 — product_sales_daily 는 포스
+    # 장부에서만 오므로, 매출 총액이 있어도 상품 행이 없는 날(크롤러 잠정 등)
+    # 을 분모에 넣으면 일평균이 희석돼 ▲118% 같은 허수가 난다(2026-08-30).
+    product_days = {str(r["sale_date"])[:10] for r in product_rows}
+    open_days = {str(d) for d in ledger_days if comparable(d)} & product_days
+    pre_start, pre_end = start - timedelta(days=28), start - timedelta(days=1)
+    pre_open = {str(d) for d in _period_days(pre_start, pre_end)
+                if (last_pos is None or d <= last_pos) and comparable(d)
+                } & product_days
+
+    def per_day_stats(match_fn, label):
+        qty = amt = pre_qty = pre_amt = 0
         for r in product_rows:
-            p = r["product"]
-            if p not in targets:
+            if not match_fn(r["product"]):
                 continue
             d = str(r["sale_date"])[:10]
             if d in open_days:
-                agg[p][0] += r.get("qty") or 0
-                agg[p][1] += r.get("amount") or 0
+                qty += r.get("qty") or 0
+                amt += r.get("amount") or 0
             elif d in pre_open:
-                agg[p][2] += r.get("qty") or 0
-                agg[p][3] += r.get("amount") or 0
-        for p in targets:
-            qty, amt, pre_qty, pre_amt = agg.get(p, [0, 0, 0, 0])
-            n1, n0 = max(len(open_days), 1), max(len(pre_open), 1)
-            avg, pre_avg = qty / n1, pre_qty / n0
-            out["targets"].append({
-                "product": p,
-                "qty": qty, "amount": amt,
+                pre_qty += r.get("qty") or 0
+                pre_amt += r.get("amount") or 0
+        n1, n0 = max(len(open_days), 1), max(len(pre_open), 1)
+        avg, pre_avg = qty / n1, pre_qty / n0
+        return {"product": label, "qty": qty, "amount": amt,
                 "qty_per_day": round(avg, 1),
                 "pre_qty_per_day": round(pre_avg, 1),
-                "qty_pct": (avg / pre_avg - 1) if pre_avg else None,
-            })
+                "qty_pct": (avg / pre_avg - 1) if pre_avg else None}
+
+    targets = camp.get("target_products") or []
+    out["targets"] = [
+        per_day_stats(lambda p, t=t: product_matches(t, p), t)
+        for t in targets
+    ] if targets else []
+
+    # 타겟이 없어도 '이 기간 뭐가 팔렸나'는 보여준다 — 기간 판매 TOP (금액순)
+    out["top_products"] = []
+    if not targets and product_rows and open_days:
+        by_amt = defaultdict(int)
+        for r in product_rows:
+            if str(r["sale_date"])[:10] in open_days:
+                by_amt[r["product"]] += r.get("amount") or 0
+        top5 = sorted(by_amt, key=lambda p: -by_amt[p])[:5]
+        out["top_products"] = [
+            per_day_stats(lambda p, name=name: p == name, name)
+            for name in top5
+        ]
     return out
 
 
-def extract_targets(title, product_names):
-    """제목에서 상품명 자동 인식 — 긴 이름 우선, 공백 무시 부분일치."""
-    norm_title = re.sub(r"\s+", "", title or "")
-    hits = []
-    for p in sorted(product_names, key=len, reverse=True):
-        np = re.sub(r"\s+", "", p)
-        if len(np) >= 2 and np in norm_title:
-            if not any(re.sub(r"\s+", "", h) in np or np in re.sub(r"\s+", "", h)
-                       for h in hits):
-                hits.append(p)
-    return hits[:3]
+# ---------------------------------------------------------------------------
+# 상품명 매칭 — 사장님 언어("버터떡")와 포스 상품명("상하이 버터떡 1BOX")을 잇는다
+# ---------------------------------------------------------------------------
+
+# 포스 상품명에 붙는 포장/옵션 장식 — 매칭 전에 걷어낸다
+_DECOR_RE = re.compile(
+    r"\[[^\]]*\]"                 # [SET], [Original] ...
+    r"|\([^)]*\)"                 # (1인), (기본), (500ml) ...
+    r"|\b\d+(BOX|L|ml|g|개입|인분|인)\b"
+    r"|^E\)"                      # E)아메리카노
+    , re.IGNORECASE)
+
+
+def _norm_product(name):
+    s = _DECOR_RE.sub("", str(name or ""))
+    return re.sub(r"[\s\-·+_/,.!?]", "", s).lower()
+
+
+def product_matches(keyword, product_name):
+    """타겟 키워드가 이 상품을 가리키나 — 정규화 후 양방향 부분일치.
+
+    '버터떡' ↔ '상하이 버터떡 1BOX', '풀드포크 샌드위치' ↔
+    '베이글-풀드포크 샌드위치' 처럼 사장님이 적는 말과 포스 표기가 달라도
+    잡힌다. (기존 완전일치는 실상품명 115종 기준 거의 전부 미스였다.)
+    """
+    k, p = _norm_product(keyword), _norm_product(product_name)
+    if len(k) < 2 or len(p) < 2:
+        return False
+    return k in p or p in k
+
+
+def extract_targets(title, product_names, max_products_per_kw=20):
+    """제목에서 타겟 키워드 자동 인식.
+
+    제목의 연속 낱말 묶음(긴 것 우선)이 실제 상품명 어느 것에든 걸리면
+    그 묶음을 키워드로 삼는다. 단, 걸리는 상품이 너무 많은 낱말('베이글'
+    한 단어 등)은 타겟이라 보기 어려워 버린다.
+    """
+    words = [w for w in re.split(r"\s+", str(title or "").strip()) if w]
+    if not words or not product_names:
+        return []
+    hits, used = [], set()
+    # 3→2→1 어절 묶음, 긴 것 우선 — "베이글 산도"가 "베이글"보다 먼저 잡힌다
+    for size in (3, 2, 1):
+        for i in range(len(words) - size + 1):
+            span = set(range(i, i + size))
+            if span & used:
+                continue
+            kw = " ".join(words[i:i + size])
+            nk = _norm_product(kw)
+            if len(nk) < 2:
+                continue
+            # 여기서는 '키워드가 상품명 안에 등장' 방향만 본다 — 양방향으로
+            # 하면 "버터떡 인스타 릴스" 전체가 (상품명 '버터떡'을 품는다는
+            # 이유로) 키워드가 돼버린다. 집계 쪽(product_matches)은 양방향.
+            n = sum(1 for p in product_names if nk in _norm_product(p))
+            if 1 <= n <= max_products_per_kw:
+                hits.append(kw)
+                used |= span
+                if len(hits) >= 3:
+                    return hits
+    return hits
