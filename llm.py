@@ -211,8 +211,52 @@ _THINKING_CONFIGS = (
 )
 
 
+def gemini_keys() -> list[tuple[str, str]]:
+    """쓸 수 있는 제미나이 무료 키를 순서대로 [(환경변수 이름, 키), ...].
+
+    무료 한도(특히 상위 flash-latest 는 하루 20건 남짓)는 **키마다 따로**
+    잡힌다 — 키를 하나 더 만들면(무료, 카드 불필요) 한도가 두 배가 된다.
+    유료에 의지하지 않고 품질을 지키는 가장 싼 길이라(사장님 지시 2026-08-30:
+    유지비 최소화), .env 에 GEMINI_API_KEY_2, _3 … 을 이어 붙이면 429 때
+    자동으로 다음 키로 넘어간다. 클로드 키 로테이션과 같은 방식.
+    """
+    out, seen = [], set()
+    names = ["GEMINI_API_KEY"] + [f"GEMINI_API_KEY_{i}" for i in range(2, 10)]
+    for name in names:
+        k = _key(name)
+        if k and k not in seen:
+            seen.add(k)
+            out.append((name, k))
+    return out
+
+
 def _call_gemini(system: str, user: str, max_tokens: int, model: str | None = None,
                  images: list | None = None) -> str:
+    """키가 여럿이면 한도가 남은 키를 찾아 쓴다 — 전부 마르면 429 를 올린다."""
+    keys = gemini_keys()
+    if not keys:
+        raise NoProviderError("제미나이 키가 없습니다(.env GEMINI_API_KEY).")
+    last = None
+    for env_name, api_key in keys:
+        if _cooling("gemini-key", (model or GEMINI_MODEL, env_name)):
+            continue                    # 이 키는 방금 이 모델 한도가 마른 걸 확인
+        try:
+            return _gemini_once(api_key, system, user, max_tokens, model, images)
+        except Exception as e:  # noqa: BLE001
+            last = e
+            if "한도 소진(429)" in str(e):
+                _cool_down("gemini-key", (model or GEMINI_MODEL, env_name))
+                nxt = ("다음 키로" if env_name != keys[-1][0]
+                       else "남은 키 없음 — 사다리로")
+                logger.warning("제미나이 %s 한도 소진(%s) → %s",
+                               env_name, model or GEMINI_MODEL, nxt)
+                continue
+            raise                        # 그 밖의 오류는 키를 바꿔도 마찬가지다
+    raise last
+
+
+def _gemini_once(api_key: str, system: str, user: str, max_tokens: int,
+                 model: str | None = None, images: list | None = None) -> str:
     model = model or GEMINI_MODEL
     parts = [{"inline_data": {"mime_type": mime,
                               "data": base64.b64encode(raw).decode()}}
@@ -231,7 +275,7 @@ def _call_gemini(system: str, user: str, max_tokens: int, model: str | None = No
             body["system_instruction"] = {"parts": [{"text": system}]}
         resp = requests.post(
             GEMINI_URL.format(model=model),
-            params={"key": _key("GEMINI_API_KEY")},
+            params={"key": api_key},
             json=body, timeout=120,
         )
         if resp.status_code != 400:
@@ -325,7 +369,8 @@ def _cool_down(name: str, model: str | None) -> None:
 
 def complete(system: str = "", user: str = "", max_tokens: int = 1500,
              model: str | None = None, images: list | None = None,
-             prefer: str | None = None, only: tuple[str, ...] | None = None) -> str:
+             prefer: str | None = None, only: tuple[str, ...] | None = None,
+             quality: bool = False) -> str:
     """AI 에게 물어 답 텍스트를 받는다. 공급자는 자동 선택 · 실패 시 다음 것으로 넘어간다.
 
     model: 이번 호출에만 쓸 Claude 모델(없으면 CLAUDE_MODEL). 불만 리뷰처럼
@@ -340,8 +385,21 @@ def complete(system: str = "", user: str = "", max_tokens: int = 1500,
           않고 그대로 실패한다**. 회의 AI 정리처럼 "무료가 아니면 아예 안 쓴다"가
           확정된 기능에 쓴다(사장님 지시 2026-08-30). only=("gemini",) 로 부르면
           유료 클로드는 절대 두드리지 않는다 — prefer 와 달리 새는 구멍이 없다.
+    quality: True = **손님에게 나가는 글**(리뷰 답글). 좋은 무료 모델부터,
+          마르면 사장님이 정한 사다리대로(무료상위→클로드→무료하위).
+          False(기본) = 내부용 대량 작업(블로그·회의·소개글). **무료 하위
+          모델부터** 쓰고 유료는 아예 안 두드린다 — 상위 무료의 하루 한도
+          (~20건)를 답글 몫으로 아껴 두기 위해서다. 예전엔 블로그가 아침에
+          상위 한도를 먼저 태워, 정작 답글이 무딘 하위 모델로 밀렸다
+          (2026-08-30, 초안 무수정률 85%→13% 붕괴의 배경. 사장님 지시:
+          유료에 의지하지 말고 유지비 최소화로 목적 달성).
     """
     steps = available_steps()
+    if not quality:
+        # 대량 작업: 하위 무료 먼저, 상위 무료는 예비, 유료는 제외.
+        gem = [s for s in steps if s[0] == "gemini"]
+        steps = (sorted(gem, key=lambda s: 0 if s[1] == GEMINI_FALLBACK_MODEL
+                        else 1) or steps)   # 제미나이 키가 없으면 원래대로
     if only:
         steps = [s for s in steps if s[0] in only]
     if prefer:

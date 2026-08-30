@@ -35,8 +35,8 @@ def test_auth_dead_provider_is_skipped(monkeypatch):
 
     _providers(monkeypatch, ["claude", "gemini"])
     monkeypatch.setattr(llm, "_CALLERS", {"claude": bad, "gemini": good})
-    assert llm.complete(user="안녕") == "답글"
-    assert llm.complete(user="안녕") == "답글"
+    assert llm.complete(user="안녕", quality=True) == "답글"
+    assert llm.complete(user="안녕", quality=True) == "답글"
     assert calls["claude"] == 1        # 401 확인 후엔 다시 두드리지 않는다
     assert calls["gemini"] == 2
 
@@ -52,7 +52,7 @@ def test_transient_error_retried_once(monkeypatch):
 
     _providers(monkeypatch, ["gemini"])
     monkeypatch.setattr(llm, "_CALLERS", {"gemini": flaky})
-    assert llm.complete(user="안녕") == "답글"
+    assert llm.complete(user="안녕", quality=True) == "답글"
     assert calls["n"] == 2
 
 
@@ -63,7 +63,7 @@ def test_hard_error_raises(monkeypatch):
     _providers(monkeypatch, ["gemini"])
     monkeypatch.setattr(llm, "_CALLERS", {"gemini": broken})
     with pytest.raises(RuntimeError):
-        llm.complete(user="안녕")
+        llm.complete(user="안녕", quality=True)
 
 
 # --- 우선순위 사다리 (사장님 지시 2026-08-27) -----------------------------
@@ -95,7 +95,7 @@ def test_free_quota_falls_to_claude_not_to_the_weak_model(monkeypatch):
 
     _providers(monkeypatch, ["gemini", "claude"])
     monkeypatch.setattr(llm, "_CALLERS", {"gemini": gemini, "claude": claude})
-    assert llm.complete(user="안녕") == "답글"
+    assert llm.complete(user="안녕", quality=True) == "답글"
     assert seen[0] == ("gemini", llm.GEMINI_MODEL)
     assert seen[1][0] == "claude", "한도가 나면 클로드 차례여야 한다"
 
@@ -115,7 +115,7 @@ def test_weak_free_model_is_the_last_resort(monkeypatch):
 
     _providers(monkeypatch, ["gemini", "claude"])
     monkeypatch.setattr(llm, "_CALLERS", {"gemini": gemini, "claude": claude})
-    assert llm.complete(user="안녕") == "답글"
+    assert llm.complete(user="안녕", quality=True) == "답글"
     assert seen == [llm.GEMINI_MODEL, llm.GEMINI_FALLBACK_MODEL]
 
 
@@ -133,8 +133,8 @@ def test_blocked_step_is_skipped_for_a_while(monkeypatch):
 
     _providers(monkeypatch, ["gemini", "claude"])
     monkeypatch.setattr(llm, "_CALLERS", {"gemini": gemini, "claude": claude})
-    llm.complete(user="안녕")
-    llm.complete(user="안녕")
+    llm.complete(user="안녕", quality=True)
+    llm.complete(user="안녕", quality=True)
     assert calls["claude"] == 2
     # 첫 호출에서 상위·하위 무료가 각각 한 번씩 막혔고, 두 번째 호출에선 건너뛴다
     assert calls["gemini"] == 1, "막힌 단계를 매번 다시 두드리면 안 된다"
@@ -254,3 +254,82 @@ def test_only_with_no_matching_provider_raises_no_provider_error(monkeypatch):
     _providers(monkeypatch, ["claude"])       # 클로드만 있고 제미나이는 없음
     with pytest.raises(llm.NoProviderError):
         llm.complete(user="회의 내용", only=("gemini",))
+
+
+# --- 무료 한도 배분 (사장님 지시 2026-08-30: 유료에 의지 X, 유지비 최소) ----
+# 상위 무료(flash-latest, 하루 ~20건)는 손님에게 나가는 **답글 몫**으로 아껴
+# 두고, 내부용(블로그·회의·소개글)은 하위 무료부터 + 유료 제외.
+
+def test_bulk_default_goes_lite_first_and_never_pays(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "g")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "a")
+    used = []
+
+    def gemini(system, user, max_tokens, model=None, images=None):
+        used.append(("gemini", model))
+        return "결과"
+
+    def claude(*a, **k):
+        raise AssertionError("내부용 작업이 유료 클로드를 두드렸다")
+
+    monkeypatch.setattr(llm, "_CALLERS", {"gemini": gemini, "claude": claude})
+    assert llm.complete(user="블로그 글감") == "결과"
+    assert used[0] == ("gemini", llm.GEMINI_FALLBACK_MODEL), "하위 무료부터"
+
+
+def test_quality_path_keeps_the_owner_ladder(monkeypatch):
+    """답글(quality=True)은 사장님이 정한 사다리 그대로 — 상위 무료부터."""
+    monkeypatch.setenv("LLM_PROVIDER", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "g")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "a")
+    used = []
+
+    def gemini(system, user, max_tokens, model=None, images=None):
+        used.append(("gemini", model))
+        return "답글"
+
+    monkeypatch.setattr(llm, "_CALLERS", {"gemini": gemini, "claude": lambda *a, **k: "x"})
+    assert llm.complete(user="답글", quality=True) == "답글"
+    assert used[0] == ("gemini", llm.GEMINI_MODEL), "상위 무료부터"
+
+
+def test_reply_generation_declares_itself_quality():
+    """답글 생성 경로가 quality=True 를 쓰는지 — 안 쓰면 예약이 무너진다."""
+    import inspect
+
+    import assistant.beargels as B
+    assert "quality=True" in inspect.getsource(B._ask_claude)
+
+
+def test_gemini_keys_rotate_on_quota(monkeypatch):
+    """키가 여럿이면 한도 마른 키를 건너뛰고 다음 키로 — 무료 한도 ×N."""
+    monkeypatch.setenv("GEMINI_API_KEY", "k1")
+    monkeypatch.setenv("GEMINI_API_KEY_2", "k2")
+    used = []
+
+    def once(api_key, *a, **k):
+        used.append(api_key)
+        if api_key == "k1":
+            raise RuntimeError("Gemini gemini-flash-latest 무료 한도 소진(429): x")
+        return "답글"
+
+    monkeypatch.setattr(llm, "_gemini_once", once)
+    assert llm._call_gemini("", "안녕", 100) == "답글"
+    assert used == ["k1", "k2"]
+    # 마른 키는 잠시 건너뛴다
+    used.clear()
+    assert llm._call_gemini("", "안녕", 100) == "답글"
+    assert used == ["k2"]
+
+
+def test_gemini_all_keys_dry_raises_for_the_ladder(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "k1")
+    monkeypatch.setenv("GEMINI_API_KEY_2", "")
+
+    def once(api_key, *a, **k):
+        raise RuntimeError("Gemini gemini-flash-latest 무료 한도 소진(429): x")
+
+    monkeypatch.setattr(llm, "_gemini_once", once)
+    with pytest.raises(RuntimeError):
+        llm._call_gemini("", "안녕", 100)

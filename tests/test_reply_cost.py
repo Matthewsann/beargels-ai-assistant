@@ -28,7 +28,7 @@ def _capture(monkeypatch, review, reply="좋은 답글입니다. " * 40):
     """generate_review_reply 를 돌리되 AI 는 부르지 않고 프롬프트만 모은다."""
     seen = []
 
-    def fake(system="", user="", max_tokens=1500, model=None, images=None):
+    def fake(system="", user="", max_tokens=1500, model=None, images=None, **kw):
         seen.append({"system": system, "user": user})
         return reply
 

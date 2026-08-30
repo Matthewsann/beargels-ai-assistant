@@ -444,7 +444,11 @@ def _ask_claude(system, user, max_tokens=1500, model=None):
     import llm
 
     try:
+        # quality=True — 손님에게 나가는 글이라 좋은 무료 모델(flash-latest)
+        # 부터 쓴다. 내부용(블로그 등)은 기본값(하위 무료부터)이라, 상위
+        # 무료의 하루 한도가 답글 몫으로 남는다(2026-08-30).
         return llm.complete(system=system, user=user, max_tokens=max_tokens,
+                            quality=True,
                             model=model).strip()
     except Exception as e:  # noqa: BLE001
         logger.warning("AI 호출 실패: %s", str(e)[:200])
