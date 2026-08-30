@@ -10,6 +10,18 @@
       "port": 5050
     },
     {
+      "name": "insta-pipeline",
+      "runtimeExecutable": "C:\\Users\\명구\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+      "runtimeArgs": [
+        "C:\\Users\\명구\\Claude\\beargels-ai-assistant\\run_web.py"
+      ],
+      "port": 8000,
+      "env": {
+        "PYTHONUTF8": "1",
+        "PIPELINE_HOST": "127.0.0.1"
+      }
+    },
+    {
       "name": "staff-service",
       "runtimeExecutable": "C:\\Users\\명구\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "runtimeArgs": [

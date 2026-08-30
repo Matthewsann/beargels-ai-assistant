@@ -50,6 +50,24 @@
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .section{margin-top:26px}
 
+  /* 샷 구성표 (기획안 = 편집 명세) */
+  .shots{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+  .shot{display:flex;gap:10px;align-items:center;background:var(--surface-2);
+    border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 10px;flex-wrap:wrap}
+  .shot img{width:52px;height:92px;object-fit:cover;border-radius:8px;background:var(--line);flex:0 0 auto}
+  .shot .role{font-size:.72rem;font-weight:800;color:var(--crust-ink);width:52px;text-align:center;flex:0 0 auto}
+  .shot .body{flex:1;min-width:150px}
+  .shot .clipname{font-size:.72rem;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+  .shot input[type=text]{width:100%;border:1px solid var(--line);background:var(--surface);color:var(--ink);
+    border-radius:8px;padding:6px 9px;font-size:.85rem;font-family:inherit;margin-top:4px}
+  .shot input[type=number]{width:62px;border:1px solid var(--line);background:var(--surface);color:var(--ink);
+    border-radius:8px;padding:5px 6px;font-size:.8rem;font-family:inherit}
+  .shot .nums{display:flex;gap:5px;align-items:center;font-size:.72rem;color:var(--ink-soft);flex:0 0 auto}
+  .shot .ops{display:flex;gap:4px;flex:0 0 auto}
+  .shot .ops button{border:1px solid var(--line);background:var(--surface);color:var(--ink);
+    border-radius:7px;padding:4px 8px;font-size:.78rem}
+  .shot .ops button:hover{border-color:var(--crust);color:var(--crust-ink)}
+
   /* project cards */
   .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:13px;margin-top:14px}
   .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:15px;
@@ -141,6 +159,14 @@
     <p class="muted" style="font-size:.82rem;margin-top:10px">반나절에 몰아서 찍고(배치 촬영), 요일별로 나눠 발행하는 게 물량의 비결이에요. 성과를 기록할수록 AI 계획이 똑똑해져요.</p>
   </div>
 
+  <!-- 소재 창고 — 폰에서 드라이브 폴더에 올리면 여기 뜬다 -->
+  <div class="section" id="sourceSec" style="display:none">
+    <div class="eyebrow">소재 창고 · 드라이브 "원본소재"</div>
+    <h2>폰에서 올린 촬영본 <span class="muted" style="font-weight:600;font-size:.85rem">— 폴더가 곧 릴스 주제예요</span></h2>
+    <div id="source" class="cards"></div>
+    <p class="muted" style="font-size:.82rem;margin-top:10px">폰 갤러리 → 공유 → 드라이브 → <b>원본소재/(주제)</b> 폴더에 올리면 여기 자동으로 떠요. 새 주제는 드라이브에서 폴더만 만들면 됩니다.</p>
+  </div>
+
   <!-- 진행 중 프로젝트 -->
   <div class="section">
     <div class="eyebrow">작업 중</div>
@@ -196,8 +222,38 @@ async function api(url, opts){ const r=await fetch(url,opts); if(!r.ok){ let m=r
 // ── 초기 로드 ──
 async function init(){
   const t = await api("/api/topics"); TOPICS = t.topics; renderTopics();
-  await loadProjects();
+  await loadProjects(); await loadSource();
   await loadPlan(); await loadQueue(); await loadReview();
+  // 폴더에 올린 게 자동으로 뜨게 — 새로고침 없이 15초마다 확인
+  setInterval(async()=>{ try{ await loadSource(); await loadProjects(); }catch(e){} }, 15000);
+}
+
+// ═══ 소재 창고 — "폴더에 올리면 시작된다" ═══
+async function loadSource(){
+  let d; try{ d = await api("/api/source"); }catch(e){ return; }
+  const sec = $("#sourceSec");
+  if(!d.root || !d.topics.length){ sec.style.display="none"; return; }
+  sec.style.display="block";
+  $("#source").innerHTML = d.topics.map(t=>{
+    const st = t.project
+      ? `<span class="pill ${t.project.status}">${t.project.status}</span>`
+      : (t.ready
+        ? `<button class="btn pri sm" onclick="importTopic('${esc(t.topic)}')">🎬 이 소재로 릴스 시작</button>`
+        : `<span class="muted" style="font-size:.78rem">영상이 아직 없어요 (사진만으론 불가)</span>`);
+    return `<div class="card">
+      <b>${esc(t.topic)}</b>
+      <div class="meta">영상 ${t.videos}개 · 사진 ${t.images}개</div>
+      <div style="margin-top:10px">${st}</div>
+    </div>`;
+  }).join("");
+}
+async function importTopic(topic){
+  const fd=new FormData(); fd.append("topic",topic);
+  try{
+    const p = await api("/api/source/import",{method:"POST",body:fd});
+    toast("창고 폴더를 프로젝트로 연결했어요 — 복사 없이 바로 씁니다");
+    await loadProjects(); await loadSource(); openProject(p.id);
+  }catch(e){ toast("연결 실패: "+e.message); }
 }
 function renderTopics(){
   $("#topics").innerHTML = TOPICS.map((t,i)=>`
@@ -244,6 +300,7 @@ async function openProject(pid){
 // 현재 해야 할 단계를 가리킨다 (주제=1은 프로젝트가 있으면 항상 완료)
 function stepIndex(s){ return {촬영대기:2,업로드됨:3,편집완료:4,완성:6}[s]||2; }
 function renderDetail(){
+  PLAN = null;   // 이전 프로젝트의 구성표가 새 프로젝트에 저장되는 사고 방지
   const p = CURRENT; const si = stepIndex(p.status);
   const steps = ["주제·가이드","영상 업로드","릴스 편집","확인·피드백","완성본 저장"];
   const hasVideo = (p.files||[]).some(f=>f.kind==="video");
@@ -274,9 +331,17 @@ function renderDetail(){
           <span class="muted" style="font-weight:500">— 드래그 대신 이 폴더에 직접 넣어도 돼요</span></div>
       </div>
 
+      <!-- ③-b 샷 구성표: 기획안이자 편집 명세 -->
+      ${hasVideo?`
+      <div class="block">
+        <h3>③-b 샷 구성표 <span class="muted" style="font-weight:600;font-size:.82rem">— 어떤 장면을 몇 초, 어떤 자막으로</span></h3>
+        <p class="muted" style="font-size:.82rem;margin:6px 0 0">순서·길이·자막을 여기서 고치면 <b>그대로 편집돼요</b>. 훅 → 과정 → 자르는 순간 → 단면 공개 순서가 기본이에요.</p>
+        <div id="shotsBlock"><div class="empty">구성표 불러오는 중…</div></div>
+      </div>`:''}
+
       <!-- ④⑤ 편집 + 자막 -->
       <div class="block">
-        <h3>④ 릴스 자동 편집 <span class="muted" style="font-weight:600;font-size:.82rem">— 9:16·자막·원본소리</span></h3>
+        <h3>④ 릴스 자동 편집 <span class="muted" style="font-weight:600;font-size:.82rem">— 구성표대로·무음(음원은 발행 때)</span></h3>
         <div class="row" style="margin-bottom:12px">
           <button class="btn" onclick="genCaption()">✨ AI가 자막·캡션 추천</button>
           <button class="btn" onclick="genHooks()">🎣 훅 3버전 추천</button>
@@ -313,6 +378,73 @@ function renderDetail(){
     </div>
   </div>`;
   wireUpload();
+  if(hasVideo) loadShots();
+}
+
+// ═══ ③-b 샷 구성표 ═══
+let PLAN = null;   // 화면에서 편집 중인 구성표
+async function loadShots(){
+  const el = $("#shotsBlock"); if(!el) return;
+  try{
+    const d = await api("/api/projects/"+CURRENT.id+"/shots");
+    PLAN = d.plan; PLAN._saved = d.saved;
+    renderShots(d.seconds);
+  }catch(e){ el.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+function renderShots(seconds){
+  const el = $("#shotsBlock"); if(!el||!PLAN) return;
+  const vids = (CURRENT.files||[]).filter(f=>f.kind==="video");
+  el.innerHTML = `
+    <div class="shots">${PLAN.shots.map((s,i)=>`
+      <div class="shot">
+        <img src="/api/projects/${CURRENT.id}/clip/${encodeURIComponent(s.clip)}?t=${s["in"]}" loading="lazy" alt="">
+        <div class="role">${esc(s.role)}${s.audio?'<div style="font-size:.85em">🔊</div>':''}</div>
+        <div class="body">
+          <div class="clipname">${esc(s.clip)}</div>
+          <input type="text" placeholder="이 샷의 자막 (비우면 자막 없음)" value="${(s.caption||'').replace(/"/g,'&quot;')}"
+            onchange="PLAN.shots[${i}].caption=this.value">
+        </div>
+        <div class="nums">시작<input type="number" step="0.5" min="0" value="${s["in"]}"
+            onchange="PLAN.shots[${i}]['in']=+this.value;shotThumb(${i})">
+          길이<input type="number" step="0.5" min="0.5" value="${s.dur}"
+            onchange="PLAN.shots[${i}].dur=+this.value;renderShots()">초</div>
+        <div class="ops">
+          <button title="위로" onclick="moveShot(${i},-1)">↑</button>
+          <button title="아래로" onclick="moveShot(${i},1)">↓</button>
+          <button title="샷 빼기" onclick="PLAN.shots.splice(${i},1);renderShots()">✕</button>
+        </div>
+      </div>`).join("")}
+    </div>
+    <div class="row" style="margin-top:12px">
+      <select id="addClip" class="btn sm" style="font-weight:600">${vids.map(f=>`<option>${esc(f.name)}</option>`).join("")}</select>
+      <button class="btn sm" onclick="addShot()">+ 샷 추가</button>
+      <span class="spacer"></span>
+      <span class="muted" style="font-size:.8rem">예상 ${seconds!=null?seconds:estSeconds()}초 ${PLAN._saved?'· 저장된 구성표':'· 자동 구성(저장 전)'}</span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn pri sm" onclick="saveShots()">💾 구성표 저장</button>
+      <button class="btn ghost sm" onclick="resetShots()">자동 구성으로 되돌리기</button>
+    </div>`;
+}
+function estSeconds(){ if(!PLAN||!PLAN.shots.length) return 0;
+  return Math.round((PLAN.shots.reduce((a,s)=>a+(+s.dur||0),0) - .25*(PLAN.shots.length-1))*10)/10; }
+function shotThumb(i){ const img=document.querySelectorAll("#shotsBlock .shot img")[i];
+  if(img) img.src=`/api/projects/${CURRENT.id}/clip/${encodeURIComponent(PLAN.shots[i].clip)}?t=${PLAN.shots[i]["in"]}&r=${Date.now()}`; }
+function moveShot(i,d){ const j=i+d; if(j<0||j>=PLAN.shots.length) return;
+  [PLAN.shots[i],PLAN.shots[j]]=[PLAN.shots[j],PLAN.shots[i]]; renderShots(); }
+function addShot(){ const clip=$("#addClip").value; if(!clip) return;
+  PLAN.shots.push({clip, "in":0, dur:2.5, caption:"", role:"과정", slow:1, audio:false}); renderShots(); }
+async function saveShots(){
+  const fd=new FormData(); fd.append("plan", JSON.stringify(PLAN));
+  try{ const r=await api("/api/projects/"+CURRENT.id+"/shots",{method:"POST",body:fd});
+    PLAN=r.plan; PLAN._saved=true; renderShots(r.seconds);
+    toast("구성표 저장 — 이대로 편집돼요");
+  }catch(e){ toast("저장 실패: "+e.message); }
+}
+async function resetShots(){
+  try{ await api("/api/projects/"+CURRENT.id+"/shots/reset",{method:"POST"});
+    toast("자동 구성으로 되돌렸어요"); await loadShots();
+  }catch(e){ toast("실패: "+e.message); }
 }
 
 // 업로드 배선
@@ -355,6 +487,9 @@ async function genCaption(){
 async function renderReel(){
   const btn=$("#renderBtn"); const hook=$("#hook").value, menu=$("#menu").value;
   btn.disabled=true; btn.innerHTML='<span class="spin"></span>편집 중… (1~2분)';
+  // 구성표를 화면에서 고쳤으면 저장하고 편집 — "고치고 바로 편집"이 되게
+  if(PLAN){ try{ const sf=new FormData(); sf.append("plan",JSON.stringify(PLAN));
+    await api("/api/projects/"+CURRENT.id+"/shots",{method:"POST",body:sf}); }catch(e){} }
   const fd=new FormData(); fd.append("hook",hook); fd.append("menu",menu);
   try{ await api("/api/projects/"+CURRENT.id+"/render",{method:"POST",body:fd});
     toast("릴스 완성! 아래에서 확인하세요"); await openProject(CURRENT.id);
