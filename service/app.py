@@ -2534,6 +2534,43 @@ def meeting_task_done(path_key, tid):
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
+@app.route("/<path_key>/meeting/<int:mid>/organize", methods=["POST"])
+def meeting_organize(path_key, mid):
+    """'✨ AI로 정리' — 집 PC 일꾼에게 논의 내용 정리를 요청한다(잡 큐).
+
+    이 웹앱엔 AI 키가 없다 — 생성은 일꾼이 한다(보통 몇 초~수십 초).
+    무료 AI(Gemini)만 쓰기로 확정돼 있어(사장님 지시 2026-08-30), 무료
+    한도가 찼으면 일꾼이 실패로 끝내고(finish_job status='error') 여기
+    폴링(organize_state)이 그 사유를 그대로 보여준다.
+    """
+    check(path_key)
+    if not mt.get_meeting(mid):
+        abort(404)
+    try:
+        job = mt.request_organize(mid)
+        return jsonify({"ok": True, "job": job.get("id") if job else None})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"회의 AI정리 요청 실패(#{mid}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 200
+
+
+@app.route("/<path_key>/meeting/<int:mid>/organize_state")
+def meeting_organize_state(path_key, mid):
+    """AI 정리 잡 상태 — 화면 JS 가 몇 초마다 확인(job 번호로 정확히 찾는다)."""
+    check(path_key)
+    try:
+        job_id = request.args.get("job", type=int)
+        job = db.get_job(job_id) if job_id else mt.latest_organize_job(mid)
+        return jsonify({
+            "status": (job or {}).get("status") or "",
+            "message": (job or {}).get("message") or "",
+        })
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": str(e)[:200]}), 200
+
+
 if __name__ == "__main__":
     if not SERVICE_PATH:
         print("[!] SERVICE_PATH 가 없습니다. .env 에 비밀 주소 조각을 넣어주세요.")

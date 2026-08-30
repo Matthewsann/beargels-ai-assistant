@@ -106,8 +106,12 @@ def update_meeting(meeting_id, **patch):
         if k in payload:
             limit = {"title": 120, "category": 20, "attendees": 200}.get(k)
             payload[k] = _clean(payload[k], limit) or None
-    payload["title"] = payload.get("title") or None
-    if payload.get("title") is None and "title" in patch:
+    # ⚠️ title 은 not null 컬럼 — patch 에 title 이 없으면 이 줄에 손대면
+    # 안 된다. 예전엔 무조건 payload["title"] = ... 로 썼다가, decisions 한
+    # 필드만 고치는 호출(회의 AI 정리)에서 title 을 null 로 밀어넣어 DB 제약
+    # 위반으로 죽었다(2026-08-30 발견). title 이 실제로 patch 에 있고 빈
+    # 문자열로 지워진 경우에만 기본 이름을 넣는다.
+    if "title" in payload and payload["title"] is None:
         payload["title"] = "제목 없는 회의"
     payload["updated_at"] = _now()
     return (get_client().table(MEETINGS).update(payload)
@@ -289,3 +293,41 @@ def open_task_count() -> int:
     resp = (get_client().table(TASKS).select("id", count="exact")
             .eq("done", False).limit(1).execute())
     return resp.count or 0
+
+
+# ---------------------------------------------------------------------------
+# AI 정리 (사장님 지시 2026-08-30) — 무료 AI(Gemini)만 쓴다.
+#
+# 이 웹앱(service/)엔 AI 키가 없다(README 참고) — 생성은 집 PC 일꾼이
+# 잡 큐로 받아 처리한다. jobs 표에 회의 전용 컬럼이 없어(DDL 회피) 대상
+# 회의 id 는 message 에 담는다. kind="meeting_organize".
+# ---------------------------------------------------------------------------
+
+def request_organize(meeting_id, by=None):
+    """웹의 '✨ AI로 정리' 요청 — 연타 방지(이미 대기/진행 중이면 그걸 재사용)."""
+    client = get_client()
+    live = (client.table("jobs").select("*")
+            .eq("kind", "meeting_organize").eq("message", str(meeting_id))
+            .in_("status", ["pending", "running"])
+            .order("requested_at", desc=True).limit(1).execute().data)
+    if live:
+        return live[0]
+    row = {"kind": "meeting_organize", "status": "pending",
+           "requested_by": by or "", "message": str(meeting_id)}
+    return (client.table("jobs").insert(row).execute().data or [None])[0]
+
+
+def latest_organize_job(meeting_id):
+    """이 회의의 **대기·진행 중인** AI 정리 잡(없으면 None).
+
+    ⚠️ finish_job 이 완료 후 message 를 결과 문구로 덮어써서, 끝난 잡은
+    회의 id 로 다시 찾을 수 없다 — 완료된 잡을 보려면 request_organize 가
+    돌려준 job id 로 get_job() 을 써야 한다(화면 JS 가 그렇게 한다).
+    이 함수는 "페이지를 새로고침해도 요청한 게 아직 돌고 있나" 정도만
+    확인하는 보조용이다.
+    """
+    rows = (get_client().table("jobs").select("*")
+            .eq("kind", "meeting_organize").eq("message", str(meeting_id))
+            .in_("status", ["pending", "running"])
+            .order("requested_at", desc=True).limit(1).execute().data)
+    return rows[0] if rows else None

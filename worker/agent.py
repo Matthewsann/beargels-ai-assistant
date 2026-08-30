@@ -37,7 +37,9 @@ if str(ROOT) not in sys.path:
 from assistant.beargels import (  # noqa: E402
     classify_review, generate_review_reply, order_count_of,
 )
+from assistant.meeting_ai import MeetingAIUnavailable, organize as ai_organize  # noqa: E402
 from alerts import notify_owner  # noqa: E402
+from database import meeting_store  # noqa: E402
 from database import supabase_client as db  # noqa: E402
 
 logger = logging.getLogger("worker")
@@ -254,6 +256,72 @@ def collect_reviews(full=False) -> tuple[int, list[str]]:
     return saved, warnings
 
 
+# ---------------------------------------------------------------------------
+# 주문(매출) 수집 — MKT 캘린더의 '진행 중인 달' 을 살리는 유일한 수단
+# ---------------------------------------------------------------------------
+#
+# 왜 필요한가 (2026-08-30 발견): 포스 장부(TOS 엑셀)는 사장님이 **월 1회**
+# 올린다. 그래서 8월에 마케팅을 기록해도 9월 초까지 매출이 한 줄도 안 잡혀
+# MKT 캘린더가 통째로 백지였다. mkt_page 에는 '장부 미반영 구간은 배달
+# 크롤러 잠정치로 보완' 하는 코드가 있었지만, 정작 **그 orders 를 채우는
+# 수집을 아무도 부르지 않아** 죽은 코드였다(orders 테이블 52행, 최신 7/25).
+# 크롤러에는 fetch_orders 가 이미 완성돼 있으므로 여기서 부르기만 하면
+# 캠페인 효과를 다음 날 아침에 볼 수 있다(피드백 30일 → 1일).
+ORDER_DAYS = int(os.getenv("WORKER_ORDER_DAYS", "3"))
+
+
+def collect_orders(days=None) -> tuple[int, list[str]]:
+    """배민·쿠팡 주문(매출)을 긁어 orders 에 저장한다. (저장 건수, 경고들)
+
+    리뷰 수집과 같은 안전 계약: 한쪽 플랫폼이 실패해도 다른 쪽은 계속하고,
+    브라우저가 끊기거나 붙지 못하면 한 번만 되살려 재시도한다.
+    """
+    days = days or ORDER_DAYS
+    saved, warnings = 0, []
+
+    if not ensure_chrome():
+        warnings.append("크롤링용 Chrome 을 켜지 못했습니다 — 집 PC 확인 필요")
+        return 0, warnings
+
+    def _retry_once(fn, what):
+        """브라우저 끊김/attach 실패면 한 번만 되살려 재시도."""
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001
+            if _is_browser_gone(e):
+                logger.warning("%s 중 브라우저가 끊겨 다시 시도합니다", what)
+                time.sleep(3)
+                ensure_chrome()
+            elif not (_is_attach_failure(e) and restart_chrome(str(e)[:60])):
+                raise
+            return fn()
+
+    def _baemin():
+        from crawler.baemin import BaeminCrawler
+        with BaeminCrawler() as c:
+            return c.fetch_orders(
+                start_date=datetime.now().date() - timedelta(days=days),
+                end_date=datetime.now().date())
+
+    def _coupang():
+        from crawler.coupang import CoupangCrawler
+        with CoupangCrawler() as c:
+            return c.fetch_orders(days=days)
+
+    for name, fn in (("배민", _baemin), ("쿠팡", _coupang)):
+        try:
+            orders = _retry_once(fn, f"{name} 주문 수집")
+            saved += db.save_orders(orders)
+            logger.info("%s 주문 %d건 수집", name, len(orders))
+        except Exception as e:  # noqa: BLE001 — 한쪽 실패가 전체를 막지 않게
+            warnings.append(f"{name} 주문 수집 실패: {str(e)[:120]}")
+            logger.warning("%s 주문 수집 실패: %s", name, e)
+            db.log_error("worker", f"{name} 주문 수집 실패: {e}",
+                         kind=type(e).__name__, path=f"collect_orders/{name}",
+                         detail=traceback.format_exc())
+    return saved, warnings
+
+
 # 이보다 오래된 미답변 리뷰는 답글 기한이 지나 등록할 수 없다 —
 # 초안을 만들지 않고 목록에서 정리한다. 실측(2026-08-13): 쿠팡은 9일 된
 # 리뷰는 등록 성공, 17일 된 리뷰는 기한만료(20051) 거절. 실제 한도보다
@@ -434,6 +502,74 @@ def run_regen_job(job) -> None:
         logger.error("재생성 #%s 실패: %s", jid, e)
         db.log_error("worker", f"재생성 #{jid} 실패: {e}",
                      kind=type(e).__name__, path="run_regen_job",
+                     detail=traceback.format_exc())
+        db.finish_job(jid, "error", str(e)[:400], 0)
+    finally:
+        db.worker_ping("idle", "대기 중")
+
+
+def run_meeting_organize_job(job) -> None:
+    """웹의 '✨ AI로 정리' 요청 — 논의 내용에서 결정사항·업무를 제안해 덧붙인다.
+
+    무료 AI(Gemini)만 쓴다(사장님 지시 2026-08-30, "api key로 유료면 사용 x")
+    — assistant.meeting_ai 가 llm.complete(only=("gemini",)) 로 부르므로 이
+    잡은 유료 크레딧을 절대 건드리지 않는다. 무료 한도가 찼으면 그대로
+    실패로 끝내고, 직원 화면이 그 사유를 보여준다(직접 적으면 된다).
+
+    기존에 적어 둔 결정사항·할 일은 지우지 않는다 — AI 제안은 "(AI 제안 …)"
+    표시를 붙여 뒤에 덧붙일 뿐이다(사장님이 확인 후 고치거나 지운다).
+    """
+    jid = job["id"]
+    try:
+        mid = int(job.get("message") or 0)
+        m = meeting_store.get_meeting(mid)
+        if not m:
+            db.finish_job(jid, "error", f"회의 {mid} 를 찾을 수 없습니다", 0)
+            return
+        db.worker_ping("working", "회의 내용 정리 중")
+        result = ai_organize(m)
+
+        added_d = added_t = 0
+        if result["decisions"]:
+            existing = [ln for ln in (m.get("decisions") or "").splitlines()
+                       if ln.strip()]
+            new_lines = [f"{d} (AI 제안 — 확인 필요)" for d in result["decisions"]]
+            meeting_store.update_meeting(
+                mid, decisions="\n".join(existing + new_lines))
+            added_d = len(new_lines)
+
+        if result["tasks"]:
+            current = meeting_store.get_tasks(mid)
+            items = [{"id": t["id"], "content": t["content"],
+                     "owner": t.get("owner"), "due_date": t.get("due_date"),
+                     "memo": t.get("memo"), "done": t.get("done")}
+                    for t in current]
+            for t in result["tasks"]:
+                items.append({"id": None, "content": f"{t['content']} (AI 제안)",
+                             "owner": "", "due_date": "",
+                             "memo": t.get("memo") or "", "done": False})
+            meeting_store.save_tasks(mid, items)
+            added_t = len(result["tasks"])
+
+        if not added_d and not added_t:
+            db.finish_job(jid, "done",
+                          "정리할 내용을 찾지 못했어요 — 내용을 조금 더 "
+                          "구체적으로 적어보세요.", 0)
+        else:
+            db.finish_job(jid, "done",
+                          f"결정사항 {added_d}건 · 업무 {added_t}건 제안했어요.",
+                          added_d + added_t)
+        logger.info("회의 AI정리 #%s 완료 (회의 %s, 결정 %s·업무 %s)",
+                   jid, mid, added_d, added_t)
+    except MeetingAIUnavailable as e:
+        db.finish_job(jid, "error",
+                      f"지금은 무료 AI 사용량이 다 찼어요. 잠시 뒤 다시 "
+                      f"시도하거나 직접 적어주세요. ({str(e)[:100]})", 0)
+        logger.warning("회의 AI정리 #%s — 무료 AI 사용 불가: %s", jid, e)
+    except Exception as e:  # noqa: BLE001
+        logger.error("회의 AI정리 #%s 실패: %s", jid, e)
+        db.log_error("worker", f"회의 AI정리 #{jid} 실패: {e}",
+                     kind=type(e).__name__, path="run_meeting_organize_job",
                      detail=traceback.format_exc())
         db.finish_job(jid, "error", str(e)[:400], 0)
     finally:
@@ -984,19 +1120,33 @@ _last_pos_slot = None
 
 
 def run_pos_import_job(job) -> None:
-    """웹 '장부 지금 반영' 버튼 요청 처리."""
+    """웹 '매출 지금 반영' 버튼 요청 처리 — 배달 주문 + 포스 장부 둘 다."""
     from worker import pos_import
     jid = job["id"]
-    db.worker_ping("working", "장부 파일 반영 중")
+    db.worker_ping("working", "매출 반영 중")
     try:
+        # ① 배달 주문(진행 중인 달을 채우는 잠정치) — 실패해도 장부는 계속
+        order_msg = ""
+        try:
+            n_ord, ord_warn = collect_orders()
+            order_msg = f"배달 주문 {n_ord}건"
+            if ord_warn:
+                order_msg += " (" + " · ".join(ord_warn)[:120] + ")"
+        except Exception as e:  # noqa: BLE001
+            order_msg = f"배달 주문 수집 실패: {str(e)[:80]}"
+            logger.warning("주문 수집 실패(장부는 계속): %s", e)
+
+        # ② 포스 장부(월 1회 올라오는 확정 매출)
+        db.worker_ping("working", "장부 파일 반영 중")
         res = pos_import.scan_ledger()
         if not res.get("ok") and res.get("error"):
-            db.finish_job(jid, "error", res["error"][:400], 0)
+            db.finish_job(jid, "error",
+                          f"{order_msg} / {res['error']}"[:400], 0)
             return
         n = len(res.get("imported") or [])
-        msg = (f"새 장부 {n}건 반영" if n else "새 장부 파일 없음")
+        msg = f"{order_msg} / " + (f"새 장부 {n}건 반영" if n else "새 장부 없음")
         if res.get("errors"):
-            msg += " / 실패: " + " · ".join(res["errors"])[:200]
+            msg += " / 실패: " + " · ".join(res["errors"])[:150]
         db.finish_job(jid, "error" if res.get("errors") and not n else "done",
                       msg, n)
     except Exception as e:  # noqa: BLE001
@@ -1008,22 +1158,40 @@ def run_pos_import_job(job) -> None:
 
 
 def maybe_pos_import() -> None:
-    """하루 두 번(기본 10:20/21:20) 장부 폴더를 스스로 훑는다."""
+    """하루 한 번(기본 10:20) 매출을 반영한다 — 배달 주문 + 포스 장부.
+
+    장부는 월 1회라 이것만으로는 진행 중인 달이 백지가 된다. 그래서 같은
+    슬롯에서 배달 주문도 긁어 어제까지의 매출이 다음 날 아침에 보이게 한다.
+    """
     global _last_pos_slot
     try:
         slot = slot_due(POS_IMPORT_TIMES, datetime.now(), _last_pos_slot)
-        if slot:
-            _last_pos_slot = slot
-            from worker import pos_import
-            res = pos_import.scan_ledger()
-            if res.get("imported"):
-                logger.info("장부 자동 반영: %s", " · ".join(res["imported"]))
-            if res.get("errors"):
+        if not slot:
+            return
+        _last_pos_slot = slot
+
+        # ① 배달 주문 — 실패해도 장부 반영은 계속한다
+        try:
+            n_ord, ord_warn = collect_orders()
+            logger.info("배달 주문 자동 수집: %d건", n_ord)
+            if ord_warn:
                 db.log_error("worker",
-                             "장부 파일 반영 실패: " + " · ".join(res["errors"])[:300],
-                             kind="PosImportError", path="maybe_pos_import")
+                             "배달 주문 수집 경고: " + " · ".join(ord_warn)[:300],
+                             kind="OrderCollectWarning", path="maybe_pos_import")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("배달 주문 자동 수집 실패(장부는 계속): %s", e)
+
+        # ② 포스 장부
+        from worker import pos_import
+        res = pos_import.scan_ledger()
+        if res.get("imported"):
+            logger.info("장부 자동 반영: %s", " · ".join(res["imported"]))
+        if res.get("errors"):
+            db.log_error("worker",
+                         "장부 파일 반영 실패: " + " · ".join(res["errors"])[:300],
+                         kind="PosImportError", path="maybe_pos_import")
     except Exception as e:  # noqa: BLE001
-        logger.warning("장부 자동 반영 실패: %s", e)
+        logger.warning("매출 자동 반영 실패: %s", e)
 
 
 # 방치된 approved 를 다시 줄 세우는 주기(초) — 매 루프(15초)마다 DB 를
@@ -1093,6 +1261,8 @@ def run_job(job) -> None:
         return run_menu_job(job)
     if job.get("kind") == "pos_import":
         return run_pos_import_job(job)
+    if job.get("kind") == "meeting_organize":
+        return run_meeting_organize_job(job)
     if job.get("kind") not in (None, "", "collect", "collect_all"):
         # 모르는 종류를 수집으로 오처리하지 않는다 — 구버전 일꾼이 새 종류의
         # 잡(post_edit)을 수집으로 돌려버린 사고(2026-08-12).

@@ -219,3 +219,38 @@ def test_non_credit_error_does_not_burn_the_other_keys(monkeypatch):
     with pytest.raises(RuntimeError):
         llm._call_claude("", "안녕", 100)
     assert used == ["a"]
+
+
+def test_only_never_falls_back_to_excluded_provider(monkeypatch):
+    """only=("gemini",) 는 제미나이가 실패해도 클로드(유료)로 넘어가지 않는다.
+
+    회의 AI 정리 기능은 유료 크레딧을 절대 쓰지 않기로 확정됐다
+    (사장님 지시 2026-08-30) — prefer 는 실패 시 다른 공급자로 새지만,
+    only 는 새지 않아야 그 약속을 지킬 수 있다.
+    """
+    calls = {"claude": 0, "gemini": 0}
+
+    def bad_gemini(*a):
+        calls["gemini"] += 1
+        raise RuntimeError("Gemini 오류 429: 무료 한도 소진")
+
+    def claude(*a):
+        calls["claude"] += 1
+        return "유료로 만든 답"
+
+    _providers(monkeypatch, ["gemini", "claude"])
+    # 무료 상위 모델이 마르면 무료 하위 모델로도 한 번 더 내려간다(정상 동작) —
+    # 여기서 확인할 건 그 중 어느 단계도 클로드로는 새지 않는다는 것.
+    monkeypatch.setattr(llm, "GEMINI_FALLBACK_MODEL", llm.GEMINI_MODEL)
+    monkeypatch.setattr(llm, "_CALLERS", {"claude": claude, "gemini": bad_gemini})
+    with pytest.raises(Exception):
+        llm.complete(user="회의 내용", only=("gemini",))
+    assert calls["claude"] == 0        # 유료 쪽은 아예 두드리지 않는다
+    assert calls["gemini"] == 1
+
+
+def test_only_with_no_matching_provider_raises_no_provider_error(monkeypatch):
+    """무료 키가 아예 없으면(only 필터 결과가 빈 목록) 조용히 실패로 알려준다."""
+    _providers(monkeypatch, ["claude"])       # 클로드만 있고 제미나이는 없음
+    with pytest.raises(llm.NoProviderError):
+        llm.complete(user="회의 내용", only=("gemini",))

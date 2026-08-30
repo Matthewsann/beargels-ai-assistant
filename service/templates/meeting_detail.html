@@ -25,8 +25,15 @@
   .meta { font-size:12.5px; color:var(--muted); margin-bottom:4px; }
 
   .blk { margin-top:15px; }
-  .blk .lbl { font-size:11.5px; font-weight:700; color:var(--muted);
+  .blk .lbl { display:flex; align-items:center; justify-content:space-between;
+              gap:8px; font-size:11.5px; font-weight:700; color:var(--muted);
               letter-spacing:.04em; margin-bottom:6px; }
+  .ai-btn { border:1px solid var(--accent); background:var(--accent-bg);
+            color:var(--accent); border-radius:20px; padding:4px 11px;
+            font-size:11.5px; font-weight:700; letter-spacing:0; cursor:pointer;
+            font-family:inherit; flex-shrink:0; }
+  .ai-btn:disabled { opacity:.6; cursor:default; }
+  .ai-note { font-size:11.5px; color:var(--muted); margin-top:8px; }
   .blk p { margin:0; font-size:14px; white-space:pre-wrap; word-break:break-word; }
   .decide { background:var(--ok-bg); border-radius:10px; padding:11px 12px; }
   .decide .lbl { color:var(--ok); }
@@ -68,8 +75,14 @@
 
     {% if m.body %}
     <div class="blk">
-      <div class="lbl">논의 내용</div>
+      <div class="lbl">
+        <span>논의 내용</span>
+        {# 무료 AI(Gemini)만 쓴다 — 유료 크레딧은 절대 안 쓴다(사장님 지시
+           2026-08-30). 이 앱엔 AI 키가 없어 집 PC 일꾼에게 잡으로 맡긴다. #}
+        <button class="ai-btn" type="button" id="aiBtn" onclick="runOrganize()">✨ AI로 정리</button>
+      </div>
       <p>{{ m.body }}</p>
+      <div class="ai-note" id="aiNote" style="display:none"></div>
     </div>
     {% endif %}
 
@@ -133,6 +146,61 @@
       row.classList.toggle("done", box.checked);
       alert("저장하지 못했어요. 잠시 뒤 다시 눌러주세요.");
     });
+  }
+
+  // '✨ AI로 정리' — 집 PC 일꾼에게 요청하고 몇 초마다 결과를 확인한다.
+  // 무료 AI(Gemini)만 쓰므로(사장님 지시 2026-08-30), 무료 한도가 찼으면
+  // 실패 사유를 그대로 보여준다 — 그럴 땐 직접 적으면 된다.
+  function runOrganize() {
+    var btn = document.getElementById("aiBtn");
+    var note = document.getElementById("aiNote");
+    btn.disabled = true;
+    btn.textContent = "정리하는 중…";
+    note.style.display = "block";
+    note.style.color = "";
+    note.textContent = "논의 내용을 읽고 있어요. 몇 초에서 1분 정도 걸려요.";
+
+    fetch("/{{ key }}/meeting/{{ m.id }}/organize", {
+      method: "POST",
+      headers: { "X-Requested-With": "fetch" },
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.ok) throw new Error(d.error || "요청 실패");
+      pollOrganize(d.job, 0);
+    }).catch(function () {
+      btn.disabled = false;
+      btn.textContent = "✨ AI로 정리";
+      note.textContent = "요청하지 못했어요. 잠시 뒤 다시 시도해주세요.";
+      note.style.color = "var(--bad)";
+    });
+  }
+
+  function pollOrganize(jobId, tries) {
+    var btn = document.getElementById("aiBtn");
+    var note = document.getElementById("aiNote");
+    if (tries > 40) {           // 40회 × 3초 ≈ 2분 — 그 이상은 뭔가 걸린 것
+      btn.disabled = false;
+      btn.textContent = "✨ AI로 정리";
+      note.textContent = "응답이 오래 걸려요. 잠시 뒤 다시 시도해주세요.";
+      note.style.color = "var(--warn)";
+      return;
+    }
+    fetch("/{{ key }}/meeting/{{ m.id }}/organize_state?job=" + jobId)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.status === "done") {
+          location.reload();      // 새 결정사항·업무를 그대로 렌더해 보여준다
+        } else if (d.status === "error") {
+          btn.disabled = false;
+          btn.textContent = "✨ AI로 정리";
+          note.textContent = d.message || "정리하지 못했어요.";
+          note.style.color = "var(--warn)";
+        } else {
+          setTimeout(function () { pollOrganize(jobId, tries + 1); }, 3000);
+        }
+      })
+      .catch(function () {
+        setTimeout(function () { pollOrganize(jobId, tries + 1); }, 3000);
+      });
   }
 
   // 카톡 등에 그대로 붙여 넣을 수 있게 회의록을 글로 만든다.

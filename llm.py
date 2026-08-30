@@ -325,7 +325,7 @@ def _cool_down(name: str, model: str | None) -> None:
 
 def complete(system: str = "", user: str = "", max_tokens: int = 1500,
              model: str | None = None, images: list | None = None,
-             prefer: str | None = None) -> str:
+             prefer: str | None = None, only: tuple[str, ...] | None = None) -> str:
     """AI 에게 물어 답 텍스트를 받는다. 공급자는 자동 선택 · 실패 시 다음 것으로 넘어간다.
 
     model: 이번 호출에만 쓸 Claude 모델(없으면 CLAUDE_MODEL). 불만 리뷰처럼
@@ -333,12 +333,17 @@ def complete(system: str = "", user: str = "", max_tokens: int = 1500,
     images: 함께 보여줄 사진 [(mime, 바이트), ...]. 블로그 사진함 태깅처럼
             'AI 가 사진을 실제로 보고 판단해야' 하는 곳에서 쓴다.
             → 편하게 쓰려면 see() 를 부르면 파일 경로만 넘겨도 된다.
-    prefer: 이 호출만 특정 공급자를 먼저 쓴다("gemini" 등). 블로그 글쓰기처럼
-            무료 등급으로 충분한 작업이 Claude 크레딧을 갉아먹지 않게 하는 용도.
-            그 공급자가 없거나 실패하면 평소 순서로 넘어간다(사장님 확정 2026-08-27:
-            크레딧 사용 최소화).
+    prefer: 이 호출만 특정 공급자를 먼저 쓴다("gemini" 등). 무료 등급으로 충분한
+            작업이 Claude 크레딧을 갉아먹지 않게 하는 용도. 그 공급자가 없거나
+            실패하면 평소 순서(무료→유료)로 넘어간다.
+    only: 이 목록에 있는 공급자만 쓴다 — 없거나 실패하면 **다른 공급자로 넘어가지
+          않고 그대로 실패한다**. 회의 AI 정리처럼 "무료가 아니면 아예 안 쓴다"가
+          확정된 기능에 쓴다(사장님 지시 2026-08-30). only=("gemini",) 로 부르면
+          유료 클로드는 절대 두드리지 않는다 — prefer 와 달리 새는 구멍이 없다.
     """
     steps = available_steps()
+    if only:
+        steps = [s for s in steps if s[0] in only]
     if prefer:
         steps = ([s for s in steps if s[0] == prefer]
                  + [s for s in steps if s[0] != prefer])

@@ -210,3 +210,27 @@ def test_form_tasks_memo_optional(app_mod):
     with _post(app_mod, form):
         rows = app_mod._meeting_form_tasks()
     assert rows[0]["memo"] == ""
+
+
+# ── update_meeting 부분 수정 (2026-08-30 발견된 버그) ────────────
+# title 은 not null 컬럼이라, title 을 건드리지 않는 부분 수정(예: 회의
+# AI 정리가 decisions 만 고치는 경우)에서 title 을 null 로 밀어넣으면 안 된다.
+
+def test_partial_update_does_not_touch_title():
+    mid = mt.create_meeting("원래 제목", body="본문")
+    try:
+        mt.update_meeting(mid, decisions="새 결정")
+        m = mt.get_meeting(mid)
+        assert m["title"] == "원래 제목"
+        assert m["decisions"] == "새 결정"
+    finally:
+        mt.delete_meeting(mid)
+
+
+def test_update_with_empty_title_falls_back_to_default_name():
+    mid = mt.create_meeting("원래 제목", body="본문")
+    try:
+        mt.update_meeting(mid, title="   ")
+        assert mt.get_meeting(mid)["title"] == "제목 없는 회의"
+    finally:
+        mt.delete_meeting(mid)

@@ -94,6 +94,34 @@ def test_screen_javascript_parses(page, tmp_path):
                 f"안 닫혔다(줄바꿈이 들어간 듯): {bad[1]}")
 
 
+def test_meeting_detail_javascript_parses(tmp_path):
+    """meeting_detail.html 은 id 가 있어야 열리는 화면이라 PAGES 목록에 못
+    넣는다 — 실제 회의 1건을 만들어 렌더한 뒤 같은 검사를 하고 지운다."""
+    client, key = _client()
+    from database import meeting_store as mt
+    mid = mt.create_meeting("JS 문법 검사용 임시 회의", body="본문")
+    try:
+        resp = client.get(f"/{key}/meeting/{mid}")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        blocks = [b for b in SCRIPT.findall(html) if b.strip()]
+        assert blocks, "meeting_detail.html 에 <script> 블록이 없다"
+        node = shutil.which("node")
+        for i, js in enumerate(blocks):
+            if node:
+                f = tmp_path / f"meeting_detail_{i}.js"
+                f.write_text(js, encoding="utf-8")
+                r = subprocess.run([node, "--check", str(f)],
+                                   capture_output=True, text=True, timeout=30)
+                assert r.returncode == 0, (
+                    f"meeting_detail script[{i}] 문법 오류\n{r.stderr[:400]}")
+            else:
+                bad = _unterminated_string_line(js)
+                assert bad is None, f"meeting_detail {bad[0]}번째 줄: {bad[1]}"
+    finally:
+        mt.delete_meeting(mid)
+
+
 def test_the_2026_08_27_bug_shape_is_detected():
     """검사기가 실제 사고 코드를 잡는지 — 테스트가 헛돌지 않게."""
     broken = "\n".join([
