@@ -42,7 +42,7 @@ def month_range(y, m):
 
 def _sales_with_provisional(d1, d2, today=None):
     """장부 매출 + (장부 미반영 구간은) 크롤러 잠정치."""
-    today = today or date.today()
+    today = today or mkt_store._today_kst()
     sales = mkt_store.sales_between(d1, d2)
     last_pos, _ = _safe(mkt_store.last_pos_date, None)
     start_prov = (last_pos + timedelta(days=1)) if last_pos else d1
@@ -54,7 +54,7 @@ def _sales_with_provisional(d1, d2, today=None):
 
 
 def build_month_view(y: int, m: int, today: date | None = None) -> dict:
-    today = today or date.today()
+    today = today or mkt_store._today_kst()
     first, last = month_range(y, m)
     # 일요일 시작 격자
     grid_start = first - timedelta(days=(first.weekday() + 1) % 7)
@@ -192,9 +192,11 @@ def build_month_view(y: int, m: int, today: date | None = None) -> dict:
         # ② 진행중 2주 넘은 캠페인 — 종료일을 미리 적어둔 것은 제외
         #    (종료일이 있으면 그 날짜에 알아서 끝난다. '종료 처리하라'고
         #     조르면 잘 쓴 사람에게 잔소리가 된다.)
-        for c in camps:
-            if (c.get("status") == "live" and c["category"] != "var"
-                    and not c.get("end_date")):
+        #    이달 격자에 걸린 것(camps)만 보면 지난달 화면에선 알림이
+        #    사라진다(감사 #3-④) — 진행중 전체를 따로 조회.
+        live_all, _ = _safe(mkt_store.live_campaigns, [])
+        for c in live_all:
+            if (c["category"] != "var" and not c.get("end_date")):
                 started = date.fromisoformat(c["start_date"])
                 if (today - started).days >= 14:
                     reminders.append({
@@ -246,7 +248,7 @@ def build_month_view(y: int, m: int, today: date | None = None) -> dict:
         "last_pos": str(last_pos) if last_pos else None,
         "prov_from": str(prov_from) if prov_from else None,
         "reminders": reminders,
-        "products": products[:120],
+        "products": products,   # 552종 전부 — [:120] 컷은 자동완성 누락(감사 #1-⑤)
         "prev": ((y - 1, 12) if m == 1 else (y, m - 1)),
         "next": ((y + 1, 1) if m == 12 else (y, m + 1)),
         "today": str(today),

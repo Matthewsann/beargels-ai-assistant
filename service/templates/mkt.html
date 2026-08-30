@@ -190,13 +190,16 @@ td{padding:3px 0; border-top:1px solid var(--line)} td:last-child{text-align:rig
       </div>
       {% endfor %}
       {% for b in w.bars %}
+      {# 막대·◆마커 클릭 → 하단 목록의 그 캠페인으로 스크롤+분석 열기.
+         (◆는 onclick 이 아예 없어 사장님의 유일한 첫 기록이 캘린더에서
+          눌러도 무반응이었다 — 2026-08-30 감사 #18) #}
       <div class="bar {{ b.cls }} {{ 'cl' if b.cont_l }} {{ 'cr' if b.cont_r }}"
            style="grid-row:{{ b.row }}; grid-column:{{ b.col_a }}/{{ b.col_b }}"
-           onclick="mkToggleEffect({{ b.id }})">{{ b.title }}</div>
+           onclick="mkJumpToCampaign({{ b.id }})">{{ b.title }}</div>
       {% endfor %}
       {% for mk in w.markers %}
       <div class="marker" style="grid-row:{{ mk.row }}; grid-column:{{ mk.col }}/8"
-           title="{{ mk.title }}">◆ {{ mk.title }}</div>
+           title="{{ mk.title }}" onclick="mkJumpToCampaign({{ mk.id }})">◆ {{ mk.title }}</div>
       {% endfor %}
     </div>
     {% endfor %}

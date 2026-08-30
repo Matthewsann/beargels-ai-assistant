@@ -21,6 +21,13 @@ from .supabase_client import get_client
 
 logger = logging.getLogger(__name__)
 
+# 서버(PA)는 UTC — 날짜 판단은 전부 매장 시간(KST)으로 (2026-08-30 감사 #17)
+KST = timezone(timedelta(hours=9))
+
+
+def _today_kst():
+    return datetime.now(KST).date()
+
 CAMPAIGNS = "mkt_campaigns"
 SALES = "sales_daily"
 PRODUCTS = "product_sales_daily"
@@ -59,7 +66,7 @@ def create_campaign(title, category, start_date, end_date=None,
         "memo": (memo or "").strip() or None,
         # 종료일이 있어도 미래면 아직 진행중이다 — 가이드가 권하는 "기간을
         # 미리 적는" 사용법에서 시작 전부터 '종료'로 찍히던 버그(2026-08-30).
-        "status": ("done" if end_date and _d(end_date) < date.today()
+        "status": ("done" if end_date and _d(end_date) < _today_kst()
                    else "live"),
     }
     res = get_client().table(CAMPAIGNS).insert(row).execute()
@@ -76,7 +83,7 @@ def update_campaign(cid, **fields):
             # 미래 종료일은 '예정된 끝'이지 종료가 아니다
             patch.setdefault(
                 "status",
-                "done" if _d(patch["end_date"]) < date.today() else "live")
+                "done" if _d(patch["end_date"]) < _today_kst() else "live")
         else:
             # 종료일을 지우면 진행중으로 되돌린다 (수정 모달에서 비운 경우)
             patch["end_date"] = None
@@ -158,16 +165,22 @@ def last_pos_date():
     return _d(res.data[0]["sale_date"]) if res.data else None
 
 
+# 포스에 '상품'으로 찍히지만 메뉴가 아닌 것 — 타겟 후보에서 뺀다.
+# ("배달비 무료 이벤트" 같은 제목이 '배달비'를 타겟으로 잡는 오탐, 감사 #1-⑥)
+_NON_MENU = ("배달비", "배달료", "포장비", "봉투", "일회용")
+
+
 def distinct_products(days=180):
     """최근 N일 판매된 상품명 목록 (타겟 자동 인식·자동완성용)."""
-    since = str(date.today() - timedelta(days=days))
+    since = str(_today_kst() - timedelta(days=days))
     rows = _fetch_all(lambda: (
         get_client().table(PRODUCTS).select("product,qty")
         .gte("sale_date", since).order("sale_date")))
     agg = defaultdict(int)
     for r in rows:
         agg[r["product"]] += r.get("qty") or 0
-    return [p for p, _ in sorted(agg.items(), key=lambda x: -x[1])]
+    return [p for p, _ in sorted(agg.items(), key=lambda x: -x[1])
+            if not any(w in p for w in _NON_MENU)]
 
 
 def crawler_daily_sales(d1, d2):
@@ -347,7 +360,7 @@ def campaign_effect(camp, sales_rows, product_rows, today=None, last_pos=None):
     반환: dict(기간, gross, 채널별 actual/expected/pct/covered_days,
               uplift, roas, targets, top_products, 제외 일수 카운트)
     """
-    today = _d(today or date.today())
+    today = _d(today or _today_kst())
     start = _d(camp["start_date"])
     end = _d(camp["end_date"]) if camp.get("end_date") else today
     end = min(end, today)

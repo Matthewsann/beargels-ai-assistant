@@ -2212,7 +2212,9 @@ from service import mkt_page  # noqa: E402
 @app.route("/<path_key>/mkt")
 def mkt_home(path_key):
     check(path_key)
-    today = datetime.now().date()
+    # PA 서버는 UTC — 그냥 now() 면 한국 아침 9시 전의 기록·조회가 전부
+    # '어제'로 밀려 요일 비교가 통째로 어긋난다(2026-08-30 감사 #17).
+    today = datetime.now(KST).date()
     try:
         y = int(request.args.get("y", today.year))
         m = int(request.args.get("m", today.month))
@@ -2271,7 +2273,7 @@ def mkt_campaign_update(path_key, cid):
     try:
         if f.get("action") == "end":
             mkt_store.update_campaign(
-                cid, end_date=f.get("end") or str(datetime.now().date()),
+                cid, end_date=f.get("end") or str(datetime.now(KST).date()),
                 status="done")
         elif f.get("action") == "delete":
             mkt_store.delete_campaign(cid)
