@@ -70,10 +70,25 @@ def test_hard_error_raises(monkeypatch):
 # 제미나이 무료 상위 → 클로드(유료) → 제미나이 무료 하위.
 # 돈은 '좋은 공짜가 떨어졌을 때만' 쓴다.
 
-def test_ladder_order_is_free_paid_free(monkeypatch):
+def test_default_ladder_is_free_only(monkeypatch):
+    """기본은 **무료만** — .env 에 유효한 클로드 키가 있어도 자동으로는 안 쓴다
+    (사장님 원칙 2026-08-30: 유료 사용에 의지 금지, 유지비 최소화)."""
     monkeypatch.setenv("LLM_PROVIDER", "")
     monkeypatch.setenv("GEMINI_API_KEY", "g")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "a")
+    monkeypatch.setattr(llm, "PAID_OK", False)
+    assert llm.available_steps() == [
+        ("gemini", llm.GEMINI_MODEL),
+        ("gemini", llm.GEMINI_FALLBACK_MODEL),
+    ]
+
+
+def test_paid_optin_restores_free_paid_free_ladder(monkeypatch):
+    """LLM_PAID_OK=true 를 명시한 날만 무료→유료→무료 사다리가 된다."""
+    monkeypatch.setenv("LLM_PROVIDER", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "g")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "a")
+    monkeypatch.setattr(llm, "PAID_OK", True)
     assert llm.available_steps() == [
         ("gemini", llm.GEMINI_MODEL),
         ("claude", None),
@@ -163,12 +178,16 @@ def test_keys_are_ordered_and_deduped(monkeypatch):
 
 
 def test_backup_key_alone_still_enables_claude(monkeypatch):
-    """1번 칸이 비어도 예비 키만 있으면 클로드를 쓴다."""
+    """유료 옵트인 상태에선, 1번 칸이 비어도 예비 키만 있으면 클로드를 쓴다."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     monkeypatch.setenv("ANTHROPIC_API_KEY_2", "backup")
     monkeypatch.setenv("GEMINI_API_KEY", "")
     monkeypatch.setenv("LLM_PROVIDER", "")
+    monkeypatch.setattr(llm, "PAID_OK", True)
     assert llm.available_providers() == ["claude"]
+    # 옵트인이 없으면 키가 있어도 자동 목록에 안 들어간다
+    monkeypatch.setattr(llm, "PAID_OK", False)
+    assert llm.available_providers() == []
 
 
 def test_dry_key_falls_to_the_next_key(monkeypatch):

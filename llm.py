@@ -83,21 +83,33 @@ def available_providers() -> list[str]:
     out = []
     if _key("GEMINI_API_KEY"):
         out.append("gemini")
-    if claude_keys():        # 1번 키가 비어도 예비 키만 있으면 쓴다
+    # 유료 클로드는 **명시적 옵트인(LLM_PAID_OK=true / LLM_PROVIDER=claude)**
+    # 일 때만 자동 목록에 들어간다 — .env 에 유효한 키가 있다는 것만으로
+    # 돈이 나가면 안 된다(사장님 원칙 2026-08-30, 아래 PAID_OK 주석 참고).
+    if PAID_OK and claude_keys():   # 1번 키가 비어도 예비 키만 있으면 쓴다
         out.append("claude")
     return out
+
+
+# 유료 클로드를 자동 폴백에 끼울지 — 기본은 **아니오**.
+# 2026-08-27 엔 "무료 상위가 마르면 유료 클로드를 사이에 넣으라"였지만,
+# 2026-08-30 사장님이 원칙을 바꿨다: "유료 사용에 의지해서는 안 됨.
+# 비용을 줄이고 목적을 달성하면서 유지비를 최소화." .env 에 유효한
+# ANTHROPIC 키가 있어도(지금 2개 들어있다) 그것만으로 돈이 나가면 안 된다.
+# 유료를 정말 쓰고 싶은 날만 .env 에 LLM_PAID_OK=true (또는
+# LLM_PROVIDER=claude 강제)를 넣는다 — 명시적 옵트인.
+PAID_OK = os.getenv("LLM_PAID_OK", "").strip().lower() in ("1", "true", "yes")
 
 
 def available_steps() -> list[tuple[str, str | None]]:
     """실제로 두드릴 순서 — (공급자, 모델). 모델이 None 이면 그쪽 기본 모델.
 
-    제미나이는 **두 번** 나온다. 상위 모델(gemini-flash-latest)은 품질이 좋은
-    대신 무료 한도가 하루 20건 남짓이라 금방 마르고, 하위 모델(flash-lite)은
-    한도가 넉넉한 대신 글이 무디다. 그래서 상위가 마르면 곧바로 하위로
-    떨어지지 않고 **그 사이에 유료 클로드를 넣는다**(사장님 지시 2026-08-27):
-        제미나이 상위(무료) → 클로드(유료) → 제미나이 하위(무료)
+    기본(무료만): 제미나이 상위(품질 좋음, 하루 20건 남짓) → 제미나이
+    하위(flash-lite, 한도 넉넉·글이 무딤). 상위가 마르면 하위로 떨어진다.
+    LLM_PAID_OK=true 를 명시한 경우에만 그 사이에 유료 클로드가 낀다:
+        제미나이 상위 → (옵트인 시) 클로드 → 제미나이 하위
     """
-    names = available_providers()
+    names = available_providers()   # 유료 제외는 available_providers 가 한다
     steps: list[tuple[str, str | None]] = [
         ("gemini", GEMINI_MODEL) if n == "gemini" else (n, None) for n in names
     ]
