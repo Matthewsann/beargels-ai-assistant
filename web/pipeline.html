@@ -348,10 +348,11 @@ function renderDetail(){
           <span class="muted" style="font-size:.8rem">훅만 바꿔 여러 버전을 만들면 뭐가 잘 되는지 배울 수 있어요</span>
         </div>
         <div class="row" id="hookChips" style="margin-bottom:12px">${hookChipsHtml(p.hook_variants)}</div>
-        <div class="grid2">
+        <div class="grid2" ${hasVideo?'style="display:none"':''}>
           <div class="field"><label>상단 훅 자막 (첫 3초)</label><input id="hook" type="text" value="${(p.hook||'').replace(/"/g,'&quot;')}"></div>
           <div class="field"><label>하단 자막 (메뉴·키워드)</label><input id="menu" type="text" value="${(p.menu||'').replace(/"/g,'&quot;')}"></div>
         </div>
+        ${hasVideo?'<p class="muted" style="font-size:.8rem;margin:0 0 10px">자막·훅은 위 <b>③-b 샷 구성표</b>에서 고쳐요 — 편집은 구성표대로 됩니다.</p>':''}
         <button class="btn pri" id="renderBtn" onclick="renderReel()" ${hasVideo?'':'disabled'}>
           ${p.has_reel?'🔄 자막 바꿔 다시 편집':'🎬 릴스 만들기'}
         </button>
@@ -395,6 +396,14 @@ function renderShots(seconds){
   const el = $("#shotsBlock"); if(!el||!PLAN) return;
   const vids = (CURRENT.files||[]).filter(f=>f.kind==="video");
   el.innerHTML = `
+    <div class="grid2" style="margin-top:10px">
+      <div class="field"><label>훅 (첫 화면, 크게)</label>
+        <input type="text" value="${((PLAN.hook&&PLAN.hook.text)||'').replace(/"/g,'&quot;')}"
+          onchange="PLAN.hook.text=this.value"></div>
+      <div class="field"><label>마지막 한 줄 (저장·방문 유도)</label>
+        <input type="text" value="${((PLAN.cta&&PLAN.cta.text)||'').replace(/"/g,'&quot;')}"
+          onchange="PLAN.cta.text=this.value"></div>
+    </div>
     <div class="shots">${PLAN.shots.map((s,i)=>`
       <div class="shot">
         <img src="/api/projects/${CURRENT.id}/clip/${encodeURIComponent(s.clip)}?t=${s["in"]}" loading="lazy" alt="">
@@ -423,7 +432,9 @@ function renderShots(seconds){
     </div>
     <div class="row" style="margin-top:10px">
       <button class="btn pri sm" onclick="saveShots()">💾 구성표 저장</button>
+      <button class="btn sm" id="aiShotsBtn" onclick="aiShots()">✨ AI가 자막 쓰기</button>
       <button class="btn ghost sm" onclick="resetShots()">자동 구성으로 되돌리기</button>
+      <span class="muted" style="font-size:.75rem">AI 자막은 사장님 말투(해요체)로 장면을 보고 써요 · 1회 약 150원</span>
     </div>`;
 }
 function estSeconds(){ if(!PLAN||!PLAN.shots.length) return 0;
@@ -445,6 +456,17 @@ async function resetShots(){
   try{ await api("/api/projects/"+CURRENT.id+"/shots/reset",{method:"POST"});
     toast("자동 구성으로 되돌렸어요"); await loadShots();
   }catch(e){ toast("실패: "+e.message); }
+}
+async function aiShots(){
+  const btn=$("#aiShotsBtn"); if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>AI가 장면 보고 쓰는 중…';}
+  try{
+    // 화면에서 고친 구조가 있으면 그 위에 쓰게 먼저 저장
+    if(PLAN){ const sf=new FormData(); sf.append("plan",JSON.stringify(PLAN));
+      await api("/api/projects/"+CURRENT.id+"/shots",{method:"POST",body:sf}); }
+    const r = await api("/api/projects/"+CURRENT.id+"/shots/ai",{method:"POST"});
+    PLAN=r.plan; PLAN._saved=true; renderShots(r.seconds);
+    toast("AI 자막 완성 ✨ — 마음에 안 드는 줄만 고치세요");
+  }catch(e){ toast("AI 자막 실패: "+e.message); if(btn){btn.disabled=false;btn.textContent="✨ AI가 자막 쓰기";} }
 }
 
 // 업로드 배선

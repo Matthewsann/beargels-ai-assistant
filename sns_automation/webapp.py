@@ -581,6 +581,58 @@ def create_app() -> FastAPI:
         _save_project(p)
         return {"ok": True, "plan": norm, "seconds": shot_plan.total_seconds(norm)}
 
+    def _shot_frames(p: dict, plan: dict, max_px: int = 480) -> list[tuple[str, bytes]]:
+        """샷 순서대로 그 시점의 프레임을 뽑는다 (AI가 실제 화면을 보고 자막을 쓰게)."""
+        ff = video_editor.ffmpeg_exe()
+        folder = _media_dir(p)
+        frames: list[tuple[str, bytes]] = []
+        for s in plan.get("shots") or []:
+            src = os.path.join(folder, s["clip"])
+            fd, tmp = tempfile.mkstemp(suffix=".jpg")
+            os.close(fd)
+            try:
+                subprocess.run(
+                    [ff, "-y", "-ss", f"{s['in'] + s['dur'] / 2:.2f}", "-i", src,
+                     "-frames:v", "1", "-vf", f"scale={max_px}:-2", "-q:v", "5", tmp],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+                with open(tmp, "rb") as f:
+                    data = f.read()
+                if data:
+                    frames.append(("image/jpeg", data))
+            except (subprocess.SubprocessError, OSError):
+                pass
+            finally:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+        return frames
+
+    @app.post("/api/projects/{pid}/shots/ai")
+    async def ai_shot_captions(pid: str):
+        """AI가 구성표의 말(훅·자막·CTA)을 확정 말투로 쓴다. 구조는 그대로.
+
+        유료 Claude 전용(사장님 확정) — 한 번에 약 $0.1 안팎.
+        """
+        p = _load_project(pid)
+        if not p:
+            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
+        files = _raw_files(pid, p)
+        plan = _ensure_plan(p, files)
+        if not plan:
+            raise HTTPException(400, "영상이 없어 구성표를 만들 수 없어요.")
+        frames = await asyncio.to_thread(_shot_frames, p, plan)
+        try:
+            new_plan = await planner.write_shot_captions(
+                plan, p.get("title", ""), p.get("menu", ""), frames)
+        except Exception as e:
+            logger.warning("AI 자막 실패: %s", e)
+            raise HTTPException(502, f"AI 자막 실패: {e}")
+        p["shot_plan"] = new_plan
+        _save_project(p)
+        return {"ok": True, "plan": new_plan,
+                "seconds": shot_plan.total_seconds(new_plan)}
+
     @app.post("/api/projects/{pid}/shots/reset")
     async def reset_shots(pid: str):
         """자동 생성으로 되돌리기."""

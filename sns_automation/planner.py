@@ -386,6 +386,76 @@ async def suggest_hooks(title: str, menu: str, base_hook: str = "") -> dict:
         return {"ai": False, "hooks": hooks[:3]}
 
 
+_SHOT_WORDS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "hook": {"type": "string", "description": "첫 화면 훅. 반전·발견형, 12자 내외"},
+        "captions": {
+            "type": "array",
+            "items": {"type": ["string", "null"],
+                      "description": "그 샷의 한 줄 자막. 훅·마무리 샷은 null"},
+        },
+        "cta": {"type": "string", "description": "마지막 방문 유도 한 줄"},
+    },
+    "required": ["hook", "captions", "cta"],
+    "additionalProperties": False,
+}
+
+
+async def write_shot_captions(plan: dict, title: str, menu: str,
+                              frames: list[tuple[str, bytes]] | None = None) -> dict:
+    """구성표의 **말**(훅·샷별 자막·CTA)을 AI가 쓴다. 구조(샷·순서·길이)는 안 바꾼다.
+
+    말투는 사장님과 인터뷰로 확정(2026-08-18):
+    화자=사장님 본인 1인칭 · 목적=식욕 자극 · 한 줄 · 친근한 해요체.
+    frames: 샷 순서대로 뽑은 프레임 [(mime, bytes)] — AI가 실제 화면을 보고 쓴다.
+    실패하면 예외를 그대로 올린다(호출부가 기존 자막 유지).
+    """
+    shots = plan.get("shots") or []
+    lines = []
+    for i, s in enumerate(shots):
+        lines.append(f"샷{i + 1} · 역할={s['role']} · {s['dur']}초 · 클립={s['clip']}"
+                     + (" · 원본 소리 살림(자르는 소리)" if s.get("audio") else ""))
+    system = (
+        "너는 베이글 카페 '베어글스 송도점' 사장님이다. 릴스 화면 자막을 직접 쓴다.\n"
+        "말투 규칙(사장님 확정 — 어기면 안 됨):\n"
+        "· 화자는 사장님 본인. 만들면서 손님에게 보여주듯 1인칭으로.\n"
+        "· 목적은 딱 하나 — 보는 사람이 '먹어보고 싶다'고 느끼게. 맛·식감·양 중심.\n"
+        "· 친근한 해요체. 격식체(합니다/하십시오) 금지. 반말 금지.\n"
+        "· 자막은 **한 줄, 15자 내외**. 화면 칩에 들어가야 한다.\n"
+        "· 금지어: 역대급, 미쳤다, 인생맛집, 대박, 혜자.\n"
+        "역할별 지침:\n"
+        "· 훅(hook 필드): 반전·발견형으로 스크롤을 멈추게 (예: '빵 사이에 귤이 통째로').\n"
+        "  지역명은 화면에 라벨로 따로 붙으니 훅에 넣지 말 것.\n"
+        "· 긴장 역할: 다음 장면이 궁금해지게 말을 건다 (예: '궁금하시죠? 잘라볼게요').\n"
+        "· 페이오프 역할: 보이는 것 묘사가 아니라 **먹는 순간**을 상상하게\n"
+        "  (예: '한 입에 귤이 통째로 들어와요').\n"
+        "· 훅 역할 샷과 마무리 역할 샷의 captions 항목은 null (훅/CTA가 따로 뜬다).\n"
+        "· cta: 저장·방문을 부드럽게 유도 (예: '저장해두셨다가 놀러 오세요').\n\n"
+        f"[브랜드 지침 요약]\n{_knowledge()[:3000]}\n\n"
+        f"[성과가 좋았던 훅 참고]\n{_hook_summary()}\n\n"
+        f"{_market()}"
+    )
+    user = (
+        f"주제: {title}\n메뉴: {menu}\n\n"
+        f"샷 구성 (사진은 이 순서대로 각 샷의 실제 화면이다):\n" + "\n".join(lines)
+        + f"\n\ncaptions 배열은 정확히 {len(shots)}개. 각 샷의 실제 화면과 맞는 말을 써라."
+    )
+    data = await _ask(system, user, _SHOT_WORDS_SCHEMA, images=frames or None)
+
+    out = json.loads(json.dumps(plan, ensure_ascii=False))   # 구조 보존 복사
+    if data.get("hook"):
+        out["hook"]["text"] = str(data["hook"]).strip()
+    caps = data.get("captions") or []
+    for i, s in enumerate(out["shots"]):
+        if i < len(caps):
+            c = (caps[i] or "").strip() if isinstance(caps[i], str) else ""
+            s["caption"] = c or None
+    if data.get("cta"):
+        out["cta"]["text"] = str(data["cta"]).strip()
+    return out
+
+
 async def analyze_insights(images: list[bytes], note: str = "") -> dict:
     """인사이트 스크린샷(들) 분석 → 요약/개선점. 기록에 저장(다음 계획에 반영됨)."""
     try:
