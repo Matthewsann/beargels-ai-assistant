@@ -952,38 +952,51 @@ def place_guide(path_key):
 
 
 def _place_keyword_panel() -> str:
-    """'어떤 검색어로 들어오나' 패널 — 목표 2단계('노출 상승') 측정치.
+    """'네이버지도 노출' 패널 — 목표 2단계('노출 상승') 측정치.
 
-    일꾼이 주 1회 저장해 둔 유입 키워드(menu_settings 'place_keywords')를 읽어
-    지난번 대비 증감과 함께 그린다. 아직 수집 전이면 아무것도 안 그린다.
+    일꾼이 주 1회 저장해 둔 유입 통계(menu_settings 'place_keywords')를 읽어
+    지난주 대비 증감과 함께 그린다. 아직 수집 전이면 아무것도 안 그린다.
     """
     try:
         k = db.get_setting("place_keywords") or {}
     except Exception:  # noqa: BLE001
         return ""
     rows = k.get("keywords") or []
-    if not rows:
+    if not rows and k.get("mapPv") is None:
         return ""
 
-    when = str(k.get("checkedAt") or "")[:10]
-    prev_at = str(k.get("prevAt") or "")[:10]
+    def _delta(v, unit=""):
+        if not isinstance(v, int):
+            return '<i class="new">첫 기록</i>'
+        if v > 0:
+            return f'<i class="up">▲ {v}{unit}</i>'
+        if v < 0:
+            return f'<i class="down">▼ {abs(v)}{unit}</i>'
+        return '<i class="same">변화 없음</i>'
+
+    period = escape(str(k.get("period") or ""))
+    prev_period = escape(str(k.get("prevPeriod") or ""))
+    sub = f"{period} 기준"
+    if prev_period:
+        sub += f" · {prev_period} 대비"
+
+    big = (f'<div class="pk-big"><p class="pk-lab">네이버지도 유입</p>'
+           f'<p class="pk-num">{escape(str(k.get("mapPv", "-")))}'
+           f'<em>회</em> {_delta(k.get("mapDelta"))}</p></div>'
+           f'<div class="pk-big"><p class="pk-lab">전체 유입</p>'
+           f'<p class="pk-num">{escape(str(k.get("total", "-")))}'
+           f'<em>회</em> {_delta(k.get("totalDelta"))}</p></div>')
+
+    chans = "".join(
+        f'<li><b>{escape(str(c.get("name","")))}</b>'
+        f'<span>{escape(str(c.get("count","")))}</span></li>'
+        for c in (k.get("channels") or [])[:6])
+
     items = ""
     for r in rows[:12]:
-        d = r.get("delta")
-        if d is None:
-            badge = '<i class="new">새로 등장</i>'
-        elif d > 0:
-            badge = f'<i class="up">▲ {d}</i>'
-        elif d < 0:
-            badge = f'<i class="down">▼ {abs(d)}</i>'
-        else:
-            badge = '<i class="same">–</i>'
-        items += (f'<li><b>{escape(str(r.get("keyword","")))}</b>'
-                  f'<span>{escape(str(r.get("count","")))}</span>{badge}</li>')
-
-    sub = f"{escape(when)} 기준"
-    if prev_at:
-        sub += f" · {escape(prev_at)} 대비 증감"
+        items += (f'<li><b>{escape(str(r.get("name","")))}</b>'
+                  f'<span>{escape(str(r.get("count","")))}</span>'
+                  f'{_delta(r.get("delta"))}</li>')
 
     return f"""
 <style>
@@ -993,31 +1006,41 @@ def _place_keyword_panel() -> str:
  .pk-h{{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;margin:0 0 2px}}
  .pk-h b{{font-size:16px;color:#292019}}
  .pk-h .when{{font-size:12px;color:#6E5F4E;margin-left:auto}}
- .pk-note{{margin:0 0 10px;font-size:12px;color:#6E5F4E}}
+ .pk-note{{margin:0 0 12px;font-size:12px;color:#6E5F4E}}
+ .pk-tops{{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px}}
+ .pk-big{{flex:1 1 180px;background:#F1EADD;border-radius:11px;padding:10px 12px}}
+ .pk-lab{{margin:0 0 2px;font-size:12px;color:#6E5F4E}}
+ .pk-num{{margin:0;font-size:22px;font-weight:700;color:#292019}}
+ .pk-num em{{font-style:normal;font-size:13px;font-weight:500;color:#6E5F4E;margin-right:6px}}
+ .pk-num i{{font-size:13px}}
+ .pk-sub{{margin:14px 0 6px;font-size:13px;font-weight:600;color:#292019}}
  .pk-list{{list-style:none;margin:0;padding:0;display:grid;
    grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px}}
  .pk-list li{{display:flex;gap:8px;align-items:baseline;font-size:13px;
    padding:7px 10px;border-radius:9px;background:#F1EADD}}
  .pk-list li b{{font-weight:600;color:#292019}}
  .pk-list li span{{margin-left:auto;color:#6E5F4E}}
- .pk-list i{{font-style:normal;font-size:12px;min-width:52px;text-align:right}}
- .pk-list .up{{color:#059B52;font-weight:600}}
- .pk-list .down{{color:#B23A32;font-weight:600}}
- .pk-list .same,.pk-list .new{{color:#8A6D1F}}
+ .pk-list i,.pk-num i{{font-style:normal;min-width:56px;text-align:right}}
+ .up{{color:#059B52;font-weight:600}}
+ .down{{color:#B23A32;font-weight:600}}
+ .same,.new{{color:#8A6D1F}}
  @media (prefers-color-scheme:dark){{
    .pk-card{{background:#262019;border-color:#3A3128}}
-   .pk-h b{{color:#EFE7DA}} .pk-h .when,.pk-note{{color:#A79781}}
-   .pk-list li{{background:#2E2720}} .pk-list li b{{color:#EFE7DA}}
-   .pk-list li span{{color:#A79781}}
-   .pk-list .up{{color:#2BD57E}} .pk-list .down{{color:#E0716A}}
-   .pk-list .same,.pk-list .new{{color:#D9B95C}}
+   .pk-h b,.pk-num,.pk-sub{{color:#EFE7DA}}
+   .pk-h .when,.pk-note,.pk-lab,.pk-num em{{color:#A79781}}
+   .pk-big,.pk-list li{{background:#2E2720}}
+   .pk-list li b{{color:#EFE7DA}} .pk-list li span{{color:#A79781}}
+   .up{{color:#2BD57E}} .down{{color:#E0716A}} .same,.new{{color:#D9B95C}}
  }}
 </style>
 <div class="pk-wrap"><div class="pk-card">
-  <p class="pk-h"><b>🔎 어떤 검색어로 들어오나</b>
-     <span class="when">{sub}</span></p>
+  <p class="pk-h"><b>🔎 네이버지도 노출</b><span class="when">{sub}</span></p>
   <p class="pk-note">최적화가 노출을 실제로 움직였는지 보는 자리예요.
-     ▲가 붙은 검색어가 늘고 있다는 뜻입니다.</p>
+     ▲면 지난주보다 늘었다는 뜻입니다.</p>
+  <div class="pk-tops">{big}</div>
+  <p class="pk-sub">어디서 들어왔나</p>
+  <ul class="pk-list">{chans}</ul>
+  <p class="pk-sub">어떤 검색어로 들어왔나</p>
   <ul class="pk-list">{items}</ul>
 </div></div>
 """

@@ -80,38 +80,69 @@ def test_값은_이스케이프된다(client):
 
 KW = {
     "checkedAt": "2026-08-31T09:00:00",
-    "prevAt": "2026-08-24T09:00:00",
+    "period": "2026-08-24 ~ 2026-08-30",
+    "prevPeriod": "2026-08-17 ~ 2026-08-23",
+    "total": 581, "totalDelta": -370,
+    "mapPv": 401, "mapDelta": -291,
+    "channels": [{"name": "네이버지도", "count": 401},
+                 {"name": "네이버검색", "count": 144}],
     "keywords": [
-        {"keyword": "송도 베이글", "count": 130, "delta": 30},
-        {"keyword": "인천대입구역 카페", "count": 40, "delta": -5},
-        {"keyword": "송도 브런치", "count": 20, "delta": None},
+        {"name": "송도베이글", "count": 130, "delta": 30},
+        {"name": "인천대입구역카페", "count": 40, "delta": -5},
+        {"name": "송도브런치", "count": 20, "delta": None},
     ],
-    "total": 190,
 }
+
+
+def test_네이버지도_유입이_주인공으로_보인다(client):
+    """목표 문구가 '네이버지도 노출'이라 이 숫자가 가장 크게 떠야 한다."""
+    A, c = client
+    A.db.get_setting = lambda k, d=None: KW if k == "place_keywords" else d
+    html = c.get("/testkey/place").get_data(as_text=True)
+    assert "네이버지도 노출" in html
+    assert "네이버지도 유입" in html and "401" in html
+    assert "▼ 291" in html                      # 지난주보다 줄었다
 
 
 def test_유입_키워드가_증감과_함께_보인다(client):
     A, c = client
     A.db.get_setting = lambda k, d=None: KW if k == "place_keywords" else d
     html = c.get("/testkey/place").get_data(as_text=True)
-    assert "어떤 검색어로 들어오나" in html
-    assert "송도 베이글" in html and "130" in html
+    assert "어떤 검색어로 들어왔나" in html
+    assert "송도베이글" in html and "130" in html
     assert "▲ 30" in html          # 늘어난 것
     assert "▼ 5" in html           # 줄어든 것
-    assert "새로 등장" in html      # 이번에 처음 잡힌 것
+    assert "첫 기록" in html        # 이번에 처음 잡힌 것
+
+
+def test_채널별_유입도_보인다(client):
+    A, c = client
+    A.db.get_setting = lambda k, d=None: KW if k == "place_keywords" else d
+    html = c.get("/testkey/place").get_data(as_text=True)
+    assert "어디서 들어왔나" in html and "네이버검색" in html
+
+
+def test_비교할_지난주가_없으면_첫_기록으로_표시(client):
+    A, c = client
+    first = dict(KW, totalDelta=None, mapDelta=None, prevPeriod=None)
+    A.db.get_setting = lambda k, d=None: first if k == "place_keywords" else d
+    html = c.get("/testkey/place").get_data(as_text=True)
+    assert "첫 기록" in html
 
 
 def test_키워드_수집_전이면_패널이_안_뜬다(client):
     A, c = client
     A.db.get_setting = lambda k, d=None: d
     html = c.get("/testkey/place").get_data(as_text=True)
-    assert "어떤 검색어로 들어오나" not in html
+    # '네이버지도 노출'은 가이드의 목표 문구에도 있어 프로브로 못 쓴다.
+    assert "네이버지도 유입" not in html
+    assert "어떤 검색어로 들어왔나" not in html
     assert "베어글스 플레이스 루틴" in html
 
 
 def test_키워드도_이스케이프된다(client):
     A, c = client
-    evil = dict(KW, keywords=[{"keyword": "<script>x</script>", "count": 1, "delta": 1}])
+    evil = dict(KW, keywords=[{"name": "<script>x</script>", "count": 1, "delta": 1}])
     A.db.get_setting = lambda k, d=None: evil if k == "place_keywords" else d
     html = c.get("/testkey/place").get_data(as_text=True)
     assert "<script>x</script>" not in html
