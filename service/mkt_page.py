@@ -278,10 +278,14 @@ def day_detail(day: str) -> dict:
                                     key=lambda x: -(x[1] if isinstance(x[1], int) else 0))
                 if ch not in ("total", "store", "delivery", "partial")
                 or ch == "store"]
-    # store 는 row 에 채널로도 있으니 중복 제거 (partial 은 플래그라 제외)
+    # store 는 row 에 채널로도 있으니 중복 제거 (partial 은 플래그라 제외).
+    # 0원 채널도 뺀다 — 잠정(배달만) 날에 '매장 0원'이 찍히면 매출이 없는
+    # 게 아니라 아직 장부가 없는 것인데 폭망으로 읽힌다.
     seen, chan_out = set(), []
     for c in channels:
-        if c["channel"] in seen or c["channel"] in ("total", "delivery", "partial"):
+        if (c["channel"] in seen
+                or c["channel"] in ("total", "delivery", "partial")
+                or not c["amount"] or c["amount"] <= 0):
             continue
         seen.add(c["channel"])
         chan_out.append(c)
