@@ -152,7 +152,7 @@ DRAFT_PROMPT = """너는 베어글스 송도점의 네이버 블로그 마케팅
 - 이모지를 넉넉히 쓴다(사장님 확정): 문단마다 1~2개, 소제목 끝에 1개. 🥯☕🍊🧡✨🌿 같은
   따뜻한 것 위주로, 음식·장면과 어울리게. 단 ①제목에는 안 쓴다(검색 매칭 방해)
   ②한 문장에 3개 이상 몰아 쓰지 않는다 ③같은 이모지만 반복하지 않는다.
-- 글자 수 1,500자 이상. 첫 문단에 대표 키워드 1회, 본문 전체 3~5회(도배 금지).
+- 글자 수 1,700자 이상(1,500자는 최소선 — 여유 있게). 첫 문단에 대표 키워드 1회, 본문 전체 3~5회(도배 금지).
 - 소제목 2~4개로 구조화. 1인칭 경험. 구체적 숫자(가격·시간·온도)는 금고에 있는 것만, 없으면 비워둔다.
 - ★사진은 위 '사진함' 목록에 **있는 것만** 쓴다. 본문에 `[📷 P07]` 처럼 번호만 적으면
   그 자리에 실제 사진이 들어간다. 5~8장. **목록에 없는 번호를 지어내지 마라.**
@@ -250,10 +250,12 @@ def make_draft_data(topic: str, post_type: str = "정보성", title: str = "",
         title=title or topic, main_keyword=main_keyword,
         sub_keywords=", ".join(subs), sub_keywords_json=json.dumps(subs, ensure_ascii=False),
     )
-    # 본문만은 '충분한 퀄리티와 분량'이 기준(사장님 2026-08-28) → Claude 우선.
-    # 크레딧이 없으면 llm 계층이 알아서 Gemini 로 넘어가고, 충전하는 순간
-    # 코드 변경 없이 Claude(Sonnet)로 승격된다. 추천·평가는 계속 무료.
-    raw = llm.complete(user=prompt, prefer="claude",
+    # 유료 Claude API 에 의지하지 않는다(사장님 확정 2026-08-30) — 본문도
+    # 무료(Gemini)가 기본. 품질·분량은 품질 게이트(blog_quality.gate)의
+    # 확장 퇴고가 책임진다(실측: 무료로 82점·2,065자). 크레딧을 충전해도
+    # 자동으로 유료를 먼저 쓰지 않는다 — Gemini 가 완전히 죽었을 때의
+    # 비상 폴백으로만 쓰인다(llm 계층의 공급자 순서).
+    raw = llm.complete(user=prompt, prefer="gemini",
                        max_tokens=cfg.get("generate", {}).get("max_tokens", 5000))
     data = gp._extract_json(raw)
     data.setdefault("tags", [])

@@ -1140,16 +1140,76 @@ def run_pos_import_job(job) -> None:
         db.worker_ping("idle", "대기 중")
 
 
+# ---------------------------------------------------------------------------
+# PythonAnywhere 무료 사이트 만료 감시 — 갱신 버튼을 놓치면 웹이 통째로 꺼진다
+# ---------------------------------------------------------------------------
+#
+# 무료 티어는 사장님이 주기적으로 PA 에 로그인해 "Run until 1 month from
+# today" 버튼을 눌러야 유지된다(다음 만료 2026-09-27). 이 갱신을 챙겨주는
+# 장치가 아무 데도 없었다(2026-08-30 비용 감사) — 놓치면 직원 화면 전체가
+# 소리 없이 꺼진다. 하루 한 번 PA API 로 만료일을 읽어 14일 안이면 직원
+# 화면 알림함(notify_owner)에 배너를 띄운다. 돈 드는 것 없음(API 무료).
+_last_pa_expiry_day = None
+
+
+def maybe_pa_expiry_check() -> None:
+    global _last_pa_expiry_day
+    token = os.getenv("PA_API_TOKEN", "").strip()
+    if not token:
+        return
+    today = datetime.now().strftime("%Y-%m-%d")
+    if today == _last_pa_expiry_day:
+        return
+    _last_pa_expiry_day = today
+    try:
+        import json as _json
+        import urllib.request
+        req = urllib.request.Request(
+            "https://www.pythonanywhere.com/api/v0/user/beargels/webapps/",
+            headers={"Authorization": f"Token {token}"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            apps = _json.loads(resp.read().decode())
+        for app_info in apps or []:
+            expiry = (app_info.get("expiry") or "")[:10]
+            if not expiry:
+                continue
+            days_left = (datetime.fromisoformat(expiry).date()
+                         - datetime.now().date()).days
+            if days_left <= 14:
+                notify_owner(
+                    f"⏰ 직원 웹사이트가 {expiry} ({days_left}일 뒤)에 꺼져요 — "
+                    "pythonanywhere.com 에 로그인해서 Web 탭의 "
+                    "[Run until 1 month from today] 버튼을 눌러주세요. "
+                    "(무료 호스팅 유지 조건, 1분이면 됩니다)",
+                    kind="Notice", source="worker", path="pa_expiry")
+                logger.warning("PA 만료 임박: %s (%d일)", expiry, days_left)
+    except Exception as e:  # noqa: BLE001 — 감시 실패가 루프를 막으면 안 된다
+        logger.warning("PA 만료 확인 실패: %s", e)
+
+
 def maybe_pos_import() -> None:
-    """하루 한 번(기본 10:20) 매출을 반영한다 — 배달 주문 + 포스 장부.
+    """하루 한 번(기본 10:20 이후 첫 한가한 때) 매출을 반영한다 —
+    배달 주문 + 포스 장부.
 
     장부는 월 1회라 이것만으로는 진행 중인 달이 백지가 된다. 그래서 같은
     슬롯에서 배달 주문도 긁어 어제까지의 매출이 다음 날 아침에 보이게 한다.
+
+    ⚠️ slot_due(10분 창)를 쓰지 않는다 — 일꾼이 마침 그 10분에 다른 일을
+       하고 있으면 그날 반영이 통째로 밀렸다(2026-08-30 감사). '오늘 아직
+       안 했고 기준 시각이 지났으면 실행'이라 몇 시간 바빠도 놓치지 않는다.
     """
     global _last_pos_slot
     try:
-        slot = slot_due(POS_IMPORT_TIMES, datetime.now(), _last_pos_slot)
-        if not slot:
+        now = datetime.now()
+        first_time = (POS_IMPORT_TIMES.split(",")[0].strip() or "10:20")
+        try:
+            hh, mm = (int(x) for x in first_time.split(":"))
+        except ValueError:
+            hh, mm = 10, 20
+        if now < now.replace(hour=hh, minute=mm, second=0, microsecond=0):
+            return
+        slot = now.strftime("%Y-%m-%d")          # 하루 1회 키
+        if slot == _last_pos_slot:
             return
         _last_pos_slot = slot
 
@@ -1245,6 +1305,11 @@ def run_job(job) -> None:
         return run_pos_import_job(job)
     if job.get("kind") == "meeting_organize":
         return run_meeting_organize_job(job)
+    # ⚠️ 블로그 분기는 '알 수 없는 잡' 가드보다 반드시 먼저 —
+    # 가드가 앞에 있던 동안 blog_* 잡 전부가 에러로 죽어 블로그 버튼이
+    # 통째로 먹통이었다(2026-08-30 감사에서 발견).
+    if str(job.get("kind") or "").startswith("blog_"):
+        return run_blog_job(job)
     if job.get("kind") not in (None, "", "collect", "collect_all"):
         # 모르는 종류를 수집으로 오처리하지 않는다 — 구버전 일꾼이 새 종류의
         # 잡(post_edit)을 수집으로 돌려버린 사고(2026-08-12).
@@ -1252,8 +1317,6 @@ def run_job(job) -> None:
                       f"알 수 없는 잡 종류: {job.get('kind')} — 일꾼 업데이트 필요", 0)
         return None
     jid = job["id"]
-    if str(job.get("kind") or "").startswith("blog_"):
-        return run_blog_job(job)
     full = job.get("kind") == "collect_all"
     logger.info("%s 요청 #%s 처리 시작 (요청자: %s)",
                 "전체 수집" if full else "수집", jid,
@@ -1367,6 +1430,7 @@ def main() -> int:
                     maybe_complaint_report()
                     maybe_request_nag()
                     maybe_pos_import()
+                    maybe_pa_expiry_check()
                     maybe_blog_react()
                     maybe_rescue_stuck()
                     db.worker_ping("idle", "대기 중")

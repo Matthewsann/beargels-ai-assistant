@@ -20,7 +20,8 @@ def _clean_len(body: str) -> int:
     return len(t)
 
 
-def mechanical_check(body: str, title: str, main_keyword: str) -> list[dict]:
+def mechanical_check(body: str, title: str, main_keyword: str,
+                     sub_keywords: list[str] | None = None) -> list[dict]:
     """SEO 기준 대비 객관 점검. 각 항목 status: ok | warn."""
     checks = []
 
@@ -54,6 +55,14 @@ def mechanical_check(body: str, title: str, main_keyword: str) -> list[dict]:
         "status": "ok" if kw_in_intro else "warn",
         "hint": "도입부(초반)에 대표 키워드 1회",
     })
+
+    if sub_keywords:
+        hit = sum(1 for k in sub_keywords if k and k in body)
+        checks.append({
+            "label": "세부 키워드", "value": f"{hit}/{len(sub_keywords)}개 등장",
+            "status": "ok" if hit >= max(1, len(sub_keywords) // 2) else "warn",
+            "hint": "세부 키워드 절반 이상은 본문에 자연스럽게 넣기(스마트블록 매칭)",
+        })
 
     subs = len(re.findall(r"^\s*##+\s", body, flags=re.MULTILINE))
     checks.append({

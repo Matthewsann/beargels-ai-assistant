@@ -101,6 +101,27 @@ def filter_unused(rels: list[str], channel: str) -> list[str]:
             if not any(u.get("channel") == channel for u in d.get(r, []))]
 
 
+def release_ref(ref: str) -> int:
+    """특정 글(ref)이 잡아둔 사용 기록을 전부 해제한다.
+
+    임시저장 시점에 기록하는데, 그 글이 발행 없이 휴지통으로 가면 소재가
+    영영 잠긴다(2026-08-30 감사) — 글을 지울 때 이걸 불러 소재를 되살린다.
+    """
+    d = _load()
+    n = 0
+    for rel in list(d):
+        kept = [u for u in d[rel] if u.get("ref") != ref]
+        n += len(d[rel]) - len(kept)
+        if kept:
+            d[rel] = kept
+        else:
+            del d[rel]
+    if n:
+        _save(d)
+        logger.info("원장 해제: %s → %d건", ref, n)
+    return n
+
+
 def rename(old_rel: str, new_rel: str) -> None:
     """창고 재편으로 경로가 바뀔 때 기록을 따라 옮긴다."""
     d = _load()

@@ -369,8 +369,12 @@ def catalog(index: dict | None = None, include_bad: bool = False,
     out = {}
     for i, (rel, v) in enumerate(items, 1):
         out[f"P{i:02d}"] = {**v, "rel": rel}
+    # 영상 후보는 **편집 클립(_클립/)만** — 원본 4K MOV(91~193MB)를 AI가
+    # 그대로 골라 블로그에 통째 업로드하는 사고를 막는다(2026-08-30 감사).
+    # 원본은 blog_video.py 가 구간을 골라 클립으로 만들 때만 쓰인다.
     vids = [(k, v) for k, v in idx.items()
-            if v.get("kind") == "video" and not media_ledger.used_in(k, channel)]
+            if v.get("kind") == "video" and "/_클립/" in f"/{k}"
+            and not media_ledger.used_in(k, channel)]
     for j, (rel, v) in enumerate(vids, 1):
         out[f"V{j:02d}"] = {**v, "rel": rel}
     return out
@@ -407,8 +411,13 @@ def _lookup(token: str, cat: dict, idx: dict) -> dict | None:
     item = idx.get(token)
     if item:
         return {**item, "rel": token}
-    for rel, v in idx.items():          # 파일 이름만 적혀 있을 때도 찾아준다
-        if rel.rsplit("/", 1)[-1] == token:
+    # 경로가 안 맞으면 **파일 이름**으로 찾아준다. 창고 재편(사진함→원본소재,
+    # 2026-08-28)으로 옛 글 본문의 '만드는과정/IMG_x.jpg' 같은 경로가 통째로
+    # 어긋났는데, 예전 코드는 전체 토큰과 파일명을 비교해서 절대 못 찾았다
+    # (글#1 미디어 7개가 전부 0개로 죽어 있던 원인 — 2026-08-30 감사).
+    name = token.rsplit("/", 1)[-1]
+    for rel, v in idx.items():
+        if rel.rsplit("/", 1)[-1] == name:
             return {**v, "rel": rel}
     return None
 

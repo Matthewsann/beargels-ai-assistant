@@ -54,7 +54,7 @@ def main() -> None:
                 except Exception as e:
                     print(f"  · 세션 저장 경고: {e}")
                 print(f"\n✅ 로그인 감지! ({waited}초)")
-                print("이제 발행 자동화(schedule_publish.py)를 쓸 수 있습니다.")
+                print("이제 웹 파이프라인의 임시저장 자동화를 쓸 수 있습니다.")
                 result = "OK"
                 break
             time.sleep(step)

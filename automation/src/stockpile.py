@@ -2,7 +2,7 @@
 [1단계] 자동으로 계속 콘텐츠를 쌓는 러너 (본문 + 이미지/촬영목록).
 
 예약 실행(작업 스케줄러/cron)에 걸어두면, 켜둔 PC가 알아서 창고를 채웁니다.
-발행은 하지 않습니다 — 오직 생성/적재만. 발행은 schedule_publish.py 로 주 1회 골라서.
+발행은 하지 않습니다 — 오직 생성/적재만. 발행·예약은 사람이 네이버에서 직접.
 
     python src/stockpile.py            # config 의 stockpile.per_run 개수만큼 쌓기
     python src/stockpile.py 5          # 5개 쌓기
@@ -21,6 +21,9 @@ import library
 
 
 def main() -> None:
+    raise SystemExit(
+        "퇴역한 스크립트입니다 — 글 생성은 웹 기획실(무료 Gemini)을 쓰세요. "
+        "(유료 Claude 직접 호출 차단, 2026-08-30 비용 감사)")
     cfg = generate_post.load_config()
     per_run = int(cfg.get("stockpile", {}).get("per_run", 3))
     do_plan = "--plan" in sys.argv
@@ -50,7 +53,7 @@ def main() -> None:
 
     ready = library.list_items(status=library.STATUS_READY)
     print(f"\n완료! 이번에 {len(made)}개 적재. 창고 총 발행대기: {len(ready)}개")
-    print("주 1회 'schedule_publish.py' 로 골라서 예약 발행하세요 🐻")
+    print("발행·예약은 네이버에서 직접 골라서 해주세요 🐻")
 
 
 if __name__ == "__main__":

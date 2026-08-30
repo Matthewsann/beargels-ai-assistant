@@ -33,7 +33,7 @@ STORE = ROOT / "data" / "blog_quality.json"
 QUALITY_MIN = 80
 # 이 글자 수(사진 표시 제외) 밑이면 점수와 무관하게 확장 퇴고를 건다.
 # 네이버 상위노출 기준 1,500자 — 짧은 글은 무료 모델의 고질 약점이다.
-LENGTH_MIN = 1400
+LENGTH_MIN = 1500   # evaluator·프롬프트와 동일 기준(2026-08-30 통일)
 # 퇴고 최대 횟수. 1회로 부족한 경우(짧고+개선점 많음)를 위해 2회까지.
 MAX_REVISIONS = 2
 
@@ -111,10 +111,11 @@ def improve(body: str, title: str, main_keyword: str,
     """개선점을 먹여 한 번 퇴고한 본문. 사진 표시가 깨졌으면 버린다(None)."""
     import llm
     imp = "\n".join(f"- {i}" for i in improvements[:6]) or "- 전반적 완성도"
-    # 퇴고도 본문이다 → Claude 우선(크레딧 없으면 자동 Gemini 폴백).
+    # 유료 Claude API 에 의지하지 않는다(사장님 확정 2026-08-30) — 퇴고도
+    # 무료(Gemini) 기본. 확장 퇴고 루프가 무료 모델의 분량 약점을 메운다.
     raw = llm.complete(user=REVISE_PROMPT.format(
         title=title, main_keyword=main_keyword, body=body, improvements=imp),
-        max_tokens=4000, prefer="claude").strip()
+        max_tokens=4000, prefer="gemini").strip()
     raw = re.sub(r"^```.*?\n|\n```$", "", raw, flags=re.DOTALL)
     # 퇴고가 사진 표시를 잃어버렸으면 원본이 낫다
     marks = re.findall(r"\[[📷🎬][^\]]*\]", body)

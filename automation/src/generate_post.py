@@ -20,9 +20,14 @@ import pathlib
 import re
 
 import yaml
-from anthropic import Anthropic
 
 import library
+
+# ⚠️ 퇴역(2026-08-30 비용 감사): 이 모듈의 글 생성은 유료 Claude API 를
+# 직접 불렀다 — 사장님 원칙("유료 API 에 의지하지 않는다")에 따라 생성
+# 기능은 막아 둔다. 글 생성은 웹 기획실(무료 Gemini, llm.complete 경유)로.
+# load_config() 등 설정 함수는 generate_image.py 가 계속 쓰므로 남긴다.
+Anthropic = None  # 유료 클라이언트 제거
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SEO_DOC = ROOT.parent / "네이버-SEO-지식.md"
@@ -137,7 +142,10 @@ def _extract_json(text: str) -> dict:
     return json.loads(text)
 
 
-def generate_one(client: Anthropic, cfg: dict, post_type: str, variables: dict) -> dict:
+def generate_one(client, cfg: dict, post_type: str, variables: dict) -> dict:
+    raise RuntimeError(
+        "퇴역한 기능입니다 — 글 생성은 웹 기획실(무료 Gemini)을 쓰세요. "
+        "(유료 Claude 직접 호출 차단, 2026-08-30)")
     gen = cfg.get("generate", {})
     msg = client.messages.create(
         model=gen.get("model", "claude-sonnet-5"),
@@ -189,6 +197,9 @@ def main() -> None:
     ap.add_argument("--images", action="store_true", help="생성 후 이미지 계획/생성까지 실행")
     args = ap.parse_args()
 
+    raise SystemExit(
+        "퇴역한 스크립트입니다 — 글 생성은 웹 기획실(무료 Gemini)을 쓰세요. "
+        "(유료 Claude 직접 호출 차단, 2026-08-30)")
     cfg = load_config()
     client = Anthropic()
     made: list[int] = []

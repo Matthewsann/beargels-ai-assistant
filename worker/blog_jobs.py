@@ -97,6 +97,8 @@ def do_draft(payload: dict) -> tuple[int, str]:
         media = blog_media.used_media(body)
         if media:
             photo_note = f" · 사진 {len(media)}장"
+        else:
+            photo_note = " · ⚠ 사진 0장 — 사진함을 확인해 주세요"
     except Exception as e:  # noqa: BLE001 — 사진을 못 붙여도 글은 저장한다
         logger.warning("사진 붙이기 실패: %s", str(e)[:120])
 
@@ -203,7 +205,7 @@ def do_publish(payload: dict) -> tuple[int, str]:
         raise ValueError(f"글 #{post_id} 를 찾을 수 없습니다.")
 
     body = post.get("body") or ""
-    blocks, n_media = build_blocks(body)
+    blocks, _prepared = build_blocks(body)
 
     cfg = na.load_config()
     headful = bool(cfg.get("naver", {}).get("headful", True))
@@ -219,25 +221,31 @@ def do_publish(payload: dict) -> tuple[int, str]:
         except Exception:  # noqa: BLE001
             pass
     if not ok:
+        # 실패 원인을 사장님이 읽을 수 있는 말로 (2026-08-30 감사: 로그인
+        # 만료가 "화면 구조가 바뀌었을 수 있어요"로 둔갑해 원인을 못 찾았다)
+        reason = getattr(na, "LAST_ERROR", "")
+        if reason == "login_expired":
+            raise RuntimeError(
+                "네이버 로그인이 만료됐어요 — 집 PC에서 automation 폴더의 "
+                "로그인(login_helper.py)을 다시 실행해 주세요.")
         raise RuntimeError("네이버 에디터 입력 실패 (화면 구조가 바뀌었을 수 있어요)")
     store.update_post(post_id, prepared_at=store._now())
 
-    # ★ 쓴 사진은 사용완료/ 로 옮긴다 — 다음 글이 같은 사진을 또 쓰지 않게
-    #   (사장님 확정 2026-08-28). 옮겨도 이 글의 재발행은 full_path 폴백으로 된다.
-    #   에디터에 **실제로 들어간 것만** 옮긴다(예: 영상 삽입이 실패했으면
-    #   그 클립은 아직 안 쓴 것이므로 남긴다).
+    # ★ **실제로 에디터에 들어간** 사진·클립만 원장에 기록한다.
+    #   (insert 함수들이 True/False 를 정직하게 돌려주게 고침 — 08-30)
+    inserted = [b["rel"] for b in blocks if b.get("rel") and b.get("inserted")]
+    failed = [b["rel"] for b in blocks if b.get("rel") and not b.get("inserted")]
     moved = 0
     try:
         import blog_media
-        rels = [b["rel"] for b in blocks
-                if b.get("rel") and b.get("inserted", True)]
-        moved = blog_media.mark_used(rels, label=f"글 #{post_id}")
-    except Exception as e:  # noqa: BLE001 — 이동 실패가 발행 성공을 덮으면 안 된다
-        logger.warning("사용완료 이동 실패: %s", str(e)[:120])
+        moved = blog_media.mark_used(inserted, label=f"글 #{post_id}")
+    except Exception as e:  # noqa: BLE001 — 기록 실패가 발행 성공을 덮으면 안 된다
+        logger.warning("원장 기록 실패: %s", str(e)[:120])
 
-    with_photo = f" (사진 {n_media}장 포함)" if n_media else ""
-    used_note = f" · 사진 {moved}개 사용완료 처리" if moved else ""
-    return 1, (f"네이버 임시저장 완료{with_photo}{used_note}"
+    # '사진 N장 포함'은 준비한 개수가 아니라 **실제 들어간 개수**를 말한다
+    with_photo = f" (사진·영상 {len(inserted)}개 들어감)" if inserted else " (⚠ 미디어 0개)"
+    fail_note = f" · ⚠ {len(failed)}개는 업로드 실패" if failed else ""
+    return 1, (f"네이버 임시저장 완료{with_photo}{fail_note}"
                f" — {post.get('title', '')[:40]}")
 
 
@@ -411,6 +419,9 @@ def do_plan(payload: dict) -> tuple[int, str]:
 def do_react() -> tuple[int, str]:
     """발행 감지(RSS→URL 연결) + 공감·댓글 수집 + 발행본에서 배우기."""
     import blog_perf
+    freed = blog_perf.release_trashed()
+    if freed:
+        logger.info("휴지통 글의 소재 %d건을 원장에서 해제", freed)
     linked = blog_perf.sync_published()
     n, likes, comments = blog_perf.collect()
     learned = 0

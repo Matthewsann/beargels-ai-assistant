@@ -42,6 +42,10 @@ from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout, Fram
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEBUG_DIR = ROOT / "posts" / "_debug"
 
+# 마지막 실패의 기계가 읽을 수 있는 원인 — 호출자(worker)가 사장님용
+# 한국어 메시지로 바꾸는 데 쓴다. draft_one 이 False/None 을 돌려주기 전에 채운다.
+LAST_ERROR = ""
+
 # 스마트에디터 기본 선택자 후보들. config.yaml 의 selectors 로 덮어쓸 수 있습니다.
 # 각 항목은 '먼저 되는 것을 쓰는' 후보 리스트입니다.
 DEFAULT_SELECTORS = {
@@ -118,29 +122,10 @@ DEFAULT_SELECTORS = {
         "button:has-text('저장')",
         ".btn_save",
     ],
-    # ↓ 아래 4개는 현재 웹 파이프라인(blog_jobs.py)은 안 쓴다(예약 자동화는
-    # 2026-08-29 폐지 — 실제 예약은 사람이 네이버에서 직접). 구버전 CLI 도구
-    # automation/src/schedule_publish.py 가 여전히 참조하므로 값만 남겨 둔다.
-    "publish_open": [
-        "button.publish_btn__m9KHH",
-        "button:has-text('발행')",
-        ".btn_publish",
-    ],
-    "reserve_radio": [
-        "label:has-text('예약')",
-        "input[type='radio'][value='reserve']",
-        ".radio_time:has-text('예약')",
-    ],
-    "reserve_date": [
-        "input.input_date",
-        ".se-popup input[placeholder*='날짜']",
-    ],
-    "reserve_confirm": [
-        "button.confirm_btn__WEaBq",
-        "button:has-text('예약 발행')",
-        "button:has-text('발행')",
-    ],
 }
+# (발행/예약 관련 셀렉터는 2026-08-30 에 삭제 — 발행·예약은 사람이 네이버에서
+#  직접 한다는 원칙에 따라, 자동으로 발행까지 갈 수 있던 구버전 CLI
+#  schedule_publish.py 를 은퇴시키면서 함께 걷어냈다. 복원은 git 이력.)
 
 
 def load_config() -> dict:
@@ -439,6 +424,11 @@ def insert_media(page: Page, frame: Frame, selectors: dict, path: str,
     if not _dim_gone(frame):                  # 앞 단계가 남긴 레이어부터 청소
         clear_popups(page, frame, selectors)
         _close_layer(page, frame)
+    # 기준 개수는 업로드를 **시작하기 전에** 센다. 예전엔 파일을 넘긴 뒤에
+    # 세서, 빠른 업로드는 '늘어남'을 못 보고 타임아웃까지 기다렸고 실패해도
+    # True 를 돌려줬다 — 실패한 사진이 원장에 '사용됨'으로 박히던 원인
+    # (2026-08-30 감사).
+    before = frame.locator(".se-component.se-image").count()
     btn = first_working(frame, selectors["image_button"])
     if btn is not None:
         try:
@@ -461,13 +451,14 @@ def insert_media(page: Page, frame: Frame, selectors: dict, path: str,
 
     # 업로드가 끝나 본문에 이미지 덩어리가 하나 늘어날 때까지 기다린다.
     # (파일이 크면 몇 초 걸린다 — 안 기다리면 다음 글자가 엉뚱한 데 들어간다)
-    before = frame.locator(".se-component.se-image").count()
+    inserted = False
     waited = 0
     while waited < timeout_ms:
         page.wait_for_timeout(500)
         waited += 500
         try:
             if frame.locator(".se-component.se-image").count() > before:
+                inserted = True
                 break
         except Exception:  # noqa: BLE001
             pass
@@ -479,7 +470,9 @@ def insert_media(page: Page, frame: Frame, selectors: dict, path: str,
     # 사진을 넣으면 커서가 '사진 설명' 칸에 가 있을 수 있다. 그대로 두면
     # 다음 문단이 사진 설명으로 들어가 버린다 → 본문 맨 끝으로 커서를 되돌린다.
     _refocus_body(page, frame)
-    return True
+    if not inserted:
+        print("    ✗ 사진이 본문에 안 들어갔습니다(업로드 실패/시간 초과)")
+    return inserted
 
 
 # ---------------------------------------------------------------------------
@@ -681,6 +674,14 @@ def fill_editor(page: Page, cfg: dict, post: dict) -> Frame | None:
 
     print(f"  · '{title}' 작성 시작")
     page.goto(write_url(blog_id), wait_until="domcontentloaded")
+    page.wait_for_timeout(1500)
+    # 세션 만료면 로그인 페이지로 튕긴다 — 예전엔 이게 "에디터를 찾지
+    # 못했습니다"로 둔갑해 원인을 알 수 없었다(2026-08-30 감사).
+    if "nid.naver.com" in (page.url or "") or "nidlogin" in (page.url or ""):
+        global LAST_ERROR
+        LAST_ERROR = "login_expired"
+        print("    ✗ 네이버 로그인이 만료됐습니다 — 집 PC에서 재로그인 필요")
+        return None
 
     try:
         frame = find_editor_frame(page, selectors)

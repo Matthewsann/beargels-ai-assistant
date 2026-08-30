@@ -79,6 +79,21 @@ def rss_posts() -> list[dict]:
     return out
 
 
+def release_trashed() -> int:
+    """휴지통에 간 글이 잡아둔 소재를 원장에서 해제한다(발행 안 된 초안 구제)."""
+    import media_ledger
+    from database import blog_store as store
+    try:
+        res = (store.get_client().table(store.POSTS).select("id")
+               .eq("status", "trashed").execute())
+    except Exception:  # noqa: BLE001
+        return 0
+    n = 0
+    for row in res.data or []:
+        n += media_ledger.release_ref(f"글 #{row['id']}")
+    return n
+
+
 def sync_published() -> int:
     """RSS 에 뜬 글을 창고와 제목으로 맞춰 naver_url·발행 상태를 채운다."""
     from database import blog_store as store
@@ -223,16 +238,39 @@ def perf_context(max_posts: int = 10) -> str:
 # 발행본에서 배우기 — 사장님이 네이버 에디터에서 직접 고친 것도 놓치지 않는다
 # ---------------------------------------------------------------------------
 
-def fetch_published_text(log_no: str) -> str:
-    """발행된 글의 본문 텍스트(모바일 페이지에서 추출, 태그 제거)."""
+def _extract_container(html: str, marker: str = "se-main-container") -> str | None:
+    """marker 클래스를 가진 div 의 **정확한** 안쪽 HTML.
+
+    예전엔 정규식 `(.*?)</div>` 로 잘랐는데, 본문 div 는 겹겹이 중첩이라
+    첫 </div> 에서 끊겨 절대 매칭되지 않았고, 폴백으로 **페이지 전체**
+    (CSS 포함)가 '사장님이 고친 글'로 학습에 들어갔다(2026-08-30 감사).
+    div 여닫이 깊이를 세서 자른다.
+    """
+    m = re.search(rf'<div[^>]*class="[^"]*{marker}[^"]*"[^>]*>', html)
+    if not m:
+        return None
+    start = m.end()
+    depth = 1
+    for tag in re.finditer(r"<div\b|</div>", html[start:]):
+        depth += 1 if tag.group(0) != "</div>" else -1
+        if depth == 0:
+            return html[start:start + tag.start()]
+    return None
+
+
+def fetch_published_text(log_no: str) -> str | None:
+    """발행된 글의 본문 텍스트. 본문 영역을 못 찾으면 None(전체 페이지 금지)."""
     r = requests.get(f"https://m.blog.naver.com/{BLOG_ID}/{log_no}",
                      headers={"User-Agent": UA}, timeout=15)
-    m = re.search(r'<div[^>]*class="[^"]*se-main-container[^"]*"[^>]*>(.*?)</div>\s*<div[^>]*class="[^"]*post_btn', r.text, re.DOTALL)
-    html = m.group(1) if m else r.text
-    text = re.sub(r"<script.*?</script>", " ", html, flags=re.DOTALL)
+    inner = _extract_container(r.text)
+    if inner is None:
+        logger.warning("발행본 본문 영역을 못 찾음(%s) — 학습 건너뜀", log_no)
+        return None
+    text = re.sub(r"<(script|style).*?</\1>", " ", inner, flags=re.DOTALL)
     text = re.sub(r"<[^>]+>", "\n", text)
     text = re.sub(r"&nbsp;?", " ", text)
-    text = re.sub(r"\n{2,}", "\n", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n\s*\n+", "\n", text)
     return text.strip()
 
 
@@ -246,8 +284,11 @@ def learn_from_published() -> int:
     from database import blog_store as store
     import blog_media
 
+    import difflib
+
     data = _load()
     learned = 0
+    dirty = False
     for p in store.list_posts(limit=50):
         url = p.get("naver_url") or ""
         m = re.search(r"/(\d+)$", url)
@@ -256,22 +297,40 @@ def learn_from_published() -> int:
         rec = data.get(m.group(1))
         if rec is None or rec.get("learned"):
             continue
+        # 추출 실패가 반복되면 포기(매일 헛돌지 않게)
+        if rec.get("learn_attempts", 0) >= 3:
+            rec["learned"] = True
+            dirty = True
+            continue
         try:
             published = fetch_published_text(m.group(1))
         except Exception as e:  # noqa: BLE001
             logger.warning("발행본 읽기 실패(%s): %s", m.group(1), str(e)[:80])
-            continue
-        draft_plain = blog_media.strip_marks(p.get("body") or "")
+            published = None
         if not published or len(published) < 200:
+            rec["learn_attempts"] = rec.get("learn_attempts", 0) + 1
+            dirty = True
             continue
-        # 뼈대가 크게 다르면(사장님이 고침) 학습 잡으로 보낸다
+
+        # ★ diff 게이트 — 창고 본문과 사실상 같으면(사장님이 안 고쳤으면)
+        #   학습 잡을 만들지 않는다. 예전엔 무조건 만들어서, 안 고친 글에서도
+        #   AI 가 '교훈'을 지어낼 위험이 있었다(2026-08-30 감사).
+        draft_plain = blog_media.strip_marks(p.get("body") or "")
+        norm = lambda t: re.sub(r"\s+", "", t)  # noqa: E731 — 공백 차이 무시
+        sim = difflib.SequenceMatcher(
+            None, norm(draft_plain)[:8000], norm(published)[:8000]).ratio()
+        rec["learned"] = True
+        dirty = True
+        if sim >= 0.90:
+            logger.info("발행본이 창고 본문과 동일 수준(유사도 %.2f) — 학습 생략", sim)
+            continue
+
         store.request_blog_job("blog_learn", {
             "post_id": p["id"],
             "before": f"[제목] {p.get('title', '')}\n\n{draft_plain[:6000]}",
             "after": f"[제목] {rec.get('title', '')}\n\n{published[:6000]}",
         }, by="발행본비교")
-        rec["learned"] = True
         learned += 1
-    if learned:
+    if dirty:
         _save(data)
     return learned

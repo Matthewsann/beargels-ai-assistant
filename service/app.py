@@ -1541,11 +1541,22 @@ def _blog_job_view(job) -> dict | None:
         "blog_media": "사진함 살펴보기", "blog_learn": "수정에서 배우기",
         "blog_react": "반응 수집", "blog_plan": "채널 배분안",
     }.get(job.get("kind"), job.get("kind") or "")
+    msg = job.get("message") or ""
+    # 흔한 실패 원문을 사장님이 읽을 수 있는 말로 (리뷰 화면과 같은 배려)
+    low = msg.lower()
+    if "quota" in low or "rate limit" in low or "429" in low:
+        msg = "AI 무료 사용량이 잠시 소진됐어요. 몇 시간 뒤 다시 눌러주세요."
+    elif "credit balance" in low:
+        msg = "AI 크레딧이 없어 무료 AI로 동작 중이에요. (기능엔 문제 없음)"
+    elif "media_plans" in low and "could not find" in low:
+        msg = ("배분안 저장 테이블이 아직 없어요 — Supabase SQL Editor 에서 "
+               "supabase/migrations/007_media_plans.sql 을 한 번 실행해 주세요.")
     return {
         "kind": label,
         "status": job.get("status"),
         "busy": job.get("status") in ("pending", "running"),
-        "message": job.get("message") or "",
+        "failed": job.get("status") == "error",
+        "message": msg,
     }
 
 
@@ -1553,7 +1564,7 @@ def _blog_job_view(job) -> dict | None:
 def blog_home(path_key):
     check(path_key)
     error = None
-    posts, recs, ranks, job = [], [], [], None
+    posts, recs, ranks, job, plans = [], [], [], None, []
     try:
         posts = blog.list_posts(limit=50)
         recs = blog.list_recommendations()
@@ -1575,6 +1586,7 @@ def blog_home(path_key):
 
 def _ask_worker(path_key, kind, payload=None):
     """집 PC 일꾼에게 작업을 요청하고 블로그 홈으로 돌아간다."""
+    check(path_key)   # 비밀주소 검증 — 이걸 빼먹은 라우트가 3개 있었다(08-30 감사)
     try:
         blog.request_blog_job(kind, payload or {}, by="web")
     except Exception as e:  # noqa: BLE001

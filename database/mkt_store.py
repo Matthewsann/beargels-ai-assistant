@@ -13,6 +13,7 @@
 """
 
 import logging
+import os
 import re
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
@@ -205,8 +206,20 @@ def last_pos_date():
 _NON_MENU = ("배달비", "배달료", "포장비", "봉투", "일회용")
 
 
+# 상품명 목록 캐시 — 6,951행을 7왕복으로 내려받는 무거운 조회인데
+# /mkt 페이지뷰마다 돌고 있었다(2026-08-30 비용 감사). 상품명은 분 단위로
+# 바뀌는 게 아니므로 10분이면 충분히 신선하다. (프로세스 메모리 — PA 웹과
+# 일꾼이 각자 하나씩 갖는다.)
+_PRODUCTS_CACHE: dict = {}
+_PRODUCTS_TTL_SEC = int(os.getenv("MKT_PRODUCTS_TTL_SEC", "600"))
+
+
 def distinct_products(days=180):
-    """최근 N일 판매된 상품명 목록 (타겟 자동 인식·자동완성용)."""
+    """최근 N일 판매된 상품명 목록 (타겟 자동 인식·자동완성용, 10분 캐시)."""
+    import time as _time
+    hit = _PRODUCTS_CACHE.get(days)
+    if hit and _time.time() - hit[0] < _PRODUCTS_TTL_SEC:
+        return hit[1]
     since = str(_today_kst() - timedelta(days=days))
     rows = _fetch_all(lambda: (
         get_client().table(PRODUCTS).select("product,qty")
@@ -214,8 +227,10 @@ def distinct_products(days=180):
     agg = defaultdict(int)
     for r in rows:
         agg[r["product"]] += r.get("qty") or 0
-    return [p for p, _ in sorted(agg.items(), key=lambda x: -x[1])
-            if not any(w in p for w in _NON_MENU)]
+    out = [p for p, _ in sorted(agg.items(), key=lambda x: -x[1])
+           if not any(w in p for w in _NON_MENU)]
+    _PRODUCTS_CACHE[days] = (_time.time(), out)
+    return out
 
 
 def crawler_daily_sales(d1, d2):
