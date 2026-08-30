@@ -69,11 +69,17 @@ def build_variants(raw: bytes) -> dict[str, bytes]:
 
 
 def upload_all(client, sku: str, raw: bytes) -> dict:
-    """변환하고 버킷에 저장. 같은 이름은 덮어쓴다(재업로드=교체)."""
+    """변환하고 버킷에 저장. 같은 이름은 덮어쓴다(재업로드=교체).
+
+    원본은 **마지막에** 올린다 — 중간에 끊기면 채널 파일 일부만 남는데,
+    화면은 원본 유무로 '사진 있음'을 판단하므로 원본이 마지막이어야
+    반쯤 실패한 업로드가 완료로 위장하지 못한다.
+    """
     files = build_variants(raw)
     st = client.storage.from_(BUCKET)
-    for name, data in files.items():
-        st.upload(f"{sku}/{name}", data,
+    names = sorted(files, key=lambda n: n == "original.jpg")   # 원본이 맨 뒤
+    for name in names:
+        st.upload(f"{sku}/{name}", files[name],
                   {"content-type": "image/jpeg", "upsert": "true"})
     return {"files": sorted(files), "channels": list(SPECS)}
 

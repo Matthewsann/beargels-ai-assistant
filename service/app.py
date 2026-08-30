@@ -946,8 +946,81 @@ def place_guide(path_key):
         '<!doctype html>\n<html lang="ko">\n'
         '<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-        f"<body>\n{sidebar}\n{_place_status_panel()}\n{body}\n</body>\n</html>"
+        f"<body>\n{sidebar}\n{_place_status_panel()}\n{_place_keyword_panel()}\n"
+        f"{body}\n</body>\n</html>"
     )
+
+
+def _place_keyword_panel() -> str:
+    """'어떤 검색어로 들어오나' 패널 — 목표 2단계('노출 상승') 측정치.
+
+    일꾼이 주 1회 저장해 둔 유입 키워드(menu_settings 'place_keywords')를 읽어
+    지난번 대비 증감과 함께 그린다. 아직 수집 전이면 아무것도 안 그린다.
+    """
+    try:
+        k = db.get_setting("place_keywords") or {}
+    except Exception:  # noqa: BLE001
+        return ""
+    rows = k.get("keywords") or []
+    if not rows:
+        return ""
+
+    when = str(k.get("checkedAt") or "")[:10]
+    prev_at = str(k.get("prevAt") or "")[:10]
+    items = ""
+    for r in rows[:12]:
+        d = r.get("delta")
+        if d is None:
+            badge = '<i class="new">새로 등장</i>'
+        elif d > 0:
+            badge = f'<i class="up">▲ {d}</i>'
+        elif d < 0:
+            badge = f'<i class="down">▼ {abs(d)}</i>'
+        else:
+            badge = '<i class="same">–</i>'
+        items += (f'<li><b>{escape(str(r.get("keyword","")))}</b>'
+                  f'<span>{escape(str(r.get("count","")))}</span>{badge}</li>')
+
+    sub = f"{escape(when)} 기준"
+    if prev_at:
+        sub += f" · {escape(prev_at)} 대비 증감"
+
+    return f"""
+<style>
+ .pk-wrap{{max-width:860px;margin:12px auto 0;padding:0 16px;
+   font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}}
+ .pk-card{{background:#fff;border:1px solid #E5DCCB;border-radius:14px;padding:16px 18px}}
+ .pk-h{{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;margin:0 0 2px}}
+ .pk-h b{{font-size:16px;color:#292019}}
+ .pk-h .when{{font-size:12px;color:#6E5F4E;margin-left:auto}}
+ .pk-note{{margin:0 0 10px;font-size:12px;color:#6E5F4E}}
+ .pk-list{{list-style:none;margin:0;padding:0;display:grid;
+   grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px}}
+ .pk-list li{{display:flex;gap:8px;align-items:baseline;font-size:13px;
+   padding:7px 10px;border-radius:9px;background:#F1EADD}}
+ .pk-list li b{{font-weight:600;color:#292019}}
+ .pk-list li span{{margin-left:auto;color:#6E5F4E}}
+ .pk-list i{{font-style:normal;font-size:12px;min-width:52px;text-align:right}}
+ .pk-list .up{{color:#059B52;font-weight:600}}
+ .pk-list .down{{color:#B23A32;font-weight:600}}
+ .pk-list .same,.pk-list .new{{color:#8A6D1F}}
+ @media (prefers-color-scheme:dark){{
+   .pk-card{{background:#262019;border-color:#3A3128}}
+   .pk-h b{{color:#EFE7DA}} .pk-h .when,.pk-note{{color:#A79781}}
+   .pk-list li{{background:#2E2720}} .pk-list li b{{color:#EFE7DA}}
+   .pk-list li span{{color:#A79781}}
+   .pk-list .up{{color:#2BD57E}} .pk-list .down{{color:#E0716A}}
+   .pk-list .same,.pk-list .new{{color:#D9B95C}}
+ }}
+</style>
+<div class="pk-wrap"><div class="pk-card">
+  <p class="pk-h"><b>🔎 어떤 검색어로 들어오나</b>
+     <span class="when">{sub}</span></p>
+  <p class="pk-note">최적화가 노출을 실제로 움직였는지 보는 자리예요.
+     ▲가 붙은 검색어가 늘고 있다는 뜻입니다.</p>
+  <ul class="pk-list">{items}</ul>
+</div></div>
+"""
 
 
 def _place_status_panel() -> str:
@@ -2271,7 +2344,12 @@ def menu_item_image(path_key, sku):
                         "error": f"파일이 너무 큽니다({len(raw)//1024//1024}MB) — 15MB 이하로"}), 400
     try:
         out = upload_all(db.get_client(), sku, raw)
-        return jsonify({"ok": True, **out})
+        # 사진 유무를 서버가 알아야 목록 배지·필터·출시 체크에 뜬다.
+        # 컬럼 대신 menu_settings kv — 새 표 없이 쓰는 이 프로젝트의 관행.
+        pa = db.menu_settings_all().get("photo_at") or {}
+        pa[sku] = datetime.utcnow().isoformat() + "Z"
+        db.menu_set_setting("photo_at", pa)
+        return jsonify({"ok": True, "photo_at": pa[sku], **out})
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     except Exception as e:  # noqa: BLE001
@@ -2290,6 +2368,9 @@ def menu_item_image_delete(path_key, sku):
         from service.menu_images import delete_all
     try:
         n = delete_all(db.get_client(), sku)
+        pa = db.menu_settings_all().get("photo_at") or {}
+        if pa.pop(sku, None) is not None:
+            db.menu_set_setting("photo_at", pa)
         return jsonify({"ok": True, "removed": n})
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": str(e)[:200]}), 500

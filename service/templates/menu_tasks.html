@@ -376,9 +376,21 @@ function render(){
         if(t.type==="extra") desc=`<div class="why">${LABEL[CH]}에 ${won(t.cur)}로 올라와
             있는데 정본에 비슷한 메뉴도 없습니다. 안 파는 메뉴면 ${LABEL[CH]}에서 내리고,
             파는 메뉴면 정본에 추가하세요.</div>`;
-        if(t.type==="add") desc=`<div class="why">정본에는 있는데 ${LABEL[CH]}에 없습니다.
+        if(t.type==="add"){
+          // 등록에 필요한 것을 이 줄에 다 모은다 — 사진은 그 채널 규격 파일로
+          // 바로, 소개글은 복사 버튼으로. 없으면 정본으로 가는 링크(딥링크가
+          // 이제 그 메뉴를 바로 연다).
+          const it=DATA.items.find(i=>i.sku===t.sku)||{};
+          const pa=(DATA.settings&&DATA.settings.photo_at)||{};
+          const photo = pa[t.sku]
+            ? `<a class="fix" href="${DATA.img_base}/${t.sku}/${CH}.jpg" target="_blank" rel="noopener">📷 ${LABEL[CH]}용 사진</a>`
+            : `<a class="fix" href="/{{ key }}/menu?sku=${encodeURIComponent(t.sku)}">📷 사진 없음 — 정본에서 올리기</a>`;
+          const intro=(it.intro_ko||"").trim();
+          desc=`<div class="why">정본에는 있는데 ${LABEL[CH]}에 없습니다.
             팔 메뉴가 아니면 정본에서 ${LABEL[CH]} 판매를 꺼 두세요.</div>
-          등록 가격 <b>${won(t.to)}</b> ${cp(t.to)} · 이름 ${cp(t.name)} ${master}`;
+          등록 가격 <b>${won(t.to)}</b> ${cp(t.to)} · 이름 ${cp(t.name)}
+          ${intro?`· 소개글 ${cp(intro)}`:""} ${photo} ${master}`;
+        }
         html+=`<label class="row ${done?"done":""}">
           <input type="checkbox" ${done?"checked":""}
             onchange="markDone('${CH}',${JSON.stringify(t).replace(/"/g,"&quot;")},this.checked,this.closest('.row'))">

@@ -4,3 +4,4 @@ Flask>=3.0
 python-dotenv>=1.0
 supabase>=2.0
 gunicorn>=21.0
+Pillow>=10.0.0   # 메뉴 사진 채널 규격 변환 — 지금은 PA에 우연히 깔려 있어 돌지만 명시해 둔다

@@ -603,9 +603,13 @@ const isSelling = it => !!(it.store_active || it.delivery_active);
 const STATES = [["on","🟢 판매중",isSelling],
                 ["off","🚫 숨김", it=>!isSelling(it)]];
 
+// 사진 유무 — 업로드/삭제 때 서버가 menu_settings.photo_at 에 적는다.
+const photoAt = sku => (DATA.settings.photo_at||{})[sku];
+const probNophoto = it => isSelling(it) && !photoAt(it.sku);
 const PROBS = [["nocost","⚠ 원가 미입력",probNocost,"warnc"],
                ["over","🔴 원가율 초과",probOver,"redc"],
-               ["be","📦 손익분기 초과",probBe,"redc"]];
+               ["be","📦 손익분기 초과",probBe,"redc"],
+               ["nophoto","📷 사진 없음",probNophoto,"warnc"]];
 
 // ── 보기 모드 ────────────────────────────────────────────────
 //  · 기본 : 이름·매장가·배달가·원가·원가율·판매 — 고치는 데 필요한 것만
@@ -1003,6 +1007,7 @@ function render(){
         </span>`:""}
         ${inact?'<span class="badge hid">숨김</span>':""}
         ${it.ingredient_cost==null?'<span class="badge miss">원가 미입력</span>':""}
+        ${probNophoto(it)?'<span class="badge miss" title="메뉴 사진이 아직 없습니다 — 상세에서 올리면 채널 규격 4장이 자동으로 만들어집니다">📷</span>':""}
         ${ovrCnt?`<span class="badge ovr">채널예외 ${ovrCnt}</span>`:""}
         <br><span class="sku">${it.sku}</span><span class="grp">${esc(it.group_name||"")}</span>
         <span class="chev">▶</span></td>
@@ -1143,6 +1148,10 @@ function launchTasks(it){
           via: it.ingredient_cost != null ? won(it.ingredient_cost)+"원" : "레시피 편집에서"});
   t.push({k:"intro", grp:"정본", label:"소개글 한/영", auto:true,
           ok: !!(it.intro_ko||"").trim(), via: (it.intro_ko||"").trim() ? "" : "직접 입력"});
+  t.push({k:"photo", grp:"정본", label:"메뉴 사진", auto:true,
+          ok: !!photoAt(it.sku),
+          via: photoAt(it.sku) ? String(photoAt(it.sku)).slice(0,10)+" 올림"
+                               : "원본 1장이면 채널 4장 자동"});
   if (it.store_active)
     t.push({k:"store", grp:"채널", label:"매장 포스 · 키오스크", auto:false,
             ok: chChecked(it.sku,"store")});
@@ -1194,48 +1203,94 @@ const IMG_CH = [["baemin","배민 1280×960"],["coupang","쿠팡이츠 1080×660
 const imgUrl = (sku, name) => `${DATA.img_base}/${sku}/${name}?v=${IMG_V}`;
 
 function imageHTML(sku){
+  const has = photoAt(sku);
   return `<div class="dsec">
     <b>🖼 메뉴 사진</b>
     <span class="note">원본 1장을 올리면 채널 규격 4장이 자동으로 만들어집니다.
       링크를 눌러 저장한 뒤 각 채널 포털에 올리세요. 다시 올리면 교체됩니다.</span>
     <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-top:6px">
       <img id="img-${sku}" src="${imgUrl(sku,"original.jpg")}" alt=""
-        style="width:96px;height:96px;object-fit:cover;border-radius:10px;border:1px solid var(--line)"
+        style="width:96px;height:96px;object-fit:cover;border-radius:10px;border:1px solid var(--line);${has?"":"display:none"}"
         onerror="this.style.display='none';document.getElementById('imgnone-${sku}').style.display=''">
-      <span id="imgnone-${sku}" class="note" style="display:none;margin:0;align-self:center">아직 사진이 없습니다</span>
+      <span id="imgnone-${sku}" class="note" style="${has?"display:none;":""}margin:0;align-self:center">아직 사진이 없습니다</span>
       <div style="display:flex;flex-direction:column;gap:4px">
         ${IMG_CH.map(([ch,label])=>`<a href="${imgUrl(sku, ch+".jpg")}" target="_blank" rel="noopener"
           style="font-size:12.5px">📥 ${label}</a>`).join("")}
       </div>
     </div>
-    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
       <input type="file" id="imgfile-${sku}" accept="image/*" style="display:none"
         onchange="uploadImage('${sku}', this.files[0])">
-      <button onclick="document.getElementById('imgfile-${sku}').click()">📷 사진 올리기 / 교체</button>
+      <button id="imgbtn-${sku}" onclick="document.getElementById('imgfile-${sku}').click()">📷 사진 올리기 / 교체</button>
       <button onclick="deleteImage('${sku}')">🗑 사진 삭제</button>
+      <span id="imgstat-${sku}" class="note" style="margin:0"></span>
     </div></div>`;
+}
+
+// 폰 원본(수 MB)을 그대로 보내면 수십 초 — 보내기 전에 브라우저에서 긴 변
+// 2000px 로 줄인다. 서버는 어차피 1600px 로 다시 줄이므로 화질 손해가 없다.
+// 축소가 실패하면(구형 브라우저·특이 포맷) 원본 그대로 보낸다.
+async function shrinkImage(file){
+  try{
+    const bmp = await createImageBitmap(file);
+    const MAX = 2000, scale = Math.min(1, MAX/Math.max(bmp.width,bmp.height));
+    if (scale >= 1) return file;
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width*scale); c.height = Math.round(bmp.height*scale);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise(res=>c.toBlob(res, "image/jpeg", .9));
+    return blob || file;
+  }catch(_){ return file; }
 }
 
 async function uploadImage(sku, file){
   if (!file) return;
-  toast("사진 올리는 중… (채널 규격 4장 생성)");
+  const btn = document.getElementById("imgbtn-"+sku);
+  const stat = document.getElementById("imgstat-"+sku);
+  // 진행 표시는 토스트(1.6초 뒤 사라짐)가 아니라 자리에 남는 문구로 —
+  // 폰에서 업로드 수십 초 동안 화면이 죽은 것처럼 보이던 문제.
+  if (btn){ btn.disabled = true; btn.textContent = "올리는 중…"; }
+  if (stat){ stat.textContent = "사진 줄이는 중…"; stat.style.color = ""; }
+  const small = await shrinkImage(file);
+  if (stat) stat.textContent = "서버에 올려 채널 규격 4장 만드는 중…";
   const fd = new FormData();
-  fd.append("file", file);
-  const r = await fetch(`${BASE}/item/${sku}/image`, {method:"POST", body: fd});
-  const j = await r.json().catch(()=>({ok:false,error:"응답을 읽지 못했습니다"}));
-  if (!j.ok){ toast("⚠ 실패: " + (j.error||r.status)); return; }
+  fd.append("file", small, "photo.jpg");
+  const r = await fetch(`${BASE}/item/${sku}/image`, {method:"POST", body: fd})
+    .catch(()=>null);
+  const j = r ? await r.json().catch(()=>({ok:false,error:"응답을 읽지 못했습니다"}))
+              : {ok:false, error:"연결이 끊겼습니다 — 다시 시도해 주세요"};
+  if (!j.ok){
+    if (btn){ btn.disabled = false; btn.textContent = "📷 사진 올리기 / 교체"; }
+    // 실패는 사라지는 토스트가 아니라 화면에 남긴다
+    if (stat){ stat.textContent = "⚠ 실패: " + (j.error||"") ; stat.style.color = "var(--red)"; }
+    return;
+  }
+  (DATA.settings.photo_at = DATA.settings.photo_at || {})[sku] = j.photo_at || new Date().toISOString();
   IMG_V++;                                   // 캐시 깨고 새 사진 표시
   toast("사진 저장 ✓ — 채널 규격 4장 생성됨");
-  if (sheetOpen() && OPEN_SKU === sku)
+  // '사진 없음' 필터로 몰아서 올리는 중이면 다음 메뉴로 자동 이동 —
+  // 189장 초기 채우기의 실제 경로. 필터를 안 걸었으면 제자리에 머문다.
+  let next = null;
+  if (PROB === "nophoto"){
+    next = DATA.items.find(i => probNophoto(i) && i.sku !== sku &&
+      (CAT === "전체" || i.category === CAT));
+  }
+  render();
+  if (next){
+    revealRow(next.sku); toggleDetail(next.sku);
+    toast(`다음: ${next.name}`);
+  } else if (sheetOpen() && OPEN_SKU === sku){
     document.getElementById("sheetBody").innerHTML = detailHTML(sku);
-  else refreshDetail(sku);
+  } else refreshDetail(sku);
 }
 async function deleteImage(sku){
   if (!confirm("이 메뉴의 사진(원본+채널 4장)을 삭제할까요?")) return;
   const j = await api(`/item/${sku}/image/delete`);
   if (!j) return;
+  if (DATA.settings.photo_at) delete DATA.settings.photo_at[sku];
   IMG_V++;
   toast("사진 삭제됨");
+  render();
   if (sheetOpen() && OPEN_SKU === sku)
     document.getElementById("sheetBody").innerHTML = detailHTML(sku);
   else refreshDetail(sku);
