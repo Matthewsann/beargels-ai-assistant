@@ -1028,6 +1028,18 @@ def perf(path_key):
 
 @app.route("/<path_key>/review/<int:review_id>/save", methods=["POST"])
 def save_draft(path_key, review_id):
+    """초안 저장. ⚠️ 실패를 성공처럼 돌려주면 안 된다(2026-08-29 감사).
+
+    예전엔 저장이 실패해도 성공과 똑같이 302 를 돌려줬고, 화면은 그대로
+    등록으로 진행했다 — 직원이 방금 고친 문장(예: 사과 문구)이 저장되지
+    않은 채 **옛 초안이 실고객에게 게시**될 수 있었다. 화면엔 초록불에
+    '실제 등록된 답글'도 DB 값(=옛 문장)이 떠서 알아챌 단서조차 없었다.
+    이제 JS 호출엔 {ok: false} 를 돌려주고, 화면(submitPost)은 저장 성공을
+    확인한 뒤에만 등록을 요청한다.
+
+    (302 리다이렉트를 따라가 100장짜리 /todo 를 통째로 다시 그리던 낭비도
+    함께 정리 — JS 면 JSON 으로 끝낸다. 리다이렉트는 비-JS 폴백 전용.)
+    """
     check(path_key)
     text = (request.form.get("draft") or "").strip()
     try:
@@ -1037,6 +1049,10 @@ def save_draft(path_key, review_id):
         db.log_error("service", f"답글 저장 실패(review {review_id}): {e}",
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
+        if _ajax():
+            return jsonify({"ok": False, "error": str(e)[:150]}), 200
+    if _ajax():
+        return jsonify({"ok": True})
     return redirect(url_for("todo", path_key=path_key) + f"#r{review_id}")
 
 

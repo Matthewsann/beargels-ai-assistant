@@ -487,12 +487,28 @@ function ta(id) { return document.getElementById('d' + id); }
 function urlOf(id, kind) { return ta(id).dataset['url' + kind]; }
 
 // 칸에서 나갈 때·복사할 때·등록 직전에 자동 저장한다(따로 저장 버튼 없음).
+// 값이 마지막 저장과 같으면 서버를 부르지 않는다 — 일괄 등록 때 안 바뀐
+// 칸까지 매번 저장하면 그 왕복이 전부 등록 대기에 얹힌다(2026-08-29 감사).
+const savedDraft = {};                 // id → 마지막으로 저장 성공한 값
+
+// 저장 성공 여부를 돌려준다(true/false). ⚠️ 실패를 삼키면 안 된다 —
+// 옛 초안이 그대로 게시되는 사고 경로다. 등록(submitPost)은 이 결과를
+// 확인한 뒤에만 /post 를 부른다.
 function saveDraft(id) {
   const t = ta(id);
-  if (!t) return Promise.resolve();
+  if (!t) return Promise.resolve(true);
+  if (savedDraft[id] === t.value) return Promise.resolve(true);
+  const val = t.value;
   return fetch(urlOf(id, 'Save'),
-               {method: 'POST', body: new URLSearchParams({draft: t.value})})
-         .catch(() => {});
+               {method: 'POST',
+                headers: {'X-Requested-With': 'fetch'},
+                body: new URLSearchParams({draft: val})})
+    .then(r => r.json())
+    .then(res => {
+      if (res && res.ok) { savedDraft[id] = val; return true; }
+      return false;
+    })
+    .catch(() => false);
 }
 
 function copyIt(id) {
@@ -565,17 +581,26 @@ const POLL_MS = 1500;      // 등록 자체가 ~12초라 3초 간격은 감지�
 const POLL_MAX = 160;      // 1.5초 × 160 = 4분
 
 // 초안 저장 + 등록 요청까지만. 결과는 기다리지 않는다.
+// ⚠️ 저장이 실패하면 등록으로 넘어가지 않는다 — 넘어가면 직원이 방금 고친
+//    문장이 아니라 **저장돼 있던 옛 초안**이 실고객에게 나간다(2026-08-29).
 function submitPost(id) {
   setState(id, 'posting', '집 PC가 등록하는 중이에요…');
   return saveDraft(id)
-    .then(() => fetch(urlOf(id, 'Post'), {method: 'POST'}))
-    .then(r => r.json())
-    .then(res => {
-      if (!res.ok) {
-        setState(id, 'failed', '요청 실패: ' + (res.error || ''));
+    .then(saved => {
+      if (!saved) {
+        setState(id, 'failed',
+          '고친 내용이 저장되지 않아 등록을 멈췄어요 — 잠시 후 다시 눌러주세요.');
         return false;
       }
-      return true;
+      return fetch(urlOf(id, 'Post'), {method: 'POST'})
+        .then(r => r.json())
+        .then(res => {
+          if (!res.ok) {
+            setState(id, 'failed', '요청 실패: ' + (res.error || ''));
+            return false;
+          }
+          return true;
+        });
     })
     .catch(() => { setState(id, 'failed', '통신에 실패했어요.'); return false; });
 }
@@ -632,8 +657,12 @@ function scheduleOne(id, url) {
   const btn = document.getElementById('sb' + id);
   if (btn) { btn.disabled = true; btn.textContent = '예약 중…'; }
   // 칸에서 나가지 않고 눌러도 고친 내용이 저장되게 먼저 저장한다.
+  // 저장 실패면 예약하지 않는다 — 예약해 두면 아침에 옛 초안이 나간다.
   saveDraft(id)
-    .then(() => fetch(url, {method: 'POST'}))
+    .then(saved => {
+      if (!saved) throw new Error('고친 내용이 저장되지 않았어요');
+      return fetch(url, {method: 'POST'});
+    })
     .then(r => r.json())
     .then(res => {
       if (!res.ok) throw new Error(res.error || '');
