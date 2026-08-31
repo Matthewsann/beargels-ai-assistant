@@ -237,8 +237,40 @@
   .tl-nowline { position:absolute; top:22px; bottom:0; width:2px; background:var(--now); z-index:2; }
   .tl-nowlab { position:absolute; top:2px; transform:translateX(-50%); font-size:10px; color:var(--now); font-weight:700; z-index:2; }
 
+  /* ── 프린트 시트 (A4 가로) ───────────────────────────────── */
+  #printSheet { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .psheet-head { display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+  .psheet-head .ph-title { display:flex; align-items:baseline; gap:10px; }
+  .psheet-head .ph-title b { font-size:16px; }
+  .psheet-head .ph-date { font-size:14px; font-weight:700; }
+  .psheet-head .ph-meta { margin-left:auto; font-size:11px; color:var(--muted); text-align:right; line-height:1.6; }
+  .psheet-sign { display:none; }
+
+  /* ── 시간대별 매출·인원 그래프 ───────────────────────────── */
+  .chart { border:1px solid var(--line); border-radius:10px 10px 0 0; border-bottom:none; overflow:hidden; background:var(--card); }
+  .chart-inner { min-width:880px; }
+  .crow2 { display:grid; grid-template-columns:336px 1fr; border-bottom:1px solid var(--hair); }
+  .crow2 > .lab { padding:5px 8px; font-size:11px; color:var(--muted); border-right:1px solid var(--hair); display:flex; flex-direction:column; justify-content:center; }
+  .crow2 > .lab b { color:var(--ink); font-size:12px; }
+  .plot { position:relative; }
+  .plot .off { position:absolute; top:0; bottom:0; background:repeating-linear-gradient(45deg,transparent 0 5px,rgba(138,137,127,.13) 5px 10px),var(--offhour); }
+  .plot .gl { position:absolute; left:0; right:0; border-top:1px dotted var(--hair); }
+  .plot .tick { position:absolute; top:0; bottom:0; border-left:1px solid var(--hair); }
+  .bar { position:absolute; bottom:0; border-radius:2px 2px 0 0; }
+  .bar.sale { background:linear-gradient(180deg,#7ea9d4,#4a7fb0); }
+  .bar.sale.peak { background:linear-gradient(180deg,#3f7fbf,#1f5f9f); }
+  .bar.head { background:#b9c9b0; }
+  .bar.head.short { background:#e0b46a; }
+  .bar.head.none { background:var(--now); }
+  .bar b { position:absolute; top:-13px; left:50%; transform:translateX(-50%); font-size:9px; color:var(--muted); font-weight:400; }
+  .headnum { position:absolute; bottom:1px; left:0; right:0; text-align:center; font-size:9px; color:#fff; font-weight:700; }
+  .chart .axis { display:grid; grid-template-columns:336px 1fr; }
+  .chart .axis .lab { border-right:1px solid var(--hair); }
+  .chart .axis .plot { height:15px; }
+  .chart .axis .plot span { position:absolute; top:1px; font-size:9px; color:var(--muted); transform:translateX(-50%); }
+
   /* ── 데일리 근무시간표 (스타벅스식 표) ──────────────────── */
-  .dgrid { overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--card); }
+  .dgrid { overflow-x:auto; border:1px solid var(--line); border-radius:0 0 10px 10px; background:var(--card); }
   .dgrid-inner { min-width:880px; }
   .drow { display:grid; grid-template-columns:70px 104px 46px 58px 58px 1fr; border-bottom:1px solid var(--line); }
   .drow:last-child { border-bottom:none; }
@@ -340,11 +372,43 @@
     .wkcal-inner { min-width:640px; }
   }
 
+  /* ── 인쇄: A4 가로 한 장 ─────────────────────────────────── */
+  @page { size:A4 landscape; margin:8mm; }
   @media print {
-    .demobar, .side, .tabs, .no-print { display:none !important; }
+    .demobar, .side, .tabs, .no-print, .wknav, #daySummary, .top,
+    #dayGapNote, #dayBizNote, .legend { display:none !important; }
+    #view-staff { display:none !important; }
     #view-admin section { display:none !important; }
-    #tab-day { display:block !important; }
-    body { background:#fff; }
+    #view-admin #tab-day { display:block !important; }   /* 위 규칙보다 구체적이어야 이긴다 */
+    html, body { background:#fff; }
+    body { font-size:10pt; }
+    .wrap { max-width:none; padding:0; }
+    * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+
+    #printSheet { border:none; border-radius:0; padding:0; }
+    .psheet-head { margin-bottom:6px; border-bottom:2px solid #333; padding-bottom:4px; }
+    .psheet-head .ph-title b { font-size:13pt; }
+    .psheet-head .ph-date { font-size:12pt; }
+    .psheet-head .ph-meta { font-size:8pt; }
+
+    .chart, .dgrid { overflow:visible !important; border-color:#999; border-radius:0; }
+    .chart-inner, .dgrid-inner { min-width:0 !important; width:100% !important; }
+    .crow2, .chart .axis { grid-template-columns:272px 1fr; }
+    .drow { grid-template-columns:58px 88px 34px 46px 46px 1fr; }
+    .drow > div { min-height:0; padding:3px 5px; font-size:8.5pt; }
+    .drow.head > div, .drow.cover > div { font-size:7.5pt; }
+    .dbar { font-size:7pt; top:3px; bottom:3px; }
+    .dbrk { font-size:7pt; top:4px; bottom:4px; }
+    .covcell { font-size:7.5pt; }
+    .tcell .tick b, .chart .axis .plot span, .bar b { font-size:6.5pt; }
+
+    /* 인수인계 · 서명란 — 매장에 붙여두고 쓰는 칸 */
+    .psheet-sign { display:block !important; margin-top:6px; }
+    .psheet-sign table { width:100%; border-collapse:collapse; font-size:8pt; }
+    .psheet-sign th, .psheet-sign td { border:1px solid #999; padding:4px 6px; text-align:left; }
+    .psheet-sign th { background:#eee; font-weight:700; width:70px; }
+    .psheet-sign td.sign { width:70px; }
+    .psheet-sign .memo { height:34px; }
   }
 </style>
 
@@ -413,13 +477,28 @@
       </div>
 
       <div style="font-size:13px;color:var(--muted);margin-bottom:10px;" id="daySummary"></div>
-      <div id="dayGrid"></div>
+
+      <!-- 프린트되는 부분 (A4 가로) -->
+      <div id="printSheet">
+        <div class="psheet-head">
+          <div class="ph-title">
+            <b>베어글스 송도 타임스페이스점</b>
+            <span class="ph-date num" id="phDate"></span>
+          </div>
+          <div class="ph-meta num" id="phMeta"></div>
+        </div>
+        <div id="dayChart"></div>
+        <div id="dayGrid"></div>
+        <div class="psheet-sign" id="phSign"></div>
+      </div>
+
       <div class="note warn" id="dayGapNote" hidden></div>
       <div style="font-size:12px;color:var(--muted);margin-top:8px;" id="dayBizNote"></div>
       <div class="legend no-print" style="margin-top:8px;">
         <span><b>WT</b> = 실제 근무시간 (퇴근 − 출근 − 휴게)</span>
         <span>흰 칸 = 휴게 (30분 <b>B</b> / 1시간 <b>M</b>)</span>
         <span style="color:var(--warn)">주황 칸 = 그 시간에 1명뿐</span>
+        <span style="color:var(--now)">빨간 칸 = 영업 중인데 0명</span>
       </div>
 
       <div class="sec no-print"><b>오늘 마감 기록</b><small>변동 없으면 "예정대로" 한 번이면 끝</small></div>
@@ -654,6 +733,7 @@
   function defaultCfg() {
     return {
       bizOpen: 7, bizClose: 21,        // 매장 영업시간 07:00 ~ 21:00
+      salesPerHead: 35,                // 1명이 감당하는 30분 매출(천원) — 인원 부족 판단 기준
       closedDows: [],                  // 정기 휴무 요일 (0=월 … 6=일)
       closedDates: ['2026-09-16'],     // 임시 휴무 날짜
       showHoliday: true,               // 공휴일 표시
@@ -1071,17 +1151,107 @@
   };
   let dayGaps = [];                  // 영업 중인데 아무도 없는 시간대
 
+  // 그 시각에 실제로 매장에 있는 인원 (휴게 중인 사람은 뺀다)
+  function coverAt(list, h) {
+    return list.filter(sh => {
+      if (!(sh.s <= h && h < sh.e)) return false;
+      const b = brWindow(sh);
+      return !(b && b.s <= h && h < b.e);
+    }).length;
+  }
+
+  // ── 시간대별 예상 매출 ──────────────────────────────────────
+  // 기준: 최근 4주, 같은 요일, 30분 단위 매출의 **중앙값**.
+  //  · 평균이 아니라 중앙값을 쓴다 — 단체주문 한 번에 그래프가 통째로 휘는 걸 막는다.
+  //  · 휴무일과 공휴일은 표본에서 빼고, 공휴일은 지난 공휴일들만 따로 모아 본다.
+  //  · 왜 작년도 연평균도 아닌 최근 4주인가:
+  //      - 작년 데이터는 매장이 갓 열었을 때라 지금 손님 수와 다르다(오픈 10개월차)
+  //      - 연평균·월평균은 요일 차이를 뭉갠다 (주말과 평일 곡선이 완전히 다름)
+  //      - 4주면 최근 흐름을 담으면서 같은 요일 표본을 4개 확보한다
+  //  · 실제 페이지에서는 POS 매출 내역에서 하루 한 번 계산해 파일로 저장한다.
+  // 목업의 값은 카페 매출 곡선을 흉내 낸 예시다(천원 단위, 06:00부터 30분 간격).
+  const SALES_WKDAY = [0,0, 14,22, 38,46, 41,33, 27,25, 29,37, 52,58, 47,35, 31,33, 38,42, 44,40, 33,27, 23,19, 16,13, 10,7, 0,0];
+  const SALES_WKEND = [0,0,  6,10, 16,22, 28,34, 42,48, 54,58, 64,68, 62,56, 52,54, 58,60, 56,50, 44,38, 32,26, 21,17, 13,9, 0,0];
+
+  function salesAt(iso, h) {
+    if (h < CFG.bizOpen || h >= CFG.bizClose) return 0;
+    const dow = (new Date(iso + 'T00:00:00').getDay() + 6) % 7;
+    const weekendLike = dow >= 5 || !!holidayOf(iso);   // 공휴일은 주말처럼 움직인다
+    const arr = weekendLike ? SALES_WKEND : SALES_WKDAY;
+    const i = Math.round((h - 6) * 2);
+    const base = (i >= 0 && i < arr.length) ? arr[i] : 0;
+    const key = (+iso.slice(5,7)) * 100 + (+iso.slice(8,10));
+    return Math.round(base * (0.86 + ((key * 7919) % 28) / 100));
+  }
+
+  // 시간대별 예상 매출 · 근무 인원 그래프 — 아래 근무표와 시간축을 맞춘다
+  function dayChartHTML() {
+    const list = todayShifts();
+    const total = AXIS_END - AXIS_START;
+    const pct = (h) => ((h - AXIS_START) / total) * 100;
+    const cw = (0.5 / total) * 100;
+
+    const slots = [];
+    for (let h = AXIS_START; h < AXIS_END; h += 0.5) {
+      const won = salesAt(TODAY_ISO, h);
+      slots.push({ h, won, n: coverAt(list, h), open: h >= CFG.bizOpen && h < CFG.bizClose,
+                   need: Math.ceil(won / CFG.salesPerHead) });
+    }
+    const maxWon = Math.max(1, ...slots.map(s => s.won));
+    const maxN   = Math.max(1, ...slots.map(s => s.n), 2);
+    const peak   = Math.max(...slots.map(s => s.won));
+
+    const off = `<span class="off" style="left:0;width:${pct(CFG.bizOpen)}%"></span>
+                 <span class="off" style="left:${pct(CFG.bizClose)}%;right:0"></span>`;
+    let ticks = '';
+    for (let h = Math.ceil(AXIS_START); h <= AXIS_END; h++) ticks += `<span class="tick" style="left:${pct(h)}%"></span>`;
+
+    const saleBars = slots.map(s => s.won
+      ? `<span class="bar sale${s.won === peak ? ' peak' : ''}"
+           style="left:calc(${pct(s.h)}% + 1px);width:calc(${cw}% - 2px);height:${(s.won / maxWon) * 100}%"
+           title="${hm(s.h)} · ${s.won}천원">${s.won === peak ? `<b class="num">${s.won}천</b>` : ''}</span>` : '').join('');
+
+    const headBars = slots.map(s => {
+      if (!s.n) return s.open
+        ? `<span class="bar head none" style="left:calc(${pct(s.h)}% + 1px);width:calc(${cw}% - 2px);height:8%" title="${hm(s.h)} · 0명"></span>` : '';
+      const short = s.open && s.n < s.need;
+      return `<span class="bar head${short ? ' short' : ''}"
+        style="left:calc(${pct(s.h)}% + 1px);width:calc(${cw}% - 2px);height:${(s.n / maxN) * 100}%"
+        title="${hm(s.h)} · ${s.n}명${short ? ` (매출 기준 ${s.need}명 필요)` : ''}"><i class="headnum">${s.n}</i></span>`;
+    }).join('');
+
+    let axis = '';
+    for (let h = Math.ceil(AXIS_START); h <= AXIS_END; h++) axis += `<span class="num" style="left:${pct(h)}%">${String(h).padStart(2,'0')}</span>`;
+
+    const shortCount = slots.filter(s => s.open && s.n && s.n < s.need).length;
+
+    return `<div class="chart"><div class="chart-inner">
+      <div class="crow2">
+        <div class="lab"><b>시간대별 예상 매출</b>최근 4주 같은 요일 중앙값 · 최고 ${peak}천원</div>
+        <div class="plot" style="height:66px">${off}${ticks}
+          <span class="gl" style="top:33%"></span><span class="gl" style="top:66%"></span>${saleBars}</div>
+      </div>
+      <div class="crow2">
+        <div class="lab"><b>실제 근무 인원</b>휴게 시간은 뺀 인원${shortCount ? ` · <span style="color:var(--warn)">부족 ${shortCount}칸</span>` : ''}</div>
+        <div class="plot" style="height:42px">${off}${ticks}${headBars}</div>
+      </div>
+      <div class="axis"><div class="lab"></div><div class="plot">${axis}</div></div>
+    </div></div>`;
+  }
+
   // 데일리 근무시간표 — 행=근무자, 가로=30분 단위 시간축
   function dailyGridHTML() {
     const list = [...todayShifts()].sort((a,b) => a.s - b.s || a.e - b.e);
     const total = AXIS_END - AXIS_START;
     const pct = (h) => ((h - AXIS_START) / total) * 100;
 
-    // 시간 눈금
-    let ticks = '';
+    // 시간 눈금 — 숫자는 머리글 행에만, 아래 행들은 선만
+    let ticks = '', ticksHead = '';
     for (let h = AXIS_START; h <= AXIS_END; h += 0.5) {
       const hr = h % 1 === 0;
-      ticks += `<span class="tick${hr ? ' hr' : ''}" style="left:${pct(h)}%">${hr && h < AXIS_END ? `<b class="num">${String(h).padStart(2,'0')}</b>` : ''}</span>`;
+      const line = `<span class="tick${hr ? ' hr' : ''}" style="left:${pct(h)}%">`;
+      ticks += line + '</span>';
+      ticksHead += line + (hr && h < AXIS_END ? `<b class="num">${String(h).padStart(2,'0')}</b>` : '') + '</span>';
     }
     // 영업시간 밖 음영
     const off = `<span class="off" style="left:0;width:${pct(CFG.bizOpen)}%"></span>
@@ -1090,31 +1260,14 @@
     let html = `<div class="dgrid"><div class="dgrid-inner">
       <div class="drow head">
         <div>포지션</div><div>근무자</div><div>WT</div><div>출근</div><div>퇴근</div>
-        <div class="tcell">${off}${ticks}</div>
+        <div class="tcell">${off}${ticksHead}</div>
       </div>`;
 
-    // 시간대별 인원 (휴게 제외한 실제 커버)
-    let cov = '';
-    const gaps = [];
+    // 영업 중인데 아무도 없는 시간 찾기 (인원 그래프는 위 차트가 보여준다)
+    dayGaps = [];
     for (let h = AXIS_START; h < AXIS_END; h += 0.5) {
-      const n = list.filter(sh => {
-        if (!(sh.s <= h && h < sh.e)) return false;
-        const b = brWindow(sh);
-        return !(b && b.s <= h && h < b.e);
-      }).length;
-      const open = h >= CFG.bizOpen && h < CFG.bizClose;
-      const gap = open && n === 0;
-      if (gap) gaps.push(h);
-      cov += `<span class="covcell ${gap ? 'gap' : n === 0 ? 'zero' : (open && n === 1) ? 'low' : ''}"
-        style="left:${pct(h)}%;width:${(0.5 / total) * 100}%"
-        title="${hm(h)} · ${n}명">${n || '·'}</span>`;
+      if (h >= CFG.bizOpen && h < CFG.bizClose && coverAt(list, h) === 0) dayGaps.push(h);
     }
-    dayGaps = gaps;
-    html += `<div class="drow cover">
-      <div style="grid-column:1 / 6;">시간대별 인원 <span style="margin-left:auto;color:var(--ink);font-weight:700;">
-        총 ${hrs(list.reduce((a, sh) => a + wtOf(sh), 0))}시간</span></div>
-      <div class="tcell">${off}${cov}</div>
-    </div>`;
 
     if (!list.length) {
       html += '<div class="drow"><div style="grid-column:1 / -1;color:var(--muted);">오늘 배치된 근무가 없어요.</div></div>';
@@ -1138,7 +1291,29 @@
   function renderDay() {
     document.getElementById('dayTitle').textContent = '8월 31일 (월) · 오늘';
     ['daySummary','sDaySummary'].forEach(id => document.getElementById(id).innerHTML = daySummaryHTML());
+    // 프린트 시트 머리말
+    const list = todayShifts();
+    const totalWT = list.reduce((a, sh) => a + wtOf(sh), 0);
+    const first = list.length ? Math.min(...list.map(s => s.s)) : CFG.bizOpen;
+    const last  = list.length ? Math.max(...list.map(s => s.e)) : CFG.bizClose;
+    const wx = weatherOf(TODAY_ISO);
+    const hol = holidayOf(TODAY_ISO);
+    document.getElementById('phDate').innerHTML =
+      `2026년 8월 31일 (월)${hol ? ` <span style="color:#c0392b">${esc(hol)}</span>` : ''}`;
+    document.getElementById('phMeta').innerHTML =
+      `매장영업시간 ${hm(CFG.bizOpen)}–${hm(CFG.bizClose)} &nbsp;·&nbsp; 매장근무시간 ${hm(first)}–${hm(last)}<br>` +
+      `총 근무 ${hrs(totalWT)}시간 &nbsp;·&nbsp; 근무자 ${list.length}명 &nbsp;·&nbsp; 날씨 ${wx.icon} ${wx.hi}°/${wx.lo}°`;
+
+    document.getElementById('dayChart').innerHTML = dayChartHTML();
     document.getElementById('dayGrid').innerHTML = dailyGridHTML();
+
+    // 인쇄본 아래 인수인계 · 전달사항 칸
+    document.getElementById('phSign').innerHTML = `<table>
+      <tr><th>인수인계</th>${list.map(sh => `<td>${esc(posOf(sh))} ${esc(sh.w)}</td>`).join('')}</tr>
+      <tr><th>확인 서명</th>${list.map(() => '<td class="sign">&nbsp;</td>').join('')}</tr>
+      <tr><th>전달사항</th><td class="memo" colspan="${Math.max(1, list.length)}">&nbsp;</td></tr>
+    </table>`;
+
     document.getElementById('dayGapNote').innerHTML = dayGaps.length
       ? `🚨 <b>영업 중인데 매장에 아무도 없는 시간이 있어요</b> — ${
           dayGaps.map(h => `<b class="num">${hm(h)}</b>`).join(', ')}. 휴게 시간을 겹치지 않게 옮기거나 근무를 더 넣어주세요.`
