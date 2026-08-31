@@ -137,6 +137,7 @@
   .wkgrid-head .dh .wx { font-size:10px; color:var(--muted); display:block; line-height:1.5; white-space:nowrap; }
   .wkgrid-head .dh .wx .rain { color:#2c6ea8; }
   .wkgrid-head .dh .closedtag { font-size:9px; color:var(--warn); font-weight:700; display:block; line-height:1.4; }
+  .wkgrid-head .dh .biz { font-size:9px; color:var(--accent); display:block; line-height:1.5; white-space:nowrap; }
 
   .wkgrid-body { display:grid; grid-template-columns:52px repeat(7,1fr); position:relative; }
   .wkaxis { border-right:1px solid var(--line); background:var(--card); position:sticky; left:0; z-index:5; }
@@ -154,7 +155,10 @@
       var(--offhour);
   }
   .dcol:last-child { border-right:none; }
-  .dcol .bizband { position:absolute; left:0; right:0; background:var(--card); z-index:0; }
+  .dcol .bizband {
+    position:absolute; left:0; right:0; background:var(--card); z-index:0;
+    border-top:1px dashed rgba(24,95,165,.55); border-bottom:1px dashed rgba(24,95,165,.55);
+  }
   .dcol.today .bizband { background:#fdfcf8; }
   .dcol.closed {
     background:
@@ -181,7 +185,19 @@
     position:absolute; border-radius:6px; color:#fff; padding:3px 5px 2px; z-index:3;
     overflow:hidden; line-height:1.3; cursor:pointer; border:1px solid rgba(255,255,255,.35);
   }
-  .ev.ro { cursor:default; }
+  .ev { cursor:grab; touch-action:none; }
+  .ev.ro { cursor:default; touch-action:auto; }
+  .ev .rz { position:absolute; left:0; right:0; height:8px; cursor:ns-resize; z-index:5; }
+  .ev .rz.top { top:0; } .ev .rz.bot { bottom:0; }
+  .ev .rz::after {
+    content:''; position:absolute; left:50%; transform:translateX(-50%); width:22px; height:2px;
+    border-radius:2px; background:rgba(255,255,255,.75); opacity:0; transition:opacity .12s;
+  }
+  .ev .rz.top::after { top:2px; } .ev .rz.bot::after { bottom:2px; }
+  .ev:hover .rz::after { opacity:1; }
+  .ev.ro .rz { display:none; }
+  .ev.dragging { cursor:grabbing; opacity:.9; box-shadow:0 6px 16px rgba(0,0,0,.3); z-index:20; }
+  .dcol.droptarget { outline:2px dashed var(--accent); outline-offset:-2px; }
   .ev .t { font-size:10px; opacity:.9; display:block; }
   .ev b { font-size:11px; display:block; font-weight:700; }
   .ev.compact .t .e { display:none; }
@@ -510,16 +526,23 @@
     <section id="tab-set" hidden>
       <div class="note">✏️ 여기 값을 바꾸면 <b>근무표가 바로 다시 그려져요.</b> 실제 매장 시간·직원 이름을 넣어보고 어떻게 보이는지 확인해보세요. (이 목업에서는 이 브라우저에만 저장됩니다)</div>
 
-      <div class="sec" style="margin-top:0;"><b>매장 영업시간</b><small>근무시간과 다릅니다</small></div>
+      <div class="sec" style="margin-top:0;"><b>매장 영업시간</b><small>요일마다 다르게 · 바뀐 날짜부터 적용</small></div>
       <div class="card">
-        <div class="erow">
-          <label class="cap" for="bizOpenIn">영업 시작</label>
-          <input class="fld num" type="time" id="bizOpenIn" onchange="onBizChange()">
-          <span style="color:var(--muted);">~</span>
-          <label class="cap" for="bizCloseIn">영업 종료</label>
-          <input class="fld num" type="time" id="bizCloseIn" onchange="onBizChange()">
+        <div id="bizDowHost"></div>
+        <div class="rangebar" style="margin-top:12px;">
+          <label class="cap" for="bizFromIn">이 날짜부터 적용</label>
+          <input class="fld num" type="date" id="bizFromIn" value="2026-08-31">
+          <button class="btn small primary" onclick="applyBizHours()">적용</button>
+          <button class="btn small" onclick="fillBizAllDows()">모든 요일 같게</button>
         </div>
         <div class="note" style="margin-bottom:0;" id="bizHint"></div>
+
+        <div class="sec" style="margin-bottom:6px;"><b style="font-size:14px;">영업시간 바뀐 기록</b></div>
+        <div id="bizHistHost"></div>
+        <div class="note" style="margin-bottom:0;">
+          🔒 영업시간을 바꿔도 <b>과거 근무표는 그대로 남습니다.</b> 바꾼 날짜 이후부터만 적용돼요.
+          이미 기록한 출근·퇴근 시각은 영업시간과 상관없이 그 자체로 저장되니 절대 안 바뀝니다.
+        </div>
       </div>
 
       <div class="sec"><b>매장 휴무</b><small>쉬는 날엔 근무를 넣을 수 없어요</small></div>
@@ -553,7 +576,7 @@
         </div>
       </div>
 
-      <div class="sec"><b>시프트 프리셋</b><small>근무 추가할 때 버튼 한 번으로 시간이 채워져요</small></div>
+      <div class="sec"><b>근무 시간대</b><small>근무 추가할 때 버튼 한 번으로 시간이 채워져요</small></div>
       <div class="card">
         <div id="presetHost"></div>
         <div style="margin-top:12px;"><button class="btn small" onclick="addPreset()">＋ 프리셋 추가</button></div>
@@ -667,7 +690,7 @@
       <label class="lbl">직원</label>
       <div class="chiprow" id="mdStaff"></div>
     </div>
-    <label class="lbl">시프트</label>
+    <label class="lbl">근무 시간대</label>
     <div class="chiprow" id="mdPresets"></div>
     <div class="grid3">
       <div><label class="lbl" for="mdStart">시작</label><input class="fld num w" type="time" id="mdStart"></div>
@@ -690,7 +713,7 @@
   const TODAY_ISO = '2026-08-31';
   const TODAY_W = 1, TODAY_D = 0; // 오늘 = 8/31 (월)
   const BASE_MON = '2026-08-24';  // 첫 주 월요일
-  const LSKEY = 'beargels-schedule-mockup-v4';
+  const LSKEY = 'beargels-schedule-mockup-v5';
 
   // ── 날짜 유틸 ──
   const addDays = (iso, n) => {
@@ -732,7 +755,11 @@
   // ══ 기본값 (실제 페이지에서는 서버가 설정 파일에서 읽어옵니다) ══
   function defaultCfg() {
     return {
-      bizOpen: 7, bizClose: 21,        // 매장 영업시간 07:00 ~ 21:00
+      // 매장 영업시간은 "언제부터 이랬다"를 기록으로 쌓는다.
+      // 바꿔도 과거 근무표는 그때 영업시간 그대로 남는다.
+      bizHours: [
+        { from:'2026-01-01', dows:[[7,21],[7,21],[7,21],[7,21],[7,21],[7,21],[7,21]] },  // 월~일
+      ],
       salesPerHead: 35,                // 1명이 감당하는 30분 매출(천원) — 인원 부족 판단 기준
       closedDows: [],                  // 정기 휴무 요일 (0=월 … 6=일)
       closedDates: ['2026-09-16'],     // 임시 휴무 날짜
@@ -745,11 +772,11 @@
         { name:'마감', s:16,  e:21.5 },
       ],
       staff: [
-        { name:'지은', c:'#5a6b8c', role:'점장',       memo:'월·화·목·토 오픈' },
-        { name:'민수', c:'#2f8f83', role:'파트타이머', memo:'수·금 오픈 · 월 오후 · 일 미들' },
-        { name:'하늘', c:'#7b68ae', role:'파트타이머', memo:'월·화·목·토 마감' },
-        { name:'소연', c:'#c2587e', role:'파트타이머', memo:'월 미들 · 수 마감 · 금 미들 · 일 오픈' },
-        { name:'준호', c:'#8a6d3b', role:'파트타이머', memo:'목 오후 · 금 마감 · 토·일 미들' },
+        { name:'지은', c:'#5a6b8c', role:'점장'       },
+        { name:'민수', c:'#2f8f83', role:'파트타이머' },
+        { name:'하늘', c:'#7b68ae', role:'파트타이머' },
+        { name:'소연', c:'#c2587e', role:'파트타이머' },
+        { name:'준호', c:'#8a6d3b', role:'파트타이머' },
       ],
     };
   }
@@ -818,12 +845,23 @@
   const staffOf = (n) => CFG.staff.find(s => s.name === n);
   const colorOf = (n) => (staffOf(n) || {}).c || '#8a897f';
   const isClosed = (iso, di) => CFG.closedDates.includes(iso) || CFG.closedDows.includes(di);
+  const dowOf = (iso) => (new Date(iso + 'T00:00:00').getDay() + 6) % 7;   // 0=월 … 6=일
+
+  // 그 날짜에 적용되던 영업시간. 영업시간을 바꿔도 과거는 그대로다.
+  function bizOf(iso) {
+    let entry = CFG.bizHours[0];
+    for (const e of CFG.bizHours) if (e.from <= iso) entry = e;
+    const p = (entry && entry.dows && entry.dows[dowOf(iso)]) || [7, 21];
+    return { open:p[0], close:p[1] };
+  }
+  const bizToday = () => bizOf(TODAY_ISO);
 
   // 시간축 = 영업시간과 실제 근무시간을 모두 감싸도록 자동 계산
   function recalcAxis() {
     const all = WEEKS.flatMap(w => w.days.flat());
-    const starts = all.map(s => s.s).concat(CFG.bizOpen);
-    const ends   = all.map(s => s.e).concat(CFG.bizClose);
+    const bizAll = CFG.bizHours.flatMap(e => e.dows);
+    const starts = all.map(s => s.s).concat(bizAll.map(p => p[0]));
+    const ends   = all.map(s => s.e).concat(bizAll.map(p => p[1]));
     AXIS_START = Math.floor(Math.min(...starts));
     AXIS_END   = Math.max(AXIS_START + 1, Math.ceil(Math.max(...ends)));
   }
@@ -854,7 +892,7 @@
   }
   function resetAll() {
     if (!confirm('바꾼 설정과 근무를 전부 처음 예시 상태로 되돌릴까요?')) return;
-    CFG = defaultCfg(); WEEKS = defaultWeeks(); meName = '하늘'; wkIdx = TODAY_W;
+    CFG = defaultCfg(); WEEKS = defaultWeeks(); meName = '하늘'; wkIdx = TODAY_W; bizDraft = null;
     try { localStorage.removeItem(LSKEY); } catch (e) {}
     renderAll();
   }
@@ -898,27 +936,29 @@
         const w = weatherOf(iso);
         wx = `<span class="wx${w.rain ? ' rain' : ''}">${w.icon} <span class="num">${w.hi}°</span></span>`;
       }
+      const bz = bizOf(iso);
       head += `<div class="dh ${cls}">
         <span class="w">${DOW[i]}${i === wk.todayIdx ? ' · 오늘' : ''}</span>
         <span class="dt num">${d}</span>
         ${hol ? `<span class="holname">${esc(hol)}</span>` : ''}
         ${wx}
-        ${closed ? '<span class="closedtag">휴무</span>' : `<span class="cnt">${n ? n + '명' : '—'}</span>`}
+        ${closed ? '<span class="closedtag">휴무</span>'
+                 : `<span class="biz num">${hm(bz.open)}–${hm(bz.close)}</span>
+                    <span class="cnt">${n ? n + '명' : '—'}</span>`}
       </div>`;
     });
     head += '</div>';
 
     let body = '<div class="wkgrid-body">';
     body += '<div class="wkaxis">' + hours.map(h => {
-      const mark = h === Math.floor(CFG.bizOpen) ? '<em>오픈</em>' : (h === Math.floor(CFG.bizClose) ? '<em>마감</em>' : '');
-      const biz = (h >= CFG.bizOpen - 1 && h < CFG.bizClose) ? ' biz' : '';
-      return `<div class="hl${biz}" style="height:${HH}px">${mark}<span class="num">${String(h).padStart(2,'0')}</span></div>`;
+      return `<div class="hl" style="height:${HH}px"><span class="num">${String(h).padStart(2,'0')}</span></div>`;
     }).join('') + '</div>';
 
     wk.days.forEach((day, di) => {
       const closed = isClosed(wk.iso[di], di);
       body += `<div class="dcol ${di === wk.todayIdx ? 'today' : ''}${closed ? ' closed' : ''}" data-day="${di}">`;
-      body += `<div class="bizband" style="top:${y(CFG.bizOpen)}px;height:${(CFG.bizClose - CFG.bizOpen) * HH}px"></div>`;
+      const bz = bizOf(wk.iso[di]);
+      body += `<div class="bizband" style="top:${y(bz.open)}px;height:${(bz.close - bz.open) * HH}px"></div>`;
       body += hours.map(() => `<div class="hl" style="height:${HH}px"></div>`).join('');
       if (closed) body += '<span class="closedlab">휴 무</span>';
       assignLanes(day).forEach(sh => {
@@ -927,17 +967,16 @@
         const mk = sh.st === 'ok' ? '<span class="mk ok">✓</span>'
                  : sh.st === 'diff' ? `<span class="mk diff">${esc(sh.note || '변동')}</span>`
                  : sh.st === 'pend' ? '<span class="mk pend">기록 전</span>' : '';
-        const click = ro ? '' : ` onclick="event.stopPropagation();openEditShift(${wi},${di},${day.indexOf(sh)})"`;
+        const grab = ro ? '' : ` data-di="${di}" data-idx="${day.indexOf(sh)}"`;
+        const rz = ro ? '' : '<i class="rz top"></i><i class="rz bot"></i>';
         body += `<div class="ev${ro ? ' ro' : ''}${sh.st === 'diff' ? ' diff' : ''}"
           style="top:${y(sh.s)}px;height:${Math.max(14, dur(sh) * HH - 4)}px;left:calc(${sh._lane * w}% + 2px);width:calc(${w}% - 4px);background:${colorOf(sh.w)};${dim}"
-          title="${esc(sh.w)} ${span(sh)} (${hrs(dur(sh))}시간)"${click}>
-          ${mk}<span class="t num"><span class="s">${hm(sh.s)}</span><span class="e">–${hm(sh.e)}</span></span><b>${esc(sh.w)}</b></div>`;
+          title="${esc(sh.w)} ${span(sh)} (${hrs(dur(sh))}시간) — 끌어서 옮기기, 위아래 끝을 끌어 시간 조절"${grab}>
+          ${rz}${mk}<span class="t num"><span class="s">${hm(sh.s)}</span><span class="e">–${hm(sh.e)}</span></span><b>${esc(sh.w)}</b></div>`;
       });
       body += '</div>';
     });
 
-    body += `<div class="bizline" style="top:${y(CFG.bizOpen)}px"><b class="num">영업 ${hm(CFG.bizOpen)}</b></div>`;
-    body += `<div class="bizline" style="top:${y(CFG.bizClose)}px"><b class="num">마감 ${hm(CFG.bizClose)}</b></div>`;
     if (wk.todayIdx >= 0 && NOW >= AXIS_START && NOW <= AXIS_END) {
       body += `<div class="nowline" style="top:${y(NOW)}px"><b class="num">지금 ${hm(NOW)}</b></div>`;
     }
@@ -996,7 +1035,7 @@
       html += `<div class="stats">
         <div class="stat"><span class="n num">${hrs(totalH)}시간</span><small>이번 주 총 근무</small></div>
         <div class="stat"><span class="n num">${people}명</span><small>근무 인원</small></div>
-        <div class="stat"><span class="n num">${flat.length}건</span><small>배치된 시프트</small></div>
+        <div class="stat"><span class="n num">${flat.length}건</span><small>배치된 근무</small></div>
       </div>`;
     }
     if (wk.locked) {
@@ -1012,12 +1051,88 @@
         const di = +col.dataset.day;
         if (isClosed(wk.iso[di], di)) return;   // 휴무일에는 근무를 넣지 않는다
         col.onclick = (e) => {
+          if (justDragged) return;              // 방금 끌어다 놓은 거면 추가창을 열지 않는다
           const yPos = e.clientY - col.getBoundingClientRect().top;
           const half = Math.max(0, Math.round(yPos / (HH / 2)));
           openAddShift(wkIdx, di, Math.min(AXIS_END - 1, AXIS_START + half / 2));
         };
       });
+      host.querySelectorAll('.ev[data-idx]').forEach(el =>
+        el.addEventListener('pointerdown', (e) => startDrag(e, el, wkIdx)));
     }
+  }
+
+  // ── 드래그로 옮기기 · 시간 늘리고 줄이기 ──────────────────
+  let drag = null, justDragged = false;
+
+  function startDrag(e, el, wi) {
+    if (e.button != null && e.button !== 0) return;
+    const di = +el.dataset.di, idx = +el.dataset.idx;
+    const sh = WEEKS[wi].days[di][idx]; if (!sh) return;
+    const bodyEl = el.closest('.wkgrid-body'); if (!bodyEl) return;
+    drag = {
+      wi, di, idx, el,
+      mode: e.target.classList.contains('top') ? 'top'
+          : e.target.classList.contains('bot') ? 'bottom' : 'move',
+      cols: [...bodyEl.querySelectorAll('.dcol')],
+      startY: e.clientY,
+      origS: sh.s, origE: sh.e,
+      newS: sh.s, newE: sh.e, newDi: di,
+      moved: false,
+    };
+    el.classList.add('dragging');
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+    e.preventDefault(); e.stopPropagation();
+  }
+
+  function moveDrag(e) {
+    if (!drag) return;
+    const d = drag;
+    const steps = Math.round((e.clientY - d.startY) / (HH / 2)) / 2;   // 30분 단위로 맞춘다
+    const len = d.origE - d.origS;
+
+    if (d.mode === 'move') {
+      const s = Math.max(AXIS_START, Math.min(AXIS_END - len, d.origS + steps));
+      d.newS = s; d.newE = s + len;
+      let ti = d.cols.findIndex(c => {
+        const r = c.getBoundingClientRect();
+        return e.clientX >= r.left && e.clientX <= r.right;
+      });
+      if (ti >= 0 && !isClosed(WEEKS[d.wi].iso[ti], ti)) d.newDi = ti;   // 휴무일에는 못 놓는다
+    } else if (d.mode === 'top') {
+      d.newS = Math.max(AXIS_START, Math.min(d.origE - 0.5, d.origS + steps));
+      d.newE = d.origE;
+    } else {
+      d.newE = Math.min(AXIS_END, Math.max(d.origS + 0.5, d.origE + steps));
+      d.newS = d.origS;
+    }
+    if (d.newS !== d.origS || d.newE !== d.origE || d.newDi !== d.di) d.moved = true;
+
+    const col = d.cols[d.newDi];
+    if (col && d.el.parentElement !== col) col.appendChild(d.el);
+    d.cols.forEach((c, i) => c.classList.toggle('droptarget', d.moved && i === d.newDi && d.newDi !== d.di));
+    d.el.style.top = ((d.newS - AXIS_START) * HH) + 'px';
+    d.el.style.height = Math.max(14, (d.newE - d.newS) * HH - 4) + 'px';
+    d.el.style.left = '2px';
+    d.el.style.width = 'calc(100% - 4px)';
+    const t = d.el.querySelector('.t');
+    if (t) t.innerHTML = `<span class="s">${hm(d.newS)}</span><span class="e">–${hm(d.newE)}</span>`;
+  }
+
+  function endDrag() {
+    if (!drag) return;
+    const d = drag; drag = null;
+    d.el.classList.remove('dragging');
+    d.cols.forEach(c => c.classList.remove('droptarget'));
+    justDragged = true;
+    setTimeout(() => { justDragged = false; }, 0);
+
+    if (!d.moved) { openEditShift(d.wi, d.di, d.idx); return; }
+    const day = WEEKS[d.wi].days[d.di];
+    const sh = day[d.idx]; if (!sh) { renderAll(); return; }
+    sh.s = d.newS; sh.e = d.newE;
+    if (d.newDi !== d.di) { day.splice(d.idx, 1); WEEKS[d.wi].days[d.newDi].push(sh); }
+    save(); renderAll();
   }
 
   function moveWeek(d) { wkIdx = Math.max(0, Math.min(WEEKS.length - 1, wkIdx + d)); renderWeek(); }
@@ -1099,9 +1214,10 @@
     const pct = (h) => ((h - AXIS_START) / total) * 100;
     const at = (h) => `calc(70px + (100% - 70px) * ${pct(h) / 100})`;
 
-    let html = `<div class="tl-biz" style="left:${at(CFG.bizOpen)};width:calc((100% - 70px) * ${(CFG.bizClose - CFG.bizOpen) / total});"></div>
-      <div class="tl-bizlab" style="left:${at(CFG.bizOpen)}">영업 ${hm(CFG.bizOpen)}</div>
-      <div class="tl-bizlab" style="left:${at(CFG.bizClose)}">마감 ${hm(CFG.bizClose)}</div>
+    const bz = bizToday();
+    let html = `<div class="tl-biz" style="left:${at(bz.open)};width:calc((100% - 70px) * ${(bz.close - bz.open) / total});"></div>
+      <div class="tl-bizlab" style="left:${at(bz.open)}">영업 ${hm(bz.open)}</div>
+      <div class="tl-bizlab" style="left:${at(bz.close)}">마감 ${hm(bz.close)}</div>
       <div class="tl-nowlab num" style="left:${at(NOW)}">지금 ${hm(NOW)}</div>
       <div class="tl-nowline" style="left:${at(NOW)}"></div>
       <div class="tl-scale">`;
@@ -1132,9 +1248,10 @@
     const list = todayShifts(); if (!list.length) return '';
     const first = [...list].sort((a,b) => a.s - b.s)[0];
     const last  = [...list].sort((a,b) => b.e - a.e)[0];
-    const before = Math.round((CFG.bizOpen - first.s) * 60);
-    const after  = Math.round((last.e - CFG.bizClose) * 60);
-    return `매장 영업 <b class="num">${hm(CFG.bizOpen)}–${hm(CFG.bizClose)}</b> · ` +
+    const bz = bizToday();
+    const before = Math.round((bz.open - first.s) * 60);
+    const after  = Math.round((last.e - bz.close) * 60);
+    return `매장 영업 <b class="num">${hm(bz.open)}–${hm(bz.close)}</b> · ` +
       `첫 출근 <b class="num">${hm(first.s)}</b> (${esc(first.w)}, 영업 ${before >= 0 ? before + '분 전' : (-before) + '분 후'}) · ` +
       `마지막 퇴근 <b class="num">${hm(last.e)}</b> (${esc(last.w)}, 영업 종료 ${after >= 0 ? after + '분 후' : (-after) + '분 전'})`;
   }
@@ -1174,9 +1291,9 @@
   const SALES_WKEND = [0,0,  6,10, 16,22, 28,34, 42,48, 54,58, 64,68, 62,56, 52,54, 58,60, 56,50, 44,38, 32,26, 21,17, 13,9, 0,0];
 
   function salesAt(iso, h) {
-    if (h < CFG.bizOpen || h >= CFG.bizClose) return 0;
-    const dow = (new Date(iso + 'T00:00:00').getDay() + 6) % 7;
-    const weekendLike = dow >= 5 || !!holidayOf(iso);   // 공휴일은 주말처럼 움직인다
+    const bz = bizOf(iso);
+    if (h < bz.open || h >= bz.close) return 0;
+    const weekendLike = dowOf(iso) >= 5 || !!holidayOf(iso);   // 공휴일은 주말처럼 움직인다
     const arr = weekendLike ? SALES_WKEND : SALES_WKDAY;
     const i = Math.round((h - 6) * 2);
     const base = (i >= 0 && i < arr.length) ? arr[i] : 0;
@@ -1187,6 +1304,7 @@
   // 시간대별 예상 매출 · 근무 인원 그래프 — 아래 근무표와 시간축을 맞춘다
   function dayChartHTML() {
     const list = todayShifts();
+    const bz = bizToday();
     const total = AXIS_END - AXIS_START;
     const pct = (h) => ((h - AXIS_START) / total) * 100;
     const cw = (0.5 / total) * 100;
@@ -1194,15 +1312,15 @@
     const slots = [];
     for (let h = AXIS_START; h < AXIS_END; h += 0.5) {
       const won = salesAt(TODAY_ISO, h);
-      slots.push({ h, won, n: coverAt(list, h), open: h >= CFG.bizOpen && h < CFG.bizClose,
+      slots.push({ h, won, n: coverAt(list, h), open: h >= bz.open && h < bz.close,
                    need: Math.ceil(won / CFG.salesPerHead) });
     }
     const maxWon = Math.max(1, ...slots.map(s => s.won));
     const maxN   = Math.max(1, ...slots.map(s => s.n), 2);
     const peak   = Math.max(...slots.map(s => s.won));
 
-    const off = `<span class="off" style="left:0;width:${pct(CFG.bizOpen)}%"></span>
-                 <span class="off" style="left:${pct(CFG.bizClose)}%;right:0"></span>`;
+    const off = `<span class="off" style="left:0;width:${pct(bz.open)}%"></span>
+                 <span class="off" style="left:${pct(bz.close)}%;right:0"></span>`;
     let ticks = '';
     for (let h = Math.ceil(AXIS_START); h <= AXIS_END; h++) ticks += `<span class="tick" style="left:${pct(h)}%"></span>`;
 
@@ -1242,6 +1360,7 @@
   // 데일리 근무시간표 — 행=근무자, 가로=30분 단위 시간축
   function dailyGridHTML() {
     const list = [...todayShifts()].sort((a,b) => a.s - b.s || a.e - b.e);
+    const bz = bizToday();
     const total = AXIS_END - AXIS_START;
     const pct = (h) => ((h - AXIS_START) / total) * 100;
 
@@ -1254,8 +1373,8 @@
       ticksHead += line + (hr && h < AXIS_END ? `<b class="num">${String(h).padStart(2,'0')}</b>` : '') + '</span>';
     }
     // 영업시간 밖 음영
-    const off = `<span class="off" style="left:0;width:${pct(CFG.bizOpen)}%"></span>
-                 <span class="off" style="left:${pct(CFG.bizClose)}%;right:0"></span>`;
+    const off = `<span class="off" style="left:0;width:${pct(bz.open)}%"></span>
+                 <span class="off" style="left:${pct(bz.close)}%;right:0"></span>`;
 
     let html = `<div class="dgrid"><div class="dgrid-inner">
       <div class="drow head">
@@ -1266,7 +1385,7 @@
     // 영업 중인데 아무도 없는 시간 찾기 (인원 그래프는 위 차트가 보여준다)
     dayGaps = [];
     for (let h = AXIS_START; h < AXIS_END; h += 0.5) {
-      if (h >= CFG.bizOpen && h < CFG.bizClose && coverAt(list, h) === 0) dayGaps.push(h);
+      if (h >= bz.open && h < bz.close && coverAt(list, h) === 0) dayGaps.push(h);
     }
 
     if (!list.length) {
@@ -1294,14 +1413,15 @@
     // 프린트 시트 머리말
     const list = todayShifts();
     const totalWT = list.reduce((a, sh) => a + wtOf(sh), 0);
-    const first = list.length ? Math.min(...list.map(s => s.s)) : CFG.bizOpen;
-    const last  = list.length ? Math.max(...list.map(s => s.e)) : CFG.bizClose;
+    const bzT = bizToday();
+    const first = list.length ? Math.min(...list.map(s => s.s)) : bzT.open;
+    const last  = list.length ? Math.max(...list.map(s => s.e)) : bzT.close;
     const wx = weatherOf(TODAY_ISO);
     const hol = holidayOf(TODAY_ISO);
     document.getElementById('phDate').innerHTML =
       `2026년 8월 31일 (월)${hol ? ` <span style="color:#c0392b">${esc(hol)}</span>` : ''}`;
     document.getElementById('phMeta').innerHTML =
-      `매장영업시간 ${hm(CFG.bizOpen)}–${hm(CFG.bizClose)} &nbsp;·&nbsp; 매장근무시간 ${hm(first)}–${hm(last)}<br>` +
+      `매장영업시간 ${hm(bzT.open)}–${hm(bzT.close)} &nbsp;·&nbsp; 매장근무시간 ${hm(first)}–${hm(last)}<br>` +
       `총 근무 ${hrs(totalWT)}시간 &nbsp;·&nbsp; 근무자 ${list.length}명 &nbsp;·&nbsp; 날씨 ${wx.icon} ${wx.hi}°/${wx.lo}°`;
 
     document.getElementById('dayChart').innerHTML = dayChartHTML();
@@ -1363,14 +1483,60 @@
   }
 
   // ══ 설정 ══
-  function onBizChange() {
-    const o = toH(document.getElementById('bizOpenIn').value);
-    const c = toH(document.getElementById('bizCloseIn').value);
-    if (!(c > o)) { document.getElementById('bizHint').innerHTML = '⚠️ 영업 종료가 시작보다 빨라요. 다시 골라주세요.'; return; }
-    CFG.bizOpen = o; CFG.bizClose = c;
+  // 편집 중인 요일별 영업시간(아직 적용 전). [적용]을 눌러야 기록에 쌓인다.
+  let bizDraft = null;
+  const currentBizEntry = () => {
+    let e = CFG.bizHours[0];
+    for (const x of CFG.bizHours) if (x.from <= TODAY_ISO) e = x;
+    return e;
+  };
+  function ensureBizDraft() {
+    if (!bizDraft) bizDraft = currentBizEntry().dows.map(p => [p[0], p[1]]);
+    return bizDraft;
+  }
+  function editBizDow(i, which, v) {
+    ensureBizDraft()[i][which === 'open' ? 0 : 1] = toH(v);
+    renderSettings();
+  }
+  function fillBizAllDows() {
+    const d = ensureBizDraft();
+    for (let i = 1; i < 7; i++) { d[i][0] = d[0][0]; d[i][1] = d[0][1]; }
+    renderSettings();
+  }
+  function applyBizHours() {
+    const d = ensureBizDraft();
+    const bad = d.findIndex(p => !(p[1] > p[0]));
+    if (bad >= 0) { alert(`${DOW[bad]}요일 영업 종료가 시작보다 빨라요.`); return; }
+    const from = document.getElementById('bizFromIn').value;
+    if (!from) { alert('적용 시작일을 골라주세요.'); return; }
+    CFG.bizHours = CFG.bizHours.filter(e => e.from !== from);
+    CFG.bizHours.push({ from, dows: d.map(p => [p[0], p[1]]) });
+    CFG.bizHours.sort((a, b) => a.from.localeCompare(b.from));
+    bizDraft = null;
     save(); renderAll();
   }
-  function addPreset() { CFG.presets.push({ name:'새 시프트', s:CFG.bizOpen, e:Math.min(CFG.bizClose, CFG.bizOpen + 5) }); save(); renderAll(); }
+  function delBizEntry(from) {
+    if (CFG.bizHours.length <= 1) { alert('영업시간 기록은 최소 하나는 있어야 해요.'); return; }
+    if (!confirm(`${mdOf(from)}부터 적용된 영업시간 기록을 지울까요?\n그 이후 날짜는 이전 기록을 따라갑니다.`)) return;
+    CFG.bizHours = CFG.bizHours.filter(e => e.from !== from);
+    bizDraft = null;
+    save(); renderAll();
+  }
+  const sameHours = (dows) => dows.every(p => p[0] === dows[0][0] && p[1] === dows[0][1]);
+  function bizSummary(dows) {
+    if (sameHours(dows)) return `매일 ${hm(dows[0][0])}–${hm(dows[0][1])}`;
+    const groups = [];
+    dows.forEach((p, i) => {
+      const g = groups.find(g => g.o === p[0] && g.c === p[1]);
+      if (g) g.d.push(DOW[i]); else groups.push({ o:p[0], c:p[1], d:[DOW[i]] });
+    });
+    return groups.map(g => `${g.d.join('·')} ${hm(g.o)}–${hm(g.c)}`).join(' / ');
+  }
+  function addPreset() {
+    const bz = bizToday();
+    CFG.presets.push({ name:'새 근무', s:bz.open, e:Math.min(bz.close, bz.open + 5) });
+    save(); renderAll();
+  }
   function delPreset(i) { CFG.presets.splice(i, 1); save(); renderAll(); }
   function editPreset(i, field, v) {
     const p = CFG.presets[i];
@@ -1383,7 +1549,7 @@
     const PAL = ['#5a6b8c','#2f8f83','#7b68ae','#c2587e','#8a6d3b','#3d7ea6','#a35d3d','#4f7a4a'];
     let n = '새 직원', i = 2;
     while (staffOf(n)) { n = '새 직원 ' + i++; }
-    CFG.staff.push({ name:n, c:PAL[CFG.staff.length % PAL.length], role:'파트타이머', memo:'' });
+    CFG.staff.push({ name:n, c:PAL[CFG.staff.length % PAL.length], role:'파트타이머' });
     save(); renderAll();
   }
   function delStaff(i) {
@@ -1437,8 +1603,28 @@
   }
 
   function renderSettings() {
-    document.getElementById('bizOpenIn').value = hm(CFG.bizOpen);
-    document.getElementById('bizCloseIn').value = hm(CFG.bizClose);
+    const d = ensureBizDraft();
+    document.getElementById('bizDowHost').innerHTML = d.map((p, i) => `
+      <div class="erow">
+        <b style="width:22px;${i === 5 ? 'color:#2c6ea8' : i === 6 ? 'color:#c0392b' : ''}">${DOW[i]}</b>
+        <input class="fld num" type="time" value="${hm(p[0])}" aria-label="${DOW[i]}요일 영업 시작"
+               onchange="editBizDow(${i},'open',this.value)">
+        <span style="color:var(--muted);">~</span>
+        <input class="fld num" type="time" value="${hm(p[1])}" aria-label="${DOW[i]}요일 영업 종료"
+               onchange="editBizDow(${i},'close',this.value)">
+        <span class="cap num">${p[1] > p[0] ? hrs(p[1] - p[0]) + '시간' : '시간 거꾸로'}</span>
+      </div>`).join('');
+
+    document.getElementById('bizHistHost').innerHTML = [...CFG.bizHours].reverse().map(e => {
+      const now = e === currentBizEntry();
+      return `<div class="erow">
+        <b class="num">${mdOf(e.from)}부터</b>
+        <span class="cap">${esc(bizSummary(e.dows))}</span>
+        ${now ? '<span class="tag accent">지금 적용 중</span>' : ''}
+        ${CFG.bizHours.length > 1 ? `<button class="del" title="삭제" onclick="delBizEntry('${e.from}')">✕</button>` : ''}
+      </div>`;
+    }).join('');
+
     document.getElementById('holChk').checked = !!CFG.showHoliday;
     document.getElementById('wxChk').checked = !!CFG.showWeather;
 
@@ -1458,11 +1644,14 @@
       : '<div class="cap">임시 휴무일이 없어요.</div>';
 
     const all = WEEKS.flatMap(w => w.days.flat());
-    const first = all.length ? Math.min(...all.map(s => s.s)) : CFG.bizOpen;
-    const last  = all.length ? Math.max(...all.map(s => s.e)) : CFG.bizClose;
-    document.getElementById('bizHint').innerHTML =
-      `🕒 오픈 근무자는 영업 시작 <b>전</b>에 출근하고, 마감 근무자는 영업 종료 <b>후</b>에 퇴근해요. ` +
-      `지금 짜둔 근무 기준으로 근무표는 <b class="num">${hm(Math.floor(first))}~${hm(Math.ceil(last))}</b> 범위로 그려집니다.`;
+    const bzT = bizToday();
+    const first = all.length ? Math.min(...all.map(s => s.s)) : bzT.open;
+    const last  = all.length ? Math.max(...all.map(s => s.e)) : bzT.close;
+    const dirty = JSON.stringify(d) !== JSON.stringify(currentBizEntry().dows);
+    document.getElementById('bizHint').innerHTML = dirty
+      ? '✏️ 바꾼 내용은 아직 반영 전이에요. <b>적용 시작일을 고르고 [적용]</b>을 눌러야 그 날짜부터 반영됩니다.'
+      : `🕒 오픈 근무자는 영업 시작 <b>전</b>에 출근하고, 마감 근무자는 영업 종료 <b>후</b>에 퇴근해요. ` +
+        `지금 짜둔 근무 기준으로 근무표는 <b class="num">${hm(Math.floor(first))}~${hm(Math.ceil(last))}</b> 범위로 그려집니다.`;
 
     document.getElementById('presetHost').innerHTML = CFG.presets.map((p, i) => `
       <div class="erow">
@@ -1486,8 +1675,6 @@
                onchange="editStaff(${i},'name',this.value)">
         <input class="fld roleIn" type="text" value="${esc(s.role)}" aria-label="역할"
                onchange="editStaff(${i},'role',this.value)">
-        <input class="fld memoIn" type="text" value="${esc(s.memo)}" placeholder="기본 근무 패턴 메모" aria-label="메모"
-               onchange="editStaff(${i},'memo',this.value)">
         <span class="cap num">${cnt}건</span>
         <button class="del" title="삭제" onclick="delStaff(${i})">✕</button>
       </div>`;
@@ -1663,6 +1850,9 @@
   document.getElementById('mdStart').addEventListener('change', onModalTime);
   document.getElementById('mdEnd').addEventListener('change', onModalTime);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+  document.addEventListener('pointermove', moveDrag);
+  document.addEventListener('pointerup', endDrag);
+  document.addEventListener('pointercancel', endDrag);
   window.addEventListener('resize', () => fitEvents(document));
 
   load();
