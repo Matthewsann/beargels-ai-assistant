@@ -133,6 +133,15 @@
   </div>
   {% endif %}
 
+  {# 사진 리뷰 재검토(일회성, 2026-08-31) — 남은 게 있을 때만 입구가 보인다 #}
+  {% if recheck_remain %}
+  <a class="note" style="display:block; text-decoration:none;"
+     href="{{ url_for('photo_recheck', path_key=key) }}">
+    📷 <b>사진 리뷰 재검토 {{ recheck_remain }}건 남음</b> — 사진을 못 읽던
+    버그의 영향분을 직접 확인해 주세요 →
+  </a>
+  {% endif %}
+
   {# 고객이 남긴 요청·불편 — 답글은 잘 나가는데 정작 '매장에서 바꿀 이야기'는
      아무도 모르고 지나갔다(사장님 요청 2026-08-28). 여기 모아 두고, 한 번에
      복사해 매장 단톡방에 올릴 수 있게 한다. AI 없이 규칙으로 고른다. #}

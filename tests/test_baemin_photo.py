@@ -116,3 +116,77 @@ def test_screen_tells_only_what_it_knows():
     html = pathlib.Path("service/templates/staff.html").read_text(encoding="utf-8")
     assert "사진 여부 미확인" in html, "모를 땐 모른다고 말해야 한다"
     assert "rvphotos" in html, "사진이 있으면 화면에서 바로 보여준다"
+
+
+# --- 사진 재검토 화면 (2026-08-31 사장님: "내가 직접 재검토하게 해달라") ----
+
+import pytest
+
+
+@pytest.fixture()
+def client(monkeypatch):
+    monkeypatch.setenv("SERVICE_PATH", "testkey")
+    import service.app as app_mod
+    monkeypatch.setattr(app_mod, "SERVICE_PATH", "testkey")
+    return app_mod, app_mod.app.test_client()
+
+
+def test_recheck_groups_split_by_state(client, monkeypatch):
+    """대상이 상태별(대기초안/등록답글/옛답글/넘김)로 나뉘어야 직접 훑기 쉽다."""
+    app_mod, _ = client
+    kv = {"photo_recheck_ids": [1, 2, 3, 4], "photo_recheck_done": [4]}
+    monkeypatch.setattr(app_mod.db, "get_setting",
+                        lambda k, d=None: kv.get(k, d))
+    rows = [
+        {"id": 1, "reply_status": "drafted", "reply_draft": "초안",
+         "platform": "baemin", "raw": {"text": "", "images": ["u"]}},
+        {"id": 2, "reply_status": "posted", "platform_reply": "등록된 답글",
+         "platform": "baemin", "raw": {"text": "", "images": ["u"]}},
+        {"id": 3, "reply_status": "none", "platform_replied": True,
+         "platform": "baemin", "raw": {"text": "", "images": ["u"]}},
+        {"id": 4, "reply_status": "skipped",
+         "platform": "baemin", "raw": {"text": "", "images": ["u"]}},
+    ]
+
+    class _Q:
+        def __init__(s): pass
+        def table(s, *a): return s
+        def select(s, *a): return s
+        def in_(s, *a): return s
+        def execute(s): return type("R", (), {"data": rows})()
+
+    monkeypatch.setattr(app_mod.db, "get_client", lambda: _Q())
+    groups, remain, total = app_mod._photo_recheck_groups()
+    assert [g["id"] for g in groups["pending"]] == [1]
+    assert [g["id"] for g in groups["posted"]] == [2]
+    assert [g["id"] for g in groups["old_replied"]] == [3]
+    assert [g["id"] for g in groups["skipped"]] == [4]
+    assert total == 4 and remain == 3          # 4번은 이미 확인함
+    assert groups["skipped"][0]["checked"] is True
+
+
+def test_recheck_toggle_persists(client, monkeypatch):
+    """[확인함] 체크가 kv 에 저장돼 폰·PC 어디서든 이어서 볼 수 있다."""
+    app_mod, c = client
+    store = {"photo_recheck_done": [5]}
+    monkeypatch.setattr(app_mod.db, "get_setting",
+                        lambda k, d=None: store.get(k, d))
+    monkeypatch.setattr(app_mod.db, "menu_set_setting",
+                        lambda k, v: store.__setitem__(k, v))
+    r = c.post("/testkey/photo-recheck/toggle", json={"id": 9, "checked": True})
+    assert r.get_json()["ok"] is True
+    assert store["photo_recheck_done"] == [5, 9]
+    r2 = c.post("/testkey/photo-recheck/toggle", json={"id": 5, "checked": False})
+    assert r2.get_json()["ok"] is True
+    assert store["photo_recheck_done"] == [9]
+
+
+def test_dashboard_banner_hides_when_finished(client, monkeypatch):
+    """전부 확인하면 현황 입구 배너가 사라진다 — 일회성 화면이 눌러앉지 않게."""
+    app_mod, _ = client
+    kv = {"photo_recheck_ids": [1, 2], "photo_recheck_done": [1, 2]}
+    monkeypatch.setattr(app_mod.db, "get_setting",
+                        lambda k, d=None: kv.get(k, d))
+    app_mod._photo_recheck_remaining.cache_clear()
+    assert app_mod._photo_recheck_remaining() == 0
+    app_mod._photo_recheck_remaining.cache_clear()

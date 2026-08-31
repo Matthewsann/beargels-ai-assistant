@@ -918,6 +918,7 @@ def review_home(path_key):
         # 다시 조립하면 두 곳이 어긋난다.
         requests_text=cr.format_for_kakao(reqs, today=_today_label()),
         requests_period=_period_label(REQUEST_DAYS),
+        recheck_remain=_photo_recheck_remaining(),
     )
 
 
@@ -989,6 +990,93 @@ def todo(path_key):
         # (사장님 확정 2026-08-28: 22시~아침 8시는 예약이 기본).
         sched_when=scheduled_post_when(), night=_is_night(),
     )
+
+
+# ── 사진 리뷰 재검토 (2026-08-31, 일회성 감사 화면) ──────────────────
+# 배민 사진 유실 버그(사진 리뷰 167건을 '별점만'으로 취급)의 영향분을
+# **사장님이 직접 한 건씩** 확인하는 화면. 대상은 버그 발견 시점에 kv 로
+# 고정해 뒀다(photo_recheck_ids) — 이후 수집분은 정상 처리라 안 섞인다.
+# 확인한 건 체크로 내려가고(photo_recheck_done), 전부 끝나면 현황의
+# 입구 배너도 사라진다.
+
+def _photo_recheck_groups():
+    """재검토 대상을 상태별로 나눠 돌려준다. (groups, 남은 건수, 전체)"""
+    ids = [int(x) for x in (db.get_setting("photo_recheck_ids", []) or [])]
+    done = {int(x) for x in (db.get_setting("photo_recheck_done", []) or [])}
+    if not ids:
+        return {}, 0, 0
+    rows = []
+    for i in range(0, len(ids), 100):
+        rows += (db.get_client().table("reviews")
+                 .select("id,author,rating,content,written_date,reply_status,"
+                         "reply_draft,platform_reply,platform_replied,raw,platform")
+                 .in_("id", ids[i:i + 100]).execute().data)
+    groups = {"pending": [], "posted": [], "old_replied": [], "skipped": []}
+    for r in sorted(rows, key=lambda x: x.get("written_date") or "",
+                    reverse=True):
+        v = {
+            "id": r["id"], "author": r.get("author") or "고객",
+            "rating": r.get("rating"),
+            "date": (r.get("written_date") or "")[:10],
+            "content": (r.get("content") or "").strip(),
+            "photos": _photo_urls(r),
+            "reply": (r.get("platform_reply") or r.get("reply_draft") or ""),
+            "checked": r["id"] in done,
+            "find_key": r.get("review_no") or "",
+        }
+        st = r.get("reply_status")
+        if st == "posted":
+            groups["posted"].append(v)
+        elif st == "skipped":
+            groups["skipped"].append(v)
+        elif r.get("platform_replied"):
+            groups["old_replied"].append(v)
+        else:
+            groups["pending"].append(v)
+    return groups, len(ids) - len(done & set(ids)), len(ids)
+
+
+@cached(60)
+def _photo_recheck_remaining() -> int:
+    """재검토 남은 건수 — 현황 화면 입구 배너용(kv 두 번 읽기라 가볍다)."""
+    try:
+        ids = {int(x) for x in (db.get_setting("photo_recheck_ids", []) or [])}
+        done = {int(x) for x in (db.get_setting("photo_recheck_done", []) or [])}
+        return len(ids - done)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+@app.route("/<path_key>/photo-recheck")
+def photo_recheck(path_key):
+    check(path_key)
+    try:
+        groups, remain, total = _photo_recheck_groups()
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"사진 재검토 화면 실패: {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        groups, remain, total = {}, 0, 0
+    return render_template("photo_recheck.html", key=path_key,
+                           groups=groups, remain=remain, total=total)
+
+
+@app.route("/<path_key>/photo-recheck/toggle", methods=["POST"])
+def photo_recheck_toggle(path_key):
+    """[확인함] 체크 저장/해제 — 진행 상황이 기기와 무관하게 남는다."""
+    check(path_key)
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        rid = int(data.get("id") or 0)
+        done = {int(x) for x in (db.get_setting("photo_recheck_done", []) or [])}
+        if data.get("checked"):
+            done.add(rid)
+        else:
+            done.discard(rid)
+        db.menu_set_setting("photo_recheck_done", sorted(done))
+        return jsonify({"ok": True, "done": len(done)})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)[:120]}), 200
 
 
 @app.route("/<path_key>/guide")

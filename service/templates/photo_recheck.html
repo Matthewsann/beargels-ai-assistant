@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>사진 리뷰 재검토 — 베어글스</title>
+{# 배민 사진 유실 버그(2026-08-31)의 영향분 167건을 사장님이 **직접 한 건씩**
+   확인하는 일회성 감사 화면. 리뷰 원문·사진·현재 답글을 한 카드에 같이
+   보여주고, 확인한 건 [✔]로 내려간다(진행은 kv 에 저장 — 폰·PC 어디서
+   이어서 봐도 된다). 전부 끝나면 리뷰 현황의 입구 배너도 사라진다. #}
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
+          --ok:#3b6d11; --ok-bg:#eaf3de; --bad:#a3271f; --bad-bg:#fbe9e7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px 14px 64px; }
+  .head { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+  .logo { width:36px; height:36px; border-radius:10px; background:var(--accent-bg);
+          color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:19px; }
+  .head b { font-size:16px; } .head small { display:block; color:var(--muted); font-size:12px; }
+  .prog { font-size:13px; color:var(--muted); margin-bottom:14px; }
+  .prog b { color:var(--accent); }
+  .bar { height:8px; background:var(--line); border-radius:6px; overflow:hidden; margin-top:5px; }
+  .bar i { display:block; height:100%; background:var(--accent); border-radius:6px; }
+  .sec { font-size:13px; font-weight:700; margin:20px 0 8px; }
+  .sec small { font-weight:400; color:var(--muted); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:13px; margin-bottom:10px; }
+  .card.done { opacity:.45; }
+  .top { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:7px; }
+  .top b { font-size:14px; }
+  .stars { color:#c98a12; letter-spacing:1px; font-size:13px; }
+  .dim { color:var(--muted); font-size:12px; }
+  .chk { margin-left:auto; display:inline-flex; align-items:center; gap:6px;
+         font-size:12.5px; color:var(--ok); white-space:nowrap; cursor:pointer; }
+  .chk input { width:18px; height:18px; }
+  .rv { font-size:13.5px; background:#f6f5f1; border-radius:9px; padding:9px 11px;
+        margin-bottom:8px; white-space:pre-wrap; word-break:break-word; }
+  .photos { display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+  .photos img { width:96px; height:96px; object-fit:cover; border-radius:9px;
+                border:1px solid var(--line); }
+  .lbl { font-size:11.5px; color:var(--muted); margin-bottom:3px; }
+  .reply { font-size:13px; border:1px dashed var(--line); border-radius:9px;
+           padding:9px 11px; white-space:pre-wrap; word-break:break-word;
+           max-height:180px; overflow:auto; }
+  .empty { text-align:center; color:var(--muted); padding:44px 16px; font-size:14px; }
+  .note { font-size:12.5px; padding:10px 12px; border-radius:9px; margin-bottom:14px;
+          background:var(--accent-bg); color:var(--accent); }
+  .alldone { background:var(--ok-bg); color:var(--ok); }
+</style>
+</head>
+<body>
+{% include "_sidebar.html" %}
+<div class="wrap">
+
+  <div class="head">
+    <div class="logo">📷</div>
+    <div><b>사진 리뷰 재검토</b>
+      <small>사진을 못 읽던 버그(8/31 수정)의 영향분 — 직접 확인하고 [✔]</small></div>
+  </div>
+
+  <div class="prog">
+    남은 <b id="remainN">{{ remain }}</b>건 / 전체 {{ total }}건
+    <div class="bar"><i id="progBar"
+        style="width:{{ ((total - remain) / total * 100) if total else 0 }}%"></i></div>
+  </div>
+
+  {% if remain == 0 and total %}
+  <div class="note alldone">🎉 전부 확인하셨어요 — 이 화면은 이제 볼 일이 없습니다.</div>
+  {% else %}
+  <div class="note">
+    각 카드에 리뷰 원문·<b>사진</b>·현재 답글(초안 또는 등록본)이 같이 있어요.
+    답글이 사진과 어긋나면: 대기분은 리뷰 답글 화면에서 🔄 AI 로 다시,
+    등록분은 등록한 답글 화면에서 ✏️ 고치기.
+  </div>
+  {% endif %}
+
+  {% macro card(r) -%}
+  <div class="card {{ 'done' if r.checked }}" id="pc{{ r.id }}">
+    <div class="top">
+      <b>{{ r.author }}</b>
+      <span class="stars">{{ '★' * (r.rating or 0) }}</span>
+      <span class="dim">{{ r.date }}</span>
+      <label class="chk"><input type="checkbox" {{ 'checked' if r.checked }}
+             onchange="toggleCheck({{ r.id }}, this.checked)"> 확인함</label>
+    </div>
+    {% if r.photos %}
+    <div class="photos">
+      {% for u in r.photos %}
+      <img src="{{ u }}" alt="리뷰 사진" loading="lazy"
+           referrerpolicy="no-referrer" onerror="this.style.display='none'">
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="rv">{{ r.content or '(글 없이 사진만 남긴 리뷰)' }}</div>
+    <div class="lbl">현재 답글{{ '(등록됨)' if r.reply and not r.checked else '' }}</div>
+    <div class="reply">{{ r.reply or '(답글 없음)' }}</div>
+  </div>
+  {%- endmacro %}
+
+  {% if groups.pending %}
+  <div class="sec">✍️ 등록 전 초안 {{ groups.pending|length }}건
+    <small>— 버그 수정 후 전부 다시 뽑아 뒀어요. 초안이 사진과 맞는지 봐주세요.</small></div>
+  {% for r in groups.pending %}{{ card(r) }}{% endfor %}
+  {% endif %}
+
+  {% if groups.posted %}
+  <div class="sec">📮 우리가 등록한 답글 {{ groups.posted|length }}건
+    <small>— 이미 고객에게 나간 글. 사진과 어긋난 게 있으면 '등록한 답글'에서 수정.</small></div>
+  {% for r in groups.posted %}{{ card(r) }}{% endfor %}
+  {% endif %}
+
+  {% if groups.old_replied %}
+  <div class="sec">🗂️ 예전에 답글 단 것 {{ groups.old_replied|length }}건
+    <small>— 시스템 도입 전/앱에서 직접 단 답글.</small></div>
+  {% for r in groups.old_replied %}{{ card(r) }}{% endfor %}
+  {% endif %}
+
+  {% if groups.skipped %}
+  <div class="sec">⏭️ 넘김 처리한 것 {{ groups.skipped|length }}건</div>
+  {% for r in groups.skipped %}{{ card(r) }}{% endfor %}
+  {% endif %}
+
+  {% if not total %}
+  <div class="empty">재검토 대상이 없어요.</div>
+  {% endif %}
+
+</div>
+<script>
+const TOGGLE_URL = '{{ url_for("photo_recheck_toggle", path_key=key) }}';
+const TOTAL = {{ total }};
+
+function toggleCheck(id, checked) {
+  document.getElementById('pc' + id).classList.toggle('done', checked);
+  fetch(TOGGLE_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({id: id, checked: checked}),
+  }).then(r => r.json()).then(res => {
+    if (!res.ok) return;
+    const remain = Math.max(0, TOTAL - res.done);
+    document.getElementById('remainN').textContent = remain;
+    document.getElementById('progBar').style.width =
+      (TOTAL ? (TOTAL - remain) / TOTAL * 100 : 0) + '%';
+  }).catch(() => {});
+}
+</script>
+</body>
+</html>
