@@ -619,6 +619,13 @@ def _review_view(r: dict) -> dict:
                      or draft.strip().startswith("⚠️")),
         "has_draft": bool(draft),
         "platform_url": PLATFORM_REVIEW_URL.get(r.get("platform"), ""),
+        # 플랫폼 화면에서 이 리뷰를 찾을 열쇠. 배민 카드에는 '리뷰번호'가
+        # 그대로 찍혀 있어 번호로 찾는 게 가장 빠르고, 쿠팡은 그 번호가
+        # 화면에 없어 작성자 이름으로 찾는다(2026-08-31 사장님 요청:
+        # 의심될 때 바로 실제 리뷰를 확인할 수 있게).
+        "review_no": r.get("review_no") or "",
+        "find_key": (r.get("review_no") or "") if r.get("platform") == "baemin"
+                    else (r.get("author") or ""),
         # 주문 정보 — 배민·쿠팡 리뷰 관리 화면과 같은 항목을 보여준다.
         **_order_info(r),
     }

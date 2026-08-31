@@ -184,3 +184,36 @@ def test_web_app_survives_without_anthropic(monkeypatch):
     # 죽지 않고, 민감 유형(question)은 여전히 배지에서 빠진다
     assert "question" not in got
     assert "rating_only" in got
+
+
+# --- 실제 리뷰 확인 버튼 + 끊긴 초안 경고 (2026-08-31 사장님 요청) --------
+
+def test_card_exposes_a_key_to_find_the_review_on_the_platform():
+    """배민·쿠팡 모두 리뷰 하나만 여는 주소가 없다(배민은 URL 파라미터도 안
+    받는 SPA — 2026-08-31 실측). 그래서 목록을 열면서 '찾을 열쇠'를 준다:
+    배민=리뷰번호(카드에 찍혀 있다), 쿠팡=작성자(번호가 화면에 없다)."""
+    import service.app as app
+    bm = app._review_view({"platform": "baemin", "review_no": "2026082802870907",
+                           "author": "파스타1인분장인", "reply_draft": "초안"})
+    assert bm["find_key"] == "2026082802870907"
+    cp = app._review_view({"platform": "coupang", "review_no": "9999",
+                           "author": "김*슬", "reply_draft": "초안"})
+    assert cp["find_key"] == "김*슬", "쿠팡은 리뷰번호가 화면에 없어 이름으로 찾는다"
+
+
+def test_review_link_button_is_on_the_card():
+    import pathlib
+    html = pathlib.Path("service/templates/staff.html").read_text(encoding="utf-8")
+    assert "🔍 실제 리뷰" in html
+    assert "copyFindKey" in html
+    assert 'target="_blank"' in html
+
+
+def test_cut_sentence_warning_ignores_the_greeting_line():
+    """호칭 줄('백*아님,')은 쉼표로 끝나는 게 정상 — 여기에 경보가 뜨면
+    멀쩡한 초안 대부분이 경고를 달고, 진짜 끊긴 글을 대충 넘기게 된다."""
+    import pathlib
+    html = pathlib.Path("service/templates/staff.html").read_text(encoding="utf-8")
+    assert "checkCut" in html and "CUT_TAIL" in html
+    # 호칭 줄 제외 규칙이 살아 있어야 한다
+    assert "님\s*[,·]?$" in html

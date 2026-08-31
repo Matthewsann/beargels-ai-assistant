@@ -75,6 +75,13 @@
   .acts.mini .btn.go { background:var(--accent); border-color:var(--accent);
                        color:#fff; font-weight:600; }
   textarea { min-height:150px; }
+  /* '실제 리뷰' 버튼이 복사한 찾기 열쇠 안내 */
+  .findkey { display:none; font-size:11.5px; color:var(--ok); width:100%;
+             margin-top:2px; }
+  /* 문장이 어중간하게 끝난 초안 경고 */
+  .cutwarn { display:none; font-size:12px; color:var(--warn);
+             background:var(--warn-bg); border-radius:7px;
+             padding:6px 9px; margin-top:5px; }
   /* 상한에 잘린 초안의 '끝 문장' 미리보기 */
   .tatail { display:none; font-size:12px; color:var(--muted); margin-top:4px;
             padding:5px 9px; background:var(--bg); border-radius:7px;
@@ -308,9 +315,14 @@
         <div class="acts mini">
           <button class="btn go" type="button"
                   onclick="copyIt({{ r.id }})">📋 복사</button>
+          {# 민감 리뷰는 여기서 직접 등록해야 하므로, 열쇠까지 복사해 주면
+             그 화면에서 해당 리뷰를 곧장 찾을 수 있다. #}
           {% if r.platform_url %}
-          <a class="btn" href="{{ r.platform_url }}" target="_blank" rel="noopener">
-            🔗 {{ r.platform }}에서 등록</a>
+          <a class="btn" href="{{ r.platform_url }}" target="_blank" rel="noopener"
+             title="찾을 열쇠({{ r.find_key }})도 복사돼요 — Ctrl+F 로 붙여넣으세요"
+             onclick="copyFindKey({{ r.id }})">🔗 {{ r.platform }}에서 등록</a>
+          <span class="findkey" id="fk{{ r.id }}" data-key="{{ r.find_key }}"
+                >복사됨: {{ r.find_key }} — 열린 창에서 Ctrl+F 로 찾으세요</span>
           {% endif %}
           <button class="btn" type="button" id="g{{ r.id }}"
                   onclick="regenIt({{ r.id }}, '{{ url_for('regen', path_key=key, review_id=r.id) }}', '{{ url_for('draft_state', path_key=key, review_id=r.id) }}')">🔄 AI</button>
@@ -351,6 +363,18 @@
                   onclick="regenIt({{ r.id }}, '{{ url_for('regen', path_key=key, review_id=r.id) }}', '{{ url_for('draft_state', path_key=key, review_id=r.id) }}')">🔄 AI</button>
           <button class="btn" type="button"
                   onclick="copyIt({{ r.id }})">📋 복사</button>
+          {# 실제 리뷰 확인 — 초안이나 등록 결과가 의심스러울 때 곧장 원본을
+             본다(사장님 요청 2026-08-31). 배민·쿠팡 모두 리뷰 하나만 여는
+             주소가 없어서, 리뷰 목록을 새 창으로 열면서 **찾을 열쇠**(배민은
+             리뷰번호, 쿠팡은 작성자)를 클립보드에 담아 준다 → 그 화면에서
+             Ctrl+F 붙여넣기면 바로 걸린다. #}
+          {% if r.platform_url %}
+          <a class="btn" href="{{ r.platform_url }}" target="_blank" rel="noopener"
+             title="{{ r.platform }} 리뷰 목록을 새 창으로 열고, 찾을 열쇠({{ r.find_key }})를 복사해요 — Ctrl+F 로 붙여넣으세요"
+             onclick="copyFindKey({{ r.id }})">🔍 실제 리뷰</a>
+          <span class="findkey" id="fk{{ r.id }}" data-key="{{ r.find_key }}"
+                >복사됨: {{ r.find_key }} — 열린 창에서 Ctrl+F 로 찾으세요</span>
+          {% endif %}
           <form method="post" action="{{ url_for('skip', path_key=key, review_id=r.id) }}"
                 style="display:contents"
                 onsubmit="return actNow(this, {hide: '.card', confirm: '이 리뷰를 넘어갈까요?\n(이미 앱에서 직접 등록했거나 답글이 필요 없는 경우)'})">
@@ -520,9 +544,58 @@ document.addEventListener('DOMContentLoaded', () => {
       fitTextarea(t);
     });
     t.addEventListener('blur', () => fitTextarea(t));
+    t.addEventListener('input', () => checkCut(t));
     fitTextarea(t);
+    checkCut(t);
   });
 });
+
+
+// ── 실제 리뷰 확인 ───────────────────────────────────────────────
+// 배민·쿠팡 모두 리뷰 하나만 여는 주소가 없다(배민은 URL 파라미터도 안 받는
+// SPA — 2026-08-31 실측). 그래서 목록을 새 창으로 열면서 **찾을 열쇠**를
+// 클립보드에 담아 준다: 배민은 리뷰번호(카드에 그대로 찍혀 있다), 쿠팡은
+// 작성자 이름. 열린 창에서 Ctrl+F 붙여넣기면 바로 걸린다.
+function copyFindKey(id) {
+  const el = document.getElementById('fk' + id);
+  if (!el) return;                       // 링크는 그대로 열린다(막지 않는다)
+  const key = el.dataset.key || '';
+  if (!key) return;
+  const show = () => {
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 6000);
+  };
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(key).then(show).catch(show);
+  } else {
+    show();
+  }
+}
+
+// ── 어중간하게 끝난 초안 경고 ────────────────────────────────────
+// 문장이 쉼표·연결어미로 끝나면 중간이 잘린 글이다. 그대로 등록하면 손님이
+// 끊긴 문장을 본다(2026-08-31 실제로 그런 초안을 발견). 사람이 지웠든 AI가
+// 잘랐든, 등록 전에 눈에 띄게만 해 둔다 — 막지는 않는다.
+const CUT_TAIL = /[,·]\s*$|(?:는데|은데|아서|어서|하고|이고|지만|으며|하며|면서|라서)\s*$/;
+function checkCut(t) {
+  if (!t) return;
+  let w = t.parentNode.querySelector('.cutwarn');
+  if (!w) {
+    w = document.createElement('div');
+    w.className = 'cutwarn';
+    t.parentNode.insertBefore(w, t.nextSibling);
+  }
+  // 끝의 이모지·공백은 걷어내고 '내용 줄'만 본다
+  const lines = (t.value || '').split(/\n+/)
+      .map(x => x.replace(/[\s🐻✨😊🥯☕🌿🤍💕♡~!.]+$/u, '').trim())
+      .filter(Boolean);
+  // 호칭 줄("백*아님,")은 쉼표로 끝나는 게 정상이라 뺀다 — 안 빼면 멀쩡한
+  // 초안 대부분에 경보가 떠서, 정작 진짜 끊긴 글을 대충 넘기게 된다
+  // (2026-08-31 실측: 21건 중 2건 오탐).
+  const bad = lines.some(l => !/님\s*[,·]?$/.test(l) && CUT_TAIL.test(l));
+  w.textContent = '⚠️ 문장이 중간에 끊긴 것 같아요 — 등록 전에 확인해 주세요';
+  w.style.display = bad ? 'block' : 'none';
+}
 
 // ── 초안 저장 / 복사 ─────────────────────────────────────────────
 function ta(id) { return document.getElementById('d' + id); }
