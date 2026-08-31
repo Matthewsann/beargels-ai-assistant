@@ -6,7 +6,8 @@
     --accent:#185fa5; --accent-bg:#e6f1fb;
     --warn:#854f0b; --warn-bg:#faeeda;
     --ok:#3b6d11; --ok-bg:#eaf3de;
-    --hover:#f4f2ec; --stat:#f1efe8;
+    --hover:#f4f2ec; --stat:#f1efe8; --hair:#f0eee8; --now:#b23b2e;
+    --offhour:#f2efe8;
     --p-jieun:#5a6b8c; --p-minsu:#2f8f83; --p-haneul:#7b68ae; --p-soyeon:#c2587e; --p-junho:#8a6d3b;
   }
   * { box-sizing:border-box; }
@@ -24,7 +25,7 @@
 
   /* ── 목업 안내 바 (실제 페이지에는 없는 부분) ─────────────── */
   .demobar {
-    position:sticky; top:0; z-index:50; background:var(--ink); color:#f5f4f0;
+    position:sticky; top:0; z-index:60; background:var(--ink); color:#f5f4f0;
     display:flex; align-items:center; justify-content:space-between; gap:10px;
     padding:8px 14px; font-size:13px; flex-wrap:wrap;
   }
@@ -48,7 +49,7 @@
   .side a.m:hover { background:var(--hover); }
   .side a.m.on { background:var(--accent-bg); color:var(--accent); font-weight:700; }
   .side .adminnote { margin-top:14px; font-size:11px; color:var(--muted); padding:0 10px; }
-  .wrap { max-width:720px; margin:0 auto; padding:20px 16px 60px; width:100%; }
+  .wrap { max-width:980px; margin:0 auto; padding:20px 16px 60px; width:100%; }
   .top { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
   .brand { width:38px; height:38px; border-radius:10px; background:var(--accent-bg); display:flex; align-items:center; justify-content:center; font-size:20px; }
   .top small { color:var(--muted); }
@@ -73,6 +74,8 @@
   .btn:hover { background:var(--hover); }
   .btn.primary { border-color:var(--accent); color:var(--accent); font-weight:700; }
   .btn.small { padding:6px 10px; font-size:13px; }
+  .btn.chip { border-radius:20px; padding:5px 12px; font-size:12px; }
+  .btn.chip.on { border-color:var(--accent); color:var(--accent); background:var(--accent-bg); font-weight:700; }
 
   .note { background:var(--accent-bg); color:var(--accent); border-radius:8px; font-size:13px; padding:10px 14px; margin:14px 0; }
   .note.warn { background:var(--warn-bg); color:var(--warn); }
@@ -86,45 +89,96 @@
   .stat { background:var(--stat); border-radius:8px; padding:12px 14px; }
   .stat .n { font-size:22px; font-weight:700; display:block; line-height:1.3; }
   .stat small { color:var(--muted); font-size:12px; }
+  .presets { display:grid; grid-template-columns:repeat(auto-fit,minmax(158px,1fr)); gap:10px; }
 
   .fld {
-    width:100%; border:1px solid var(--line); border-radius:8px; padding:9px 12px;
+    border:1px solid var(--line); border-radius:8px; padding:9px 12px;
     font-family:inherit; font-size:14px; background:var(--card); color:var(--ink);
   }
   .fld:focus { outline:2px solid var(--accent-bg); border-color:var(--accent); }
   .lbl { display:block; font-size:13px; font-weight:700; margin-bottom:5px; }
 
-  /* ── 주간 보드 ────────────────────────────────────────────── */
+  /* ── 주간 캘린더 (시간축 위클리 뷰) ──────────────────────── */
   .wknav { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
   .wknav .sp { flex:1; }
-  .week { margin-bottom:6px; }
   .wkhead { display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
   .wkhead b { font-size:16px; }
   .wkactions { display:flex; gap:8px; margin-left:auto; flex-wrap:wrap; }
   .unlock { font-size:12px; color:var(--muted); background:none; border:none; text-decoration:underline; padding:6px 2px; }
 
-  .cal { display:grid; grid-template-columns:repeat(7,1fr); gap:5px; }
-  .cal .h { text-align:center; font-size:11px; color:var(--muted); padding-bottom:2px; }
-  .cell { min-height:96px; border:1px solid var(--line); border-radius:8px; padding:6px; background:var(--card); display:flex; flex-direction:column; gap:4px; }
-  .cell.today { border:2px solid var(--accent); }
-  .cell .d { font-size:11px; color:var(--muted); }
-  .cell .d .dw { display:none; }
-  .shift {
-    display:flex; align-items:center; gap:4px; font-size:11px; line-height:1.4;
-    background:var(--hover); border-radius:5px; padding:3px 5px; white-space:nowrap; overflow:hidden;
+  .wkcal { overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--card); }
+  .wkcal-inner { min-width:700px; }
+
+  .wkgrid-head { display:grid; grid-template-columns:52px repeat(7,1fr); border-bottom:1px solid var(--line); }
+  .wkgrid-head .sp { border-right:1px solid var(--line); background:var(--card); position:sticky; left:0; z-index:5; }
+  .wkgrid-head .dh { text-align:center; padding:7px 2px 8px; border-right:1px solid var(--line); }
+  .wkgrid-head .dh:last-child { border-right:none; }
+  .wkgrid-head .dh .w { font-size:11px; color:var(--muted); display:block; line-height:1.4; }
+  .wkgrid-head .dh .dt { font-size:13px; font-weight:700; }
+  .wkgrid-head .dh.today { background:var(--accent-bg); }
+  .wkgrid-head .dh.today .w, .wkgrid-head .dh.today .dt { color:var(--accent); }
+  .wkgrid-head .dh .cnt { font-size:10px; color:var(--muted); display:block; line-height:1.4; }
+
+  .wkgrid-body { display:grid; grid-template-columns:52px repeat(7,1fr); position:relative; }
+  .wkaxis { border-right:1px solid var(--line); background:var(--card); position:sticky; left:0; z-index:5; }
+  .wkaxis .hl {
+    display:flex; align-items:center; justify-content:flex-end; gap:4px;
+    padding-right:6px; font-size:10px; color:var(--muted);
   }
-  .shift .pdot { width:7px; height:7px; border-radius:50%; flex:0 0 auto; }
-  .shift .t { color:var(--muted); margin-left:auto; }
-  .shift .st { font-size:10px; flex:0 0 auto; }
-  .shift .st.ok { color:var(--ok); }
-  .shift .st.diff { color:var(--warn); font-weight:700; }
-  .shift .st.pend { color:var(--accent); }
-  .addlink {
-    border:1px dashed var(--line); background:none; border-radius:5px; color:var(--muted);
-    font-size:12px; padding:2px 0; margin-top:auto;
+  .wkaxis .hl.biz { color:var(--ink); }
+  .wkaxis .hl em { font-style:normal; font-size:9px; color:var(--accent); }
+
+  .dcol {
+    position:relative; border-right:1px solid var(--line);
+    background:
+      repeating-linear-gradient(45deg, transparent 0 5px, rgba(138,137,127,.13) 5px 10px),
+      var(--offhour);
   }
-  .addlink:hover { background:var(--hover); }
-  .week.locked .addlink { display:none; }
+  .dcol:last-child { border-right:none; }
+  .dcol .bizband { position:absolute; left:0; right:0; background:var(--card); z-index:0; }
+  .dcol.today .bizband { background:#fdfcf8; }
+  .dcol .hl { border-bottom:1px solid var(--hair); position:relative; z-index:1; }
+  .dcol .hl:last-child { border-bottom:none; }
+  .week:not(.locked) .dcol { cursor:copy; }
+
+  .bizline { position:absolute; left:52px; right:0; border-top:1px dashed var(--accent); opacity:.55; z-index:2; pointer-events:none; }
+  .bizline b {
+    position:absolute; left:3px; top:-8px; font-size:9px; color:var(--accent); font-weight:700;
+    background:var(--card); padding:0 4px; border-radius:3px;
+  }
+
+  .ev {
+    position:absolute; border-radius:6px; color:#fff; padding:3px 5px 2px; z-index:3;
+    overflow:hidden; line-height:1.3; cursor:pointer; border:1px solid rgba(255,255,255,.35);
+  }
+  .ev .t { font-size:10px; opacity:.9; display:block; }
+  .ev b { font-size:11px; display:block; font-weight:700; }
+  .ev.compact .t .e { display:none; }
+  .ev.narrow .t { display:none; }
+  .ev .mk { float:right; font-size:9px; background:rgba(255,255,255,.9); border-radius:3px; padding:0 3px; line-height:1.6; margin-left:3px; }
+  .ev .mk.ok   { color:var(--ok); }
+  .ev .mk.diff { color:var(--warn); font-weight:700; }
+  .ev .mk.pend { color:var(--accent); }
+  .ev.narrow .mk { display:none; }
+  .ev.diff { outline:2px solid var(--warn); outline-offset:-2px; }
+
+  .nowline { position:absolute; left:52px; right:0; height:2px; background:var(--now); z-index:4; pointer-events:none; }
+  .nowline b {
+    position:absolute; left:3px; top:-15px; font-size:10px; color:var(--now);
+    background:var(--card); padding:0 3px; border-radius:3px;
+  }
+
+  .legend { font-size:12px; color:var(--muted); margin-top:10px; display:flex; gap:14px; flex-wrap:wrap; }
+  .legend .sw {
+    display:inline-block; width:11px; height:11px; border-radius:3px; vertical-align:-1px; margin-right:3px;
+    border:1px solid var(--line);
+    background:
+      repeating-linear-gradient(45deg, transparent 0 3px, rgba(138,137,127,.35) 3px 6px),
+      var(--offhour);
+  }
+  .emptywk { text-align:center; padding:36px 16px; }
+  .emptywk p { margin:0 0 14px; color:var(--muted); }
+
   .week .wkactions .lockonly { display:none; }
   .week.locked .wkactions .draftonly { display:none; }
   .week.locked .wkactions .lockonly { display:inline-flex; }
@@ -132,27 +186,25 @@
   .week.locked .badge-draft { display:none; }
   .week.locked .badge-locked { display:inline-block; }
 
-  .legend { font-size:12px; color:var(--muted); margin-top:10px; display:flex; gap:14px; flex-wrap:wrap; }
-  .legend .dot { font-weight:700; }
-
-  .emptywk { text-align:center; padding:36px 16px; }
-  .emptywk p { margin:0 0 14px; color:var(--muted); }
-
   /* ── 데일리 타임라인 ──────────────────────────────────────── */
   .tlbox { overflow-x:auto; }
-  .tl { min-width:520px; position:relative; padding-top:4px; }
-  .tl-scale { position:relative; height:18px; margin-left:64px; }
+  .tl { min-width:560px; position:relative; padding-top:4px; }
+  .tl-scale { position:relative; height:18px; margin-left:70px; }
   .tl-scale span { position:absolute; transform:translateX(-50%); font-size:10px; color:var(--muted); }
+  .tl-scale span.first { transform:translateX(0); }
+  .tl-scale span.last  { transform:translateX(-100%); }
+  .tl-biz { position:absolute; top:22px; bottom:0; border-left:1px dashed var(--accent); border-right:1px dashed var(--accent); opacity:.55; pointer-events:none; }
+  .tl-bizlab { position:absolute; top:0; font-size:9px; color:var(--accent); font-weight:700; transform:translateX(-50%); }
   .tl-row { display:flex; align-items:center; }
-  .tl-name { width:64px; flex:0 0 64px; font-size:12px; font-weight:700; display:flex; align-items:center; gap:5px; }
-  .tl-name .pdot { width:8px; height:8px; border-radius:50%; }
+  .tl-name { width:70px; flex:0 0 70px; font-size:12px; font-weight:700; display:flex; align-items:center; gap:5px; }
+  .tl-name .pdot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
   .tl-track { position:relative; flex:1; height:36px; background:var(--stat); border-radius:6px; margin:3px 0; }
   .tl-bar {
     position:absolute; top:5px; bottom:5px; border-radius:5px; color:#fff; font-size:11px;
     display:flex; align-items:center; padding:0 8px; white-space:nowrap; overflow:hidden;
   }
-  .tl-nowline { position:absolute; top:22px; bottom:0; width:2px; background:#b23b2e; z-index:2; }
-  .tl-nowlab { position:absolute; top:2px; transform:translateX(-50%); font-size:10px; color:#b23b2e; font-weight:700; z-index:2; }
+  .tl-nowline { position:absolute; top:22px; bottom:0; width:2px; background:var(--now); z-index:2; }
+  .tl-nowlab { position:absolute; top:2px; transform:translateX(-50%); font-size:10px; color:var(--now); font-weight:700; z-index:2; }
 
   /* ── 하루 마감(실제 기록) ─────────────────────────────────── */
   .crow { border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:10px; background:var(--card); }
@@ -168,8 +220,8 @@
   .crow .editform { display:none; margin-top:12px; border-top:1px solid var(--line); padding-top:12px; }
   .crow.editing .editform { display:block; }
   .crow.done .acts, .crow.diff .acts, .crow.absent .acts { display:none; }
-  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+  .grid3 .fld { width:100%; }
 
   /* ── 직원·데이터 ─────────────────────────────────────────── */
   .list { border:1px solid var(--line); border-radius:12px; background:var(--card); overflow:hidden; }
@@ -179,6 +231,8 @@
   .row .pdot { width:9px; height:9px; border-radius:50%; flex:0 0 auto; }
   .row .sub { color:var(--muted); font-size:12px; }
   .row .right { margin-left:auto; text-align:right; }
+  .rangebar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .rangebar .fld { width:auto; }
   details.export { margin-top:12px; }
   details.export summary { cursor:pointer; font-size:13px; color:var(--accent); }
   details.export pre {
@@ -187,7 +241,7 @@
   }
 
   /* ── 직원용 링크 화면 ─────────────────────────────────────── */
-  .staffwrap { max-width:560px; margin:0 auto; padding:16px 14px 60px; min-height:100vh; background:var(--bg); }
+  .staffwrap { max-width:660px; margin:0 auto; padding:16px 14px 60px; min-height:100vh; background:var(--bg); }
   .staffbar { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
   .staffbar .ico { width:38px; height:38px; border-radius:10px; background:var(--accent-bg); display:flex; align-items:center; justify-content:center; font-size:20px; }
   .staffbar b { font-size:17px; }
@@ -204,10 +258,11 @@
   .nextshift { text-align:center; padding:26px 16px; }
   .nextshift .big { font-size:26px; font-weight:700; line-height:1.4; }
   .nextshift small { color:var(--muted); }
-  .picker { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+  .picker { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px; }
   .picker button { border:1px solid var(--line); background:var(--card); border-radius:20px; padding:7px 14px; font-size:13px; display:inline-flex; gap:6px; align-items:center; }
   .picker button.on { border-color:var(--accent); color:var(--accent); font-weight:700; background:var(--accent-bg); }
   .picker .pdot { width:8px; height:8px; border-radius:50%; }
+  .viewtoggle { display:flex; gap:6px; margin-left:auto; }
 
   /* ── 모바일 ──────────────────────────────────────────────── */
   @media (max-width:700px) {
@@ -216,15 +271,9 @@
     .side .logo { margin-bottom:8px; }
     .side a.m { display:inline-block; padding:7px 11px; font-size:13px; }
     .side .adminnote { display:none; }
-    .cal { grid-template-columns:1fr; }
-    .cal .h { display:none; }
-    .cell { min-height:0; }
-    .cell .d { font-size:13px; font-weight:700; color:var(--ink); }
-    .cell .d .dw { display:inline; color:var(--muted); font-weight:400; }
-    .shift { font-size:13px; padding:8px 10px; }
-    .addlink { padding:8px 0; }
     .stats { grid-template-columns:1fr; }
     .grid3 { grid-template-columns:1fr; }
+    .wkcal-inner { min-width:640px; }
   }
 
   @media print {
@@ -237,7 +286,7 @@
 
 <!-- ══ 목업 안내 바 ══ -->
 <div class="demobar no-print">
-  <span class="hint">🧪 목업 — 버튼을 눌러보며 둘러보세요 · 이름·시간·금액은 전부 예시</span>
+  <span class="hint">🧪 목업 — 버튼을 눌러보며 둘러보세요 · 이름과 시간은 전부 예시</span>
   <div class="demoswitch">
     <button id="dm-admin" class="on" onclick="setMode('admin')">👔 관리자 화면</button>
     <button id="dm-staff" onclick="setMode('staff')">👤 직원용 링크</button>
@@ -269,184 +318,22 @@
       <button data-tab="tab-data" onclick="setTab('tab-data',this)">📄 데이터</button>
     </div>
 
-    <!-- ── 탭 1: 주간 보드 ── -->
+    <!-- ── 탭 1: 주간 캘린더 ── -->
     <section id="tab-week">
       <div class="wknav no-print">
         <button class="btn small" onclick="moveWeek(-1)">‹ 지난주</button>
         <span class="sp"></span>
-        <span id="wkpos" style="font-size:12px;color:var(--muted);">2 / 3</span>
+        <span id="wkpos" style="font-size:12px;color:var(--muted);"></span>
         <span class="sp"></span>
         <button class="btn small" onclick="moveWeek(1)">다음 주 ›</button>
       </div>
-
-      <!-- 주 A: 지난주 = 확정 + 실제 기록 -->
-      <div class="week locked" id="wk0" hidden>
-        <div class="wkhead">
-          <b class="num">8/24 (월) – 8/30 (일)</b>
-          <span class="tag accent">🔒 확정</span>
-          <div class="wkactions"><button class="unlock lockonly" onclick="alert('실제 페이지에서는 사유를 적어야 잠금이 풀려요.\n(해제 이력이 기록됩니다)')">잠금 해제</button></div>
-        </div>
-        <div class="cal">
-          <div class="h">월</div><div class="h">화</div><div class="h">수</div><div class="h">목</div><div class="h">금</div><div class="h">토</div><div class="h">일</div>
-          <div class="cell"><div class="d num">8/24 <span class="dw">(월)</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-jieun)"></i>지은<span class="t num">09–14</span><span class="st ok">✓</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-minsu)"></i>민수<span class="t num">16–21</span><span class="st ok">✓</span></div>
-          </div>
-          <div class="cell"><div class="d num">8/25 <span class="dw">(화)</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-jieun)"></i>지은<span class="t num">09–14</span><span class="st ok">✓</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-haneul)"></i>하늘<span class="t num">16–21</span><span class="st diff">지각</span></div>
-          </div>
-          <div class="cell"><div class="d num">8/26 <span class="dw">(수)</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-minsu)"></i>민수<span class="t num">09–14</span><span class="st ok">✓</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-soyeon)"></i>소연<span class="t num">16–21</span><span class="st ok">✓</span></div>
-          </div>
-          <div class="cell"><div class="d num">8/27 <span class="dw">(목)</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-jieun)"></i>지은<span class="t num">09–14</span><span class="st ok">✓</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-haneul)"></i>하늘<span class="t num">16–21</span><span class="st ok">✓</span></div>
-          </div>
-          <div class="cell"><div class="d num">8/28 <span class="dw">(금)</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-minsu)"></i>민수<span class="t num">09–14</span><span class="st ok">✓</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-soyeon)"></i>소연<span class="t num">12–17</span><span class="st ok">✓</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-junho)"></i>준호<span class="t num">16–21</span><span class="st diff">연장</span></div>
-          </div>
-          <div class="cell"><div class="d num">8/29 <span class="dw">(토)</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-jieun)"></i>지은<span class="t num">09–14</span><span class="st ok">✓</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-junho)"></i>준호<span class="t num">12–17</span><span class="st ok">✓</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-haneul)"></i>하늘<span class="t num">16–21</span><span class="st ok">✓</span></div>
-          </div>
-          <div class="cell today"><div class="d num">8/30 <span class="dw">(일) · 오늘</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-jieun)"></i>지은<span class="t num">09–14</span><span class="st pend">기록 전</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-soyeon)"></i>소연<span class="t num">10–15</span><span class="st pend">기록 전</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-minsu)"></i>민수<span class="t num">12–17</span><span class="st pend">기록 전</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-haneul)"></i>하늘<span class="t num">16–21</span><span class="st pend">기록 전</span></div>
-          </div>
-        </div>
-        <div class="note">✅ 지나간 날은 <b>변동이 없으면 자동으로 "예정대로"</b> 처리돼요. 지각·연장·결근만 <b>☀️ 오늘</b> 탭에서 고치면 됩니다.</div>
-      </div>
-
-      <!-- 주 B: 다음 주 = 작성 중 -->
-      <div class="week" id="wk1">
-        <div class="wkhead">
-          <b class="num">8/31 (월) – 9/6 (일)</b>
-          <span class="tag warning badge-draft">작성 중</span>
-          <span class="tag accent badge-locked">🔒 확정</span>
-          <div class="wkactions">
-            <button class="btn small draftonly" onclick="alert('지난주(8/24~8/30) 근무를 이 주에 그대로 복사해요.\n복사 후 달라지는 근무만 고치면 됩니다.')">📋 지난주 복사</button>
-            <button class="btn small primary draftonly" onclick="lockWeek()">🔒 이번 주 확정</button>
-            <button class="unlock lockonly" onclick="unlockWeek()">잠금 해제</button>
-          </div>
-        </div>
-        <div class="cal">
-          <div class="h">월</div><div class="h">화</div><div class="h">수</div><div class="h">목</div><div class="h">금</div><div class="h">토</div><div class="h">일</div>
-          <div class="cell"><div class="d num">8/31 <span class="dw">(월)</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-jieun)"></i>지은<span class="t num">09–14</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-minsu)"></i>민수<span class="t num">16–21</span></div>
-            <button class="addlink" onclick="demoAdd()">＋</button>
-          </div>
-          <div class="cell"><div class="d num">9/1 <span class="dw">(화)</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-jieun)"></i>지은<span class="t num">09–14</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-haneul)"></i>하늘<span class="t num">16–21</span></div>
-            <button class="addlink" onclick="demoAdd()">＋</button>
-          </div>
-          <div class="cell"><div class="d num">9/2 <span class="dw">(수)</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-minsu)"></i>민수<span class="t num">09–14</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-soyeon)"></i>소연<span class="t num">16–21</span></div>
-            <button class="addlink" onclick="demoAdd()">＋</button>
-          </div>
-          <div class="cell"><div class="d num">9/3 <span class="dw">(목)</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-jieun)"></i>지은<span class="t num">09–14</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-haneul)"></i>하늘<span class="t num">16–21</span></div>
-            <button class="addlink" onclick="demoAdd()">＋</button>
-          </div>
-          <div class="cell"><div class="d num">9/4 <span class="dw">(금)</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-minsu)"></i>민수<span class="t num">09–14</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-soyeon)"></i>소연<span class="t num">12–17</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-junho)"></i>준호<span class="t num">16–21</span></div>
-            <button class="addlink" onclick="demoAdd()">＋</button>
-          </div>
-          <div class="cell"><div class="d num">9/5 <span class="dw">(토)</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-jieun)"></i>지은<span class="t num">09–14</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-junho)"></i>준호<span class="t num">12–17</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-haneul)"></i>하늘<span class="t num">16–21</span></div>
-            <button class="addlink" onclick="demoAdd()">＋</button>
-          </div>
-          <div class="cell"><div class="d num">9/6 <span class="dw">(일)</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-soyeon)"></i>소연<span class="t num">09–14</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-minsu)"></i>민수<span class="t num">12–17</span></div>
-            <div class="shift"><i class="pdot" style="background:var(--p-junho)"></i>준호<span class="t num">16–21</span></div>
-            <button class="addlink" onclick="demoAdd()">＋</button>
-          </div>
-        </div>
-        <div class="stats">
-          <div class="stat"><span class="n num">85시간</span><small>이번 주 총 근무(예정)</small></div>
-          <div class="stat"><span class="n num">5명</span><small>근무 인원</small></div>
-          <div class="stat"><span class="n num">17건</span><small>배치된 시프트</small></div>
-        </div>
-        <div class="note" id="lockmsg" hidden>🔒 확정됐어요. 이제 이 주의 예정은 잠기고, 직원 화면에도 <b>"확정"</b>으로 표시돼요. 이후 달라지는 건 <b>실제 기록</b>으로만 남습니다.</div>
-      </div>
-
-      <!-- 주 C: 다다음 주 = 빈 주 -->
-      <div class="week" id="wk2" hidden>
-        <div class="wkhead">
-          <b class="num">9/7 (월) – 9/13 (일)</b>
-          <span class="tag warning badge-draft" id="wk2badge" hidden>작성 중</span>
-        </div>
-        <div class="card emptywk" id="wk2empty">
-          <p>이번 주가 아직 비어 있어요.</p>
-          <button class="btn primary" onclick="copyWeek()">📋 지난주 그대로 가져오기</button>
-          <p style="font-size:12px;margin-top:12px;">복사한 뒤 달라지는 근무만 고치면 돼요.<br>매주 스케줄 짜기가 <b>버튼 한 번 + 예외 수정</b>으로 끝납니다.</p>
-        </div>
-        <div id="wk2board" hidden>
-          <div class="cal">
-            <div class="h">월</div><div class="h">화</div><div class="h">수</div><div class="h">목</div><div class="h">금</div><div class="h">토</div><div class="h">일</div>
-            <div class="cell"><div class="d num">9/7 <span class="dw">(월)</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-jieun)"></i>지은<span class="t num">09–14</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-minsu)"></i>민수<span class="t num">16–21</span></div>
-              <button class="addlink" onclick="demoAdd()">＋</button>
-            </div>
-            <div class="cell"><div class="d num">9/8 <span class="dw">(화)</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-jieun)"></i>지은<span class="t num">09–14</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-haneul)"></i>하늘<span class="t num">16–21</span></div>
-              <button class="addlink" onclick="demoAdd()">＋</button>
-            </div>
-            <div class="cell"><div class="d num">9/9 <span class="dw">(수)</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-minsu)"></i>민수<span class="t num">09–14</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-soyeon)"></i>소연<span class="t num">16–21</span></div>
-              <button class="addlink" onclick="demoAdd()">＋</button>
-            </div>
-            <div class="cell"><div class="d num">9/10 <span class="dw">(목)</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-jieun)"></i>지은<span class="t num">09–14</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-haneul)"></i>하늘<span class="t num">16–21</span></div>
-              <button class="addlink" onclick="demoAdd()">＋</button>
-            </div>
-            <div class="cell"><div class="d num">9/11 <span class="dw">(금)</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-minsu)"></i>민수<span class="t num">09–14</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-soyeon)"></i>소연<span class="t num">12–17</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-junho)"></i>준호<span class="t num">16–21</span></div>
-              <button class="addlink" onclick="demoAdd()">＋</button>
-            </div>
-            <div class="cell"><div class="d num">9/12 <span class="dw">(토)</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-jieun)"></i>지은<span class="t num">09–14</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-junho)"></i>준호<span class="t num">12–17</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-haneul)"></i>하늘<span class="t num">16–21</span></div>
-              <button class="addlink" onclick="demoAdd()">＋</button>
-            </div>
-            <div class="cell"><div class="d num">9/13 <span class="dw">(일)</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-soyeon)"></i>소연<span class="t num">09–14</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-minsu)"></i>민수<span class="t num">12–17</span></div>
-              <div class="shift"><i class="pdot" style="background:var(--p-junho)"></i>준호<span class="t num">16–21</span></div>
-              <button class="addlink" onclick="demoAdd()">＋</button>
-            </div>
-          </div>
-          <div class="note">📋 지난주가 그대로 복사됐어요. 이제 달라지는 근무만 고치고 <b>🔒 확정</b>하면 끝.</div>
-        </div>
-      </div>
-
+      <div id="weekhost"></div>
       <div class="legend no-print">
-        <span><span class="dot" style="color:var(--accent)">●</span> 예정</span>
-        <span><span class="dot" style="color:var(--ok)">✓</span> 예정대로 근무</span>
-        <span><span class="dot" style="color:var(--warn)">⚠</span> 변동(지각·연장·결근)</span>
-        <span>🔒 확정된 주 = 더 이상 예정을 안 바꿈</span>
+        <span><span class="sw"></span>영업 전·후 준비/마감 시간</span>
+        <span style="color:var(--accent)">┄ 영업 시작·종료</span>
+        <span style="color:var(--ok)">✓ 예정대로 근무</span>
+        <span style="color:var(--warn)">⚠ 변동(지각·연장·결근)</span>
+        <span>빈 곳을 누르면 그 시간에 근무 추가</span>
       </div>
     </section>
 
@@ -455,188 +342,93 @@
       <div class="wknav no-print">
         <button class="btn small">‹ 어제</button>
         <span class="sp"></span>
-        <b class="num">8월 30일 (일) · 오늘</b>
+        <b class="num" id="dayTitle"></b>
         <span class="sp"></span>
         <button class="btn small">내일 ›</button>
         <button class="btn small" onclick="window.print()">🖨 인쇄</button>
       </div>
 
       <div class="card">
-        <div style="font-size:13px;color:var(--muted);margin-bottom:8px;">지금 매장 <b style="color:var(--ink)">3명</b> · 다음 교대 <b style="color:var(--ink)" class="num">16:00 하늘 출근</b></div>
-        <div class="tlbox">
-          <div class="tl">
-            <div class="tl-nowlab num" style="left:calc(64px + (100% - 64px) * 0.375);">지금 13:30</div>
-            <div class="tl-nowline" style="left:calc(64px + (100% - 64px) * 0.375);"></div>
-            <div class="tl-scale">
-              <span style="left:0%">09</span><span style="left:16.7%">11</span><span style="left:33.3%">13</span>
-              <span style="left:50%">15</span><span style="left:66.7%">17</span><span style="left:83.3%">19</span><span style="left:100%">21</span>
-            </div>
-            <div class="tl-row"><div class="tl-name"><i class="pdot" style="background:var(--p-jieun)"></i>지은</div>
-              <div class="tl-track"><div class="tl-bar num" style="left:0%;width:41.7%;background:var(--p-jieun)">09:00–14:00</div></div></div>
-            <div class="tl-row"><div class="tl-name"><i class="pdot" style="background:var(--p-soyeon)"></i>소연</div>
-              <div class="tl-track"><div class="tl-bar num" style="left:8.3%;width:41.7%;background:var(--p-soyeon)">10:00–15:00</div></div></div>
-            <div class="tl-row"><div class="tl-name"><i class="pdot" style="background:var(--p-minsu)"></i>민수</div>
-              <div class="tl-track"><div class="tl-bar num" style="left:25%;width:41.7%;background:var(--p-minsu)">12:00–17:00</div></div></div>
-            <div class="tl-row"><div class="tl-name"><i class="pdot" style="background:var(--p-haneul)"></i>하늘</div>
-              <div class="tl-track"><div class="tl-bar num" style="left:58.3%;width:41.7%;background:var(--p-haneul)">16:00–21:00</div></div></div>
-          </div>
-        </div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:8px;" id="daySummary"></div>
+        <div class="tlbox"><div class="tl" id="dayTimeline"></div></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:6px;" id="dayBizNote"></div>
       </div>
 
       <div class="sec no-print"><b>오늘 마감 기록</b><small>변동 없으면 "예정대로" 한 번이면 끝</small></div>
-
-      <div class="no-print">
-        <div class="crow" id="cr1">
-          <div class="rhead"><i class="pdot" style="background:var(--p-jieun)"></i><b>지은</b>
-            <span class="plan num">예정 09:00–14:00</span><span class="result"></span></div>
-          <div class="acts">
-            <button class="btn small primary" onclick="crowOk('cr1')">✓ 예정대로</button>
-            <button class="btn small" onclick="crowEdit('cr1')">시간 수정</button>
-            <button class="btn small" onclick="crowAbsent('cr1')">결근</button>
-          </div>
-          <div class="editform">
-            <div class="grid3">
-              <div><label class="lbl">실제 출근</label><input class="fld num" type="time" value="09:20" id="cr1s"></div>
-              <div><label class="lbl">실제 퇴근</label><input class="fld num" type="time" value="14:00" id="cr1e"></div>
-              <div><label class="lbl">사유</label>
-                <select class="fld" id="cr1r"><option>지각</option><option>연장</option><option>조퇴</option><option>대타</option></select></div>
-            </div>
-            <div style="margin-top:10px;"><button class="btn small primary" onclick="crowSave('cr1')">기록 저장</button></div>
-          </div>
-        </div>
-
-        <div class="crow" id="cr2">
-          <div class="rhead"><i class="pdot" style="background:var(--p-soyeon)"></i><b>소연</b>
-            <span class="plan num">예정 10:00–15:00</span><span class="result"></span></div>
-          <div class="acts">
-            <button class="btn small primary" onclick="crowOk('cr2')">✓ 예정대로</button>
-            <button class="btn small" onclick="crowEdit('cr2')">시간 수정</button>
-            <button class="btn small" onclick="crowAbsent('cr2')">결근</button>
-          </div>
-          <div class="editform">
-            <div class="grid3">
-              <div><label class="lbl">실제 출근</label><input class="fld num" type="time" value="10:00" id="cr2s"></div>
-              <div><label class="lbl">실제 퇴근</label><input class="fld num" type="time" value="15:30" id="cr2e"></div>
-              <div><label class="lbl">사유</label>
-                <select class="fld" id="cr2r"><option>연장</option><option>지각</option><option>조퇴</option><option>대타</option></select></div>
-            </div>
-            <div style="margin-top:10px;"><button class="btn small primary" onclick="crowSave('cr2')">기록 저장</button></div>
-          </div>
-        </div>
-
-        <div class="crow" id="cr3">
-          <div class="rhead"><i class="pdot" style="background:var(--p-minsu)"></i><b>민수</b>
-            <span class="plan num">예정 12:00–17:00</span><span class="result"></span></div>
-          <div class="acts">
-            <button class="btn small primary" onclick="crowOk('cr3')">✓ 예정대로</button>
-            <button class="btn small" onclick="crowEdit('cr3')">시간 수정</button>
-            <button class="btn small" onclick="crowAbsent('cr3')">결근</button>
-          </div>
-          <div class="editform">
-            <div class="grid3">
-              <div><label class="lbl">실제 출근</label><input class="fld num" type="time" value="12:00" id="cr3s"></div>
-              <div><label class="lbl">실제 퇴근</label><input class="fld num" type="time" value="17:00" id="cr3e"></div>
-              <div><label class="lbl">사유</label>
-                <select class="fld" id="cr3r"><option>지각</option><option>연장</option><option>조퇴</option><option>대타</option></select></div>
-            </div>
-            <div style="margin-top:10px;"><button class="btn small primary" onclick="crowSave('cr3')">기록 저장</button></div>
-          </div>
-        </div>
-
-        <div class="crow" id="cr4">
-          <div class="rhead"><i class="pdot" style="background:var(--p-haneul)"></i><b>하늘</b>
-            <span class="plan num">예정 16:00–21:00</span><span class="result"></span></div>
-          <div class="acts">
-            <button class="btn small primary" onclick="crowOk('cr4')">✓ 예정대로</button>
-            <button class="btn small" onclick="crowEdit('cr4')">시간 수정</button>
-            <button class="btn small" onclick="crowAbsent('cr4')">결근</button>
-          </div>
-          <div class="editform">
-            <div class="grid3">
-              <div><label class="lbl">실제 출근</label><input class="fld num" type="time" value="16:00" id="cr4s"></div>
-              <div><label class="lbl">실제 퇴근</label><input class="fld num" type="time" value="21:00" id="cr4e"></div>
-              <div><label class="lbl">사유</label>
-                <select class="fld" id="cr4r"><option>지각</option><option>연장</option><option>조퇴</option><option>대타</option></select></div>
-            </div>
-            <div style="margin-top:10px;"><button class="btn small primary" onclick="crowSave('cr4')">기록 저장</button></div>
-          </div>
-        </div>
-
-        <div class="note">💡 아무것도 안 누르면 다음 날 새벽에 자동으로 <b>"예정대로"</b> 처리돼요. 마감 SOP 마지막에 "근무 변동 있었으면 기록" 한 줄만 추가하면 누락을 막을 수 있어요.</div>
-      </div>
+      <div class="no-print" id="closeHost"></div>
+      <div class="note no-print">💡 아무것도 안 누르면 다음 날 새벽에 자동으로 <b>"예정대로"</b> 처리돼요. 마감 SOP 마지막에 "근무 변동 있었으면 기록" 한 줄만 추가하면 누락을 막을 수 있어요.</div>
     </section>
 
     <!-- ── 탭 3: 직원 관리 ── -->
     <section id="tab-staff" hidden>
-      <div class="sec"><b>직원</b><small>이름 · 역할 · 기본 근무 패턴</small></div>
-      <div class="list">
-        <div class="row"><i class="pdot" style="background:var(--p-jieun)"></i><b>지은</b><span class="sub">점장 · 월급제</span>
-          <span class="right sub">기본 패턴: 월·화·목·토 오픈</span></div>
-        <div class="row"><i class="pdot" style="background:var(--p-minsu)"></i><b>민수</b><span class="sub">파트타이머</span>
-          <span class="right sub">수·금 오픈 · 월 마감 · 일 미들</span></div>
-        <div class="row"><i class="pdot" style="background:var(--p-haneul)"></i><b>하늘</b><span class="sub">파트타이머</span>
-          <span class="right sub">화·목·토 마감</span></div>
-        <div class="row"><i class="pdot" style="background:var(--p-soyeon)"></i><b>소연</b><span class="sub">파트타이머</span>
-          <span class="right sub">수 마감 · 금 미들 · 일 오픈</span></div>
-        <div class="row"><i class="pdot" style="background:var(--p-junho)"></i><b>준호</b><span class="sub">파트타이머</span>
-          <span class="right sub">금 마감 · 토 미들</span></div>
-      </div>
+      <div class="sec" style="margin-top:0;"><b>직원</b><small>이름 · 역할 · 기본 근무 패턴</small></div>
+      <div class="list" id="staffList"></div>
       <div style="margin-top:10px;"><button class="btn" onclick="demoAdd()">＋ 직원 추가</button></div>
+
+      <div class="sec"><b>매장 영업시간</b><small>근무시간과 다릅니다</small></div>
+      <div class="card">
+        <div class="stats" style="margin-top:0;">
+          <div class="stat"><span class="n num" id="bizOpenTxt"></span><small>영업 시작</small></div>
+          <div class="stat"><span class="n num" id="bizCloseTxt"></span><small>영업 종료</small></div>
+          <div class="stat"><span class="n num" id="bizPrepTxt"></span><small>오픈 준비 · 마감 정리</small></div>
+        </div>
+        <div class="note" style="margin-bottom:0;">🕒 오픈 근무자는 영업 시작 <b>전</b>에 출근하고, 마감 근무자는 영업 종료 <b>후</b>에 퇴근해요. 그래서 근무 시간표는 영업시간보다 앞뒤로 넓게 나옵니다.</div>
+      </div>
 
       <div class="sec"><b>시프트 프리셋</b><small>근무 추가할 때 버튼 한 번으로 시간이 채워져요</small></div>
       <div class="card">
-        <div class="grid3">
-          <div class="stat"><span class="n">☀️ 오픈</span><small class="num">09:00 – 14:00</small></div>
-          <div class="stat"><span class="n">🌤 미들</span><small class="num">12:00 – 17:00</small></div>
-          <div class="stat"><span class="n">🌙 마감</span><small class="num">16:00 – 21:00</small></div>
-        </div>
+        <div class="presets" id="presetHost"></div>
         <div class="note warn" style="margin-bottom:0;">⚠️ 영업시간·프리셋 시간은 예시예요. 실제 만들 때 사장님이 매장 시간에 맞게 정해주시면 됩니다.</div>
       </div>
-
-      <div class="note">🔐 시급·급여 정보는 이 페이지에 아예 없어요. 여기는 이름·역할·근무 패턴만 관리합니다.</div>
     </section>
 
     <!-- ── 탭 4: 데이터 내보내기 ── -->
     <section id="tab-data" hidden>
-      <div class="wknav no-print">
-        <button class="btn small">‹</button>
-        <span class="sp"></span><b class="num">2026년 8월</b><span class="sp"></span>
-        <button class="btn small">›</button>
-      </div>
-
-      <div class="note warn">⚠️ 내보내기 전 점검: <b>8/30 마감 기록 1건이 아직 안 됐어요</b> — 지금 뽑으면 "예정대로"로 나가요. <u>기록하러 가기</u></div>
-
-      <div class="stats">
-        <div class="stat"><span class="n num">236.5시간</span><small>8월 실제 근무 합계</small></div>
-        <div class="stat"><span class="n num">66건</span><small>근무 기록</small></div>
-        <div class="stat"><span class="n num" style="color:var(--warn)">1건</span><small>미기록(자동 처리 예정)</small></div>
-      </div>
+      <div class="sec" style="margin-top:0;"><b>실제 근무 데이터 내보내기</b><small>기간을 정해서 뽑아요</small></div>
 
       <div class="card">
-        <b>실제 근무 데이터 내보내기</b>
-        <p style="font-size:13px;color:var(--muted);margin:6px 0 12px;">
-          한 달치 <b>실제 근무 기록</b>(누가·언제·몇 시간, 변동 사유 포함)을 표로 뽑아요.
-          급여 계산은 여기서 하지 않아요 — 지금처럼 급여명세서 프로그램에 넣기 좋은 형태로만 나갑니다.
+        <label class="lbl">기간</label>
+        <div class="rangebar">
+          <input class="fld num" type="date" id="rangeFrom" value="2026-08-01" onchange="onRangeInput()">
+          <span style="color:var(--muted);">~</span>
+          <input class="fld num" type="date" id="rangeTo" value="2026-08-31" onchange="onRangeInput()">
+        </div>
+        <div class="rangebar" style="margin-top:10px;">
+          <button class="btn chip on" data-p="thismonth" onclick="setRange('thismonth',this)">이번 달</button>
+          <button class="btn chip" data-p="lastmonth" onclick="setRange('lastmonth',this)">지난달</button>
+          <button class="btn chip" data-p="thisweek" onclick="setRange('thisweek',this)">이번 주</button>
+          <button class="btn chip" data-p="lastweek" onclick="setRange('lastweek',this)">지난주</button>
+          <button class="btn chip" data-p="half" onclick="setRange('half',this)">이번 달 전반(1~15일)</button>
+          <button class="btn chip" data-p="half2" onclick="setRange('half2',this)">이번 달 후반(16일~)</button>
+        </div>
+        <div class="note" id="rangeInfo"></div>
+      </div>
+
+      <div class="note warn" id="rangeCheck"></div>
+
+      <div class="card">
+        <p style="font-size:13px;color:var(--muted);margin:0 0 12px;">
+          선택한 기간의 <b>실제 근무 기록</b>(누가·언제·몇 시간, 변동 사유 포함)을 표로 뽑아요.
+          지금 노션에서 월말에 다운받던 그 자리를 이 버튼이 대신합니다.
         </p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn primary" onclick="alert('실제 페이지에서는 아래 미리보기 형식의 .md 파일이 다운로드돼요.')">⬇ Markdown 내려받기</button>
-          <button class="btn" onclick="alert('실제 페이지에서는 같은 내용이 .csv(엑셀용)로 다운로드돼요.')">⬇ CSV 내려받기</button>
+          <button class="btn primary" onclick="demoExport('Markdown','.md')">⬇ Markdown 내려받기</button>
+          <button class="btn" onclick="demoExport('CSV','.csv')">⬇ CSV 내려받기</button>
         </div>
         <details class="export">
           <summary>미리보기 — 내려받는 표가 이렇게 생겼어요</summary>
-          <pre>| 날짜      | 이름 | 실제 근무     | 시간 | 비고 |
-|----------|------|-------------|------|------|
-| 8/1 (금) | 민수 | 09:00–14:00 | 5.0  |      |
-| 8/1 (금) | 소연 | 12:00–17:00 | 5.0  |      |
-| 8/2 (토) | 하늘 | 16:00–21:20 | 5.3  | 연장 |
-| 8/3 (일) | 준호 | 결근         | 0.0  | 결근 |
-| …        |      |             |      |      |
-| 합계     | 민수 |             | 84.0 |      |
-| 합계     | 하늘 |             | 62.5 |      |</pre>
+          <pre>| 날짜      | 이름 | 예정          | 실제          | 시간 | 비고 |
+|----------|------|--------------|--------------|------|------|
+| 8/1 (토) | 지은 | 06:30–12:00  | 06:30–12:00  | 5.5  |      |
+| 8/1 (토) | 준호 | 12:00–17:00  | 12:00–17:00  | 5.0  |      |
+| 8/1 (토) | 하늘 | 16:00–21:30  | 16:00–22:10  | 6.2  | 연장 |
+| 8/2 (일) | 소연 | 06:30–12:00  | 06:50–12:00  | 5.2  | 지각 |
+| 8/2 (일) | 민수 | 12:00–17:00  | 결근          | 0.0  | 결근 |
+| …        |      |              |              |      |      |
+| 합계     | 지은 |              |              | 84.0 |      |
+| 합계     | 하늘 |              |              | 62.5 |      |</pre>
         </details>
       </div>
-
-      <div class="note">🔐 시급·급여 금액은 <b>이 페이지 어디에도 없어요.</b> 급여 계산은 사장님이 이 데이터를 뽑아 별도 프로그램에서 — 지금 노션에서 다운받던 그 자리를 이 버튼이 대신할 뿐이에요.</div>
     </section>
   </main>
 </div>
@@ -645,7 +437,7 @@
 <div id="view-staff" class="staffwrap" hidden>
   <header class="staffbar">
     <span class="ico">🐻</span>
-    <div><b>베어글스 근무표</b><br><small style="color:var(--muted);">이번 주 <span class="tag accent">🔒 확정</span></small></div>
+    <div><b>베어글스 근무표</b><br><small style="color:var(--muted);" id="sHeadState"></small></div>
   </header>
 
   <div class="tabs">
@@ -654,184 +446,492 @@
     <button data-tab="stab-me" onclick="setStab('stab-me',this)">⭐ 내 근무</button>
   </div>
 
-  <!-- 직원: 오늘 -->
   <section id="stab-today">
     <div class="card">
-      <div style="font-size:13px;color:var(--muted);margin-bottom:8px;"><b class="num" style="color:var(--ink)">8월 30일 (일)</b> · 지금 매장 <b style="color:var(--ink)">3명</b> · 다음 교대 <b style="color:var(--ink)" class="num">16:00 하늘</b></div>
-      <div class="tlbox">
-        <div class="tl">
-          <div class="tl-nowlab num" style="left:calc(64px + (100% - 64px) * 0.375);">지금 13:30</div>
-          <div class="tl-nowline" style="left:calc(64px + (100% - 64px) * 0.375);"></div>
-          <div class="tl-scale">
-            <span style="left:0%">09</span><span style="left:16.7%">11</span><span style="left:33.3%">13</span>
-            <span style="left:50%">15</span><span style="left:66.7%">17</span><span style="left:83.3%">19</span><span style="left:100%">21</span>
-          </div>
-          <div class="tl-row"><div class="tl-name"><i class="pdot" style="background:var(--p-jieun)"></i>지은</div>
-            <div class="tl-track"><div class="tl-bar num" style="left:0%;width:41.7%;background:var(--p-jieun)">09:00–14:00</div></div></div>
-          <div class="tl-row"><div class="tl-name"><i class="pdot" style="background:var(--p-soyeon)"></i>소연</div>
-            <div class="tl-track"><div class="tl-bar num" style="left:8.3%;width:41.7%;background:var(--p-soyeon)">10:00–15:00</div></div></div>
-          <div class="tl-row"><div class="tl-name"><i class="pdot" style="background:var(--p-minsu)"></i>민수</div>
-            <div class="tl-track"><div class="tl-bar num" style="left:25%;width:41.7%;background:var(--p-minsu)">12:00–17:00</div></div></div>
-          <div class="tl-row"><div class="tl-name"><i class="pdot" style="background:var(--p-haneul)"></i>하늘</div>
-            <div class="tl-track"><div class="tl-bar num" style="left:58.3%;width:41.7%;background:var(--p-haneul)">16:00–21:00</div></div></div>
-        </div>
-      </div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:8px;" id="sDaySummary"></div>
+      <div class="tlbox"><div class="tl" id="sDayTimeline"></div></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px;" id="sDayBizNote"></div>
     </div>
     <div class="note">이 링크는 <b>스케줄만</b> 보여요. 로그인·앱 설치 필요 없음 — 단톡방 링크를 홈 화면에 추가해두면 앱처럼 쓸 수 있어요.</div>
   </section>
 
-  <!-- 직원: 이번 주 -->
   <section id="stab-week" hidden>
-    <div class="sec" style="margin-top:0;"><b class="num">8/24 – 8/30</b><small><span class="tag accent">🔒 확정</span> 안 바뀌어요, 믿고 약속 잡으세요</small></div>
-    <div class="daycard"><div class="dh num">8/29 (토)</div>
-      <span class="schip"><i class="pdot" style="background:var(--p-jieun)"></i>지은 <span class="num">09–14</span></span>
-      <span class="schip"><i class="pdot" style="background:var(--p-junho)"></i>준호 <span class="num">12–17</span></span>
-      <span class="schip mine" style="background:var(--p-haneul)">하늘 <span class="num">16–21</span></span>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <b class="num" id="sWeekLabel"></b>
+      <div class="viewtoggle">
+        <button class="btn chip on" id="sv-list" onclick="setStaffWeekView('list')">목록</button>
+        <button class="btn chip" id="sv-cal" onclick="setStaffWeekView('cal')">캘린더</button>
+      </div>
     </div>
-    <div class="daycard today"><div class="dh num">8/30 (일) <small>오늘</small></div>
-      <span class="schip"><i class="pdot" style="background:var(--p-jieun)"></i>지은 <span class="num">09–14</span></span>
-      <span class="schip"><i class="pdot" style="background:var(--p-soyeon)"></i>소연 <span class="num">10–15</span></span>
-      <span class="schip"><i class="pdot" style="background:var(--p-minsu)"></i>민수 <span class="num">12–17</span></span>
-      <span class="schip mine" style="background:var(--p-haneul)">하늘 <span class="num">16–21</span></span>
-    </div>
-
-    <div class="sec"><b class="num">8/31 – 9/6</b><small><span class="tag warning">작성 중</span> 아직 바뀔 수 있어요</small></div>
-    <div class="daycard"><div class="dh num">8/31 (월)</div>
-      <span class="schip"><i class="pdot" style="background:var(--p-jieun)"></i>지은 <span class="num">09–14</span></span>
-      <span class="schip"><i class="pdot" style="background:var(--p-minsu)"></i>민수 <span class="num">16–21</span></span>
-    </div>
-    <div class="daycard"><div class="dh num">9/1 (화)</div>
-      <span class="schip"><i class="pdot" style="background:var(--p-jieun)"></i>지은 <span class="num">09–14</span></span>
-      <span class="schip mine" style="background:var(--p-haneul)">하늘 <span class="num">16–21</span></span>
-    </div>
-    <div class="daycard"><div class="dh num">9/2 (수)</div>
-      <span class="schip"><i class="pdot" style="background:var(--p-minsu)"></i>민수 <span class="num">09–14</span></span>
-      <span class="schip"><i class="pdot" style="background:var(--p-soyeon)"></i>소연 <span class="num">16–21</span></span>
-    </div>
-    <div class="daycard"><div class="dh num">9/3 (목)</div>
-      <span class="schip"><i class="pdot" style="background:var(--p-jieun)"></i>지은 <span class="num">09–14</span></span>
-      <span class="schip mine" style="background:var(--p-haneul)">하늘 <span class="num">16–21</span></span>
-    </div>
-    <div class="daycard"><div class="dh num">9/4 (금)</div>
-      <span class="schip"><i class="pdot" style="background:var(--p-minsu)"></i>민수 <span class="num">09–14</span></span>
-      <span class="schip"><i class="pdot" style="background:var(--p-soyeon)"></i>소연 <span class="num">12–17</span></span>
-      <span class="schip"><i class="pdot" style="background:var(--p-junho)"></i>준호 <span class="num">16–21</span></span>
-    </div>
-    <div class="daycard"><div class="dh num">9/5 (토)</div>
-      <span class="schip"><i class="pdot" style="background:var(--p-jieun)"></i>지은 <span class="num">09–14</span></span>
-      <span class="schip"><i class="pdot" style="background:var(--p-junho)"></i>준호 <span class="num">12–17</span></span>
-      <span class="schip mine" style="background:var(--p-haneul)">하늘 <span class="num">16–21</span></span>
-    </div>
-    <div class="daycard"><div class="dh num">9/6 (일)</div>
-      <span class="schip"><i class="pdot" style="background:var(--p-soyeon)"></i>소연 <span class="num">09–14</span></span>
-      <span class="schip"><i class="pdot" style="background:var(--p-minsu)"></i>민수 <span class="num">12–17</span></span>
-      <span class="schip"><i class="pdot" style="background:var(--p-junho)"></i>준호 <span class="num">16–21</span></span>
-    </div>
+    <div id="sWeekList"></div>
+    <div id="sWeekCal" hidden></div>
   </section>
 
-  <!-- 직원: 내 근무 -->
   <section id="stab-me" hidden>
-    <div class="picker">
-      <button onclick="pickMe(this)"><i class="pdot" style="background:var(--p-jieun)"></i>지은</button>
-      <button onclick="pickMe(this)"><i class="pdot" style="background:var(--p-minsu)"></i>민수</button>
-      <button class="on" onclick="pickMe(this)"><i class="pdot" style="background:var(--p-haneul)"></i>하늘</button>
-      <button onclick="pickMe(this)"><i class="pdot" style="background:var(--p-soyeon)"></i>소연</button>
-      <button onclick="pickMe(this)"><i class="pdot" style="background:var(--p-junho)"></i>준호</button>
-    </div>
-    <div style="font-size:12px;color:var(--muted);margin:-6px 0 12px;">처음 한 번만 자기 이름을 고르면 폰이 기억해요. (목업은 하늘 기준으로 보여드려요)</div>
-
-    <div class="card nextshift">
-      <small>다음 출근</small>
-      <div class="big num">오늘 (일) 16:00</div>
-      <small class="num">2시간 30분 뒤 · 마감 16:00–21:00</small>
-    </div>
-
-    <div class="sec"><b>하늘의 근무</b><small>이번 주 + 다음 주</small></div>
-    <div class="list">
-      <div class="row"><b class="num">8/30 (일)</b><span class="sub num">16:00–21:00 · 마감</span><span class="right"><span class="tag accent">🔒 확정</span></span></div>
-      <div class="row"><b class="num">9/1 (화)</b><span class="sub num">16:00–21:00 · 마감</span><span class="right"><span class="tag warning">작성 중</span></span></div>
-      <div class="row"><b class="num">9/3 (목)</b><span class="sub num">16:00–21:00 · 마감</span><span class="right"><span class="tag warning">작성 중</span></span></div>
-      <div class="row"><b class="num">9/5 (토)</b><span class="sub num">16:00–21:00 · 마감</span><span class="right"><span class="tag warning">작성 중</span></span></div>
-    </div>
-
-    <div class="stats" style="grid-template-columns:1fr 1fr;">
-      <div class="stat"><span class="n num">62.5시간</span><small>8월 근무 (확정 기준)</small></div>
-      <div class="stat"><span class="n num">15시간</span><small>9월 예정 (작성 중)</small></div>
-    </div>
-    <div class="note">🔐 이 화면에는 근무시간만 나와요. 급여 정보는 어디에도 표시되지 않아요.</div>
+    <div class="picker" id="mePicker"></div>
+    <div style="font-size:12px;color:var(--muted);margin:0 0 12px;">처음 한 번만 자기 이름을 고르면 폰이 기억해요.</div>
+    <div class="card nextshift" id="meNext"></div>
+    <div class="sec"><b id="meTitle"></b><small>이번 주 + 다음 주</small></div>
+    <div class="list" id="meList"></div>
   </section>
 </div>
 
 <script>
-  // ── 목업 화면 전환 ──
+  // ══ 매장 설정 (실제 페이지에서는 설정 화면에서 사장님이 정합니다) ══
+  const BIZ_OPEN = 7, BIZ_CLOSE = 21;        // 매장 영업시간 07:00 ~ 21:00
+  const HH = 36;                             // 캘린더에서 1시간 = 36px
+  const NOW = 11;                            // 지금 11:00 (목업 고정값)
+  const DOW = ['월','화','수','목','금','토','일'];
+
+  const STAFF = {
+    '지은': { c:'var(--p-jieun)',  role:'점장',       pattern:'월·화·목·토 오픈' },
+    '민수': { c:'var(--p-minsu)',  role:'파트타이머', pattern:'수·금 오픈 · 월 오후 · 일 미들' },
+    '하늘': { c:'var(--p-haneul)', role:'파트타이머', pattern:'월·화·목·토 마감' },
+    '소연': { c:'var(--p-soyeon)', role:'파트타이머', pattern:'월 미들 · 수 마감 · 금 미들 · 일 오픈' },
+    '준호': { c:'var(--p-junho)',  role:'파트타이머', pattern:'목 오후 · 금 마감 · 토·일 미들' },
+  };
+
+  // 시프트 프리셋 — 오픈은 영업 30분 전 출근, 마감은 영업 30분 후 퇴근
+  const PRESETS = [
+    { icon:'☀️', name:'오픈',  s:6.5, e:12,   memo:'영업 30분 전 출근' },
+    { icon:'🌤', name:'미들',  s:10,  e:15,   memo:'' },
+    { icon:'🌞', name:'오후',  s:14,  e:19,   memo:'' },
+    { icon:'🌙', name:'마감',  s:16,  e:21.5, memo:'영업 30분 후 퇴근' },
+  ];
+
+  // 매주 반복되는 기본 패턴
+  const P = [
+    [{w:'지은',s:6.5,e:12},{w:'소연',s:10,e:15},{w:'민수',s:14,e:19},{w:'하늘',s:16,e:21.5}], // 월
+    [{w:'지은',s:6.5,e:12},{w:'하늘',s:16,e:21.5}],                                          // 화
+    [{w:'민수',s:6.5,e:12},{w:'소연',s:16,e:21.5}],                                          // 수
+    [{w:'지은',s:6.5,e:12},{w:'준호',s:14,e:19},{w:'하늘',s:16,e:21.5}],                      // 목
+    [{w:'민수',s:6.5,e:12},{w:'소연',s:12,e:17},{w:'준호',s:16,e:21.5}],                      // 금
+    [{w:'지은',s:6.5,e:12},{w:'준호',s:12,e:17},{w:'하늘',s:16,e:21.5}],                      // 토
+    [{w:'소연',s:6.5,e:12},{w:'민수',s:12,e:17},{w:'준호',s:16,e:21.5}],                      // 일
+  ];
+  const clonePattern = (fn) => P.map((day, di) => day.map(sh => ({ ...sh, ...(fn ? fn(sh, di) : {}) })));
+
+  const WEEKS = [
+    {
+      label:'8/24 (월) – 8/30 (일)', dates:['8/24','8/25','8/26','8/27','8/28','8/29','8/30'],
+      locked:true, todayIdx:-1,
+      days: clonePattern((sh, di) => {
+        if (di === 1 && sh.w === '하늘') return { st:'diff', note:'지각' };
+        if (di === 4 && sh.w === '준호') return { st:'diff', note:'연장' };
+        return { st:'ok' };
+      }),
+    },
+    {
+      label:'8/31 (월) – 9/6 (일)', dates:['8/31','9/1','9/2','9/3','9/4','9/5','9/6'],
+      locked:false, todayIdx:0,
+      days: clonePattern((sh, di) => (di === 0 ? { st:'pend' } : {})),
+    },
+    {
+      label:'9/7 (월) – 9/13 (일)', dates:['9/7','9/8','9/9','9/10','9/11','9/12','9/13'],
+      locked:false, todayIdx:-1, days:[[],[],[],[],[],[],[]],
+    },
+  ];
+
+  // 시간축 범위 = 영업시간과 실제 근무시간을 모두 감싸도록 자동 계산
+  const ALL = WEEKS.flatMap(w => w.days.flat());
+  const AXIS_START = Math.floor(Math.min(BIZ_OPEN, ...ALL.map(s => s.s)));
+  const AXIS_END   = Math.ceil(Math.max(BIZ_CLOSE, ...ALL.map(s => s.e)));
+
+  const TODAY_W = 1, TODAY_D = 0;   // 오늘 = 8/31 (월)
+  let wkIdx = TODAY_W;
+  let meName = '하늘';
+
+  // ══ 유틸 ══
+  const hm = (h) => String(Math.floor(h)).padStart(2,'0') + ':' + String(Math.round((h % 1) * 60)).padStart(2,'0');
+  const span = (sh) => hm(sh.s) + '–' + hm(sh.e);
+  const dur = (sh) => sh.e - sh.s;
+  const hrs = (n) => (Math.round(n * 10) / 10).toString();
+  const esc = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  // 겹치는 근무를 몇 개의 세로줄로 나눌지 계산 (캘린더 기본 배치 규칙)
+  function assignLanes(shifts) {
+    const sorted = [...shifts].sort((a,b) => a.s - b.s || a.e - b.e);
+    const laneEnd = [];
+    sorted.forEach(sh => {
+      let lane = laneEnd.findIndex(end => end <= sh.s);
+      if (lane === -1) lane = laneEnd.length;
+      laneEnd[lane] = sh.e;
+      sh._lane = lane;
+    });
+    sorted.forEach(sh => { sh._lanes = laneEnd.length; });
+    return sorted;
+  }
+
+  // ══ 주간 캘린더 렌더 ══
+  function weekCalHTML(wk, opts = {}) {
+    const mine = opts.mine || null;
+    const hours = [];
+    for (let h = AXIS_START; h < AXIS_END; h++) hours.push(h);
+    const y = (h) => (h - AXIS_START) * HH;
+
+    let head = '<div class="wkgrid-head"><div class="sp"></div>';
+    wk.dates.forEach((d, i) => {
+      const n = wk.days[i].length;
+      head += `<div class="dh ${i === wk.todayIdx ? 'today' : ''}">
+        <span class="w">${DOW[i]}${i === wk.todayIdx ? ' · 오늘' : ''}</span>
+        <span class="dt num">${d}</span>
+        <span class="cnt">${n ? n + '명' : '—'}</span>
+      </div>`;
+    });
+    head += '</div>';
+
+    let body = '<div class="wkgrid-body">';
+    body += '<div class="wkaxis">' + hours.map(h => {
+      const mark = h === BIZ_OPEN ? '<em>오픈</em>' : (h === BIZ_CLOSE ? '<em>마감</em>' : '');
+      const biz = (h >= BIZ_OPEN && h < BIZ_CLOSE) ? ' biz' : '';
+      return `<div class="hl${biz}" style="height:${HH}px">${mark}<span class="num">${String(h).padStart(2,'0')}</span></div>`;
+    }).join('') + '</div>';
+
+    wk.days.forEach((day, di) => {
+      body += `<div class="dcol ${di === wk.todayIdx ? 'today' : ''}" data-day="${di}">`;
+      body += `<div class="bizband" style="top:${y(BIZ_OPEN)}px;height:${(BIZ_CLOSE - BIZ_OPEN) * HH}px"></div>`;
+      body += hours.map(() => `<div class="hl" style="height:${HH}px"></div>`).join('');
+      assignLanes(day).forEach(sh => {
+        const w = 100 / sh._lanes;
+        const dim = mine && sh.w !== mine ? 'opacity:.4;' : '';
+        const mk = sh.st === 'ok' ? '<span class="mk ok">✓</span>'
+                 : sh.st === 'diff' ? `<span class="mk diff">${esc(sh.note)}</span>`
+                 : sh.st === 'pend' ? '<span class="mk pend">기록 전</span>' : '';
+        body += `<div class="ev${sh.st === 'diff' ? ' diff' : ''}"
+          style="top:${y(sh.s)}px;height:${dur(sh) * HH - 4}px;left:calc(${sh._lane * w}% + 2px);width:calc(${w}% - 4px);background:${STAFF[sh.w].c};${dim}"
+          title="${esc(sh.w)} ${span(sh)} (${hrs(dur(sh))}시간)"
+          onclick="event.stopPropagation();demoShift('${esc(sh.w)}','${span(sh)}')">
+          ${mk}<span class="t num"><span class="s">${hm(sh.s)}</span><span class="e">–${hm(sh.e)}</span></span><b>${esc(sh.w)}</b></div>`;
+      });
+      body += '</div>';
+    });
+
+    body += `<div class="bizline" style="top:${y(BIZ_OPEN)}px"><b class="num">영업 ${hm(BIZ_OPEN)}</b></div>`;
+    body += `<div class="bizline" style="top:${y(BIZ_CLOSE)}px"><b class="num">마감 ${hm(BIZ_CLOSE)}</b></div>`;
+    if (wk.todayIdx >= 0) {
+      body += `<div class="nowline" style="top:${y(NOW)}px"><b class="num">지금 ${hm(NOW)}</b></div>`;
+    }
+    body += '</div>';
+
+    return `<div class="wkcal"><div class="wkcal-inner">${head}${body}</div></div>`;
+  }
+
+  // 블록이 좁으면 시간 표기를 줄인다
+  function fitEvents(root) {
+    root.querySelectorAll('.ev').forEach(ev => {
+      const w = ev.offsetWidth;
+      ev.classList.toggle('compact', w < 104);
+      ev.classList.toggle('narrow', w < 46);
+    });
+  }
+
+  function renderWeek() {
+    const wk = WEEKS[wkIdx];
+    const host = document.getElementById('weekhost');
+    const isEmpty = wk.days.every(d => d.length === 0);
+    const flat = wk.days.flat();
+    const totalH = flat.reduce((a, sh) => a + dur(sh), 0);
+    const people = new Set(flat.map(sh => sh.w)).size;
+
+    let html = `<div class="week ${wk.locked ? 'locked' : ''}">
+      <div class="wkhead">
+        <b class="num">${wk.label}</b>
+        <span class="tag warning badge-draft">작성 중</span>
+        <span class="tag accent badge-locked">🔒 확정</span>
+        <div class="wkactions no-print">
+          ${isEmpty ? '' : `<button class="btn small draftonly" onclick="copyPrevWeek()">📋 지난주 복사</button>
+          <button class="btn small primary draftonly" onclick="lockWeek()">🔒 이번 주 확정</button>`}
+          <button class="unlock lockonly" onclick="unlockWeek()">잠금 해제</button>
+        </div>
+      </div>`;
+
+    if (isEmpty) {
+      html += `<div class="card emptywk">
+        <p>이번 주가 아직 비어 있어요.</p>
+        <button class="btn primary" onclick="copyPrevWeek()">📋 지난주 그대로 가져오기</button>
+        <p style="font-size:12px;margin-top:12px;">복사한 뒤 달라지는 근무만 고치면 돼요.<br>매주 스케줄 짜기가 <b>버튼 한 번 + 예외 수정</b>으로 끝납니다.</p>
+      </div>`;
+    } else {
+      html += weekCalHTML(wk);
+      html += `<div class="stats">
+        <div class="stat"><span class="n num">${hrs(totalH)}시간</span><small>이번 주 총 근무</small></div>
+        <div class="stat"><span class="n num">${people}명</span><small>근무 인원</small></div>
+        <div class="stat"><span class="n num">${flat.length}건</span><small>배치된 시프트</small></div>
+      </div>`;
+      if (wk.locked) {
+        html += `<div class="note">🔒 확정됐어요. 이 주의 예정은 잠기고, 직원 화면에도 <b>"확정"</b>으로 표시돼요. 이후 달라지는 건 <b>실제 기록</b>으로만 남습니다.</div>`;
+      }
+    }
+    html += '</div>';
+    host.innerHTML = html;
+    document.getElementById('wkpos').textContent = (wkIdx + 1) + ' / ' + WEEKS.length;
+    fitEvents(host);
+
+    if (!wk.locked) {
+      host.querySelectorAll('.dcol').forEach(col => {
+        col.onclick = (e) => {
+          const yPos = e.clientY - col.getBoundingClientRect().top;
+          const half = Math.max(0, Math.round(yPos / (HH / 2)));
+          const hour = Math.min(AXIS_END - 0.5, AXIS_START + half / 2);
+          const di = +col.dataset.day;
+          demoAdd(`${wk.dates[di]} (${DOW[di]}) ${hm(hour)}`);
+        };
+      });
+    }
+  }
+
+  function moveWeek(d) {
+    wkIdx = Math.max(0, Math.min(WEEKS.length - 1, wkIdx + d));
+    renderWeek();
+  }
+  function lockWeek()   { WEEKS[wkIdx].locked = true;  renderWeek(); renderStaffWeek(); renderMe(); }
+  function unlockWeek() { WEEKS[wkIdx].locked = false; renderWeek(); renderStaffWeek(); renderMe(); }
+  function copyPrevWeek() {
+    const prev = WEEKS[Math.max(0, wkIdx - 1)];
+    WEEKS[wkIdx].days = prev.days.map(day => day.map(sh => ({ w:sh.w, s:sh.s, e:sh.e })));
+    renderWeek(); renderStaffWeek(); renderMe();
+  }
+  function demoAdd(when) {
+    alert((when ? when + '에 근무 추가\n\n' : '') +
+      '실제 페이지에서는: 직원 선택 → 프리셋(오픈/미들/오후/마감) 버튼 한 번 → 추가 완료.\n시간을 직접 입력할 필요가 거의 없어요.');
+  }
+  function demoShift(who, t) {
+    alert(who + ' ' + t + '\n\n실제 페이지에서는 여기서 시간 수정·삭제·대타 지정을 할 수 있어요.');
+  }
+
+  // ══ 오늘(데일리) ══
+  const todayShifts = () => WEEKS[TODAY_W].days[TODAY_D];
+
+  function timelineHTML() {
+    const shifts = [...todayShifts()].sort((a,b) => a.s - b.s);
+    const total = AXIS_END - AXIS_START;
+    const pct = (h) => ((h - AXIS_START) / total) * 100;
+    const at = (h) => `calc(70px + (100% - 70px) * ${pct(h) / 100})`;
+
+    let html = `<div class="tl-biz" style="left:${at(BIZ_OPEN)};width:calc((100% - 70px) * ${(BIZ_CLOSE - BIZ_OPEN) / total});"></div>
+      <div class="tl-bizlab" style="left:${at(BIZ_OPEN)}">영업 ${hm(BIZ_OPEN)}</div>
+      <div class="tl-bizlab" style="left:${at(BIZ_CLOSE)}">마감 ${hm(BIZ_CLOSE)}</div>
+      <div class="tl-nowlab num" style="left:${at(NOW)}">지금 ${hm(NOW)}</div>
+      <div class="tl-nowline" style="left:${at(NOW)}"></div>
+      <div class="tl-scale">`;
+    for (let h = AXIS_START; h <= AXIS_END; h += 2) {
+      const cls = h === AXIS_START ? ' class="first"' : (h + 2 > AXIS_END ? ' class="last"' : '');
+      html += `<span${cls} style="left:${pct(h)}%">${String(h).padStart(2,'0')}</span>`;
+    }
+    html += '</div>';
+
+    shifts.forEach(sh => {
+      html += `<div class="tl-row">
+        <div class="tl-name"><i class="pdot" style="background:${STAFF[sh.w].c}"></i>${esc(sh.w)}</div>
+        <div class="tl-track"><div class="tl-bar num" style="left:${pct(sh.s)}%;width:${(dur(sh) / total) * 100}%;background:${STAFF[sh.w].c}">${span(sh)}</div></div>
+      </div>`;
+    });
+    return html;
+  }
+
+  function daySummaryHTML() {
+    const on = todayShifts().filter(sh => sh.s <= NOW && NOW < sh.e);
+    const next = todayShifts().filter(sh => sh.s > NOW).sort((a,b) => a.s - b.s)[0];
+    return `<b class="num" style="color:var(--ink)">8월 31일 (월)</b> · 지금 매장 <b style="color:var(--ink)">${on.length}명</b>` +
+      (next ? ` · 다음 교대 <b style="color:var(--ink)" class="num">${hm(next.s)} ${esc(next.w)}</b>` : ' · 남은 교대 없음');
+  }
+
+  function bizNoteHTML() {
+    const first = [...todayShifts()].sort((a,b) => a.s - b.s)[0];
+    const last  = [...todayShifts()].sort((a,b) => b.e - a.e)[0];
+    if (!first) return '';
+    return `매장 영업 <b class="num">${hm(BIZ_OPEN)}–${hm(BIZ_CLOSE)}</b> · ` +
+      `첫 출근 <b class="num">${hm(first.s)}</b> (${esc(first.w)}, 영업 ${Math.round((BIZ_OPEN - first.s) * 60)}분 전) · ` +
+      `마지막 퇴근 <b class="num">${hm(last.e)}</b> (${esc(last.w)}, 영업 종료 ${Math.round((last.e - BIZ_CLOSE) * 60)}분 후)`;
+  }
+
+  function renderDay() {
+    document.getElementById('dayTitle').textContent = '8월 31일 (월) · 오늘';
+    ['daySummary','sDaySummary'].forEach(id => document.getElementById(id).innerHTML = daySummaryHTML());
+    ['dayTimeline','sDayTimeline'].forEach(id => document.getElementById(id).innerHTML = timelineHTML());
+    ['dayBizNote','sDayBizNote'].forEach(id => document.getElementById(id).innerHTML = bizNoteHTML());
+
+    document.getElementById('closeHost').innerHTML = [...todayShifts()].sort((a,b) => a.s - b.s).map((sh, i) => {
+      const id = 'cr' + i;
+      return `<div class="crow" id="${id}">
+        <div class="rhead"><i class="pdot" style="background:${STAFF[sh.w].c}"></i><b>${esc(sh.w)}</b>
+          <span class="plan num">예정 ${span(sh)}</span><span class="result"></span></div>
+        <div class="acts">
+          <button class="btn small primary" onclick="crowOk('${id}')">✓ 예정대로</button>
+          <button class="btn small" onclick="crowEdit('${id}')">시간 수정</button>
+          <button class="btn small" onclick="crowAbsent('${id}')">결근</button>
+        </div>
+        <div class="editform">
+          <div class="grid3">
+            <div><label class="lbl" for="${id}s">실제 출근</label><input class="fld num" type="time" value="${hm(sh.s)}" id="${id}s"></div>
+            <div><label class="lbl" for="${id}e">실제 퇴근</label><input class="fld num" type="time" value="${hm(sh.e)}" id="${id}e"></div>
+            <div><label class="lbl" for="${id}r">사유</label>
+              <select class="fld" id="${id}r"><option>지각</option><option>연장</option><option>조퇴</option><option>대타</option></select></div>
+          </div>
+          <div style="margin-top:10px;"><button class="btn small primary" onclick="crowSave('${id}')">기록 저장</button></div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function crowResult(id, cls, html) {
+    const r = document.getElementById(id);
+    r.classList.remove('editing','done','diff','absent');
+    r.classList.add(cls);
+    r.querySelector('.result').innerHTML = html;
+  }
+  const crowOk = (id) => crowResult(id, 'done', '<span class="tag success">✓ 기록 완료 — 예정대로</span>');
+  const crowEdit = (id) => document.getElementById(id).classList.toggle('editing');
+  const crowAbsent = (id) => crowResult(id, 'absent', '<span class="tag warning">결근 · 0시간</span>');
+  function crowSave(id) {
+    const s = document.getElementById(id + 's').value, e = document.getElementById(id + 'e').value;
+    const r = document.getElementById(id + 'r').value;
+    crowResult(id, 'diff', `<span class="tag warning">⚠ ${esc(r)}</span> <span class="num" style="font-size:13px;">실제 ${esc(s)}–${esc(e)}</span>`);
+  }
+
+  // ══ 직원 관리 ══
+  function renderStaffList() {
+    document.getElementById('staffList').innerHTML = Object.entries(STAFF).map(([name, s]) =>
+      `<div class="row"><i class="pdot" style="background:${s.c}"></i><b>${esc(name)}</b>
+        <span class="sub">${esc(s.role)}</span>
+        <span class="right sub">기본 패턴: ${esc(s.pattern)}</span></div>`).join('');
+
+    document.getElementById('bizOpenTxt').textContent = hm(BIZ_OPEN);
+    document.getElementById('bizCloseTxt').textContent = hm(BIZ_CLOSE);
+    document.getElementById('bizPrepTxt').textContent = '30분 · 30분';
+
+    document.getElementById('presetHost').innerHTML = PRESETS.map(p =>
+      `<div class="stat"><span class="n">${p.icon} ${esc(p.name)}</span>
+        <small class="num">${hm(p.s)} – ${hm(p.e)}</small>
+        ${p.memo ? `<small style="display:block;">${esc(p.memo)}</small>` : ''}</div>`).join('');
+  }
+
+  // ══ 데이터 내보내기 — 기간 설정 ══
+  const fmtK = (iso) => { const [y,m,d] = iso.split('-'); return `${+m}월 ${+d}일`; };
+  const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000) + 1;
+
+  const RANGES = {
+    thismonth: ['2026-08-01','2026-08-31'],
+    lastmonth: ['2026-07-01','2026-07-31'],
+    thisweek:  ['2026-08-31','2026-09-06'],
+    lastweek:  ['2026-08-24','2026-08-30'],
+    half:      ['2026-08-01','2026-08-15'],
+    half2:     ['2026-08-16','2026-08-31'],
+  };
+
+  function setRange(key, btn) {
+    const [f, t] = RANGES[key];
+    document.getElementById('rangeFrom').value = f;
+    document.getElementById('rangeTo').value = t;
+    btn.parentElement.querySelectorAll('.btn.chip').forEach(b => b.classList.toggle('on', b === btn));
+    updateRangeInfo();
+  }
+  function onRangeInput() {
+    document.querySelectorAll('#tab-data .btn.chip').forEach(b => b.classList.remove('on'));
+    updateRangeInfo();
+  }
+  function updateRangeInfo() {
+    const f = document.getElementById('rangeFrom').value, t = document.getElementById('rangeTo').value;
+    const info = document.getElementById('rangeInfo'), chk = document.getElementById('rangeCheck');
+    if (!f || !t || new Date(f) > new Date(t)) {
+      info.className = 'note warn';
+      info.innerHTML = '기간을 다시 골라주세요 — 시작일이 종료일보다 늦어요.';
+      chk.hidden = true;
+      return;
+    }
+    const n = daysBetween(f, t);
+    info.className = 'note';
+    info.innerHTML = `📅 <b>${fmtK(f)} ~ ${fmtK(t)}</b> (${n}일) 사이의 실제 근무 기록을 내보냅니다.`;
+
+    const includesToday = new Date(f) <= new Date('2026-08-31') && new Date('2026-08-31') <= new Date(t);
+    chk.hidden = !includesToday;
+    chk.innerHTML = '⚠️ 내보내기 전 점검: <b>8월 31일(오늘) 마감 기록 4건이 아직 안 됐어요</b> — 지금 뽑으면 "예정대로"로 나갑니다. <u>기록하러 가기</u>';
+  }
+  function demoExport(kind, ext) {
+    const f = document.getElementById('rangeFrom').value, t = document.getElementById('rangeTo').value;
+    alert(`실제 페이지에서는 아래 파일이 다운로드돼요.\n\n근무기록_${f}_${t}${ext}  (${kind})\n\n미리보기 형식 그대로, 선택한 기간만 담깁니다.`);
+  }
+
+  // ══ 직원용 화면 ══
+  let staffWeekView = 'list';
+  function setStaffWeekView(v) {
+    staffWeekView = v;
+    document.getElementById('sv-list').classList.toggle('on', v === 'list');
+    document.getElementById('sv-cal').classList.toggle('on', v === 'cal');
+    document.getElementById('sWeekList').hidden = v !== 'list';
+    document.getElementById('sWeekCal').hidden = v !== 'cal';
+    if (v === 'cal') fitEvents(document.getElementById('sWeekCal'));
+  }
+
+  function renderStaffWeek() {
+    const wk = WEEKS[TODAY_W];
+    const badge = `<span class="tag ${wk.locked ? 'accent' : 'warning'}">${wk.locked ? '🔒 확정' : '작성 중'}</span>`;
+    document.getElementById('sHeadState').innerHTML = '이번 주 ' + badge;
+    document.getElementById('sWeekLabel').innerHTML = `<span class="num">${wk.label}</span> ${badge}`;
+
+    document.getElementById('sWeekList').innerHTML = wk.dates.map((d, i) => {
+      const chips = [...wk.days[i]].sort((a,b) => a.s - b.s).map(sh =>
+        sh.w === meName
+          ? `<span class="schip mine" style="background:${STAFF[sh.w].c}">${esc(sh.w)} <span class="num">${span(sh)}</span></span>`
+          : `<span class="schip"><i class="pdot" style="background:${STAFF[sh.w].c}"></i>${esc(sh.w)} <span class="num">${span(sh)}</span></span>`
+      ).join('');
+      return `<div class="daycard ${i === wk.todayIdx ? 'today' : ''}">
+        <div class="dh"><span class="num">${d} (${DOW[i]})</span>${i === wk.todayIdx ? '<small>오늘</small>' : ''}</div>
+        ${chips || '<span style="color:var(--muted);font-size:13px;">근무 없음</span>'}</div>`;
+    }).join('');
+
+    document.getElementById('sWeekCal').innerHTML = weekCalHTML(wk, { mine: meName });
+    if (staffWeekView === 'cal') fitEvents(document.getElementById('sWeekCal'));
+  }
+
+  function renderMe() {
+    document.getElementById('mePicker').innerHTML = Object.entries(STAFF).map(([name, s]) =>
+      `<button class="${name === meName ? 'on' : ''}" onclick="pickMe('${esc(name)}')"><i class="pdot" style="background:${s.c}"></i>${esc(name)}</button>`).join('');
+    document.getElementById('meTitle').textContent = meName + '의 근무';
+
+    const rows = [];
+    [TODAY_W, TODAY_W + 1].forEach(wi => {
+      const wk = WEEKS[wi]; if (!wk) return;
+      wk.dates.forEach((d, di) => wk.days[di].filter(sh => sh.w === meName)
+        .forEach(sh => rows.push({ d, di, sh, wk, isToday: di === wk.todayIdx })));
+    });
+
+    const next = rows.find(r => !r.isToday || r.sh.s > NOW);
+    document.getElementById('meNext').innerHTML = next
+      ? `<small>다음 출근</small>
+         <div class="big num">${next.isToday ? '오늘' : next.d} (${DOW[next.di]}) ${hm(next.sh.s)}</div>
+         <small class="num">${next.isToday ? Math.round((next.sh.s - NOW) * 60) + '분 뒤 · ' : ''}${span(next.sh)} · ${hrs(dur(next.sh))}시간</small>`
+      : '<small>예정된 근무가 없어요</small>';
+
+    document.getElementById('meList').innerHTML = rows.map(r =>
+      `<div class="row"><b class="num">${r.d} (${DOW[r.di]})</b>
+        <span class="sub num">${span(r.sh)} · ${hrs(dur(r.sh))}시간</span>
+        <span class="right"><span class="tag ${r.wk.locked ? 'accent' : 'warning'}">${r.wk.locked ? '🔒 확정' : '작성 중'}</span></span></div>`
+    ).join('') || '<div class="row"><span class="sub">예정된 근무가 없어요</span></div>';
+  }
+  function pickMe(name) { meName = name; renderMe(); renderStaffWeek(); }
+
+  // ══ 화면 전환 ══
   function setMode(m) {
     document.getElementById('view-admin').hidden = (m !== 'admin');
     document.getElementById('view-staff').hidden = (m !== 'staff');
     document.getElementById('dm-admin').classList.toggle('on', m === 'admin');
     document.getElementById('dm-staff').classList.toggle('on', m === 'staff');
     window.scrollTo(0, 0);
+    fitEvents(document);
   }
   function setTab(id, btn) {
-    ['tab-week','tab-day','tab-staff','tab-data'].forEach(t =>
-      document.getElementById(t).hidden = (t !== id));
+    ['tab-week','tab-day','tab-staff','tab-data'].forEach(t => document.getElementById(t).hidden = (t !== id));
     btn.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn));
+    if (id === 'tab-week') fitEvents(document.getElementById('weekhost'));
   }
   function setStab(id, btn) {
-    ['stab-today','stab-week','stab-me'].forEach(t =>
-      document.getElementById(t).hidden = (t !== id));
+    ['stab-today','stab-week','stab-me'].forEach(t => document.getElementById(t).hidden = (t !== id));
     btn.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn));
+    if (id === 'stab-week' && staffWeekView === 'cal') fitEvents(document.getElementById('sWeekCal'));
   }
 
-  // ── 주간 보드: 주 이동 / 확정 / 지난주 복사 ──
-  let wkIdx = 1;
-  function moveWeek(d) {
-    wkIdx = Math.max(0, Math.min(2, wkIdx + d));
-    [0,1,2].forEach(i => document.getElementById('wk' + i).hidden = (i !== wkIdx));
-    document.getElementById('wkpos').textContent = (wkIdx + 1) + ' / 3';
-  }
-  function lockWeek() {
-    document.getElementById('wk1').classList.add('locked');
-    document.getElementById('lockmsg').hidden = false;
-  }
-  function unlockWeek() {
-    document.getElementById('wk1').classList.remove('locked');
-    document.getElementById('lockmsg').hidden = true;
-  }
-  function copyWeek() {
-    document.getElementById('wk2empty').hidden = true;
-    document.getElementById('wk2board').hidden = false;
-    document.getElementById('wk2badge').hidden = false;
-  }
-  function demoAdd() {
-    alert('실제 페이지에서는: 직원 선택 → 프리셋(오픈/미들/마감) 버튼 한 번 → 추가 완료.\n시간을 직접 입력할 필요가 거의 없어요.');
-  }
+  window.addEventListener('resize', () => fitEvents(document));
 
-  // ── 하루 마감 기록 ──
-  function crowResult(id, cls, html) {
-    const r = document.getElementById(id);
-    r.classList.remove('editing', 'done', 'diff', 'absent');
-    r.classList.add(cls);
-    r.querySelector('.result').innerHTML = html;
-  }
-  function crowOk(id) {
-    crowResult(id, 'done', '<span class="tag success">✓ 기록 완료 — 예정대로</span>');
-  }
-  function crowEdit(id) {
-    document.getElementById(id).classList.toggle('editing');
-  }
-  function crowSave(id) {
-    const s = document.getElementById(id + 's').value;
-    const e = document.getElementById(id + 'e').value;
-    const r = document.getElementById(id + 'r').value;
-    crowResult(id, 'diff',
-      '<span class="tag warning">⚠ ' + r + '</span> <span class="num" style="font-size:13px;">실제 ' + s + '–' + e + '</span>');
-  }
-  function crowAbsent(id) {
-    crowResult(id, 'absent', '<span class="tag warning">결근 · 0시간</span>');
-  }
-
-  // ── 직원 화면: 이름 선택(목업에서는 표시만 바뀜) ──
-  function pickMe(btn) {
-    btn.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn));
-  }
+  renderWeek(); renderDay(); renderStaffList(); renderStaffWeek(); renderMe(); updateRangeInfo();
 </script>
