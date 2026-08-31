@@ -2642,7 +2642,7 @@ def menu_channel_save(path_key, sku, channel):
 def menu_settings_save(path_key, key):
     check(path_key)
     if key not in ("channel_fees", "target_cost_rates", "order_model", "task_done",
-                   "launching"):
+                   "launching", "launch_checked"):
         abort(400)
     try:
         db.menu_set_setting(key, request.get_json(force=True))

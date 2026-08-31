@@ -1130,8 +1130,12 @@ async function saveLaunch(list){
 // 수집 스냅샷에 이 메뉴가 잡혀 있으면 그 채널엔 이미 등록된 것(자동 확인)
 const snapHas = (sku, ch) => (DATA.snapshots || [])
   .some(s => s.channel === ch && s.matched_sku === sku);
-const chChecked = (sku, ch) => { const o = chOverride(sku, ch);
-  return !!o && o.active !== false; };
+// 등록 완료 표시는 menu_channels 가 아니라 전용 기록(launch_checked)을 본다.
+// 예전엔 예외 행의 active 를 겸용했는데, 그러면 ①가격 예외만 저장해도 등록
+// 완료로 뜨고 ②체크를 끄면 '이 채널에선 안 파는 메뉴'가 되어 작업지시서에서
+// 사라졌다(감사 확인). active 는 이제 '안 팖' 한 뜻만 갖는다.
+const chChecked = (sku, ch) =>
+  ((DATA.settings.launch_checked || {})[sku] || []).includes(ch);
 
 // 체크 항목 — 위 4개는 정본 데이터로 자동 판정, 아래는 직접 체크.
 function launchTasks(it){
@@ -1169,8 +1173,15 @@ function launchTasks(it){
 const launchLeft = it => launchTasks(it).filter(x=>!x.ok).length;
 
 async function toggleLaunchCh(sku, ch, val){
-  const ok = await diffOverride(sku, ch, {active: val});
-  if (!ok) return;
+  const lc = DATA.settings.launch_checked = DATA.settings.launch_checked || {};
+  const before = lc[sku] ? [...lc[sku]] : undefined;
+  const set = new Set(lc[sku] || []);
+  val ? set.add(ch) : set.delete(ch);
+  if (set.size) lc[sku] = [...set]; else delete lc[sku];
+  if (!(await api("/settings/launch_checked", lc))){
+    if (before) lc[sku] = before; else delete lc[sku];   // 실패 — 되돌린다
+    return;
+  }
   toast(val ? "등록 표시 ✓" : "표시 해제");
   if (sheetOpen() && OPEN_SKU === sku)
     document.getElementById("sheetBody").innerHTML = detailHTML(sku);
@@ -2051,7 +2062,8 @@ function openDiff(){
         <small style="color:var(--sub)">채널 ${won(p.snap.price)}원 · 정본 기준 ${won(p.expected)}원</small></div>
         <div>${mini("📋 기준가 복사", `copyText('${Math.round(p.expected)}')`, "채널 앱에 붙여넣어 정본으로 통일")}
         ${mini("정본을 채널가로", `diffAdopt('${p.it.sku}','${ch}',${p.snap.price})`, "채널 가격이 맞는 경우 — 정본을 고칩니다")}
-        ${mini("채널 예외로 인정", `diffAllowPrice('${p.it.sku}','${ch}',${p.snap.price})`, "이 채널만 일부러 다른 가격을 쓰는 걸로")}</div></div>`;
+        ${STORE_PRICED.has(ch) ? ""    /* 네이버는 매장가를 그대로 쓰는 채널 — 가격 예외를 저장해도 어디서도 안 읽는다(유령 저장) */
+          : mini("채널 예외로 인정", `diffAllowPrice('${p.it.sku}','${ch}',${p.snap.price})`, "이 채널만 일부러 다른 가격을 쓰는 걸로")}</div></div>`;
     }
     // 수집이 오래됐으면 그 사이 채널이 바뀌었을 수 있다 — 비교보다 재수집이 먼저.
     const ageDays = rows[0].collected_at
