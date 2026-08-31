@@ -367,7 +367,15 @@ def _trusted_kinds() -> set:
     # 실제로 어긋나 있었다: beargels 는 question 을 민감(큰 모델감)이라
     # 선언하는데, 배지는 escalate·complaint 만 빼서 question 에 '그대로
     # 등록해도 좋아요'가 붙을 수 있었다(2026-08-30 감사).
-    from assistant.beargels import _SENSITIVE_KINDS
+    #
+    # ⚠️ import 실패도 삼킨다. 이 배지는 '있으면 편한' 부가 기능인데, 여기서
+    #    예외가 새면 '등록해야 할 답글' 화면이 통째로 안 뜬다 — 실제로
+    #    beargels 의 최상단 anthropic import 때문에 그렇게 죽었다(2026-08-31).
+    #    화면이 죽는 것보다 배지가 안 뜨는 게 훨씬 낫다.
+    try:
+        from assistant.beargels import _SENSITIVE_KINDS
+    except Exception:  # noqa: BLE001
+        _SENSITIVE_KINDS = ("escalate", "complaint", "question")
     return {k for k, s in stats.items()
             if k not in _SENSITIVE_KINDS
             and s["n"] >= TRUST_MIN_SAMPLES

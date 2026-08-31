@@ -22,7 +22,11 @@ import re
 from collections import Counter
 from pathlib import Path
 
-from anthropic import Anthropic
+# ⚠️ anthropic 패키지를 여기서 import 하지 않는다 — AI 호출은 전부 llm.py 를
+#    거치고(llm 이 필요할 때만 lazy import 한다), 이 모듈은 직원 웹앱에서도
+#    import 된다(민감 유형 정의 등). 웹앱이 도는 PythonAnywhere 에는
+#    anthropic 이 깔려 있지 않아, 최상단 import 하나 때문에 '등록해야 할 답글'
+#    화면이 통째로 죽었다(2026-08-31 실장애).
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -62,7 +66,6 @@ logger = logging.getLogger(__name__)
 # 분석용 모델 — .env BEARGELS_MODEL 로 교체 가능(비용/품질 조절).
 #   claude-haiku-4-5(~$2/월) < claude-sonnet-5(~$4) < claude-opus-4-8(~$11)
 MODEL = os.getenv("BEARGELS_MODEL", "claude-opus-4-8")
-_client = None
 
 # 비서 페르소나 — 모든 Claude 호출의 기본 system 프롬프트.
 PERSONA = (
@@ -184,14 +187,10 @@ def target_len_for(kind, platform, fallback, content=""):
 
 
 
-def get_client():
-    """Anthropic 클라이언트(싱글턴)."""
-    global _client
-    if _client is None:
-        if not os.getenv("ANTHROPIC_API_KEY"):
-            raise RuntimeError(".env 에 ANTHROPIC_API_KEY 를 설정하세요.")
-        _client = Anthropic()
-    return _client
+# (2026-08-31 정리) 여기 있던 get_client() 는 llm.py 가 생기기 전의 잔재로,
+# 아무도 부르지 않는 죽은 코드였다. 그런데 그것 때문에 남아 있던 최상단
+# `from anthropic import Anthropic` 이 웹앱 화면을 죽였다. AI 호출은 llm.py
+# 한 곳으로만 나간다(_ask_claude → llm.complete).
 
 
 # ---------------------------------------------------------------------------

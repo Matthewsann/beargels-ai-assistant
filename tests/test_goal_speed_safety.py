@@ -141,3 +141,46 @@ def test_dead_auto_post_path_stays_dead():
     for name in ("run_auto_post", "AUTO_POST_TIMES", "post_slot_due",
                  "maybe_auto_post"):
         assert not hasattr(agent, name), name
+
+
+# --- 웹앱은 anthropic 패키지 없이도 떠야 한다 (2026-08-31 실장애) ----------
+# PythonAnywhere 에는 anthropic 이 안 깔려 있다. assistant/beargels.py 의
+# 최상단 `from anthropic import Anthropic`(llm.py 이전의 잔재) 때문에
+# '등록해야 할 답글' 화면이 통째로 죽었다: "No module named 'anthropic'".
+
+def test_beargels_has_no_module_level_anthropic_import():
+    """AI 호출은 llm.py 한 곳으로만 — 이 모듈은 웹앱도 import 한다."""
+    import pathlib
+    src = pathlib.Path("assistant/beargels.py").read_text(encoding="utf-8")
+    for line in src.splitlines():
+        stripped = line.strip()
+        assert not stripped.startswith(("import anthropic", "from anthropic")), (
+            "beargels 최상단에서 anthropic 을 import 하면 웹앱 화면이 죽는다")
+
+
+def test_web_app_survives_without_anthropic(monkeypatch):
+    """anthropic 이 없어도 beargels·service.app 이 import 되고 배지 계산도 산다."""
+    import builtins
+    import importlib
+
+    real = builtins.__import__
+
+    def fake(name, *a, **k):
+        if name == "anthropic" or name.startswith("anthropic."):
+            raise ModuleNotFoundError("No module named 'anthropic'")
+        return real(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", fake)
+    import assistant.beargels as B
+    importlib.reload(B)                      # anthropic 없는 상태로 다시 읽기
+
+    import service.app as app_mod
+    monkeypatch.setattr(app_mod.db, "edit_rate_by_kind",
+                        lambda: {"question": {"n": 50, "rate": 0.0},
+                                 "rating_only": {"n": 50, "rate": 0.0}})
+    app_mod._trusted_kinds.cache_clear()
+    got = app_mod._trusted_kinds()
+    app_mod._trusted_kinds.cache_clear()
+    # 죽지 않고, 민감 유형(question)은 여전히 배지에서 빠진다
+    assert "question" not in got
+    assert "rating_only" in got
