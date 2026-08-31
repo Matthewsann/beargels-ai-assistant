@@ -1032,6 +1032,47 @@ def maybe_request_nag() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 관리자 업무 리마인드 (2026-08-31)
+# ---------------------------------------------------------------------------
+# 비서의 역할은 "일을 대신 하는 것"이 아니라 **알려주고 우선순위를 매기는
+# 것**이다(사장님 확정 2026-08-31). 업무 보드(/work)는 열어야만 보이므로,
+# 아무도 안 열면 기한이 지난 업무가 조용히 묻힌다 — 고객 요청 잔소리와
+# 똑같은 구멍이다. 그래서 급한 업무가 있으면 **하루 한 번** 알림함으로 민다.
+
+WORK_NAG_AFTER_HOUR = int(os.getenv("WORKER_WORK_NAG_HOUR", "10"))
+
+
+def maybe_work_nag() -> None:
+    """기한이 지난 관리자 업무가 있으면 알림함으로 알린다(하루 1회).
+
+    ⚠️ '급함'만 민다 — 여유 있는 업무까지 매일 울리면 알림함이 시끄러워져
+       진짜 위험 신호(민감 리뷰·세션 만료)가 묻힌다.
+    """
+    now = datetime.now()
+    if now.hour < WORK_NAG_AFTER_HOUR:
+        return
+    today = now.strftime("%Y-%m-%d")
+    try:
+        if db.get_setting("work_nag_day") == today:
+            return
+        from database import work_store as wk
+        # 기한이 지났거나 오늘까지인 것만 — 순위 규칙은 보드와 같은 함수를 쓴다.
+        urgent = [t for t in wk.open_tasks() if t["pri"]["level"] == "hi"]
+        if not urgent:
+            return
+        db.menu_set_setting("work_nag_day", today)
+        tops = " · ".join(
+            f"{t['content'][:24]}({t['owner'] or '담당 없음'}, {t['pri']['why']})"
+            for t in urgent[:3])
+        notify_owner(
+            f"기한이 급한 업무가 {len(urgent)}건 있어요 — {tops} "
+            f"(업무 보드에서 확인)",
+            kind="Notice", source="worker")
+    except Exception as e:  # noqa: BLE001 — 알림 실패가 루프를 막으면 안 된다
+        logger.warning("업무 리마인드 판단 실패: %s", str(e)[:120])
+
+
+# ---------------------------------------------------------------------------
 # 문제(심각) 리뷰 정기 보고 — 구 스케줄러(14/22시)에서 이식 (2026-08-16)
 # ---------------------------------------------------------------------------
 # 스케줄러가 퇴역하면서 이 보고도 함께 죽어, 민감 리뷰가 며칠씩 조용히
@@ -1550,6 +1591,7 @@ def main() -> int:
                     maybe_release_scheduled()
                     maybe_complaint_report()
                     maybe_request_nag()
+                    maybe_work_nag()
                     maybe_pos_import()
                     maybe_place_audit()
                     maybe_place_stats()

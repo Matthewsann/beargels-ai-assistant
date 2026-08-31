@@ -255,6 +255,25 @@ def set_task_done(task_id, done=True):
     }).eq("id", task_id).execute().data)
 
 
+def update_task(task_id, **fields):
+    """할 일 하나의 담당자·기한·내용·메모를 고친다 (업무 보드 /work 용).
+
+    회의 작성 화면은 `save_tasks` 로 통째 동기화하지만, 보드에서는 줄 하나의
+    담당자만 채우는 식이라 그 방식이 맞지 않는다(다른 줄까지 다시 써야 한다).
+    빈 문자열은 '지움'(null)으로 본다.
+    """
+    payload = {}
+    for k in ("content", "owner", "memo"):
+        if k in fields:
+            payload[k] = (fields[k] or "").strip() or None
+    if "due_date" in fields:
+        payload["due_date"] = fields["due_date"] or None
+    if not payload:
+        return None
+    return (get_client().table(TASKS).update(payload)
+            .eq("id", task_id).execute().data)
+
+
 def open_tasks(limit=20):
     """안 끝난 할 일 — 홈 화면용. 기한 있는 것부터(빠른 순), 그다음 기한 없는 것.
 

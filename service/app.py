@@ -237,6 +237,16 @@ def _last_collect_cached():
     return db.last_collect_at()
 
 
+@cached(20)     # 홈이 열릴 때마다 업무 두 표를 다 읽지 않게
+def _work_top_cached():
+    """홈에 실을 '오늘 이것부터' 상위 3개. 업무 보드와 같은 규칙으로 고른다."""
+    try:
+        from database import work_store as _wk
+        return _wk.top_priorities(_wk.open_tasks(), limit=3)
+    except Exception:  # noqa: BLE001 — 홈이 이것 때문에 죽으면 안 된다
+        return []
+
+
 @cached(15)
 def _tab_counts() -> dict:
     """리뷰 답글 탭 바(할 일·문제·등록함·전체)의 배지 숫자.
@@ -798,6 +808,8 @@ def home(path_key):
             # 표가 아직 없으면 gather 가 None 으로 돌려주고 홈은 그대로 뜬다.
             meet_tasks=lambda: mt.open_tasks(limit=6),
             meet_open=mt.open_task_count,
+            # 업무 보드가 고른 '오늘 이것부터' — 홈에는 상위 3개만(2026-08-31).
+            work_top=_work_top_cached,
         )
         stat = {
             "todo": (g["todo_baemin"] or 0) + (g["todo_coupang"] or 0),
@@ -821,6 +833,7 @@ def home(path_key):
         learning=g.get("learning"), error=error, alerts=g.get("alerts") or [],
         meet_tasks=g.get("meet_tasks") or [], meet_open=g.get("meet_open") or 0,
         updated=_updated_view(g.get("updated")),
+        work_top=g.get("work_top") or [],
     )
 
 
@@ -2940,6 +2953,162 @@ def meeting_organize_state(path_key, mid):
         })
     except Exception as e:  # noqa: BLE001
         return jsonify({"error": str(e)[:200]}), 200
+
+
+# ---------------------------------------------------------------------------
+# 업무 보드 (/work) — 사장님 확정 2026-08-31
+#
+# 역할 분담이 이 화면의 전부다:
+#     비서  = 우선순위 매기기 · 오늘 할 것 알려주기 · 흩어진 일 모아 정리
+#     담당자 = 업무 등록 · 담당자/기한 정하기 · 진행 기록 · 완료 체크
+# 그래서 비서는 순위 배지만 붙이고, 내용을 바꾸는 건 전부 사람 손이다.
+#
+# 저장은 두 곳(work_tasks · meeting_tasks)에 나뉘어 있고 **읽을 때만** 합친다
+# (database/work_store.py). 회의를 지우면 그 회의 할 일만 같이 지워져야 하니까.
+# ---------------------------------------------------------------------------
+
+from database import work_store as wk  # noqa: E402
+
+
+def _derived_work() -> list[dict]:
+    """'비서가 모아둔 것' — 다른 화면 맨 위에 흩어져 묻히던 일들.
+
+    여기서는 **건수와 링크만** 보여준다. 답글 21건을 한 줄씩 풀면 관리자 업무가
+    전부 묻히고, 체크·필터가 얽힌 전용 화면을 두 번 만드는 꼴이 된다.
+    하나가 실패해도 나머지는 보여야 하므로 각각 독립적으로 센다.
+    """
+    g = gather(
+        review=lambda: db.count_pending(with_draft=True),
+        place=lambda: len((db.get_setting("place_audit") or {}).get("todo") or []),
+        photo=_photo_todo_count,
+    )
+    rows = [
+        {"icon": "💬", "label": "답글 등록 대기", "n": g["review"] or 0,
+         "href": url_for("todo", path_key=SERVICE_PATH)},
+        {"icon": "📍", "label": "플레이스 점검 미완", "n": g["place"] or 0,
+         "href": url_for("place_guide", path_key=SERVICE_PATH)},
+        {"icon": "📷", "label": "사진 없는 메뉴", "n": g["photo"] or 0,
+         "href": url_for("menu_page", path_key=SERVICE_PATH)},
+    ]
+    return [r for r in rows if r["n"]]
+
+
+@cached(60)
+def _photo_todo_count() -> int:
+    """사진이 아직 없는 **판매 중** 메뉴 수.
+
+    판정은 메뉴 화면(menu.html)의 '📷 사진 없음' 필터와 같아야 한다 —
+    거기서는 `isSelling = store_active || delivery_active` 이고 숨긴 메뉴는
+    세지 않는다. 기준이 어긋나면 보드 숫자와 메뉴 화면 숫자가 달라진다.
+    """
+    try:
+        done = set((db.menu_settings_all().get("photo_at") or {}).keys())
+        return sum(1 for i in (db.menu_all() or [])
+                   if (i.get("store_active") or i.get("delivery_active"))
+                   and i.get("sku") not in done)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+@app.route("/<path_key>/work")
+def work_board(path_key):
+    """업무 보드 — 관리자 업무를 한자리에서 보고 배정한다."""
+    check(path_key)
+    error, tasks, owners, top, derived = None, [], [], [], []
+    who = (request.args.get("who") or "").strip()      # 담당자 필터
+    try:
+        tasks = wk.open_tasks()
+        owners = wk.owner_counts(tasks)
+        top = wk.top_priorities(tasks)                  # 필터와 무관하게 전체 기준
+        derived = _derived_work()
+        if who == "none":       # 아무도 안 맡은 업무만
+            tasks = [t for t in tasks if not t["owner"]]
+        elif who:
+            tasks = [t for t in tasks if t["owner"] == who]
+    except Exception as e:  # noqa: BLE001
+        error = f"업무를 불러오지 못했어요: {str(e)[:150]}"
+    return render_template(
+        "work.html", key=path_key, tasks=tasks, owners=owners, top=top,
+        derived=derived, who=who, total=len(tasks), error=error,
+        alerts=_owner_alerts(),
+    )
+
+
+@app.route("/<path_key>/work/task", methods=["POST"])
+def work_task_new(path_key):
+    """업무 등록 — 내용만 있으면 되고 담당자·기한은 나중에 채워도 된다."""
+    check(path_key)
+    d = request.get_json(force=True, silent=True) or {}
+    try:
+        row = wk.add_task(d.get("content"), owner=d.get("owner"),
+                          due_date=d.get("due_date") or None, memo=d.get("memo"))
+        return jsonify({"ok": True, "id": f"w:{row['id']}"})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 200
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"업무 등록 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": "저장하지 못했어요"}), 200
+
+
+@app.route("/<path_key>/work/task/<task_id>/update", methods=["POST"])
+def work_task_update(path_key, task_id):
+    """담당자·기한·내용을 고친다. 회의 할 일이면 회의 쪽 표를 고친다."""
+    check(path_key)
+    source, tid = wk.parse_id(task_id)
+    if not source:
+        abort(400)
+    d = request.get_json(force=True, silent=True) or {}
+    fields = {k: d[k] for k in ("content", "owner", "due_date", "memo") if k in d}
+    if not fields:
+        abort(400)
+    try:
+        if source == "work":
+            wk.update_task(tid, **fields)
+        else:
+            mt.update_task(tid, **fields)
+        return jsonify({"ok": True})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"업무 수정 실패({task_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": "저장하지 못했어요"}), 200
+
+
+@app.route("/<path_key>/work/task/<task_id>/done", methods=["POST"])
+def work_task_done(path_key, task_id):
+    """완료 체크 — 회의 할 일은 회의 쪽 완료 처리를 그대로 쓴다."""
+    check(path_key)
+    source, tid = wk.parse_id(task_id)
+    if not source:
+        abort(400)
+    done = bool((request.get_json(force=True, silent=True) or {}).get("done", True))
+    try:
+        if source == "work":
+            wk.set_done(tid, done)
+        else:
+            mt.set_task_done(tid, done)
+        return jsonify({"ok": True})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"업무 완료 처리 실패({task_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": "저장하지 못했어요"}), 200
+
+
+@app.route("/<path_key>/work/task/<task_id>/delete", methods=["POST"])
+def work_task_delete(path_key, task_id):
+    """직접 등록한 업무만 지운다 — 회의 할 일은 그 회의 화면에서 지운다."""
+    check(path_key)
+    source, tid = wk.parse_id(task_id)
+    if source != "work":
+        return jsonify({"ok": False,
+                        "error": "회의에서 나온 할 일은 회의 화면에서 지워주세요"}), 200
+    try:
+        wk.delete_task(tid)
+        return jsonify({"ok": True})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)[:120]}), 200
 
 
 if __name__ == "__main__":

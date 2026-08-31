@@ -74,6 +74,12 @@
   .mtask.gone .tx { text-decoration:line-through; }
   .mtmore { display:block; text-align:center; font-size:12px; color:var(--accent);
             text-decoration:none; padding:9px 0 10px; }
+  /* 업무 보드가 매긴 순위 배지 — 홈에서는 번호만 보여준다 */
+  .mtasks { display:block; text-decoration:none; color:inherit; }
+  .wpri { flex-shrink:0; width:19px; height:19px; border-radius:50%; margin-top:2px;
+          font-size:11px; font-weight:800; display:flex; align-items:center;
+          justify-content:center; background:var(--accent); color:var(--card); }
+  .wpri.mid { background:var(--warn); } .wpri.low { background:var(--muted); }
   .grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
   .app { position:relative; display:flex; flex-direction:column; background:var(--card);
          border:1px solid var(--line); border-radius:13px; padding:13px 12px 11px;
@@ -146,21 +152,21 @@
     {% endif %}
   </a>
 
-  {% if meet_tasks %}
-  <div class="mtasks">
-    {% for t in meet_tasks %}
-    <label class="mtask" data-id="{{ t.id }}">
-      <input type="checkbox" onchange="doneTask(this)">
-      <span class="tx">{{ t.content }}{% if t.memo %}<span class="memo">📝 {{ t.memo }}</span>{% endif %}
-        <a href="{{ url_for('meeting_detail', path_key=key, mid=t.meeting_id) }}">🗓️ {{ t.meeting_title }}{% if t.owner %} · {{ t.owner }}{% endif %}</a>
+  {# 업무 보드가 고른 '오늘 이것부터' — 회의 할 일과 직접 등록 업무를 함께 본다
+     (2026-08-31). 완료 체크·담당자 지정 같은 손대는 일은 보드에서 한다. #}
+  {% if work_top %}
+  <a class="mtasks" href="{{ url_for('work_board', path_key=key) }}">
+    {% for t in work_top %}
+    <div class="mtask">
+      <span class="wpri {{ t.pri.level }}">{{ loop.index }}</span>
+      <span class="tx">{{ t.content }}
+        <span class="memo">{{ t.pri.why }}{% if t.owner %} · {{ t.owner }}{% else %} · 담당자가 아직 없어요{% endif %}</span>
       </span>
-      {% if t.dday %}<span class="due {{ 'late' if t.overdue }}" title="{{ t.due }}">{{ t.dday }}</span>{% endif %}
-    </label>
+      {% if t.dday %}<span class="due {{ 'late' if t.pri.level == 'hi' }}">{{ t.dday }}</span>{% endif %}
+    </div>
     {% endfor %}
-    {% if meet_open > meet_tasks|length %}
-    <a class="mtmore" href="{{ url_for('meeting_home', path_key=key) }}">회의 할 일 {{ meet_open }}건 전부 보기 →</a>
-    {% endif %}
-  </div>
+    <span class="mtmore">📋 업무 보드에서 전부 보기 →</span>
+  </a>
   {% endif %}
 
   <div class="sec-lbl">바로가기</div>

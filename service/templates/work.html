@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>업무 보드 — 베어글스</title>
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
+          --ok:#3b6d11; --ok-bg:#eaf3de; --bad:#a3271f; --bad-bg:#fbe9e7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px 14px 64px; }
+  .head { display:flex; align-items:baseline; gap:8px; margin:2px 2px 12px; }
+  .head b { font-size:17px; }
+  .head small { color:var(--muted); font-size:11.5px; margin-left:auto; }
+
+  .note { font-size:12px; padding:11px 12px; border-radius:9px; margin-bottom:14px;
+          background:var(--bad-bg); color:var(--bad); }
+  .alertbox { display:flex; gap:10px; align-items:flex-start; background:var(--warn-bg);
+              color:var(--warn); border:1px solid var(--warn); border-radius:10px;
+              padding:11px 12px; margin-bottom:10px; font-size:13px; }
+  .alertbox .alertmsg { flex:1; white-space:pre-wrap; word-break:break-word; }
+  .alertbox .okb { border:1px solid var(--line); background:var(--card); color:var(--ink);
+              border-radius:8px; padding:8px 14px; font-size:13px; flex-shrink:0;
+              font-family:inherit; cursor:pointer; }
+
+  /* ── 비서가 고른 것 — 이 화면의 본체 ── */
+  .brief { background:var(--accent-bg); border-radius:14px; padding:13px 14px 11px;
+           margin-bottom:8px; }
+  .bh { font-size:12.5px; font-weight:800; color:var(--accent); margin-bottom:9px;
+        display:flex; align-items:center; gap:6px; }
+  .bh small { margin-left:auto; font-weight:400; font-size:11px; opacity:.85; }
+  .bi { display:flex; gap:9px; align-items:flex-start; padding:8px 0;
+        border-top:1px solid rgba(24,95,165,.14); text-decoration:none; color:inherit; }
+  .bi:first-of-type { border-top:none; padding-top:2px; }
+  .rank { flex-shrink:0; width:19px; height:19px; border-radius:50%; background:var(--accent);
+          color:#fff; font-size:11px; font-weight:800; display:flex; align-items:center;
+          justify-content:center; margin-top:2px; }
+  .bt { font-size:13.5px; font-weight:600; word-break:break-word; }
+  .bw { font-size:11.5px; color:var(--accent); margin-top:1px; }
+
+  .sec-lbl { font-size:11.5px; color:var(--muted); font-weight:700; letter-spacing:.04em;
+             margin:16px 2px 7px; }
+
+  /* ── 담당자 칩 ── */
+  .who { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:9px; }
+  .who a { font-size:12px; padding:5px 11px; border-radius:20px; background:var(--card);
+           border:1px solid var(--line); color:var(--muted); text-decoration:none; }
+  .who a.on { background:var(--ink); color:var(--bg); border-color:transparent; font-weight:700; }
+  .who a.none { border-style:dashed; }
+
+  /* ── 업무 줄 ── */
+  .list { background:var(--card); border:1px solid var(--line); border-radius:13px; padding:0 12px; }
+  .t { display:flex; gap:9px; align-items:flex-start; padding:11px 0;
+       border-bottom:1px solid var(--line); }
+  .t:last-child { border-bottom:none; }
+  .t input[type=checkbox] { width:17px; height:17px; margin:3px 0 0; flex-shrink:0;
+       accent-color:var(--ok); cursor:pointer; }
+  .t .body { flex:1; min-width:0; }
+  .t .txt { font-size:13.5px; word-break:break-word; cursor:text; }
+  .t .memo { display:block; font-size:11.5px; color:var(--muted); margin-top:1px;
+             white-space:pre-wrap; }
+  .t .meta { display:flex; gap:5px; flex-wrap:wrap; margin-top:5px; align-items:center; }
+  .t.gone { opacity:.45; } .t.gone .txt { text-decoration:line-through; }
+  .pri { font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:20px; white-space:nowrap; }
+  .pri.hi { background:var(--bad-bg); color:var(--bad); }
+  .pri.mid { background:var(--warn-bg); color:var(--warn); }
+  .pri.low { background:var(--bg); color:var(--muted); border:1px solid var(--line); }
+  .chip { font-size:10.5px; padding:2px 8px; border-radius:20px; background:var(--bg);
+          border:1px solid var(--line); color:var(--muted); white-space:nowrap;
+          font-family:inherit; cursor:pointer; }
+  .chip.who2 { background:var(--accent-bg); color:var(--accent); border-color:transparent;
+               font-weight:700; }
+  .chip.due2 { background:var(--warn-bg); color:var(--warn); border-color:transparent;
+               font-weight:700; }
+  .chip.empty { border-style:dashed; }
+  .src { font-size:10.5px; color:var(--muted); text-decoration:none; white-space:nowrap; }
+
+  .addbtn { width:100%; margin-top:9px; border:1px dashed var(--line); background:transparent;
+            color:var(--muted); border-radius:11px; padding:11px; font-size:13px;
+            font-family:inherit; cursor:pointer; }
+  .empty-msg { text-align:center; color:var(--muted); padding:34px 16px; font-size:13.5px; }
+
+  /* ── 비서가 모아둔 것 ── */
+  .auto { background:var(--card); border:1px solid var(--line); border-radius:13px; padding:0 12px; }
+  .a { display:flex; align-items:center; gap:9px; padding:10px 0; font-size:12.5px;
+       border-bottom:1px solid var(--line); text-decoration:none; color:inherit; }
+  .a:last-child { border-bottom:none; }
+  .a .n { margin-left:auto; font-weight:800; font-variant-numeric:tabular-nums; color:var(--accent); }
+  .a .arw { color:var(--muted); font-size:12px; }
+
+  /* ── 새 업무 다이얼로그 ── */
+  dialog { border:none; border-radius:14px; padding:0; max-width:420px; width:calc(100% - 28px);
+           background:var(--card); color:var(--ink); }
+  dialog::backdrop { background:rgba(0,0,0,.35); }
+  .dlg { padding:17px; }
+  .dlg h3 { margin:0 0 12px; font-size:15.5px; }
+  .dlg label { display:block; font-size:11.5px; color:var(--muted); margin:9px 0 3px; }
+  .dlg input { width:100%; font-family:inherit; font-size:14px; border:1px solid var(--line);
+               border-radius:9px; padding:9px 11px; background:var(--bg); color:var(--ink); }
+  .dlg .row { display:flex; gap:8px; } .dlg .row > div { flex:1; }
+  .dlg .btns { display:flex; gap:8px; margin-top:15px; }
+  .dlg button { flex:1; font-family:inherit; font-size:14px; border-radius:9px; padding:11px;
+                border:1px solid var(--line); background:var(--card); color:var(--ink);
+                cursor:pointer; }
+  .dlg button.go { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; }
+</style>
+</head>
+<body>
+{% include "_sidebar.html" %}
+<div class="wrap">
+
+  <div class="head">
+    <b>📋 업무 보드</b>
+    <small>열린 업무 {{ total }}</small>
+  </div>
+
+  {% if error %}<div class="note">{{ error }}</div>{% endif %}
+
+  {% for a in alerts %}
+  <div class="alertbox">
+    <div class="alertmsg"><b>🔔 {{ a.at }}</b><br>{{ a.message }}</div>
+    <form method="post" action="{{ url_for('ack_alert', path_key=key, alert_id=a.id) }}">
+      <button class="okb" type="submit">확인</button>
+    </form>
+  </div>
+  {% endfor %}
+
+  {# 비서가 하는 일 — 규칙으로 순위를 매기고 '왜 지금인지'를 붙인다.
+     담당자 필터와 무관하게 항상 전체 기준으로 고른다. #}
+  {% if top %}
+  <div class="brief">
+    <div class="bh">🔔 오늘 이것부터 <small>비서가 골랐어요</small></div>
+    {% for t in top %}
+    <a class="bi" href="#{{ t.id | replace(':', '-') }}">
+      <div class="rank">{{ loop.index }}</div>
+      <div>
+        <div class="bt">{{ t.content }}</div>
+        <div class="bw">{{ t.pri.why }}{% if t.owner %} · {{ t.owner }}{% else %} · 담당자가 아직 없어요{% endif %}</div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="sec-lbl">전체 업무</div>
+  {% if owners %}
+  <div class="who">
+    <a class="{{ 'on' if not who }}" href="{{ url_for('work_board', path_key=key) }}">전체 {{ total if not who else '' }}</a>
+    {% for o in owners %}
+      {% if o.owner %}
+      <a class="{{ 'on' if who == o.owner }}"
+         href="{{ url_for('work_board', path_key=key, who=o.owner) }}">{{ o.owner }} {{ o.n }}</a>
+      {% else %}
+      <a class="none {{ 'on' if who == 'none' }}"
+         href="{{ url_for('work_board', path_key=key, who='none') }}">담당자 없음 {{ o.n }}</a>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="list">
+    {% for t in tasks %}
+    <div class="t" id="{{ t.id | replace(':', '-') }}" data-id="{{ t.id }}"
+         data-owner="{{ t.owner }}" data-due="{{ t.due_date or '' }}">
+      <input type="checkbox" onchange="doneTask(this)" aria-label="완료">
+      <div class="body">
+        <div class="txt" onclick="editField(this,'content')">{{ t.content }}
+          {% if t.memo %}<span class="memo">📝 {{ t.memo }}</span>{% endif %}
+        </div>
+        <div class="meta">
+          <span class="pri {{ t.pri.level }}">{{ t.pri.label }}</span>
+          {# 담당자·기한은 사람이 채운다 — 비어 있으면 점선 ＋ 버튼 #}
+          <button class="chip {{ 'who2' if t.owner else 'empty' }}" type="button"
+                  onclick="editField(this,'owner')">👤 {{ t.owner or '＋담당자' }}</button>
+          <button class="chip {{ 'due2' if t.due_date else 'empty' }}" type="button"
+                  onclick="editField(this,'due_date')">📅 {{ t.dday or '＋기한' }}</button>
+          {% if t.source == 'meeting' and t.meeting_id %}
+          <a class="src" href="{{ url_for('meeting_detail', path_key=key, mid=t.meeting_id) }}"
+             >🗓️ {{ t.meeting_title or '회의' }}</a>
+          {% else %}
+          <span class="src">✍️ 직접 등록</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="empty-msg">
+      {% if who %}이 담당자의 열린 업무가 없어요.{% else %}열린 업무가 없어요. 👍{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <button class="addbtn" type="button" onclick="newDlg.showModal()">＋ 업무 추가</button>
+
+  {% if derived %}
+  <div class="sec-lbl">비서가 모아둔 것</div>
+  <div class="auto">
+    {% for d in derived %}
+    <a class="a" href="{{ d.href }}">{{ d.icon }} {{ d.label }}
+      <span class="n">{{ d.n }}</span><span class="arw">›</span></a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+
+<dialog id="newDlg">
+  <form class="dlg" method="dialog">
+    <h3>＋ 업무 추가</h3>
+    <label for="nContent">무엇을 해야 하나요?</label>
+    <input id="nContent" placeholder="예: 9월 메뉴판 인쇄 발주" maxlength="300">
+    <div class="row">
+      <div><label for="nOwner">담당자 (나중에 정해도 돼요)</label>
+        <input id="nOwner" maxlength="30" placeholder="예: 사장님"></div>
+      <div><label for="nDue">기한</label>
+        <input id="nDue" type="date"></div>
+    </div>
+    <div class="btns">
+      <button type="button" onclick="newDlg.close()">취소</button>
+      <button class="go" type="button" onclick="addTask()">추가</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  var KEY = "{{ key }}";
+
+  function post(url, body) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "fetch" },
+      body: JSON.stringify(body || {}),
+    }).then(function (r) { return r.json(); });
+  }
+
+  // 완료 체크 — 그 자리에서 흐려지고, 새로고침하면 목록에서 빠진다.
+  function doneTask(box) {
+    var row = box.closest(".t");
+    row.classList.toggle("gone", box.checked);
+    post("/" + KEY + "/work/task/" + row.dataset.id + "/done", { done: box.checked })
+      .then(function (d) { if (!d.ok) throw new Error(d.error); })
+      .catch(function () {
+        box.checked = !box.checked;
+        row.classList.toggle("gone", box.checked);
+        alert("저장하지 못했어요. 잠시 뒤 다시 눌러주세요.");
+      });
+  }
+
+  // 담당자·기한·내용을 그 자리에서 고친다. 비우면 지워진다.
+  function editField(el, field) {
+    var row = el.closest(".t");
+    var ask = { owner: "담당자 (비우면 지워져요)",
+                due_date: "기한 — 2026-09-05 처럼 (비우면 지워져요)",
+                content: "업무 내용" }[field];
+    var cur = field === "owner" ? row.dataset.owner
+            : field === "due_date" ? row.dataset.due
+            : row.querySelector(".txt").childNodes[0].textContent.trim();
+    var v = prompt(ask, cur || "");
+    if (v === null) return;
+    v = v.trim();
+    if (field === "due_date" && v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+      alert("날짜는 2026-09-05 처럼 적어주세요.");
+      return;
+    }
+    if (field === "content" && !v) { alert("내용은 비울 수 없어요."); return; }
+    var body = {}; body[field] = v;
+    post("/" + KEY + "/work/task/" + row.dataset.id + "/update", body)
+      .then(function (d) {
+        if (!d.ok) throw new Error(d.error);
+        location.reload();   // 순위가 바뀔 수 있어 다시 그린다
+      })
+      .catch(function () { alert("저장하지 못했어요. 잠시 뒤 다시 시도해주세요."); });
+  }
+
+  function addTask() {
+    var content = document.getElementById("nContent").value.trim();
+    if (!content) { alert("무엇을 해야 하는지 적어주세요."); return; }
+    post("/" + KEY + "/work/task", {
+      content: content,
+      owner: document.getElementById("nOwner").value.trim(),
+      due_date: document.getElementById("nDue").value || null,
+    }).then(function (d) {
+      if (!d.ok) { alert(d.error || "저장하지 못했어요."); return; }
+      location.reload();
+    }).catch(function () { alert("저장하지 못했어요. 잠시 뒤 다시 시도해주세요."); });
+  }
+</script>
+</body>
+</html>

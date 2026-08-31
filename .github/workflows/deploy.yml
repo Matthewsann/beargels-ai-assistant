@@ -23,6 +23,7 @@ on:
       - 'database/blog_store.py'
       - 'database/mkt_store.py'
       - 'database/meeting_store.py'
+      - 'database/work_store.py'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
@@ -77,6 +78,7 @@ jobs:
           upload service/templates/_theme.html
           upload service/templates/dashboard.html
           upload service/templates/home.html
+          upload service/templates/work.html
           upload service/templates/blog_base.html
           upload service/templates/blog.html
           upload service/templates/blog_post.html
@@ -97,6 +99,7 @@ jobs:
           upload database/blog_store.py
           upload database/mkt_store.py
           upload database/meeting_store.py
+          upload database/work_store.py
 
       - name: 웹앱 재시작
         run: |
