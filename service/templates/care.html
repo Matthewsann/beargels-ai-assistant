@@ -103,7 +103,7 @@
       {% if r.visit %}<span class="pill visit {{ r.visit_class }}">{{ r.visit }}</span>{% endif %}
     </div>
     {% if r.menus %}<div class="lbl">{{ r.menus }}</div>{% endif %}
-    <div class="rv">{{ r.content or '(사진/별점만, 텍스트 없음)' }}</div>
+    <div class="rv">{{ r.content or '(글 없음 — 사진·별점만일 수 있어요)' }}</div>
     {% if r.replied and r.reply_text %}
       <div class="lbl">우리 답글</div>
       <div class="reply">{{ r.reply_text }}</div>

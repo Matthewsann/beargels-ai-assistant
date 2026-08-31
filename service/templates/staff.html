@@ -75,6 +75,10 @@
   .acts.mini .btn.go { background:var(--accent); border-color:var(--accent);
                        color:#fff; font-weight:600; }
   textarea { min-height:150px; }
+  /* 리뷰 사진 썸네일 — 사진만 남긴 리뷰를 화면에서 바로 본다 */
+  .rvphotos { display:flex; gap:6px; margin:-5px 0 11px; flex-wrap:wrap; }
+  .rvphotos img { width:86px; height:86px; object-fit:cover; border-radius:9px;
+                  border:1px solid var(--line); }
   /* '실제 리뷰' 버튼이 복사한 찾기 열쇠 안내 */
   .findkey { display:none; font-size:11.5px; color:var(--ok); width:100%;
              margin-top:2px; }
@@ -296,7 +300,28 @@
 
       {# 본문이 없을 때 '사진만'이라고 단정하면 안 된다 — 사진도 글도 없이
          별점만 남긴 리뷰가 훨씬 많다(사장님 지적 2026-08-24). #}
-      <div class="rv">{{ r.content or '(글·사진 없이 별점만 남김)' }}</div>
+      {# 글이 없을 때 사진 여부를 **아는 만큼만** 말한다 — '없다'고 단정했다가
+         사진 리뷰를 "별점만 남김"으로 표시했고 AI 초안까지 틀렸다(2026-08-31
+         사장님 발견). 사진이 있으면 직접 보여준다. #}
+      <div class="rv">
+        {%- if r.content -%}
+          {{ r.content }}
+        {%- elif r.has_photo -%}
+          📷 글 없이 <b>사진으로 남긴 리뷰</b>예요
+        {%- elif r.has_photo is sameas false -%}
+          (글·사진 없이 별점만 남김)
+        {%- else -%}
+          (글 없음 — 사진 여부 미확인 · 🔍 실제 리뷰로 확인)
+        {%- endif -%}
+      </div>
+      {% if r.photos %}
+      <div class="rvphotos">
+        {% for u in r.photos %}
+        <img src="{{ u }}" alt="리뷰 사진" loading="lazy"
+             referrerpolicy="no-referrer" onerror="this.style.display='none'">
+        {% endfor %}
+      </div>
+      {% endif %}
 
       {% if r.escalate %}
         {# 민감 리뷰: 1차 가이드 초안은 주되 **자동 등록은 막는다**(사실

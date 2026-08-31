@@ -1161,30 +1161,46 @@ def order_count_of(review):
     if isinstance(raw, str):
         try:
             data = json.loads(raw)
-        except Exception:  # noqa: BLE001 — 배민 raw 는 JSON 이 아니라 HTML/텍스트
+        except Exception:  # noqa: BLE001 — 옛 배민 raw 는 JSON 이 아니라 텍스트
             m = re.search(r"(\d+)\s*회\s*주문", raw)
             return int(m.group(1)) if m else None
     else:
         data = raw
-    n = data.get("orderCount") if isinstance(data, dict) else None
-    return n if isinstance(n, int) and n > 0 else None
+    if not isinstance(data, dict):
+        return None
+    n = data.get("orderCount")                       # 쿠팡
+    if isinstance(n, int) and n > 0:
+        return n
+    # 새 배민 raw 는 dict — 카드 텍스트가 "text" 안에 있다(2026-08-31,
+    # 사진 정보를 담으려고 구조를 바꿈). 여기서 안 뽑으면 단골이 첫 주문
+    # 취급을 받는다.
+    m = re.search(r"(\d+)\s*회\s*주문", data.get("text") or "")
+    return int(m.group(1)) if m else None
 
 
 def _has_photo(review):
     """리뷰에 사진이 실제로 있는지. 모르면 None.
 
-    쿠팡은 raw JSON 의 images 로 확실히 알 수 있다. 배민 등 판별 불가면
-    None — 이때는 사진을 '언급하지 않는' 쪽이 안전하다(없는 사진을 언급한
-    답글이 실고객에 나간 사고, 2026-08-12).
+    쿠팡은 raw JSON 의 images 로, 배민은 raw dict 의 images(2026-08-31 부터
+    크롤러가 카드의 <img> 를 담는다)로 확실히 안다. 판별 불가(옛 배민 텍스트
+    raw)면 None — 이때는 사진을 '언급하지 않는' 쪽이 안전하다(없는 사진을
+    언급한 답글이 실고객에 나간 사고, 2026-08-12). 반대 사고도 있었다:
+    사진만 남긴 배민 ★5 리뷰를 "별점만 남기셨네요"라고 답할 뻔했다
+    (2026-08-31 사장님 발견) — 그래서 배민도 이제 확실히 안다.
     """
-    if review.get("platform") == "coupang" and review.get("raw"):
-        try:
-            data = review["raw"]
-            if isinstance(data, str):
-                data = json.loads(data)
-            return bool(data.get("images"))
-        except Exception:  # noqa: BLE001
-            return None
+    raw = review.get("raw")
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:  # noqa: BLE001 — 옛 배민 raw 는 그냥 텍스트다
+        return None
+    if not isinstance(data, dict):
+        return None
+    if review.get("platform") == "coupang":
+        return bool(data.get("images"))
+    if "images" in data:                 # 새 배민 raw — 있음/없음을 확실히 안다
+        return bool(data["images"])
     return None
 
 

@@ -496,6 +496,23 @@ class BaeminCrawler:
         # 버튼이 없으면 이미 답글이 달린 것으로 본다.
         reply_status = "none" if "사장님 댓글 등록하기" in raw else "posted"
 
+        # 리뷰 사진 — 예전엔 get_text() 로 텍스트만 뽑아 **사진이 통째로
+        # 사라졌다**. 그래서 사진만 남긴 ★5 리뷰가 "(글·사진 없이 별점만
+        # 남김)"으로 표시되고, AI 초안도 "별점만 눌러주셨는데"라고 틀리게
+        # 썼다(2026-08-31 사장님 발견, 리뷰 2026082802870907 실사례).
+        # 실 DOM(2026-08-31): 사진은 alt="리뷰 사진" + bmreview.cdn.baemin.com
+        # 호스트의 <img>, 클래스는 "Thumbnail_…"(해시라 접두만 신뢰). 세 신호
+        # 중 하나라도 맞으면 리뷰 사진으로 본다 — 사진 없는 카드엔 img 가
+        # 아예 없음도 같이 확인했다.
+        images = []
+        for img in item.find_all("img"):
+            src = (img.get("src") or "").strip()
+            cls = " ".join(img.get("class") or [])
+            if (("bmreview" in src) or img.get("alt") == "리뷰 사진"
+                    or "Thumbnail" in cls):
+                if src and src not in images:
+                    images.append(src)
+
         return {
             "platform": "baemin",
             "author": author,
@@ -506,7 +523,10 @@ class BaeminCrawler:
             "menus": menus or None,
             "delivery_type": delivery_type,
             "reply_status": reply_status,
-            "raw": raw,
+            # ⚠️ raw 는 이제 dict — 텍스트만으로는 사진 정보를 잃는다.
+            #    옛 행(문자열 raw)과의 호환은 소비처(_has_photo·order_count_of·
+            #    _order_info)가 각자 책임진다.
+            "raw": {"text": raw, "images": images},
         }
 
 

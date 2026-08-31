@@ -600,6 +600,37 @@ PLATFORM_REVIEW_URL = {
 }
 
 
+def _photo_of(r: dict):
+    """리뷰에 사진이 있는지 — True/False/None(모름). 판정은 beargels 한 곳만."""
+    try:
+        from assistant.beargels import _has_photo
+        return _has_photo({"platform": r.get("platform"), "raw": r.get("raw")})
+    except Exception:  # noqa: BLE001 — 이것 때문에 화면이 죽으면 안 된다
+        return None
+
+
+def _photo_urls(r: dict, limit=3):
+    """raw 에 담긴 리뷰 사진 URL(최대 limit장). 없으면 빈 목록."""
+    try:
+        raw = r.get("raw")
+        data = json.loads(raw) if isinstance(raw, str) else raw
+        if isinstance(data, dict):
+            urls = data.get("images") or []
+            # 쿠팡 images 는 dict 목록일 수 있다 — URL 칸을 찾아 편다.
+            out = []
+            for u in urls[:limit]:
+                if isinstance(u, str):
+                    out.append(u)
+                elif isinstance(u, dict):
+                    v = u.get("imageUrl") or u.get("url") or u.get("src")
+                    if v:
+                        out.append(v)
+            return out
+    except Exception:  # noqa: BLE001
+        pass
+    return []
+
+
 def _review_view(r: dict) -> dict:
     draft = r.get("reply_draft") or ""
     return {
@@ -626,6 +657,12 @@ def _review_view(r: dict) -> dict:
         "review_no": r.get("review_no") or "",
         "find_key": (r.get("review_no") or "") if r.get("platform") == "baemin"
                     else (r.get("author") or ""),
+        # 사진 유무(True/False/None=모름)와 사진 URL — 사진만 남긴 리뷰를
+        # "글·사진 없이 별점만 남김"이라고 **틀리게 단정**해 AI 초안까지
+        # "별점만 눌러주셨는데"라고 썼다(2026-08-31 사장님 발견). 모르는 건
+        # 모른다고, 아는 건 사진을 직접 보여준다.
+        "has_photo": _photo_of(r),
+        "photos": _photo_urls(r),
         # 주문 정보 — 배민·쿠팡 리뷰 관리 화면과 같은 항목을 보여준다.
         **_order_info(r),
     }
@@ -646,9 +683,13 @@ def _order_info(r: dict) -> dict:
     ordered = (r.get("ordered_at") or raw.get("orderedAt") or "")
     count = r.get("order_count") or raw.get("orderCount")
     if not isinstance(count, int):
-        # 배민 raw 는 JSON 이 아니라 카드 텍스트다 — '3회 주문 고객'에서 뽑는다.
-        # 이걸 안 해서 배민 리뷰는 주문 횟수가 아예 안 보였다(2026-08-24).
-        m = re.search(r"(\d+)\s*회\s*주문", r.get("raw") or "")
+        # 배민은 '3회 주문 고객' 텍스트에서 뽑는다. 새 raw(dict, 2026-08-31
+        # 사진 담느라 구조 변경)는 text 칸에, 옛 raw 는 문자열 그대로 있다.
+        # ⚠️ dict 에 정규식을 돌리면 TypeError 로 카드 렌더가 통째로 죽는다.
+        raw_text = raw.get("text") if isinstance(raw, dict) else ""
+        if not raw_text and isinstance(r.get("raw"), str):
+            raw_text = r["raw"]          # 옛 배민 raw(JSON 파싱 실패한 원문 텍스트)
+        m = re.search(r"(\d+)\s*회\s*주문", raw_text or "")
         count = int(m.group(1)) if m else None
     delivery = r.get("delivery_type") or raw.get("orderType") or ""
     count = count if isinstance(count, int) and count > 0 else None
