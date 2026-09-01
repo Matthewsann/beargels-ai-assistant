@@ -4,8 +4,22 @@
     {
       "name": "webapp",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["webapp/app.py"],
+      "runtimeArgs": [
+        "webapp/app.py"
+      ],
       "port": 5050
+    },
+    {
+      "name": "insta-pipeline",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "run_web.py"
+      ],
+      "port": 8000,
+      "env": {
+        "PYTHONUTF8": "1",
+        "PIPELINE_HOST": "127.0.0.1"
+      }
     }
   ]
 }

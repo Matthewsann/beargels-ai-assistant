@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+from datetime import datetime
 import shutil
 import subprocess
 import tempfile
@@ -665,6 +666,98 @@ def create_app() -> FastAPI:
         if not os.path.getsize(tmp):
             raise HTTPException(404, "그 시점에는 화면이 없어요.")
         return FileResponse(tmp, media_type="image/jpeg")
+
+    # ═══ 인스타 연결 (메타 그래프) — 토큰 갱신·성과 새로고침을 웹에서 ═══
+    def _save_env(key: str, value: str) -> None:
+        """.env 의 한 줄만 갈아끼운다(없으면 추가). 나머지 줄은 건드리지 않는다."""
+        path = os.path.join(_ROOT, ".env")
+        try:
+            with open(path, encoding="utf-8") as f:
+                raw = f.read()
+        except OSError:
+            raw = ""
+        line = f"{key}={value}"
+        pat = re.compile(rf"(?m)^{re.escape(key)}=.*$")
+        raw = pat.sub(lambda _m: line, raw) if pat.search(raw) else (
+            raw.rstrip() + f"\n{line}\n")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(raw)
+        os.environ[key] = value      # 재시작 없이 이번 실행에도 반영
+
+    @app.get("/api/meta/status")
+    async def meta_status():
+        """연결 상태 — 계정·만료일·되는 것/안 되는 것."""
+        def _check():
+            from . import meta_graph
+            out = {"connected": False, "account": None, "expires": None,
+                   "missing": [], "insights": False, "error": None}
+            try:
+                api = meta_graph.from_env()
+            except meta_graph.MetaGraphError as e:
+                out["error"] = str(e)
+                return out
+            try:
+                out["missing"] = api.missing_scopes()
+                if out["missing"]:
+                    out["error"] = "권한이 부족해요: " + ", ".join(out["missing"])
+                    return out
+                info = api.token_info()
+                exp = info.get("expires_at")
+                if exp:
+                    out["expires"] = datetime.fromtimestamp(exp).strftime("%Y-%m-%d")
+                me = api.me()
+                out["connected"] = True
+                out["account"] = {
+                    "username": me.get("username"),
+                    "followers": me.get("followers_count"),
+                    "media": me.get("media_count"),
+                }
+                out["insights"] = not api.missing_optional_scopes()
+            except meta_graph.MetaGraphError as e:
+                out["error"] = str(e)
+            return out
+
+        return await asyncio.to_thread(_check)
+
+    @app.post("/api/meta/token")
+    async def meta_token(token: str = Form(...)):
+        """토큰을 붙여넣어 저장하고 바로 연결을 확인한다."""
+        token = token.strip()
+        if not token.startswith("EAA") or len(token) < 50:
+            raise HTTPException(400, "토큰 형식이 아니에요. EAA… 로 시작하는 긴 문자열을 붙여넣어 주세요.")
+
+        def _apply():
+            from . import meta_graph
+            _save_env("META_ACCESS_TOKEN", token)
+            api = meta_graph.MetaGraph(access_token=token)
+            missing = api.missing_scopes()
+            if missing:
+                raise meta_graph.MetaGraphError("권한이 부족해요: " + ", ".join(missing))
+            uid = api.resolve_ig_user_id()
+            _save_env("IG_USER_ID", uid)     # 다음부터 계정 탐색을 건너뛴다
+            return api.me()
+
+        try:
+            me = await asyncio.to_thread(_apply)
+        except Exception as e:
+            raise HTTPException(400, str(e))
+        return {"ok": True, "username": me.get("username"),
+                "followers": me.get("followers_count")}
+
+    @app.post("/api/meta/refresh")
+    async def meta_refresh():
+        """내 게시물 성과를 다시 읽어 다음 기획에 반영한다(셀프 피드백)."""
+        def _run():
+            from . import market_scan
+            own = market_scan.scan_own()
+            market_scan.save(own, market_scan.OWN_PATH)
+            return own
+        try:
+            own = await asyncio.to_thread(_run)
+        except Exception as e:
+            raise HTTPException(400, f"성과 갱신 실패: {e}")
+        return {"ok": True, "count": own["count"], "avg_likes": own["avg_likes"],
+                "best": own["best"][:5], "worst": own["worst"][:3]}
 
     # ═══ 소재 창고 — "폴더에 올리면 시작된다" ═══
     @app.get("/api/source")

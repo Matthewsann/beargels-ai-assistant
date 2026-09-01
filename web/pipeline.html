@@ -295,6 +295,33 @@
   <div class="section">
     <div class="eyebrow">주간 리뷰 · 일주일에 15분</div>
     <h2>성과 기록 &amp; AI 분석</h2>
+    <!-- 인스타 연결 — 토큰 갱신·성과 새로고침 -->
+    <div class="card" style="margin-top:14px">
+      <div class="row" style="justify-content:space-between">
+        <b>📷 인스타 연결</b>
+        <span id="metaBadge" class="muted" style="font-size:.78rem">확인 중…</span>
+      </div>
+      <div class="meta" id="metaInfo" style="margin-top:4px"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn pri sm" id="metaRefreshBtn" onclick="metaRefresh()">🔄 성과 새로고침</button>
+        <button class="btn ghost sm" onclick="toggleMetaToken()">토큰 바꾸기</button>
+      </div>
+      <div id="metaTokenBox" style="display:none;margin-top:10px">
+        <div class="field"><label>새 액세스 토큰 (EAA… 로 시작)</label>
+          <input id="metaToken" type="text" placeholder="그래프 API 탐색기에서 복사해 붙여넣기"></div>
+        <div class="row">
+          <button class="btn pri sm" onclick="saveMetaToken()">저장하고 연결</button>
+          <a class="btn sm" href="https://developers.facebook.com/tools/explorer" target="_blank" rel="noopener">탐색기 열기</a>
+        </div>
+        <p class="muted" style="font-size:.78rem;margin:8px 0 0">
+          권한 4개 필요: <code>instagram_basic</code> · <code>pages_show_list</code> ·
+          <code>pages_read_engagement</code> · <code>business_management</code>.
+          호스트는 <b>graph.facebook.com</b>. 발급 후 <b>액세스 토큰 확장</b>으로 60일짜리를 받으세요.
+        </p>
+      </div>
+      <div id="metaBest" style="margin-top:12px"></div>
+    </div>
+
     <div class="card" style="margin-top:14px">
       <b>📈 인사이트 스크린샷 분석</b>
       <div class="meta" style="margin-top:3px">인스타 앱 → 프로페셔널 대시보드 화면을 캡처해 올리면, AI가 "다음 주에 뭘 바꿀지" 알려주고 다음 촬영 계획에 반영해요.</div>
@@ -322,7 +349,7 @@ async function init(){
   initGuide();
   const t = await api("/api/topics"); TOPICS = t.topics; renderTopics();
   await loadProjects(); await loadSource();
-  await loadPlan(); await loadQueue(); await loadReview();
+  await loadPlan(); await loadQueue(); await loadReview(); loadMeta();
   // 폴더에 올린 게 자동으로 뜨게 — 새로고침 없이 15초마다 확인
   setInterval(async()=>{ try{ await loadSource(); await loadProjects(); }catch(e){} }, 15000);
 }
@@ -764,6 +791,57 @@ async function loadReview(){
     $("#insResult").textContent = "지난 분석 ▸ " + r.insights[0].summary;
   }
 }
+// ═══ 인스타 연결 (메타) ═══
+async function loadMeta(){
+  const badge=$("#metaBadge"), info=$("#metaInfo");
+  if(!badge) return;
+  try{
+    const m = await api("/api/meta/status");
+    if(m.connected){
+      badge.innerHTML = `<b style="color:var(--good)">연결됨</b>`;
+      const a=m.account||{};
+      info.innerHTML = `@${esc(a.username||'')} · 팔로워 ${a.followers??'-'}명 · 게시물 ${a.media??'-'}개`
+        + (m.expires?` · <span class="muted">토큰 ${m.expires}까지</span>`:"")
+        + (m.insights?"":` · <span class="muted">도달·저장은 권한 없음(좋아요·댓글로 대체)</span>`);
+    }else{
+      badge.innerHTML = `<b style="color:var(--warn)">연결 안 됨</b>`;
+      info.textContent = m.error || "토큰을 넣어주세요.";
+    }
+  }catch(e){ badge.textContent=""; info.textContent = "상태를 확인하지 못했어요."; }
+}
+function toggleMetaToken(){
+  const b=$("#metaTokenBox"); b.style.display = b.style.display==="none"?"block":"none";
+}
+async function saveMetaToken(){
+  const v=$("#metaToken").value.trim();
+  if(!v){ toast("토큰을 붙여넣어 주세요"); return; }
+  try{
+    const r = await api("/api/meta/token",{method:"POST",body:new URLSearchParams({token:v})});
+    toast(`연결됨 — @${r.username}`);
+    $("#metaToken").value=""; $("#metaTokenBox").style.display="none";
+    await loadMeta();
+  }catch(e){ toast("연결 실패: "+e.message); }
+}
+async function metaRefresh(){
+  const btn=$("#metaRefreshBtn");
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>읽는 중…';
+  try{
+    const r = await api("/api/meta/refresh",{method:"POST"});
+    $("#metaBest").innerHTML = `
+      <div class="muted" style="font-size:.8rem">최근 ${r.count}개 · 평균 좋아요 ${r.avg_likes}개
+        — 아래 결과가 <b>다음 기획·자막에 자동으로 반영</b>돼요</div>
+      <div style="margin-top:8px">
+        ${r.best.map(p=>`<div style="font-size:.82rem;padding:3px 0">
+          <b style="color:var(--good)">♥${p.likes??0}</b> ${esc(p.hook||'')}</div>`).join("")}
+        ${(r.worst||[]).length?`<div class="muted" style="font-size:.78rem;margin-top:8px">반응이 약했던 글 — 이 패턴은 피해요</div>`:""}
+        ${(r.worst||[]).map(p=>`<div class="muted" style="font-size:.8rem;padding:2px 0">
+          ♥${p.likes??0} ${esc(p.hook||'')}</div>`).join("")}
+      </div>`;
+    toast("성과를 읽었어요 — 다음 기획에 반영됩니다");
+  }catch(e){ toast("실패: "+e.message); }
+  btn.disabled=false; btn.textContent="🔄 성과 새로고침";
+}
+
 function salesLine(s){
   if(!s) return "";
   const f = n => (n||0).toLocaleString("ko-KR");
