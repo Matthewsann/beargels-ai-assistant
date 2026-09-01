@@ -1198,13 +1198,22 @@ function launchTasks(it){
             ok: chChecked(it.sku,"store"),
             copies: [["영문명",(it.name_en||"").trim()||null],
                      ["영문 소개",(it.intro_en||"").trim()||null]].filter(([,v])=>v)});
+  // '수집에서 확인됨' 이 언제 본 것인지 — 오래된 확인은 확신이 아니다
+  const snapAge = ch => {
+    const s = (DATA.snapshots||[]).find(x=>x.channel===ch);
+    if (!s || !s.collected_at) return "";
+    const d = Math.floor((Date.now()-new Date(s.collected_at))/86400000);
+    return d<=0 ? " (오늘)" : ` (${d}일 전)`;
+  };
   if (it.delivery_active){
     const bs = snapHas(it.sku,"baemin"), cs = snapHas(it.sku,"coupang");
     t.push({k:"baemin", grp:"채널", label:"배민", auto:false,
-            ok: chChecked(it.sku,"baemin") || bs, via: bs ? "📡 수집에서 확인됨" : "",
+            ok: chChecked(it.sku,"baemin") || bs,
+            via: bs ? "📡 수집 확인"+snapAge("baemin") : "",
             portal: "https://self.baemin.com/", copies: cps(it.delivery_price)});
     t.push({k:"coupang", grp:"채널", label:"쿠팡이츠", auto:false,
-            ok: chChecked(it.sku,"coupang") || cs, via: cs ? "📡 수집에서 확인됨" : "",
+            ok: chChecked(it.sku,"coupang") || cs,
+            via: cs ? "📡 수집 확인"+snapAge("coupang") : "",
             portal: "https://store.coupangeats.com/merchant/management/menu",
             copies: cps(it.delivery_price)});
   }

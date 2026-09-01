@@ -1371,6 +1371,101 @@ def normalize_menu_name(name):
     return s.lower()
 
 
+# ── 채널 대조 요약 · 추세 ────────────────────────────────────
+# 계산 골자는 scripts/menu_diff_report.py 와 같다(정규화 매칭 → 유사도 0.8
+# 승격 → 예외/비활성 제외). 숫자가 화면과 조금 달라도 추세용으로는 충분하고,
+# 대조 로직을 한 곳으로 모으는 작업(감사 2차 4번)의 첫 이사분이다.
+
+_DIFF_NOISE = re.compile(
+    r"^\[B\]|^\[신메뉴\]$|^\[1~2인 세트\]$|^커피$|^보틀\(1L\)$|^단체주문 10인$"
+    r"|^든든한 샌드위치 세트$|^BEARGLS HEALTHY|^Bear Cream Cheese")
+
+
+def channel_diff_counts():
+    """채널별 불일치 요약 {ch: {price,name,extra,missing,total}}."""
+    from difflib import SequenceMatcher
+    items = menu_all()
+    overrides = {(o["sku"], o["channel"]): o for o in menu_channels_all()}
+    snaps = menu_snapshots_all()
+    by_sku = {i["sku"]: i for i in items}
+    by_norm = {normalize_menu_name(i["name"]): i["sku"] for i in items}
+    out = {}
+    for ch in ("baemin", "coupang", "naver"):
+        rows = [s for s in snaps if s["channel"] == ch
+                and not _DIFF_NOISE.search(s["menu_name"] or "")]
+        if not rows:
+            out[ch] = None          # 수집 없음 — 0건과 구분해야 한다
+            continue
+        store_based = ch == "naver"
+        price_fix = name_fix = 0
+        extra, matched = [], set()
+        for s in rows:
+            sku = s.get("matched_sku") or by_norm.get(
+                normalize_menu_name(s["menu_name"]))
+            item = by_sku.get(sku)
+            if not item:
+                extra.append(s)
+                continue
+            matched.add(sku)
+            ov = overrides.get((sku, ch))
+            if ov and ov.get("active") is False:
+                continue
+            if store_based:
+                ep = item.get("store_price")
+            elif ov and ov.get("price_override") is not None:
+                ep = ov["price_override"]
+            else:
+                ep = item.get("delivery_price") or item.get("store_price")
+            en = (ov.get("name_override") if ov and ov.get("name_override")
+                  else item["name"])
+            if s.get("price") is not None and ep is not None and s["price"] != ep:
+                price_fix += 1
+            if normalize_menu_name(s["menu_name"]) != normalize_menu_name(en):
+                name_fix += 1
+        missing = []
+        for item in items:
+            on = item.get("store_active") if store_based else item.get("delivery_active")
+            if not on or item["sku"] in matched:
+                continue
+            ov = overrides.get((item["sku"], ch))
+            if ov and ov.get("active") is False:
+                continue
+            missing.append(item)
+        # 오타·표기 차이 승격(0.8) — extra/missing 짝이면 이름 수정으로 센다
+        used = set()
+        still = 0
+        for s in extra:
+            en = normalize_menu_name(s["menu_name"])
+            best, score = None, 0.0
+            for i, item in enumerate(missing):
+                if i in used:
+                    continue
+                r = SequenceMatcher(None, en,
+                                    normalize_menu_name(item["name"])).ratio()
+                if r > score:
+                    best, score = i, r
+            if best is not None and score >= 0.8:
+                used.add(best)
+                name_fix += 1
+            else:
+                still += 1
+        miss_n = len(missing) - len(used)
+        out[ch] = {"price": price_fix, "name": name_fix, "extra": still,
+                   "missing": miss_n,
+                   "total": price_fix + name_fix + still + miss_n}
+    return out
+
+
+def append_diff_history():
+    """수집 직후 호출 — 채널별 불일치 요약을 이력으로 한 줄 쌓는다(최근 30회)."""
+    counts = channel_diff_counts()
+    hist = get_setting("diff_history", []) or []
+    hist.append({"at": datetime.utcnow().isoformat() + "Z", **{
+        ch: v for ch, v in counts.items() if v is not None}})
+    menu_set_setting("diff_history", hist[-30:])
+    return counts
+
+
 def save_menu_snapshots(channel, rows):
     """채널 스냅샷 갈아끼우기 + 정본 SKU 자동 매칭."""
     sb = get_client()

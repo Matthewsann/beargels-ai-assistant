@@ -258,6 +258,17 @@ function markDone(ch,t,checked,el){
   if(!checked) delete DONE[key(ch,t)];
   el.classList.toggle("done",checked);
   renderHeader();
+  // 이 채널의 할 일을 다 체크했으면 확인 수집을 자동 요청 — 고친 게 실제로
+  // 반영됐는지 다음 수집이 확인해 준다(고침→확인 루프 닫기). 집 PC 가 꺼져
+  // 있으면 잡이 대기할 뿐이라 무해.
+  if(checked){
+    const ts=computeTasks(ch);
+    if(ts.length && ts.every(t=>DONE[key(ch,t)])){
+      fetch(BASE+"/collect",{method:"POST"}).then(r=>{
+        if(r.ok) toast(`${LABEL[ch]} 할 일을 다 끝냈습니다 — 확인 수집을 요청했어요 🔄`);
+      }).catch(()=>{});
+    }
+  }
   clearTimeout(saveTimer);
   saveTimer=setTimeout(async()=>{
     const r=await fetch(BASE+"/settings/task_done",{method:"POST",
@@ -293,7 +304,16 @@ function renderHeader(){
     return `<div class="chip ${ch===CH?"on":""}" onclick="CH='${ch}';render()">${l}<small>${c.done}/${c.total}</small></div>`;
   }).join("");
   const c=counts[CH];
-  document.getElementById("progTxt").textContent=`${LABEL[CH]} 진행 ${c.done}/${c.total}`;
+  // 지난 수집 대비 추세 — '줄어드는 게 보여야' 손댈 동기가 생긴다(감사).
+  let trend="";
+  const hist=(DATA.settings&&DATA.settings.diff_history)||[];
+  if(hist.length>=2){
+    const a=hist[hist.length-2][CH], b=hist[hist.length-1][CH];
+    if(a&&b){ const d=b.total-a.total;
+      trend = d<0 ? ` · 지난 수집 대비 🟢 ${d}건`
+            : d>0 ? ` · 지난 수집 대비 🔺 +${d}건` : ` · 지난 수집과 같음`; }
+  }
+  document.getElementById("progTxt").textContent=`${LABEL[CH]} 진행 ${c.done}/${c.total}${trend}`;
   document.getElementById("progBar").style.width=(c.total?c.done/c.total*100:100)+"%";
 }
 

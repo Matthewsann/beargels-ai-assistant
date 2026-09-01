@@ -449,6 +449,8 @@ def collect_menus() -> tuple[int, list[str]]:
                          detail=traceback.format_exc())
     try:
         db.menu_set_setting("collect_status", status)
+        # 불일치 추세 — 작업지시서가 '지난 수집 대비 −N건' 을 띄우는 재료
+        db.append_diff_history()
     except Exception:  # noqa: BLE001 — 기록 실패가 수집을 망치면 안 된다
         pass
     return total, warnings
@@ -1229,6 +1231,34 @@ def maybe_pa_expiry_check() -> None:
 
 
 PLACE_AUDIT_TIME = os.getenv("WORKER_PLACE_AUDIT_TIME", "09:40")
+# 채널 메뉴 수집 — 하루 1회면 충분(메뉴판은 자주 안 바뀐다). 영업 전 06:50.
+# 끄려면 빈 문자열. 실패는 collect_status 로 작업지시서에 이미 보인다.
+MENU_COLLECT_TIME = os.getenv("WORKER_MENU_COLLECT_TIME", "06:50")
+_last_menu_collect_slot = None
+
+
+def maybe_menu_collect() -> None:
+    """하루 한 번 채널 메뉴를 수집한다(maybe_place_audit 와 같은 지각 허용 방식)."""
+    global _last_menu_collect_slot
+    if not MENU_COLLECT_TIME.strip():
+        return
+    try:
+        now = datetime.now()
+        try:
+            hh, mm = (int(x) for x in MENU_COLLECT_TIME.split(":"))
+        except ValueError:
+            hh, mm = 6, 50
+        if now < now.replace(hour=hh, minute=mm, second=0, microsecond=0):
+            return
+        slot = now.strftime("%Y-%m-%d")          # 하루 1회 키
+        if slot == _last_menu_collect_slot:
+            return
+        _last_menu_collect_slot = slot
+        total, warnings = collect_menus()
+        logger.info("자동 메뉴 수집: %d건 저장%s", total,
+                    f" · 경고 {warnings}" if warnings else "")
+    except Exception as e:  # noqa: BLE001 — 수집 실패가 일꾼을 멈추면 안 된다
+        logger.warning("자동 메뉴 수집 실패: %s", e)
 _last_place_slot = None
 
 
@@ -1594,6 +1624,7 @@ def main() -> int:
                     maybe_work_nag()
                     maybe_pos_import()
                     maybe_place_audit()
+                    maybe_menu_collect()
                     maybe_place_stats()
                     maybe_pa_expiry_check()
                     maybe_blog_react()

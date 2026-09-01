@@ -129,6 +129,10 @@ def save_snapshots(results: list[dict]) -> str:
             saved += db.save_menu_snapshots(r["channel"], r["rows"])
         except Exception as e:  # noqa: BLE001
             return f"실패({type(e).__name__}: {str(e)[:80]})"
+    try:
+        db.append_diff_history()      # 불일치 추세 기록(작업지시서 헤더용)
+    except Exception:  # noqa: BLE001
+        pass
     return f"{saved}건 저장"
 
 
