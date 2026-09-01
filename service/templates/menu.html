@@ -56,6 +56,9 @@ border-bottom:1px dashed var(--line)}
 background:var(--card);cursor:pointer;padding:0}
 .lc-cb.on{background:var(--green);border-color:var(--green);color:#fff;font-size:13px;line-height:1}
 .lc-via{margin-left:auto;font-size:11px;color:var(--sub);text-align:right}
+.lc-tools{flex-basis:100%;display:flex;gap:5px;flex-wrap:wrap;margin:4px 0 2px 30px}
+.lc-tool{border:1px solid var(--line);background:var(--card);color:var(--ink);
+border-radius:6px;font-size:11px;padding:3px 9px;cursor:pointer;text-decoration:none;line-height:1.5}
 .lc-grp{font-size:11px;font-weight:700;color:var(--sub);margin:8px 0 2px}
 /* 채널 노출 점 — 기본 보기의 매장/배달/네이버 토글 */
 td.chdot{text-align:center}
@@ -382,8 +385,8 @@ z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
   <h3>➕ 새 메뉴 추가</h3>
   <p class="note" style="margin-top:0">이름과 분류만 넣으면 됩니다. SKU 는 분류에 맞춰
   자동으로 붙습니다(예: 디저트 → DESRT-039).<br>
-  <b>영문명·플랫폼 소개글(한/영)도 자동으로 초안이 들어갑니다</b> —
-  만든 뒤 상세에서 확인하고 다듬어 주세요.</p>
+  만들면 상세 창이 바로 열립니다 — <b>소개글·영문명은 거기서 직접 적어 주세요</b>
+  (자동 생성은 사실과 다른 문장이 섞여 뺐습니다).</p>
   <table><tbody>
     <tr><td style="text-align:left">메뉴 이름 *</td>
       <td><input type="text" id="nm-new" style="width:230px;text-align:left"
@@ -1150,24 +1153,50 @@ function launchTasks(it){
   t.push({k:"cost", grp:"정본", label:"원가 (레시피)", auto:true,
           ok: it.ingredient_cost != null,
           via: it.ingredient_cost != null ? won(it.ingredient_cost)+"원" : "레시피 편집에서"});
-  t.push({k:"intro", grp:"정본", label:"소개글 한/영", auto:true,
+  // 소개글은 한/영을 따로 센다 — 합쳐 두면 한글만 있고 영문이 빈 채로
+  // '완료'가 됐다(감사 확인). 영문명은 키오스크 메뉴판에 걸리는 이름.
+  t.push({k:"intro", grp:"정본", label:"소개글 (한글)", auto:true,
           ok: !!(it.intro_ko||"").trim(), via: (it.intro_ko||"").trim() ? "" : "직접 입력"});
+  t.push({k:"introEn", grp:"정본", label:"소개글 (영문)", auto:true,
+          ok: !!(it.intro_en||"").trim(), via: (it.intro_en||"").trim() ? "" : "키오스크 영문 설명"});
+  t.push({k:"nameEn", grp:"정본", label:"영문 메뉴명", auto:true,
+          ok: !!(it.name_en||"").trim(), via: (it.name_en||"").trim() ? esc(it.name_en) : "키오스크용 이름"});
+  if (it.category === "세트")
+    t.push({k:"comps", grp:"정본", label:"세트 구성 엮기", auto:true,
+            ok: compsOf(it.sku).length > 0,
+            via: compsOf(it.sku).length ? `구성 ${compsOf(it.sku).length}줄`
+                                        : "엮어야 원가가 잡힙니다",
+            link: `${BASE}/ingredients?sku=${encodeURIComponent(it.sku)}`,
+            linkLabel: "🧩 엮기 →"});
   t.push({k:"photo", grp:"정본", label:"메뉴 사진", auto:true,
           ok: !!photoAt(it.sku),
           via: photoAt(it.sku) ? String(photoAt(it.sku)).slice(0,10)+" 올림"
                                : "원본 1장이면 채널 4장 자동"});
+  // 채널 줄마다 '어디로 가서 무엇을 붙여넣는지'를 같이 준다 — 이게 없어서
+  // 등록 한 건에 화면 4곳을 오가며 값을 16번 퍼 날라야 했다(감사 확인).
+  const cps = (price) => [
+    ["이름", it.name],
+    ["가격", price ? String(price) : null],
+    ["소개글", (it.intro_ko||"").trim() || null],
+  ].filter(([,v]) => v);
   if (it.store_active)
     t.push({k:"store", grp:"채널", label:"매장 포스 · 키오스크", auto:false,
-            ok: chChecked(it.sku,"store")});
+            ok: chChecked(it.sku,"store"),
+            copies: [["영문명",(it.name_en||"").trim()||null],
+                     ["영문 소개",(it.intro_en||"").trim()||null]].filter(([,v])=>v)});
   if (it.delivery_active){
     const bs = snapHas(it.sku,"baemin"), cs = snapHas(it.sku,"coupang");
     t.push({k:"baemin", grp:"채널", label:"배민", auto:false,
-            ok: chChecked(it.sku,"baemin") || bs, via: bs ? "📡 수집에서 확인됨" : ""});
+            ok: chChecked(it.sku,"baemin") || bs, via: bs ? "📡 수집에서 확인됨" : "",
+            portal: "https://self.baemin.com/", copies: cps(it.delivery_price)});
     t.push({k:"coupang", grp:"채널", label:"쿠팡이츠", auto:false,
-            ok: chChecked(it.sku,"coupang") || cs, via: cs ? "📡 수집에서 확인됨" : ""});
+            ok: chChecked(it.sku,"coupang") || cs, via: cs ? "📡 수집에서 확인됨" : "",
+            portal: "https://store.coupangeats.com/merchant/management/menu",
+            copies: cps(it.delivery_price)});
   }
   t.push({k:"naver", grp:"채널", label:"네이버", auto:false,
-          ok: naverOn(it.sku), via: "노출 점과 같은 값"});
+          ok: naverOn(it.sku), via: "노출 점과 같은 값",
+          portal: "https://new.smartplace.naver.com/", copies: cps(it.store_price)});
   return t;
 }
 const launchLeft = it => launchTasks(it).filter(x=>!x.ok).length;
@@ -1188,6 +1217,9 @@ async function toggleLaunchCh(sku, ch, val){
   render();
 }
 async function launchDone(sku){
+  const it0 = DATA.items.find(i=>i.sku===sku);
+  const left0 = it0 ? launchLeft(it0) : 0;
+  if (left0 && !confirm(`남은 일이 ${left0}개 있습니다 — 그래도 배너에서 내릴까요?`)) return;
   await saveLaunch(launchList().filter(s => s !== sku));
   const it = DATA.items.find(i=>i.sku===sku);
   toast(`${it?it.name:sku} — 출시 완료, 배너에서 내렸습니다`, {label:"되돌리기",
@@ -1313,13 +1345,25 @@ function launchHTML(sku){
   const inL = launchList().includes(sku);
   const ts = launchTasks(it);
   const left = ts.filter(x=>!x.ok).length;
+  // 채널 줄의 도구 — 포털 바로가기와 붙여넣을 값 복사. 이 줄이 있어야
+  // 출시 체크 화면 하나에서 등록이 끝난다.
+  const tools = x => {
+    const bits = [];
+    if (x.portal) bits.push(`<a class="lc-tool" href="${x.portal}" target="_blank"
+      rel="noopener">${esc(x.label)} 열기 ↗</a>`);
+    for (const [lab, v] of (x.copies || []))
+      bits.push(`<button class="lc-tool" onclick="copyText(${JSON.stringify(String(v)).replace(/"/g,"&quot;")})">${esc(lab)} 📋</button>`);
+    return bits.length ? `<div class="lc-tools">${bits.join("")}</div>` : "";
+  };
   const row = x => x.auto
     ? `<div class="lc-item">${x.ok?'<span class="lc-ok">✓</span>':'<span class="lc-no">·</span>'}
-        ${esc(x.label)}<span class="lc-via">${esc(x.via||"")}</span></div>`
-    : `<div class="lc-item"><button class="lc-cb ${x.ok?"on":""}"
+        ${esc(x.label)}<span class="lc-via">${x.link
+          ? `<a href="${x.link}" style="color:var(--brown)">${esc(x.linkLabel||"열기 →")}</a> ${esc(x.via||"")}`
+          : esc(x.via||"")}</span></div>`
+    : `<div class="lc-item" style="flex-wrap:wrap"><button class="lc-cb ${x.ok?"on":""}"
         onclick="${x.k==='naver'?`toggleNaver('${sku}',${!naverOn(sku)})`
                  :`toggleLaunchCh('${sku}','${x.k}',${!chChecked(sku,x.k)})`}">${x.ok?"✓":""}</button>
-        ${esc(x.label)}<span class="lc-via">${esc(x.via||"")}</span></div>`;
+        ${esc(x.label)}<span class="lc-via">${esc(x.via||"")}</span>${tools(x)}</div>`;
   const grp = g => ts.filter(x=>x.grp===g).map(row).join("");
   return `<div class="dsec">
     <b>🚀 출시 체크</b>
