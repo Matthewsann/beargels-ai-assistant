@@ -276,8 +276,11 @@ def _market() -> str:
     (설정: docs/meta_graph_setup.md).
     """
     try:
-        from .market_scan import as_prompt_context
-        return as_prompt_context()
+        from .market_scan import as_prompt_context, own_as_prompt_context
+        # 내 계정 실적을 먼저 — 같은 가게·같은 팔로워에게 실제로 통한 문장이라
+        # 남의 인기글보다 우선순위가 높다(셀프 피드백).
+        parts = [own_as_prompt_context(), as_prompt_context()]
+        return "\n\n".join(p for p in parts if p)
     except Exception as e:  # 데이터가 없거나 모듈 문제여도 기획은 계속돼야 한다
         logger.debug("시장 스캔 컨텍스트 없음: %s", e)
         return ""

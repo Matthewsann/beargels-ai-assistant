@@ -98,6 +98,73 @@ def scan(hashtags: list[str] | None = None, *, client: MetaGraph | None = None,
     return result
 
 
+OWN_PATH = os.path.join(_DATA_DIR, "own_media.json")
+
+
+def scan_own(*, client: MetaGraph | None = None, limit: int = 50) -> dict:
+    """**내 계정**의 지난 게시물과 실제 반응을 모은다 — 셀프 피드백의 재료.
+
+    남의 인기글보다 이게 낫다: 같은 가게·같은 팔로워에게 실제로 통한 문장이라,
+    "무엇을 더 하고 무엇을 그만둘지"를 바로 말해준다.
+
+    ⚠️ 도달·저장은 `instagram_manage_insights` 권한이 있어야 나온다. 없으면
+    좋아요·댓글로만 판단한다(그것만으로도 순위는 매겨진다).
+    """
+    api = client or from_env()
+    posts = api.my_media(limit=limit)
+    reels = [p for p in posts if p.get("media_type") in ("VIDEO", "REELS")]
+
+    def score(p):
+        return (p.get("like_count") or 0) + (p.get("comments_count") or 0) * 3
+
+    ranked = sorted(posts, key=score, reverse=True)
+    likes = [p.get("like_count") or 0 for p in posts]
+    avg = round(sum(likes) / len(likes), 1) if likes else 0
+
+    def row(p):
+        return {
+            "hook": _first_line(p.get("caption") or ""),
+            "likes": p.get("like_count"),
+            "comments": p.get("comments_count"),
+            "type": p.get("media_type"),
+            "date": (p.get("timestamp") or "")[:10],
+            "permalink": p.get("permalink"),
+        }
+
+    return {
+        "scanned_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "count": len(posts),
+        "reels_ratio": round(len(reels) / len(posts), 2) if posts else 0,
+        "avg_likes": avg,
+        "best": [row(p) for p in ranked[:8]],
+        "worst": [row(p) for p in ranked[-5:]] if len(ranked) > 8 else [],
+    }
+
+
+def own_as_prompt_context(data: dict | None = None) -> str:
+    """내 계정 성과를 기획 프롬프트에 넣을 텍스트."""
+    if data is None:
+        data = load(OWN_PATH)
+    if not data or not data.get("count"):
+        return ""
+    lines = [
+        "[내 계정(@beargels_songdo)에서 실제로 통한 글 — 셀프 피드백]",
+        f"· 최근 {data['count']}개, 평균 좋아요 {data['avg_likes']}개, "
+        f"영상 비중 {int(data['reels_ratio'] * 100)}%",
+        "· 반응이 좋았던 순:",
+    ]
+    for p in data.get("best", [])[:6]:
+        if p.get("hook"):
+            lines.append(f"    ♥{p.get('likes') or 0:>3} {p.get('type', '')[:5]:5s} \"{p['hook']}\"")
+    if data.get("worst"):
+        lines.append("· 반응이 약했던 글(같은 패턴을 반복하지 말 것):")
+        for p in data["worst"][:3]:
+            if p.get("hook"):
+                lines.append(f"    ♥{p.get('likes') or 0:>3} \"{p['hook']}\"")
+    lines.append("평균보다 잘 된 글의 각도를 변형해 재활용하고, 약했던 패턴은 피할 것.")
+    return "\n".join(lines)
+
+
 def save(data: dict, path: str = OUT_PATH) -> str:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -144,14 +211,39 @@ def as_prompt_context(data: dict | None = None, *, max_hooks: int = 12) -> str:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    # `python -m sns_automation.market_scan` 로 직접 돌릴 때도 .env 를 읽는다
+    # (웹앱 경로는 run_web.py 가 이미 로드한다)
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
+    # ① 내 계정 성과 — 권한만 있으면 항상 되고, 셀프 피드백에 제일 중요하다
+    try:
+        own = scan_own()
+        save(own, OWN_PATH)
+        print(f"\n내 계정: 게시물 {own['count']}개 · 평균 좋아요 {own['avg_likes']}")
+        for p in own["best"][:5]:
+            print(f"   ♥{p['likes']:>3} {p['date']} {p['hook'][:44]}")
+    except MetaGraphError as e:
+        print(f"\n[!] 내 계정 조회 실패: {e}")
+
+    # ② 해시태그 시장 스캔 — 앱 심사(Instagram Public Content Access)가 필요해
+    #    승인 전에는 실패한다. 실패해도 ①은 이미 저장됐다.
     tags = sys.argv[1:] or None
     try:
         data = scan(tags)
     except MetaGraphError as e:
-        print(f"\n[X] {e}\n")
-        raise SystemExit(1)
-    path = save(data)
+        print(f"\n[!] 해시태그 스캔 실패(앱 심사 필요할 수 있음): {e}")
+        return
     ok = sum(1 for s in data["hashtags"].values() if s.get("count"))
+    if not ok:
+        # 전부 실패했는데 저장하면 **기존에 모아둔 데이터를 지운다**.
+        # (앱 심사 전에는 해시태그가 늘 실패하므로 실제로 한 번 날렸다.)
+        print("\n[!] 수집된 해시태그가 없어 기존 파일을 보존합니다.")
+        return
+    path = save(data)
     print(f"\n스캔 완료: 해시태그 {ok}개 → {path}")
     for tag, s in data["hashtags"].items():
         if s.get("count"):
