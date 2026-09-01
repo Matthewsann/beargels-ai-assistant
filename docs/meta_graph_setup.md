@@ -31,15 +31,26 @@ Supermetrics 무료 체험이 2026-08-07에 만료돼서, **돈 안 드는 메�
    (또는 https://developers.facebook.com/tools/explorer)
 2. 오른쪽 위 **Meta 앱**에서 방금 만든 앱 선택
 3. **사용자 또는 페이지** → **사용자 토큰** 선택
-4. **권한 추가**에서 아래 5개를 체크합니다 — 하나라도 빠지면 안 됩니다:
+4. **권한 추가**에서 아래를 체크합니다.
 
+   **필수 4개 — 하나라도 빠지면 동작하지 않습니다:**
    ```
    pages_show_list
    pages_read_engagement
+   business_management      ← 자주 빠뜨림
    instagram_basic
-   instagram_manage_insights
-   business_management
    ```
+   **선택(있으면 좋음):**
+   ```
+   instagram_manage_insights   ← 목록에 없으면 건너뛰세요(다른 사용 사례 소속)
+   ```
+
+   > ⚠️ **`business_management` 를 꼭 넣으세요.** 베어글스 페이지는 비즈니스
+   > 포트폴리오 소유라서, 이게 없으면 `pages_show_list` 가 있어도 페이지 목록이
+   > **빈 배열**로 옵니다(에러도 안 뜹니다). 2026-08-30 실측으로 확인한 함정입니다.
+
+   > ⚠️ 왼쪽 위 호스트가 **`graph.facebook.com`** 인지 확인하세요.
+   > `graph.instagram.com` 으로 두면 페이지 권한이 목록에 아예 안 뜹니다.
 
 5. **액세스 토큰 생성** 클릭 → 페이스북 로그인 창에서 **베어글스 페이지를 선택**하고 허용
 6. 생성된 긴 문자열을 복사

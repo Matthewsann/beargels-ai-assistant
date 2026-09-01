@@ -75,9 +75,16 @@ class MetaGraph:
             return self.ig_user_id
         pages = self._get("me/accounts", fields="id,name").get("data", [])
         if not pages:
+            missing = self.missing_scopes()
+            if missing:
+                raise MetaGraphError(
+                    f"토큰에 권한이 빠져 있습니다: {', '.join(missing)}\n"
+                    "    그래프 API 탐색기에서 이 권한을 체크하고 토큰을 다시 만드세요."
+                )
             raise MetaGraphError(
-                "토큰으로 접근 가능한 페이스북 페이지가 없습니다. "
-                "토큰 발급 시 페이지 권한(pages_show_list)을 체크했는지 확인하세요."
+                "토큰으로 접근 가능한 페이스북 페이지가 없습니다.\n"
+                "    권한은 다 있으니, 토큰 생성 팝업에서 **베어글스 페이지를 체크**했는지\n"
+                "    확인하세요(페이지 선택 화면에서 빠지면 권한이 있어도 안 보입니다)."
             )
         for p in pages:
             # 페이지 유형에 따라 필드 이름이 다르다. 둘 다 본다.
@@ -113,9 +120,15 @@ class MetaGraph:
 
     #: 없으면 아무것도 안 되는 권한. 하나라도 빠지면 조용히 빈 값이 돌아온다.
     #: (페이지 권한이 없으면 me/accounts 가 빈 배열이라 인스타 계정을 못 찾는다)
+    #:
+    #: ⚠️ business_management 가 필수인 이유(2026-08-30 실측): 베어글스 페이지는
+    #: **비즈니스 포트폴리오 소유**라, 이게 없으면 pages_show_list 가 있어도
+    #: me/accounts 가 빈 배열로 온다(에러도 안 남). 실제로 이 권한만 빠진 토큰과
+    #: 있는 토큰을 비교해 확인했다.
     NEEDED_SCOPES = (
         "pages_show_list",
         "pages_read_engagement",
+        "business_management",
         "instagram_basic",
     )
 
