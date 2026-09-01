@@ -410,6 +410,27 @@ function render(){
 fetch(BASE+"/data").then(r=>r.json()).then(d=>{
   if(d.error){document.getElementById("main").innerHTML=`<div class="empty">⚠ ${d.error}</div>`;return;}
   DATA=d; DONE=d.settings.task_done||{};
+  // 해결된 체크 청소 — 지금 살아 있는 항목의 키만 남긴다(불러올 때 1회).
+  // 안 지우면 한 번 체크한 항목이 영구히 남아, 같은 메뉴가 나중에 다시
+  // 어긋나도 '완료' 취소선으로 뜨고 진행률이 거짓이 된다(감사 확인).
+  // 저장 시점이 아니라 로드 시점에 하는 이유: markDone 은 채널 하나만 알아서
+  // 저장 때 지우면 다른 두 채널의 체크가 날아간다(감사 검증 보정).
+  const live=new Set();
+  for(const ch of Object.keys(LABEL)){
+    // 수집분이 아예 없는 채널은 건드리지 않는다 — 수집 실패가 체크를
+    // 지워버리면 안 되니까(그 채널 키는 전부 살려 둔다)
+    if(!(DATA.snapshots||[]).some(s=>s.channel===ch)){
+      for(const k of Object.keys(DONE)) if(k.startsWith(ch+"|")) live.add(k);
+      continue;
+    }
+    for(const t of computeTasks(ch)) live.add(key(ch,t));
+  }
+  const kept=Object.fromEntries(Object.entries(DONE).filter(([k])=>live.has(k)));
+  if(Object.keys(kept).length!==Object.keys(DONE).length){
+    DONE=kept;
+    fetch(BASE+"/settings/task_done",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify(DONE)});
+  }
   render();
 });
 </script>
