@@ -428,6 +428,9 @@ z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
 
 <dialog id="dlgTargets">
   <h3>카테고리별 목표 원가율(%)</h3>
+  <p class="note" style="margin:0 0 6px;max-width:340px">목표를 넘는 메뉴가 빨갛게 표시됩니다.
+  실측 중앙값보다 한참 낮게 잡으면 분류 전체가 빨개져서 경고가 의미를 잃습니다 —
+  <b>중앙값을 탭하면 그 값이 들어가고</b>, 원하는 만큼 고쳐서 저장하세요.</p>
   <table><tbody id="targetRows"></tbody></table>
   <div style="text-align:right;margin-top:8px"><button onclick="saveTargets()">저장</button>
   <button onclick="dlgTargets.close()">닫기</button></div>
@@ -1071,7 +1074,12 @@ document.getElementById("pchips").addEventListener("click", e=>{
   const c = e.target.closest(".chip"); if(!c) return;
   if (c.dataset.act === "diff"){ openDiff(); return; }
   if (c.dataset.state){ STATE = (STATE === c.dataset.state) ? null : c.dataset.state; render(); return; }
-  PROB = (PROB === c.dataset.prob) ? null : c.dataset.prob; render();
+  PROB = (PROB === c.dataset.prob) ? null : c.dataset.prob;
+  // '원가율 초과'를 켜면 높은 순으로 세워 준다 — 뭐부터 고칠지 바로 보이게.
+  // 끌 때는 이 자동 정렬만 풀고, 사장님이 직접 건 다른 정렬은 안 건드린다.
+  if (PROB === "over" && !SORT) SORT = {k:"rate", d:-1};
+  else if (PROB !== "over" && SORT && SORT.k === "rate" && SORT.d === -1) SORT = null;
+  render();
 });
 document.getElementById("th").addEventListener("click", e=>{
   // 메뉴 칸은 th(이름)와 그 안의 스팬(SKU)이 겹쳐 있다. th 로 먼저 찾으면
@@ -1896,14 +1904,35 @@ async function saveFees(){
 // 목표 원가율은 분류마다 하나다 — 배달은 따로 두지 않는다(사장님 2026-08-24).
 // 배달가가 매장가 × 1.13 이라 배달 원가율은 매장보다 늘 낮게 나온다. 같은 목표를
 // 양쪽에 대면 충분하고, 두 벌을 관리하면 어느 쪽이 기준인지만 흐려진다.
+// 분류별 실측 중앙값 — 목표를 정할 때 기준이 되는 '지금 실제로 나오는 값'.
+// 판매중이고 원가·매장가가 있는 메뉴만 센다(목표와 비교하는 지표와 같은 계산).
+function medianRate(cat){
+  const rates = DATA.items
+    .filter(i => i.category === cat && isSelling(i)
+             && i.ingredient_cost != null && (i.store_price || i.delivery_price))
+    .map(i => i.ingredient_cost / (i.store_price || i.delivery_price) * 100)
+    .sort((a,b) => a-b);
+  return rates.length ? rates[Math.floor(rates.length/2)] : null;
+}
 function openTargets(){
   const t = DATA.settings.target_cost_rates || {};
   const cats = [...new Set(DATA.items.map(i=>i.category))];
   document.getElementById("targetRows").innerHTML =
-    `<tr><th style="text-align:left">분류</th><th>목표 원가율</th></tr>` +
-    cats.map((c,i)=>
-    `<tr><td style="text-align:left">${esc(c)}</td>
-       <td><input id="t-cat-${i}" value="${t[c]??35}"> %</td></tr>`).join("");
+    `<tr><th style="text-align:left">분류</th><th>목표</th>
+       <th title="판매중 메뉴의 재료원가 ÷ 매장가, 가운데 값">실측<br>중앙값</th><th></th></tr>` +
+    cats.map((c,i)=>{
+      const med = medianRate(c), cur = t[c] ?? 35;
+      // 목표가 실측보다 5%p 넘게 낮으면 그 분류는 거의 전부 빨갛게 뜬다 —
+      // 경고가 아니라 배경색이 된 상태(빨간불 77건의 뿌리, 감사 확인)
+      const gap = med != null ? med - cur : null;
+      return `<tr><td style="text-align:left">${esc(c)}</td>
+       <td><input id="t-cat-${i}" value="${cur}"> %</td>
+       <td>${med == null ? '<span class="sub">원가 없음</span>'
+          : `<button class="mini" onclick="document.getElementById('t-cat-${i}').value=${Math.round(med)}"
+              title="탭하면 목표 칸에 ${Math.round(med)} 이 들어갑니다">${med.toFixed(1)}%</button>`}</td>
+       <td>${gap != null && gap > 5
+          ? `<span class="warn" title="목표가 실측보다 ${gap.toFixed(0)}%p 낮습니다 — 이 분류는 거의 전부 빨간불">⚠ +${gap.toFixed(0)}p</span>` : ""}</td></tr>`;
+    }).join("");
   dlgTargets.showModal();
 }
 async function saveTargets(){
