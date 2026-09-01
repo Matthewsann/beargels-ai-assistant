@@ -972,12 +972,19 @@ function render(){
   if (cut) items = items.slice(0, BULK_MAX);
   VIEW = items;   // 순서 이동은 '화면에 보이는 이웃' 기준으로 한다
 
+  // 필터·검색 중엔 접힘을 무시하고 다 편다 — 걸러낸 결과가 접힌 분류 밑에
+  // 숨으면 "메뉴가 사라졌다" 오해가 생긴다. 순서·선택·일괄 모드도 마찬가지.
+  const foldOn = MODE === "view" && !q && !PROB && !STATE && !LFILTER;
   let html = "", lastCat = null, r = 0;
   for(const it of items){
+    const folded = foldOn && FOLDED.has(it.category);
     if(it.category !== lastCat && !SORT){ lastCat = it.category;
-      html += `<tr class="cat"><td colspan="${span}"><span class="catlab">
-        ${SEL?`<input type="checkbox" class="catbox" onchange="selCat('${esc(it.category).replace(/'/g,"\\'")}',this.checked)">`:""}${esc(it.category)}
-        <small style="font-weight:400">목표 원가율 ${(target(it.category)*100).toFixed(0)}%</small></span></td></tr>`; }
+      const nCat = items.filter(x=>x.category===it.category).length;
+      html += `<tr class="cat"><td colspan="${span}"><span class="catlab"
+        ${foldOn?`style="cursor:pointer" data-fold="${esc(it.category)}" title="탭하면 ${folded?"펼칩니다":"접습니다"}"`:""}>
+        ${SEL?`<input type="checkbox" class="catbox" onclick="event.stopPropagation()" onchange="selCat('${esc(it.category).replace(/'/g,"\\'")}',this.checked)">`:""}${foldOn?(folded?"▸ ":"▾ "):""}${esc(it.category)}
+        <small style="font-weight:400">${folded?`${nCat}개 접힘`:`목표 원가율 ${(target(it.category)*100).toFixed(0)}%`}</small></span></td></tr>`; }
+    if (folded){ r++; continue; }
     const rs = costRate(it,"store"), rd = costRate(it,"baemin");
     const tg = target(it.category);
 
@@ -1086,6 +1093,10 @@ document.getElementById("pchips").addEventListener("click", e=>{
   if (PROB === "over" && !SORT) SORT = {k:"rate", d:-1};
   else if (PROB !== "over" && SORT && SORT.k === "rate" && SORT.d === -1) SORT = null;
   render();
+});
+document.getElementById("tb").addEventListener("click", e=>{
+  const f = e.target.closest("[data-fold]"); if(!f) return;
+  toggleFold(f.dataset.fold);
 });
 document.getElementById("th").addEventListener("click", e=>{
   // 메뉴 칸은 th(이름)와 그 안의 스팬(SKU)이 겹쳐 있다. th 로 먼저 찾으면
@@ -1265,6 +1276,14 @@ async function launchAdd(sku){
 // 아니라 공개 URL 로 확인한다(onerror = 아직 없음).
 // 채널 대조는 서버 정본(/menu/diff) 하나를 그린다 — 예전엔 이 파일과
 // 작업지시서·집 PC 리포트가 각자 계산해 화면마다 개수가 달랐다(감사 확인).
+// 접힌 분류 — 탭해서 접고 편다. 새로고침해도 유지(localStorage).
+let FOLDED = new Set();
+try{ FOLDED = new Set(JSON.parse(localStorage.getItem("menu-folded")||"[]")); }catch(e){}
+function toggleFold(cat){
+  FOLDED.has(cat) ? FOLDED.delete(cat) : FOLDED.add(cat);
+  try{ localStorage.setItem("menu-folded", JSON.stringify([...FOLDED])); }catch(e){}
+  render();
+}
 let SDIFF = null;          // {ch: {items,obs,counts,collected_at}} | null(아직)
 let SDIFF_STALE = false;   // 정본을 고친 뒤 — 다음에 대조를 볼 때 다시 받는다
 async function fetchDiff(){
@@ -1753,6 +1772,14 @@ function openNew(){
 }
 // 방금 만든 줄로 스크롤 + 1.5초 하이라이트 — 조용히 생기면 "안 됐다"고 느낀다.
 function revealRow(sku){
+  // 지목된 메뉴의 분류가 접혀 있으면 먼저 편다 — 안 그러면 딥링크·연속
+  // 업로드가 '없는 줄'을 가리키게 된다
+  const it = DATA.items.find(i=>i.sku===sku);
+  if (it && FOLDED.has(it.category)){
+    FOLDED.delete(it.category);
+    try{ localStorage.setItem("menu-folded", JSON.stringify([...FOLDED])); }catch(e){}
+    render();
+  }
   const row = document.querySelector(`tr[data-sku="${sku}"]`);
   if (!row) return;
   row.scrollIntoView({block:"center"});
