@@ -65,14 +65,18 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
 
-OPEN_PATHS = ("/login", "/static")
+# /s/ 는 직원용 근무표 열람 링크 — 로그인 없이 열린다. 토큰을 아는 사람만 볼 수 있고,
+# 스케줄만 보이며 다른 메뉴로 넘어갈 길이 없다 (schedule_public.html).
+OPEN_PATHS = ("/login", "/static", "/s/")
 
 # 인스타 릴스 파이프라인 (주제→촬영→자동편집→완성본). 로그인 잠금은
 # 아래 before_request 가 블루프린트 경로에도 그대로 적용된다.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from instagram import bp as instagram_bp  # noqa: E402
+from schedule import bp as schedule_bp  # noqa: E402
 
 app.register_blueprint(instagram_bp)
+app.register_blueprint(schedule_bp)
 
 
 @app.context_processor

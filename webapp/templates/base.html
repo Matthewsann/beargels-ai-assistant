@@ -124,6 +124,8 @@
 
       <a class="m {{ 'on' if request.path.startswith('/place') else '' }}" href="/place">📍 스마트플레이스</a>
 
+      <a class="m {{ 'on' if request.path.startswith('/schedule') else '' }}" href="/schedule">🕒 근무표</a>
+
       {% if session.get('ok') %}
       <div class="foot"><a class="m" href="/logout">🚪 나가기</a></div>
       {% endif %}

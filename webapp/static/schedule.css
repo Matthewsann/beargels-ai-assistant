@@ -1,0 +1,338 @@
+/* 근무표 전용 스타일.
+   base.html 의 색·버튼·카드 관례를 그대로 쓰되, #sched 안으로 범위를 가둬
+   다른 화면의 .btn/.tag/.stat 규칙과 부딪히지 않게 한다.
+   직원용 공개 페이지(schedule_public.html)도 같은 파일을 쓴다. */
+
+#sched {
+  --hair: #f0eee8;
+  --offhour: #f2efe8;
+  --now: #b23b2e;
+  --sat: #2c6ea8;
+  --sun: #c0392b;
+}
+#sched [hidden] { display: none !important; }
+#sched .num { font-variant-numeric: tabular-nums; }
+
+/* ── 탭 ───────────────────────────────────────────────────── */
+#sched .stabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; }
+#sched .stabs button {
+  border: 1px solid transparent; background: transparent; color: var(--ink);
+  border-radius: 20px; padding: 8px 15px; font-size: 14px; font-family: inherit; cursor: pointer;
+}
+#sched .stabs button:hover { background: #f4f2ec; }
+#sched .stabs button.on { background: var(--accent-bg); color: var(--accent); font-weight: 700; }
+
+#sched .btn.chip { border-radius: 20px; padding: 5px 12px; font-size: 12px; }
+#sched .btn.chip.on { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); font-weight: 700; }
+#sched .btn.danger { border-color: var(--warn); color: var(--warn); }
+#sched .btn.small { padding: 6px 10px; font-size: 13px; }
+#sched .btn[disabled] { opacity: .45; cursor: not-allowed; }
+#sched .note.warn { background: var(--warn-bg); color: var(--warn); }
+#sched .cap { font-size: 12px; color: var(--muted); }
+#sched .pdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+
+#sched .rowbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+#sched .rowbar .sp { flex: 1; }
+#sched .stats3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0; }
+#sched .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+#sched .grid3 .fld { width: 100%; }
+
+/* ── 주간 캘린더 ──────────────────────────────────────────── */
+#sched .wkhead { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+#sched .wkhead b { font-size: 16px; }
+#sched .wkactions { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+#sched .unlock {
+  font-size: 12px; color: var(--muted); background: none; border: none;
+  text-decoration: underline; padding: 6px 2px; cursor: pointer; font-family: inherit;
+}
+
+#sched .wkcal { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+#sched .wkcal-inner { min-width: 700px; }
+
+#sched .wkgrid-head { display: grid; grid-template-columns: 52px repeat(7, 1fr); border-bottom: 1px solid var(--line); }
+#sched .wkgrid-head .sp { border-right: 1px solid var(--line); background: var(--card); position: sticky; left: 0; z-index: 5; }
+#sched .dh { text-align: center; padding: 7px 2px 8px; border-right: 1px solid var(--line); }
+#sched .dh:last-child { border-right: none; }
+#sched .dh .w { font-size: 11px; color: var(--muted); display: block; line-height: 1.4; }
+#sched .dh .dt { font-size: 13px; font-weight: 700; }
+#sched .dh.today { background: var(--accent-bg); }
+#sched .dh.today .w, #sched .dh.today .dt { color: var(--accent); }
+#sched .dh.sat .w, #sched .dh.sat .dt { color: var(--sat); }
+#sched .dh.sun .w, #sched .dh.sun .dt,
+#sched .dh.hol .w, #sched .dh.hol .dt { color: var(--sun); }
+#sched .dh.closed { background: var(--warn-bg); }
+#sched .dh .cnt, #sched .dh .biz, #sched .dh .wx, #sched .dh .holname, #sched .dh .closedtag {
+  display: block; line-height: 1.45; white-space: nowrap;
+}
+#sched .dh .cnt { font-size: 10px; color: var(--muted); }
+#sched .dh .biz { font-size: 9px; color: var(--accent); }
+#sched .dh .wx { font-size: 10px; color: var(--muted); }
+#sched .dh .holname { font-size: 9px; color: var(--sun); font-weight: 700; }
+#sched .dh .closedtag { font-size: 9px; color: var(--warn); font-weight: 700; }
+
+#sched .wkgrid-body { display: grid; grid-template-columns: 52px repeat(7, 1fr); position: relative; }
+#sched .wkaxis { border-right: 1px solid var(--line); background: var(--card); position: sticky; left: 0; z-index: 5; }
+#sched .wkaxis .hl {
+  display: flex; align-items: center; justify-content: flex-end;
+  padding-right: 6px; font-size: 10px; color: var(--muted);
+}
+#sched .dcol {
+  position: relative; border-right: 1px solid var(--line);
+  background: repeating-linear-gradient(45deg, transparent 0 5px, rgba(138,137,127,.13) 5px 10px), var(--offhour);
+}
+#sched .dcol:last-child { border-right: none; }
+#sched .dcol .bizband {
+  position: absolute; left: 0; right: 0; background: var(--card); z-index: 0;
+  border-top: 1px dashed rgba(24,95,165,.55); border-bottom: 1px dashed rgba(24,95,165,.55);
+}
+#sched .dcol.today .bizband { background: #fdfcf8; }
+#sched .dcol .hl { border-bottom: 1px solid var(--hair); position: relative; z-index: 1; }
+#sched .dcol .hl:last-child { border-bottom: none; }
+#sched .week:not(.locked) .dcol { cursor: copy; }
+#sched .dcol.closed {
+  background: repeating-linear-gradient(45deg, transparent 0 6px, rgba(133,79,11,.14) 6px 12px), var(--warn-bg);
+  cursor: not-allowed;
+}
+#sched .dcol.closed .bizband { display: none; }
+#sched .dcol .closedlab {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%) rotate(-90deg);
+  font-size: 13px; font-weight: 700; color: var(--warn); letter-spacing: 5px; z-index: 2; white-space: nowrap;
+}
+#sched .dcol.droptarget { outline: 2px dashed var(--accent); outline-offset: -2px; }
+
+#sched .ev {
+  position: absolute; border-radius: 6px; color: #fff; padding: 3px 5px 2px; z-index: 3;
+  overflow: hidden; line-height: 1.3; cursor: grab; touch-action: none;
+  border: 1px solid rgba(255,255,255,.35);
+}
+#sched .ev.ro { cursor: default; touch-action: auto; }
+#sched .ev b { font-size: 11px; display: block; font-weight: 700; }
+#sched .ev .t { font-size: 10px; opacity: .9; display: block; }
+#sched .ev.compact .t .e { display: none; }
+#sched .ev.narrow .t { display: none; }
+#sched .ev .mk {
+  float: right; font-size: 9px; background: rgba(255,255,255,.9);
+  border-radius: 3px; padding: 0 3px; line-height: 1.6; margin-left: 3px;
+}
+#sched .ev .mk.ok { color: var(--ok); }
+#sched .ev .mk.diff { color: var(--warn); font-weight: 700; }
+#sched .ev .mk.pend { color: var(--accent); }
+#sched .ev.narrow .mk { display: none; }
+#sched .ev.diff { outline: 2px solid var(--warn); outline-offset: -2px; }
+#sched .ev .rz { position: absolute; left: 0; right: 0; height: 8px; cursor: ns-resize; z-index: 5; }
+#sched .ev .rz.top { top: 0; }
+#sched .ev .rz.bot { bottom: 0; }
+#sched .ev .rz::after {
+  content: ''; position: absolute; left: 50%; transform: translateX(-50%);
+  width: 22px; height: 2px; border-radius: 2px; background: rgba(255,255,255,.75);
+  opacity: 0; transition: opacity .12s;
+}
+#sched .ev .rz.top::after { top: 2px; }
+#sched .ev .rz.bot::after { bottom: 2px; }
+#sched .ev:hover .rz::after { opacity: 1; }
+#sched .ev.ro .rz { display: none; }
+#sched .ev.dragging { cursor: grabbing; opacity: .9; box-shadow: 0 6px 16px rgba(0,0,0,.3); z-index: 20; }
+
+#sched .nowline { position: absolute; left: 52px; right: 0; height: 2px; background: var(--now); z-index: 4; pointer-events: none; }
+#sched .nowline b {
+  position: absolute; left: 3px; top: -15px; font-size: 10px; color: var(--now);
+  background: var(--card); padding: 0 3px; border-radius: 3px;
+}
+#sched .legend { font-size: 12px; color: var(--muted); margin-top: 10px; display: flex; gap: 14px; flex-wrap: wrap; }
+#sched .legend .sw {
+  display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px;
+  margin-right: 3px; border: 1px solid var(--line);
+  background: repeating-linear-gradient(45deg, transparent 0 3px, rgba(138,137,127,.35) 3px 6px), var(--offhour);
+}
+#sched .emptywk { text-align: center; padding: 20px 16px; }
+#sched .emptywk p { margin: 0 0 12px; color: var(--muted); }
+#sched .week .lockonly { display: none; }
+#sched .week.locked .draftonly { display: none; }
+#sched .week.locked .lockonly { display: inline-flex; }
+#sched .week .badge-locked { display: none; }
+#sched .week.locked .badge-draft { display: none; }
+#sched .week.locked .badge-locked { display: inline-block; }
+
+/* ── 인쇄 시트 (A4 가로) ──────────────────────────────────── */
+#sched .psheet { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+#sched .psheet-head { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+#sched .psheet-head .ph-title { display: flex; align-items: baseline; gap: 10px; }
+#sched .psheet-head .ph-title b { font-size: 16px; }
+#sched .psheet-head .ph-date { font-size: 14px; font-weight: 700; }
+#sched .psheet-head .ph-meta { margin-left: auto; font-size: 11px; color: var(--muted); text-align: right; line-height: 1.6; }
+#sched .psheet-sign { display: none; }
+
+/* ── 매출·인원 그래프 ─────────────────────────────────────── */
+#sched .chart { border: 1px solid var(--line); border-radius: 10px 10px 0 0; border-bottom: none; overflow-x: auto; background: var(--card); }
+#sched .chart-inner { min-width: 880px; }
+#sched .crow2 { display: grid; grid-template-columns: 336px 1fr; border-bottom: 1px solid var(--hair); }
+#sched .crow2 > .lab {
+  padding: 5px 8px; font-size: 11px; color: var(--muted); border-right: 1px solid var(--hair);
+  display: flex; flex-direction: column; justify-content: center;
+}
+#sched .crow2 > .lab b { color: var(--ink); font-size: 12px; }
+#sched .plot { position: relative; }
+#sched .plot .off { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(45deg, transparent 0 5px, rgba(138,137,127,.13) 5px 10px), var(--offhour); }
+#sched .plot .gl { position: absolute; left: 0; right: 0; border-top: 1px dotted var(--hair); }
+#sched .plot .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--hair); }
+#sched .bar { position: absolute; bottom: 0; border-radius: 2px 2px 0 0; }
+#sched .bar.sale { background: linear-gradient(180deg, #7ea9d4, #4a7fb0); }
+#sched .bar.sale.peak { background: linear-gradient(180deg, #3f7fbf, #1f5f9f); }
+#sched .bar.head { background: #b9c9b0; }
+#sched .bar.head.short { background: #e0b46a; }
+#sched .bar.head.none { background: var(--now); }
+#sched .bar b { position: absolute; top: -13px; left: 50%; transform: translateX(-50%); font-size: 9px; color: var(--muted); font-weight: 400; }
+#sched .headnum { position: absolute; bottom: 1px; left: 0; right: 0; text-align: center; font-size: 9px; color: #fff; font-weight: 700; font-style: normal; }
+#sched .chart .axis { display: grid; grid-template-columns: 336px 1fr; }
+#sched .chart .axis .lab { border-right: 1px solid var(--hair); }
+#sched .chart .axis .plot { height: 15px; }
+#sched .chart .axis .plot span { position: absolute; top: 1px; font-size: 9px; color: var(--muted); transform: translateX(-50%); }
+#sched .nodata { padding: 14px; color: var(--muted); font-size: 13px; }
+
+/* ── 데일리 근무시간표 ────────────────────────────────────── */
+#sched .dgrid { overflow-x: auto; border: 1px solid var(--line); border-radius: 0 0 10px 10px; background: var(--card); }
+#sched .dgrid-inner { min-width: 880px; }
+#sched .drow { display: grid; grid-template-columns: 70px 104px 46px 58px 58px 1fr; border-bottom: 1px solid var(--line); }
+#sched .drow:last-child { border-bottom: none; }
+#sched .drow > div {
+  padding: 7px 8px; font-size: 12px; border-right: 1px solid var(--hair);
+  display: flex; align-items: center; min-height: 34px;
+}
+#sched .drow > div:last-child { border-right: none; }
+#sched .drow.head > div { background: #f1efe8; font-weight: 700; color: var(--muted); font-size: 11px; }
+#sched .drow .who { font-weight: 700; gap: 5px; }
+#sched .drow .wt { justify-content: flex-end; font-weight: 700; }
+#sched .tcell { position: relative; padding: 0 !important; }
+#sched .tcell .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--hair); }
+#sched .tcell .tick.hr { border-left-color: var(--line); }
+#sched .tcell .tick b { position: absolute; top: 2px; left: 2px; font-size: 9px; color: var(--muted); font-weight: 400; }
+#sched .tcell .off { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(45deg, transparent 0 5px, rgba(138,137,127,.13) 5px 10px), var(--offhour); }
+#sched .dbar {
+  position: absolute; top: 5px; bottom: 5px; border-radius: 4px; color: #fff; font-size: 10px;
+  display: flex; align-items: center; padding: 0 6px; overflow: hidden; z-index: 2;
+}
+#sched .dbrk {
+  position: absolute; top: 7px; bottom: 7px; z-index: 3; border-radius: 3px;
+  background: rgba(255,255,255,.92); border: 1px solid rgba(0,0,0,.12);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; color: var(--ink);
+}
+
+/* ── 하루 마감(실제 기록) ─────────────────────────────────── */
+#sched .crow { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: var(--card); }
+#sched .crow .rhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#sched .crow .plan { color: var(--muted); font-size: 13px; }
+#sched .crow .result { margin-left: auto; }
+#sched .crow .acts { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+#sched .crow.done { background: var(--ok-bg); border-color: var(--ok-bg); }
+#sched .crow.diff { background: var(--warn-bg); border-color: var(--warn-bg); }
+#sched .crow.absent { opacity: .75; }
+#sched .crow.absent .rhead b { text-decoration: line-through; }
+#sched .crow .editform { display: none; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+#sched .crow.editing .editform { display: block; }
+
+/* ── 설정 편집 행 ─────────────────────────────────────────── */
+#sched .erow { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+#sched .erow:last-of-type { border-bottom: none; }
+#sched .erow .del {
+  background: none; border: none; color: var(--muted); font-size: 15px;
+  padding: 4px 8px; margin-left: auto; border-radius: 6px; cursor: pointer; font-family: inherit;
+}
+#sched .erow .del:hover { color: var(--warn); background: var(--warn-bg); }
+#sched .erow .fld { width: auto; }
+#sched input[type=color].sw {
+  width: 34px; height: 34px; padding: 2px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--card); cursor: pointer; flex: 0 0 auto;
+}
+#sched .nameIn { width: 90px; }
+#sched .roleIn { width: 118px; }
+#sched .linkbox {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  background: #f1efe8; border-radius: 8px; padding: 10px 12px; font-size: 12px;
+}
+#sched .linkbox code { word-break: break-all; font-size: 12px; }
+
+/* ── 모달 ─────────────────────────────────────────────────── */
+#sched .modal {
+  position: fixed; inset: 0; background: rgba(35,35,32,.45); z-index: 100;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+#sched .modal-card {
+  background: var(--card); border-radius: 14px; padding: 18px;
+  width: 100%; max-width: 430px; max-height: 88vh; overflow-y: auto;
+}
+#sched .modal-card h3 { margin: 0 0 4px; font-size: 17px; }
+#sched .modal-card .sub { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+#sched .modal-acts { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+#sched .modal-acts .sp { flex: 1; }
+#sched .chiprow { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+#sched .chiprow button {
+  border: 1px solid var(--line); background: var(--card); border-radius: 20px;
+  padding: 7px 13px; font-size: 13px; display: inline-flex; gap: 6px; align-items: center;
+  font-family: inherit; cursor: pointer; color: var(--ink);
+}
+#sched .chiprow button.on { border-color: var(--accent); color: var(--accent); font-weight: 700; background: var(--accent-bg); }
+
+/* ── 직원용 화면 ──────────────────────────────────────────── */
+#sched .daycard { border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 12px 14px; margin-bottom: 10px; }
+#sched .daycard.today { border: 2px solid var(--accent); }
+#sched .daycard .dhead { font-size: 13px; font-weight: 700; margin-bottom: 6px; display: flex; gap: 8px; align-items: center; }
+#sched .daycard .dhead small { color: var(--muted); font-weight: 400; }
+#sched .schip {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 13px; border-radius: 20px;
+  padding: 5px 12px; margin: 2px 4px 2px 0; background: #f4f2ec; color: var(--ink);
+}
+#sched .schip.mine { color: #fff; font-weight: 700; }
+#sched .nextshift { text-align: center; padding: 26px 16px; }
+#sched .nextshift .big { font-size: 26px; font-weight: 700; line-height: 1.4; }
+#sched .nextshift small { color: var(--muted); }
+
+/* 직원용 페이지는 사이드바 없이 이것만 */
+.pubwrap { max-width: 660px; margin: 0 auto; padding: 16px 14px 60px; }
+.pubbar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.pubbar .ico {
+  width: 38px; height: 38px; border-radius: 10px; background: var(--accent-bg);
+  display: flex; align-items: center; justify-content: center; font-size: 20px;
+}
+.pubbar b { font-size: 17px; }
+
+@media (max-width: 700px) {
+  #sched .stats3, #sched .grid3 { grid-template-columns: 1fr; }
+  #sched .wkcal-inner { min-width: 640px; }
+}
+
+/* ── 인쇄: A4 가로 한 장 ──────────────────────────────────── */
+@page { size: A4 landscape; margin: 8mm; }
+@media print {
+  body > .layout > .side, .top, .no-print,
+  #sched .stabs, #sched .rowbar, #sched .legend { display: none !important; }
+  #sched > section { display: none !important; }
+  #sched > section#tab-day { display: block !important; }
+  html, body { background: #fff; }
+  body { font-size: 10pt; }
+  .wrap, .main, .layout { max-width: none; padding: 0; margin: 0; display: block; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  #sched .psheet { border: none; border-radius: 0; padding: 0; }
+  #sched .psheet-head { margin-bottom: 6px; border-bottom: 2px solid #333; padding-bottom: 4px; }
+  #sched .psheet-head .ph-title b { font-size: 13pt; }
+  #sched .psheet-head .ph-date { font-size: 12pt; }
+  #sched .psheet-head .ph-meta { font-size: 8pt; }
+
+  #sched .chart, #sched .dgrid { overflow: visible !important; border-color: #999; border-radius: 0; }
+  #sched .chart-inner, #sched .dgrid-inner { min-width: 0 !important; width: 100% !important; }
+  #sched .crow2, #sched .chart .axis { grid-template-columns: 272px 1fr; }
+  #sched .drow { grid-template-columns: 58px 88px 34px 46px 46px 1fr; }
+  #sched .drow > div { min-height: 0; padding: 3px 5px; font-size: 8.5pt; }
+  #sched .drow.head > div { font-size: 7.5pt; }
+  #sched .dbar { font-size: 7pt; top: 3px; bottom: 3px; }
+  #sched .dbrk { font-size: 7pt; top: 4px; bottom: 4px; }
+  #sched .tcell .tick b, #sched .chart .axis .plot span, #sched .bar b { font-size: 6.5pt; }
+
+  #sched .psheet-sign { display: block !important; margin-top: 6px; }
+  #sched .psheet-sign table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+  #sched .psheet-sign th, #sched .psheet-sign td { border: 1px solid #999; padding: 4px 6px; text-align: left; }
+  #sched .psheet-sign th { background: #eee; font-weight: 700; width: 70px; }
+  #sched .psheet-sign td.sign { width: 70px; }
+  #sched .psheet-sign .memo { height: 34px; }
+}

@@ -47,6 +47,10 @@ sample_output/
 sample/
 sample_frames/
 
+# 근무표 데이터 — 직원 실명·근무시간이 들어 있어 올리지 않는다(기기 로컬).
+# 직원용 열람 링크 토큰도 config.json 안에 있다.
+schedule/
+
 # 웹앱: 순위 추적 결과(생성 데이터)
 webapp/rank_history.json
 # 웹앱: 로그인 세션 서명키(기기별 · 민감정보) — 절대 커밋 금지
