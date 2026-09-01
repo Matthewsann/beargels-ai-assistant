@@ -50,6 +50,21 @@
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .section{margin-top:26px}
 
+  /* 사용 가이드 */
+  .guide{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+    padding:18px 20px;box-shadow:var(--shadow)}
+  .gsteps{display:flex;flex-direction:column;gap:14px;margin-top:16px}
+  .gstep{display:flex;gap:13px;align-items:flex-start}
+  .gnum{flex:0 0 auto;width:26px;height:26px;border-radius:50%;background:var(--crust);color:#fff;
+    font-weight:800;font-size:.82rem;display:flex;align-items:center;justify-content:center;margin-top:1px}
+  .gstep b{font-size:.92rem;display:block}
+  .gstep p{margin:4px 0 0;font-size:.84rem;color:var(--ink-soft);line-height:1.55}
+  .gstep p.tip{margin-top:6px;padding:7px 10px;background:var(--surface-2);
+    border-radius:var(--r-sm);font-size:.8rem}
+  .gstep code{background:var(--surface-2);padding:1px 6px;border-radius:6px;font-size:.86em}
+  .gnote{margin-top:16px;padding:11px 13px;background:var(--warn-soft);border-radius:var(--r-sm);
+    font-size:.82rem;color:var(--ink);line-height:1.55}
+
   /* 샷 구성표 (기획안 = 편집 명세) */
   .shots{display:flex;flex-direction:column;gap:8px;margin-top:12px}
   .shot{display:flex;gap:10px;align-items:center;background:var(--surface-2);
@@ -145,11 +160,94 @@
     </svg>
     <div class="brand">베어글스 송도<small>인스타 릴스 파이프라인</small></div>
     <div class="spacer"></div>
+    <button class="btn sm" onclick="toggleGuide()">📖 사용법</button>
     <button class="btn pri" onclick="showNew()">+ 새 릴스</button>
   </div>
 </header>
 
 <div class="wrap">
+  <!-- 사용 가이드 — 처음 열면 펼쳐져 있고, 닫으면 기억한다 -->
+  <div class="section" id="guideSec" style="display:none">
+    <div class="guide">
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div>
+          <div class="eyebrow">사용법</div>
+          <h2>버튼 세 번이면 릴스가 나와요</h2>
+        </div>
+        <button class="btn ghost sm" onclick="toggleGuide(false)">닫기</button>
+      </div>
+
+      <div class="gsteps">
+        <div class="gstep">
+          <div class="gnum">1</div>
+          <div>
+            <b>폰으로 찍어서 드라이브에 올리기</b>
+            <p>갤러리 → 공유 → 드라이브 → <code>콘텐츠 생성 / 원본소재 / (주제 폴더)</code>.
+            주제 폴더 안에 <b>촬영가이드</b> 파일이 있으면 그대로 찍으면 돼요.
+            새 주제는 드라이브에서 폴더만 새로 만들면 됩니다.</p>
+            <p class="tip">잘 찍혔는지 고르지 말고 <b>찍은 걸 다 올리세요.</b> 고르는 건 편집이 합니다.</p>
+          </div>
+        </div>
+
+        <div class="gstep">
+          <div class="gnum">2</div>
+          <div>
+            <b>이 화면 «소재 창고»에서 시작</b>
+            <p>올린 폴더가 카드로 뜹니다(최대 15초). <b>[🎬 이 소재로 릴스 시작]</b> 을 누르면
+            원본을 복사하지 않고 그대로 연결돼요.</p>
+          </div>
+        </div>
+
+        <div class="gstep">
+          <div class="gnum">3</div>
+          <div>
+            <b>샷 구성표 확인 → «✨ AI가 자막 쓰기»</b>
+            <p>어떤 장면을 몇 초, 어떤 자막으로 쓸지가 표로 나옵니다.
+            AI가 장면을 보고 사장님 말투로 자막을 써줘요(1회 약 150원).
+            마음에 안 드는 줄만 고치면 됩니다.</p>
+            <p class="tip">기본 순서는 <b>훅 → 과정 → 디테일 → 자르는 순간 → 단면 공개 → 마무리</b>.
+            «자르는 순간»만 원본 소리가 남습니다(칼 소리).</p>
+          </div>
+        </div>
+
+        <div class="gstep">
+          <div class="gnum">4</div>
+          <div>
+            <b>«🎬 릴스 만들기» → 확인 → 완성본 저장</b>
+            <p>구성표대로 편집됩니다(1~2분). 미리보기로 확인하고 캡션을 다듬은 뒤
+            <b>[📁 완성본 폴더에 저장]</b>.</p>
+          </div>
+        </div>
+
+        <div class="gstep">
+          <div class="gnum">5</div>
+          <div>
+            <b>인스타 앱에서 발행 (사람이 직접)</b>
+            <p>완성본은 <b>무음</b>이에요. Meta <b>Edits</b> 앱에서 <b>인기 음원</b>을 얹어 올리세요.
+            인기 음원은 앱에서만 붙일 수 있고, 도달에 가장 크게 영향을 줍니다.</p>
+            <p class="tip">발행 후 «발행 대기»에서 <b>[✅ 발행 완료]</b>를 눌러주세요.
+            그래야 성과 기록이 시작돼요.</p>
+          </div>
+        </div>
+
+        <div class="gstep">
+          <div class="gnum">6</div>
+          <div>
+            <b>2~3일 뒤 성과 숫자 적어두기</b>
+            <p>인스타 인사이트의 도달·저장·공유를 «주간 리뷰»에 입력하면,
+            <b>다음 기획 때 AI가 잘 됐던 훅을 변형해 재활용</b>합니다.
+            이게 쌓일수록 결과물이 좋아져요.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="gnote">
+        <b>막힐 때</b> · 창고에 폴더가 안 보이면 → 드라이브 동기화가 끝났는지 확인(폰 업로드 직후엔 몇 분 걸릴 수 있어요).
+        영상 없이 사진만 있으면 릴스를 만들 수 없어요.
+        편집이 실패하면 영상 파일이 너무 짧지 않은지 보세요(1초 이상 필요).
+      </div>
+    </div>
+  </div>
   <!-- ⓪ 이번 주 촬영 체크리스트 (기획 에이전트) -->
   <div class="section">
     <div class="eyebrow">이번 주</div>
@@ -221,6 +319,7 @@ async function api(url, opts){ const r=await fetch(url,opts); if(!r.ok){ let m=r
 
 // ── 초기 로드 ──
 async function init(){
+  initGuide();
   const t = await api("/api/topics"); TOPICS = t.topics; renderTopics();
   await loadProjects(); await loadSource();
   await loadPlan(); await loadQueue(); await loadReview();
@@ -265,6 +364,25 @@ function renderTopics(){
     </div>`).join("");
 }
 function showNew(){ const p=$("#newPanel"); p.style.display = p.style.display==="none"?"block":"none"; p.scrollIntoView({behavior:"smooth"}); }
+
+// 📖 사용법 — 처음 방문이면 펼쳐두고, 닫으면 그 선택을 기억한다
+function toggleGuide(force){
+  const el=$("#guideSec");
+  const open = force!==undefined ? force : el.style.display==="none";
+  el.style.display = open ? "block" : "none";
+  try{ localStorage.setItem("pipeGuideHidden", open?"0":"1"); }catch(e){}
+  // 헤더가 sticky 라 scrollIntoView 만 하면 제목이 헤더 밑에 가린다
+  if(open){
+    const top = el.getBoundingClientRect().top + window.scrollY
+                - (document.querySelector("header")?.offsetHeight || 0) - 12;
+    window.scrollTo({top: Math.max(0, top), behavior:"smooth"});
+  }
+}
+function initGuide(){
+  let hidden="0";
+  try{ hidden = localStorage.getItem("pipeGuideHidden") || "0"; }catch(e){}
+  $("#guideSec").style.display = hidden==="1" ? "none" : "block";
+}
 
 // ② 프로젝트 생성
 async function pickTopic(i){
