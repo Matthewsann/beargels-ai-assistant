@@ -1381,47 +1381,80 @@ _DIFF_NOISE = re.compile(
     r"|^든든한 샌드위치 세트$|^BEARGLS HEALTHY|^Bear Cream Cheese")
 
 
-def channel_diff_counts():
-    """채널별 불일치 요약 {ch: {price,name,extra,missing,total}}."""
+def channel_diff():
+    """채널 대조 정본 — 모든 화면·리포트가 이 결과 하나를 그린다.
+
+    Returns: {ch: None(수집 없음) | {
+        "collected_at": str,
+        "obs": {sku: {"price": int, "name": str}},   # 채널에 실제 노출 중인 값
+        "items": [ {"type": "price","name",cur,to,sku}
+                 | {"type": "name","name",to,sku}
+                 | {"type": "maybe","name",cur,guess,guessSku,guessPrice}
+                 | {"type": "extra","name",cur}
+                 | {"type": "add","name",to,sku} ],
+        "counts": {"price","name","maybe","extra","add","total"},
+    }}
+    확정 규칙: 네이버 누락=매장 판매 기준 · active:false 는 모든 검사 제외 ·
+    노이즈 제외 · 유사도 0.8 자동 승격 / 0.5 maybe (작업지시서와 동일).
+    항목 필드는 작업지시서 완료 체크 키(ch|type|name)와 호환되게 유지한다.
+    """
     from difflib import SequenceMatcher
     items = menu_all()
     overrides = {(o["sku"], o["channel"]): o for o in menu_channels_all()}
     snaps = menu_snapshots_all()
     by_sku = {i["sku"]: i for i in items}
-    by_norm = {normalize_menu_name(i["name"]): i["sku"] for i in items}
+    by_norm = {}
+    for i in items:
+        by_norm.setdefault(normalize_menu_name(i["name"]), i["sku"])
+
+    def sim(a, b):
+        return SequenceMatcher(None, a, b).ratio()
+
     out = {}
     for ch in ("baemin", "coupang", "naver"):
-        rows = [s for s in snaps if s["channel"] == ch
-                and not _DIFF_NOISE.search(s["menu_name"] or "")]
-        if not rows:
-            out[ch] = None          # 수집 없음 — 0건과 구분해야 한다
-            continue
         store_based = ch == "naver"
-        price_fix = name_fix = 0
-        extra, matched = [], set()
-        for s in rows:
-            sku = s.get("matched_sku") or by_norm.get(
-                normalize_menu_name(s["menu_name"]))
+
+        def exp_price(item, ov):
+            if store_based:
+                return item.get("store_price")
+            if ov and ov.get("price_override") is not None:
+                return ov["price_override"]
+            return item.get("delivery_price") or item.get("store_price")
+
+        def exp_name(item, ov):
+            return (ov.get("name_override") if ov and ov.get("name_override")
+                    else item["name"])
+
+        rows = [x for x in snaps if x["channel"] == ch
+                and not _DIFF_NOISE.search(x["menu_name"] or "")]
+        if not rows:
+            out[ch] = None
+            continue
+        # 채널 이름 예외로 인정한 메뉴는 예외 이름으로도 찾는다 — 안 그러면
+        # 예외로 인정해도 다음 대조에서 또 '정본에 없음'으로 잡힌다.
+        norm_ov = {normalize_menu_name(o["name_override"]): sku
+                   for (sku, c), o in overrides.items()
+                   if c == ch and o.get("name_override")}
+        tasks, extras, matched, obs = [], [], set(), {}
+        for x in rows:
+            nm = normalize_menu_name(x["menu_name"])
+            sku = (x.get("matched_sku") if x.get("matched_sku") in by_sku else None)                 or by_norm.get(nm) or norm_ov.get(nm)
             item = by_sku.get(sku)
             if not item:
-                extra.append(s)
+                extras.append(x)
                 continue
             matched.add(sku)
+            obs[sku] = {"price": x.get("price"), "name": x["menu_name"]}
             ov = overrides.get((sku, ch))
             if ov and ov.get("active") is False:
                 continue
-            if store_based:
-                ep = item.get("store_price")
-            elif ov and ov.get("price_override") is not None:
-                ep = ov["price_override"]
-            else:
-                ep = item.get("delivery_price") or item.get("store_price")
-            en = (ov.get("name_override") if ov and ov.get("name_override")
-                  else item["name"])
-            if s.get("price") is not None and ep is not None and s["price"] != ep:
-                price_fix += 1
-            if normalize_menu_name(s["menu_name"]) != normalize_menu_name(en):
-                name_fix += 1
+            ep, en = exp_price(item, ov), exp_name(item, ov)
+            if x.get("price") is not None and ep is not None and x["price"] != ep:
+                tasks.append({"type": "price", "name": x["menu_name"],
+                              "cur": x["price"], "to": ep, "sku": sku})
+            if nm != normalize_menu_name(en):
+                tasks.append({"type": "name", "name": x["menu_name"],
+                              "to": en, "sku": sku})
         missing = []
         for item in items:
             on = item.get("store_active") if store_based else item.get("delivery_active")
@@ -1431,29 +1464,65 @@ def channel_diff_counts():
             if ov and ov.get("active") is False:
                 continue
             missing.append(item)
-        # 오타·표기 차이 승격(0.8) — extra/missing 짝이면 이름 수정으로 센다
-        used = set()
-        still = 0
-        for s in extra:
-            en = normalize_menu_name(s["menu_name"])
+        # 0.8 이상 = 오타·표기 차이 — 이름(±가격) 수정으로 자동 승격
+        still, used = [], set()
+        for x in extras:
+            nm = normalize_menu_name(x["menu_name"])
             best, score = None, 0.0
             for i, item in enumerate(missing):
                 if i in used:
                     continue
-                r = SequenceMatcher(None, en,
-                                    normalize_menu_name(item["name"])).ratio()
+                r = sim(nm, normalize_menu_name(item["name"]))
                 if r > score:
                     best, score = i, r
             if best is not None and score >= 0.8:
+                item = missing[best]
                 used.add(best)
-                name_fix += 1
+                ov = overrides.get((item["sku"], ch))
+                obs[item["sku"]] = {"price": x.get("price"), "name": x["menu_name"]}
+                tasks.append({"type": "name", "name": x["menu_name"],
+                              "to": exp_name(item, ov), "sku": item["sku"]})
+                ep = exp_price(item, ov)
+                if x.get("price") is not None and ep is not None and x["price"] != ep:
+                    tasks.append({"type": "price", "name": x["menu_name"],
+                                  "cur": x["price"], "to": ep, "sku": item["sku"]})
             else:
-                still += 1
-        miss_n = len(missing) - len(used)
-        out[ch] = {"price": price_fix, "name": name_fix, "extra": still,
-                   "missing": miss_n,
-                   "total": price_fix + name_fix + still + miss_n}
+                still.append(x)
+        missing = [m for i, m in enumerate(missing) if i not in used]
+        # 0.5~0.8 = 사람이 판단할 자리(maybe) — '정본에 추가'로 밀면 중복이 생긴다
+        for x in still:
+            nm = normalize_menu_name(x["menu_name"])
+            best, score = None, 0.0
+            for item in items:
+                r = sim(nm, normalize_menu_name(item["name"]))
+                if r > score:
+                    best, score = item, r
+            if best is not None and score >= 0.5:
+                ov = overrides.get((best["sku"], ch))
+                tasks.append({"type": "maybe", "name": x["menu_name"],
+                              "cur": x.get("price"), "guess": best["name"],
+                              "guessSku": best["sku"],
+                              "guessPrice": exp_price(best, ov)})
+            else:
+                tasks.append({"type": "extra", "name": x["menu_name"],
+                              "cur": x.get("price")})
+        for item in missing:
+            ov = overrides.get((item["sku"], ch))
+            tasks.append({"type": "add", "name": item["name"],
+                          "to": exp_price(item, ov), "sku": item["sku"]})
+        counts = {}
+        for t in tasks:
+            counts[t["type"]] = counts.get(t["type"], 0) + 1
+        counts["total"] = len(tasks)
+        out[ch] = {"collected_at": rows[0].get("collected_at"),
+                   "obs": obs, "items": tasks, "counts": counts}
     return out
+
+
+def channel_diff_counts():
+    """채널별 불일치 요약 — channel_diff 의 파생값."""
+    return {ch: (v["counts"] if v else None)
+            for ch, v in channel_diff().items()}
 
 
 def append_diff_history():

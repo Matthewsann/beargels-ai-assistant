@@ -1230,7 +1230,11 @@ function renderRec(){
     // 포장비는 목표 원가율로 마크업할 대상이 아니라 그대로 얹는 실비다.
     //   권장가 = 식자재 ÷ 목표원가율 + 포장비
     const recStore=total?Math.ceil((food/tg+pack)/100)*100:null;
-    const recDeliv=total?Math.ceil((food/tg+pack)/(1-feeRate("coupang"))/100)*100:null;
+    // 권장 배달가 = 매장가 × 1.13 (사장님 확정 규칙 2026-08-24 — 수수료 차이).
+    // 예전엔 여기만 옛 공식(쿠팡 수수료 역산)이라 /menu 의 추천가와 다른
+    // 값을 냈다(감사 확인). 매장가가 없으면 권장 매장가에 1.13 을 얹는다.
+    const recStoreBase = it.store_price || (total?Math.ceil((food/tg+pack)/100)*100:null);
+    const recDeliv = recStoreBase ? Math.round(recStoreBase*1.13/100)*100 : null;
     const rs=it.store_price?food/it.store_price:null;      // 식자재 기준(목표와 비교)
     html+=`<div class="sum">
       <div>식자재 원가 <b class="big">${won(food)}원</b>
@@ -1240,7 +1244,7 @@ function renderRec(){
       <div style="margin-top:6px">목표 원가율 ${(tg*100).toFixed(0)}% 기준 —
         권장 매장가 <b class="rec">${won(recStore)}원</b> ·
         권장 배달가 <b class="rec">${won(recDeliv)}원</b>
-        <span class="sub">(식자재 ÷ ${(tg*100).toFixed(0)}% + 포장비${pack?` ${won(pack)}원`:""}, 배달은 쿠팡 수수료 ${(feeRate("coupang")*100).toFixed(1)}% 감안)</span></div>
+        <span class="sub">(매장가 × 1.13 — 확정 규칙 · 매장가 없으면 권장 매장가 기준)</span></div>
       <div style="margin-top:6px;border-top:1px dashed var(--line);padding-top:6px">현재 <b>식자재</b> 원가율 —
         ${it.store_price?`매장 <b style="${rs>tg?"color:var(--red)":""}">${(rs*100).toFixed(1)}%</b>`:'매장 <span class="sub">판매 안 함</span>'}
         ${it.delivery_price?` · 배달 <b>${(food/it.delivery_price*100).toFixed(1)}%</b>

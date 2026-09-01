@@ -124,72 +124,13 @@ function expPrice(it,ch){
 function expName(it,ch){const o=ov(it.sku,ch);return (o&&o.name_override)||it.name;}
 function activeFor(it,ch){return STORE_PRICED.has(ch)?!!it.store_active:!!it.delivery_active;}
 
-let CACHE={};
+let SDIFF={};              // 서버 대조 정본 — 로드 때 /menu/diff 로 받는다
 function analyze(ch){
-  if(CACHE[ch]) return CACHE[ch];
-  const snaps=(DATA.snapshots||[]).filter(s=>s.channel===ch&&!NOISE.test(s.menu_name));
-  const bySku=Object.fromEntries(DATA.items.map(i=>[i.sku,i]));
-  const byNorm={};
-  for(const i of DATA.items) byNorm[norm(i.name)]??=i.sku;
-  for(const o of DATA.channels) if(o.channel===ch&&o.name_override) byNorm[norm(o.name_override)]=o.sku;
-
-  const tasks=[]; const matched=new Set();
-  const obs={};                      // sku → 이 채널에 실제 노출 중인 {price,name}
-  let extras=[];
-  for(const s of snaps){
-    const sku=s.matched_sku||byNorm[norm(s.menu_name)];
-    const it=bySku[sku];
-    if(!it){extras.push(s);continue;}
-    matched.add(sku);
-    obs[sku]={price:s.price,name:s.menu_name};
-    const o=ov(sku,ch);
-    if(o&&o.active===false) continue;
-    const ep=expPrice(it,ch), en=expName(it,ch);
-    if(s.price!=null&&ep!=null&&s.price!==ep)
-      tasks.push({type:"price",name:s.menu_name,cur:s.price,to:ep,sku});
-    if(norm(s.menu_name)!==norm(en))
-      tasks.push({type:"name",name:s.menu_name,to:en,sku});
-  }
-  let missing=DATA.items.filter(it=>{
-    if(!activeFor(it,ch)||matched.has(it.sku)) return false;
-    const o=ov(it.sku,ch); return !(o&&o.active===false);
-  });
-  // 오타·표기 차이 짝짓기 → 이름 수정으로 승격
-  const still=[],used=new Set();
-  for(const s of extras){
-    let best=-1,score=0;
-    missing.forEach((it,i)=>{
-      if(used.has(i))return;
-      const r=sim(norm(s.menu_name),norm(it.name));
-      if(r>score){score=r;best=i;}
-    });
-    if(best>=0&&score>=0.8){
-      const it=missing[best];used.add(best);
-      obs[it.sku]={price:s.price,name:s.menu_name};
-      tasks.push({type:"name",name:s.menu_name,to:expName(it,ch),sku:it.sku});
-      const ep=expPrice(it,ch);
-      if(s.price!=null&&ep!=null&&s.price!==ep)
-        tasks.push({type:"price",name:s.menu_name,cur:s.price,to:ep,sku:it.sku});
-    } else still.push(s);
-  }
-  missing=missing.filter((_,i)=>!used.has(i));
-  // 0.8 미만이라 자동으로 못 이은 것 중에도, 정본에 '비슷한 이름'이 있는 게
-  // 많다. 그걸 '정본에 없음'으로 밀면 사장님이 정본에 또 추가하게 되고 결국
-  // 중복 메뉴가 생긴다. 사람이 판단할 자리로 따로 뺀다.
-  for(const s of still){
-    let best=null,score=0;
-    for(const it of DATA.items){
-      const r=sim(norm(s.menu_name),norm(it.name));
-      if(r>score){score=r;best=it;}
-    }
-    if(best&&score>=0.5)
-      tasks.push({type:"maybe",name:s.menu_name,cur:s.price,
-                  guess:best.name,guessSku:best.sku,guessPrice:expPrice(best,ch)});
-    else
-      tasks.push({type:"extra",name:s.menu_name,cur:s.price});
-  }
-  for(const it of missing) tasks.push({type:"add",name:it.name,to:expPrice(it,ch),sku:it.sku});
-  return CACHE[ch]={tasks,obs};
+  // 계산은 서버(db.channel_diff) 한 곳 — 첫 화면·집 PC 리포트와 같은 숫자를
+  // 그린다. 항목 필드(type/name/cur/to/…)는 예전 클라이언트 계산과 동일해서
+  // 완료 체크 키가 그대로 살아남는다.
+  const d = SDIFF[ch];
+  return { tasks: d ? d.items : [], obs: d ? d.obs : {} };
 }
 function computeTasks(ch){return analyze(ch).tasks;}
 
@@ -427,9 +368,13 @@ function render(){
   document.getElementById("main").innerHTML=html;
 }
 
-fetch(BASE+"/data").then(r=>r.json()).then(d=>{
+Promise.all([
+  fetch(BASE+"/data").then(r=>r.json()),
+  fetch(BASE+"/diff").then(r=>r.json()).catch(()=>({ok:false})),
+]).then(([d, df])=>{
   if(d.error){document.getElementById("main").innerHTML=`<div class="empty">⚠ ${d.error}</div>`;return;}
   DATA=d; DONE=d.settings.task_done||{};
+  SDIFF=(df&&df.ok&&df.channels)||{};
   // 해결된 체크 청소 — 지금 살아 있는 항목의 키만 남긴다(불러올 때 1회).
   // 안 지우면 한 번 체크한 항목이 영구히 남아, 같은 메뉴가 나중에 다시
   // 어긋나도 '완료' 취소선으로 뜨고 진행률이 거짓이 된다(감사 확인).

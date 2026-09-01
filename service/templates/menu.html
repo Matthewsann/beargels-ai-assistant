@@ -505,7 +505,7 @@ async function api(path, body){
     body:JSON.stringify(body)});
   const j = await r.json().catch(()=>({ok:false}));
   if(!j.ok){toast("⚠ 저장 실패: "+(j.error||r.status));return false;}
-  DIFF_CACHE = null;   // 무엇이든 저장되면 채널 대조 결과가 달라질 수 있다
+  DIFF_CACHE = null; SDIFF_STALE = true;   // 무엇이든 저장되면 대조가 달라질 수 있다
   return true;
 }
 
@@ -903,7 +903,7 @@ function render(){
   // 문제 칩 + "총 n개 중 m개" — 필터 걸린 걸 잊고 "메뉴가 사라졌다" 오해 방지.
   // 채널 불일치도 여기 배지로 — 이 화면의 목적이 채널 통일 작업이라서.
   const minOrd = +om().min_order || 12500;
-  const nDiff = (DATA.snapshots||[]).length ? diffList().length : null;
+  const nDiff = SDIFF ? diffList().length : null;
   document.getElementById("pchips").innerHTML =
     STATES.map(([k,label,fn])=>{
       const n = DATA.items.filter(fn).length;
@@ -1263,6 +1263,17 @@ async function launchAdd(sku){
 // 원본 1장 올리면 서버가 채널 규격(배민 1280×960 · 쿠팡 1080×660 ·
 // 네이버/키오스크 1000×1000)으로 잘라 저장한다. 파일 존재 여부는 컬럼이
 // 아니라 공개 URL 로 확인한다(onerror = 아직 없음).
+// 채널 대조는 서버 정본(/menu/diff) 하나를 그린다 — 예전엔 이 파일과
+// 작업지시서·집 PC 리포트가 각자 계산해 화면마다 개수가 달랐다(감사 확인).
+let SDIFF = null;          // {ch: {items,obs,counts,collected_at}} | null(아직)
+let SDIFF_STALE = false;   // 정본을 고친 뒤 — 다음에 대조를 볼 때 다시 받는다
+async function fetchDiff(){
+  try{
+    const r = await fetch(`${BASE}/diff`);
+    const j = await r.json();
+    if (j.ok){ SDIFF = j.channels; SDIFF_STALE = false; DIFF_CACHE = null; render(); }
+  }catch(_){ /* 대조는 편의 정보 — 실패해도 화면은 살아야 한다 */ }
+}
 let IMG_V = 1;                       // 업로드 후 캐시를 깨는 버전 값
 const IMG_CH = [["baemin","배민 1280×960"],["coupang","쿠팡이츠 1080×660"],
                 ["naver","네이버 1000×1000"],["kiosk","키오스크 1000×1000"]];
@@ -2065,53 +2076,40 @@ function sim2(a, b){
    · 정본에 없으면  → [➕ 정본에 추가] / 채널에 없으면 → [이 채널선 안 팖] */
 let DIFF_CACHE = null;   // 유사도 계산이 무겁다 — 저장·재적재 때만 다시 센다
 function diffList(){
+  // 계산은 서버 정본(/menu/diff)이 한다 — 여기선 렌더에 쓰던 형태로 옮겨 담기만.
+  // (예전의 자체 계산은 네이버 누락을 배달 기준으로 세는 버그까지 있었다)
   if (DIFF_CACHE) return DIFF_CACHE;
+  if (!SDIFF) return [];
   const out = [];
-  const snaps = DATA.snapshots || [];
+  const bySku = Object.fromEntries(DATA.items.map(i=>[i.sku,i]));
   for (const ch of ["baemin","coupang","naver"]){
-    const rows = snaps.filter(s=>s.channel===ch);
-    if (!rows.length) continue;
-    const matched = new Set();
-    for (const s of rows){
-      // matched_sku 는 수집 당시 값 — 이후 정본 정리로 SKU 가 사라졌을 수 있다.
-      // 그때는 이름 매칭으로 다시 찾는다(안 그러면 멀쩡한 메뉴가 전부 '정본에 없음').
-      // '채널 이름 예외'로 인정한 메뉴는 예외 이름으로도 찾는다 — 안 그러면
-      // 예외로 인정해도 다음 대조에서 또 불일치로 잡힌다.
-      const it = (s.matched_sku && DATA.items.find(i=>i.sku===s.matched_sku))
-                || DATA.items.find(i=>norm(i.name)===norm(s.menu_name))
-                || DATA.items.find(i=>{const o=chOverride(i.sku,ch);
-                     return o && o.name_override && norm(o.name_override)===norm(s.menu_name);});
-      if (it) matched.add(it.sku);
-      if (!it){
-        // 한 글자 오타('슈패너'↔'슈페너')는 '없음'이 아니라 '이름이 살짝 다름'이다
-        // — 가장 비슷한 정본 메뉴를 추측해서 바로 연결할 수 있게 한다.
-        let guess = null, best = 0.55;
-        for (const c of DATA.items){
-          const v = sim2(c.name, s.menu_name);
-          if (v > best){ best = v; guess = c; }
-        }
-        out.push({ch, kind:"extra", snap:s, guess}); continue;
-      }
-      const expected = chPrice(it, ch);
-      const wantName = (chOverride(it.sku,ch)||{}).name_override || it.name;
-      const nameDiff = norm(wantName)!==norm(s.menu_name);
-      const priceDiff = s.price!=null && expected!=null && s.price!==expected;
-      if (nameDiff) out.push({ch, kind:"name", snap:s, it});
-      if (priceDiff) out.push({ch, kind:"price", snap:s, it, expected});
-    }
-    // 정본에서 배달 노출인데 채널에 없는 것
-    for (const it of DATA.items.filter(i=>i.delivery_active)){
-      if (matched.has(it.sku)) continue;
-      const o = chOverride(it.sku, ch);
-      if (o && o.active===false) continue;   // 일부러 안 파는 메뉴
-      out.push({ch, kind:"missing", it});
+    const d = SDIFF[ch];
+    if (!d) continue;
+    const snapOf = name => (DATA.snapshots||[]).find(
+      s=>s.channel===ch && s.menu_name===name) || {menu_name:name};
+    for (const t of d.items){
+      if (t.type==="price")
+        out.push({ch, kind:"price", it:bySku[t.sku],
+                  snap:{...snapOf(t.name), price:t.cur}, expected:t.to});
+      else if (t.type==="name")
+        out.push({ch, kind:"name", it:bySku[t.sku], snap:snapOf(t.name)});
+      else if (t.type==="maybe")
+        out.push({ch, kind:"extra", snap:{...snapOf(t.name), price:t.cur},
+                  guess: bySku[t.guessSku] || {name:t.guess, sku:t.guessSku}});
+      else if (t.type==="extra")
+        out.push({ch, kind:"extra", snap:{...snapOf(t.name), price:t.cur}, guess:null});
+      else if (t.type==="add")
+        out.push({ch, kind:"missing", it:bySku[t.sku]});
     }
   }
-  DIFF_CACHE = out;
-  return out;
+  // 정본이 삭제된 직후처럼 sku 를 못 찾는 항목은 그리지 않는다
+  DIFF_CACHE = out.filter(p=>p.kind==="extra" || p.it);
+  return DIFF_CACHE;
 }
 
 function openDiff(){
+  // 정본을 고친 뒤 처음 여는 것이면 서버 정본을 다시 받는다(받는 동안 기존 표시)
+  if (SDIFF_STALE || !SDIFF) fetchDiff().then(()=>{ if (dlgDiff.open) openDiff(); });
   const snaps = DATA.snapshots || [];
   let html = "";
   if (!snaps.length){
@@ -2274,6 +2272,7 @@ fetch(BASE+"/data").then(r=>r.json()).then(d=>{
     Supabase에 테이블이 없다면 <code>supabase/migrations/005_menu_master.sql</code> 실행 후
     <code>python scripts/seed_menu_master.py</code> 를 집 PC에서 실행하세요.</td></tr>`; return; }
   DATA = d; render();
+  fetchDiff();               // 채널 대조 정본 — 오면 칩이 갱신된다
   // 다른 화면에서 '이 메뉴' 를 지목해 넘어온 경우(작업지시서의 '정본 고치기',
   // 자재/레시피의 '← 메뉴/원가') 그 줄로 데려다 놓는다. 이게 없으면 208줄
   // 목록 맨 위에 떨어져 눈으로 다시 찾아야 했다.

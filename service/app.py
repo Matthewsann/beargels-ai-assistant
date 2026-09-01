@@ -2554,6 +2554,22 @@ def menu_collect(path_key):
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
+@app.route("/<path_key>/menu/diff")
+def menu_diff_api(path_key):
+    """채널 대조 정본(JSON) — 첫 화면 칩·대조 창·작업지시서가 전부 이걸 그린다.
+
+    계산이 4벌로 흩어져 화면마다 불일치 개수가 다르던 것을 서버 한 곳으로
+    모았다(감사 2차 4번). 규칙은 db.channel_diff docstring 참고.
+    """
+    check(path_key)
+    try:
+        return jsonify({"ok": True, "channels": db.channel_diff()})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"채널 대조 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
 @app.route("/<path_key>/menu/recompute_all", methods=["POST"])
 def menu_recompute_all(path_key):
     """원가 전체 재계산 — 과거에 연쇄가 끊겨 새어나간 값을 한 번에 복구.
