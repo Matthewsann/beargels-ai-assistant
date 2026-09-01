@@ -345,6 +345,7 @@ z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
     <button onclick="dlgTools.close();openCats()">🗂 분류 관리 <small>이름 · 순서</small></button>
     <button onclick="dlgTools.close();openFees()">💳 채널 수수료 설정</button>
     <button onclick="dlgTools.close();openTargets()">🎯 분류별 목표 원가율</button>
+    <button onclick="dlgTools.close();recomputeAll()">♻ 원가 전체 재계산 <small>수기 입력은 보호</small></button>
     <button onclick="dlgTools.close();openDiff()">📡 채널 노출 대조</button>
     <button onclick="dlgTools.close();openSim()">🧮 주문 단위 손익</button>
     <button onclick="dlgTools.close();dlgHelp.showModal()">❓ 계산 기준 설명</button>
@@ -841,7 +842,12 @@ async function bSave(){
   for (const [sku, fields] of entries){
     const body = {...fields};
     // 원가를 손으로 고치면 레시피 자동계산이 덮지 않도록 출처를 바꿔 둔다.
-    if ("ingredient_cost" in body) body.cost_source = "웹에서 직접 입력";
+    // 비웠으면 도장도 비운다 — 도장이 남으면 자동계산이 영영 안 덮는다(감사 확인).
+    if ("ingredient_cost" in body){
+      if (body.ingredient_cost === "" || body.ingredient_cost == null){
+        body.ingredient_cost = null; body.cost_source = null;
+      } else body.cost_source = "웹에서 직접 입력";
+    }
     const j = await api(`/item/${sku}`, body);
     if (j){ ok++; Object.assign(DATA.items.find(i=>i.sku===sku), body); } else fail++;
   }
@@ -1108,7 +1114,7 @@ function editCell(td, sku, field){
         const old = it[field] ?? null;
         const oldSrc = it.cost_source;   // 되돌릴 때 출처도 같이 — 안 그러면
         it[field] = v;                    // '직접 입력'이 남아 레시피 자동계산이 영영 안 덮는다
-        if (field === "ingredient_cost") it.cost_source = "웹에서 직접 입력";
+        if (field === "ingredient_cost") it.cost_source = (v == null ? null : "웹에서 직접 입력");
         const ok = await api(`/item/${sku}`, {[field]: v, ...(field==="ingredient_cost"?{cost_source:it.cost_source}:{})});
         if (ok) toast(`${won(old)} → ${won(v)} 저장됨`, {label:"되돌리기", fn: async ()=>{
           it[field] = old;
@@ -1699,6 +1705,18 @@ function setEditor(sku){
     </div></div>`;
 }
 
+// 과거에 연쇄가 끊겨 새어나간 원가를 한 번에 복구한다. 수기 입력은 보호.
+async function recomputeAll(){
+  if (!confirm("모든 메뉴의 원가를 레시피·세트 구성 기준으로 다시 계산할까요?\n(직접 입력한 원가는 건드리지 않습니다)")) return;
+  toast("전체 재계산 중…");
+  const r = await fetch(`${BASE}/recompute_all`, {method:"POST",
+    headers:{"Content-Type":"application/json"}, body:"{}"});
+  const j = await r.json().catch(()=>({ok:false}));
+  if (!j.ok){ toast("⚠ 실패: " + (j.error||r.status)); return; }
+  await reloadData();
+  toast(`원가 ${j.recomputed}개 다시 계산 ✓`);
+  render();
+}
 async function reloadData(){
   const d = await fetch(BASE+"/data").then(r=>r.json());
   if(!d.error){ DATA = d; DIFF_CACHE = null; }

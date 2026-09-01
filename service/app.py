@@ -2554,12 +2554,35 @@ def menu_collect(path_key):
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
+@app.route("/<path_key>/menu/recompute_all", methods=["POST"])
+def menu_recompute_all(path_key):
+    """원가 전체 재계산 — 과거에 연쇄가 끊겨 새어나간 값을 한 번에 복구.
+
+    수기 입력 원가는 건드리지 않는다(force=False). 레시피→세트→반제품
+    연쇄는 recompute_costs 꼬리가 알아서 따라간다.
+    """
+    check(path_key)
+    try:
+        updated = db.recompute_costs(None)
+        return jsonify({"ok": True, "recomputed": len(updated)})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"전체 재계산 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
 @app.route("/<path_key>/menu/item/<sku>", methods=["POST"])
 def menu_item_save(path_key, sku):
     check(path_key)
     try:
-        db.menu_update_item(sku, request.get_json(force=True) or {})
-        return jsonify({"ok": True})
+        body = request.get_json(force=True) or {}
+        db.menu_update_item(sku, body)
+        # 원가를 손으로 고쳤으면 그 값을 쓰는 곳(세트·반제품 자재)까지 —
+        # 이게 없어서 수기 원가는 어디로도 흐르지 않았다(감사 확인 c·h).
+        cascaded = {}
+        if "ingredient_cost" in body:
+            cascaded = db.cascade_menu_cost(sku)
+        return jsonify({"ok": True, "cascaded": len(cascaded)})
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"메뉴 저장 실패({sku}): {e}",
                      kind=type(e).__name__, path=request.path,

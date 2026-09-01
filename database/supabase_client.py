@@ -1200,11 +1200,29 @@ def menu_delete(sku):
     for r in recipes_all():
         if r["sku"] == sku:
             sb.table("menu_recipes").delete().eq("id", r["id"]).execute()
+    parents = set()
     for c in components_all():
         if c["sku"] == sku or c["component_sku"] == sku:
+            if c["component_sku"] == sku:
+                parents.add(c["sku"])       # 이 메뉴를 품던 세트 — 지운 뒤 재계산
             sb.table("menu_components").delete().eq("id", c["id"]).execute()
     sb.table("menu_channels").delete().eq("sku", sku).execute()
     sb.table("menu_items").delete().eq("sku", sku).execute()
+    # 구성품이 빠졌으니 세트 원가가 달라진다 — 경고만 하고 손 놓던 지점(감사).
+    # 남은 구성으로 다시 계산하고, 구성이 다 사라진 세트는 component_delete 와
+    # 같은 규칙으로 원가를 비운다.
+    for p in parents:
+        left = (sb.table("menu_components").select("id")
+                .eq("sku", p).limit(1).execute().data)
+        if left:
+            recompute_costs([p])
+        else:
+            cur = (sb.table("menu_items").select("cost_source")
+                   .eq("sku", p).execute().data)
+            if cur and (cur[0].get("cost_source") or "").startswith("세트 구성"):
+                sb.table("menu_items").update(
+                    {"ingredient_cost": None, "cost_source": None}
+                ).eq("sku", p).execute()
     return {"deleted": sku}
 
 
@@ -1260,7 +1278,7 @@ def prep_create(name, yield_qty, unit="g"):
     return {"sku": sku, "ingredient": ing, "name": name}
 
 
-def prep_sync(skus=None):
+def prep_sync(skus=None, _seen=None):
     """반제품 메뉴의 원가 → 짝인 자재의 pack_cost 로 흘려보낸다.
 
     자재값이 바뀌었으니 그 자재를 쓰는 메뉴 원가도 다시 계산해야 한다.
@@ -1288,8 +1306,31 @@ def prep_sync(skus=None):
         touched += 1
         downstream.update(skus_using_ingredient(ing["id"]))
     downstream -= {m["sku"] for m in preps}     # 자기 자신은 다시 돌지 않는다
-    updated = recompute_costs(list(downstream), force=True) if downstream else {}
+    if _seen is not None:
+        downstream -= _seen                      # 연쇄 재귀에서 이미 돈 메뉴 제외
+    updated = (recompute_costs(list(downstream), force=True, _seen=_seen)
+               if downstream else {})
     return touched, updated
+
+
+def cascade_menu_cost(sku):
+    """이 메뉴의 원가가 (수단 불문 — 수기 입력 포함) 바뀐 뒤 호출한다.
+
+    이 메뉴를 품은 세트를 다시 계산하고, 반제품이면 짝 자재로 흘려보낸다.
+    recompute_costs 꼬리 연쇄는 '재계산으로 바뀐' 메뉴만 알기 때문에,
+    수기 입력처럼 재계산 밖에서 바뀐 경우는 이 함수가 그 첫 발을 놓는다.
+    """
+    seen = {sku}
+    updated = {}
+    parents = {c["sku"] for c in components_all() if c["component_sku"] == sku}
+    if parents:
+        updated.update(recompute_costs(list(parents), _seen=seen))
+    row = (get_client().table("menu_items").select("category")
+           .eq("sku", sku).execute().data)
+    if row and row[0].get("category") == PREP_CATEGORY:
+        _, more = prep_sync([sku], _seen=seen)
+        updated.update(more)
+    return updated
 
 
 def menu_upsert_channel(sku, channel, fields: dict):
@@ -1716,10 +1757,25 @@ def recipe_upsert(sku, ingredient_id, qty):
 
 
 def recipe_delete(rid):
-    rows = (get_client().table("menu_recipes").select("sku")
+    sb = get_client()
+    rows = (sb.table("menu_recipes").select("sku")
             .eq("id", rid).execute().data)
-    get_client().table("menu_recipes").delete().eq("id", rid).execute()
-    return rows[0]["sku"] if rows else None
+    sb.table("menu_recipes").delete().eq("id", rid).execute()
+    sku = rows[0]["sku"] if rows else None
+    # 마지막 줄을 지우면 재계산할 재료가 없어 recompute 가 그냥 지나간다 —
+    # 그러면 직전 계산값이 '자동계산' 도장인 채 유령으로 남는다(감사 확인).
+    # 세트(component_delete)에 이미 있는 방어를 레시피에도 똑같이 둔다.
+    if sku:
+        left = (sb.table("menu_recipes").select("id")
+                .eq("sku", sku).limit(1).execute().data)
+        if not left:
+            cur = (sb.table("menu_items").select("cost_source")
+                   .eq("sku", sku).execute().data)
+            if cur and (cur[0].get("cost_source") or "").startswith("레시피 자동계산"):
+                sb.table("menu_items").update(
+                    {"ingredient_cost": None, "cost_source": None}
+                ).eq("sku", sku).execute()
+    return sku
 
 
 # ── 세트 구성 ────────────────────────────────────────────────
@@ -1816,14 +1872,15 @@ def _set_cost(sku, comps, cost_of):
     return round(total, 1)
 
 
-def recompute_costs(skus=None, force=False):
+def recompute_costs(skus=None, force=False, _seen=None):
     """레시피 기반으로 menu_items.ingredient_cost 재계산.
 
     Args:
         skus: 대상 SKU 목록(None=레시피가 있는 전 메뉴).
         force: True 면 '웹에서 직접 입력' 원가도 덮어쓴다. 레시피를 사람이
                직접 고친 직후에는 True 로 부른다(레시피가 더 최신 의사표시).
-    Returns: 갱신된 {sku: cost}
+        _seen: 연쇄 재귀의 방문 기록(내부용) — 같은 메뉴를 두 번 돌지 않는다.
+    Returns: 갱신된 {sku: cost} (연쇄로 따라 바뀐 세트·하위 메뉴 포함)
     """
     sb = get_client()
     ings = {i["id"]: i for i in sb.table("ingredients").select("*").execute().data}
@@ -1853,12 +1910,18 @@ def recompute_costs(skus=None, force=False):
     for sku, lns in by_sku.items():
         if not force and src_by.get(sku, "").startswith("웹에서 직접 입력"):
             continue
-        total = 0.0
+        total, unknown = 0.0, False
         for ln in lns:
             ing = ings.get(ln["ingredient_id"])
-            if not ing or not ing.get("pack_qty"):
-                continue
+            # 자재가 없거나 단가를 모르면(양·값이 비었거나 0) 그 줄을 0원으로
+            # 더하면 안 된다 — 메뉴가 실제보다 싸 보인다(요거트 0원 사고 계열).
+            # 세트와 같은 정책: 미상이 끼면 그 메뉴는 건드리지 않는다.
+            if not ing or not ing.get("pack_qty") or not ing.get("pack_cost"):
+                unknown = True
+                break
             total += float(ln["qty"]) * float(ing["pack_cost"]) / float(ing["pack_qty"])
+        if unknown:
+            continue
         cost = round(total, 1)
         sb.table("menu_items").update(
             {"ingredient_cost": cost, "cost_source": stamp}).eq("sku", sku).execute()
@@ -1888,6 +1951,28 @@ def recompute_costs(skus=None, force=False):
                 {"ingredient_cost": cost, "cost_source": set_stamp}
             ).eq("sku", sku).execute()
             updated[sku] = cost
+
+    # ── 꼬리 연쇄 — 어느 문으로 들어왔든 바뀐 원가를 쓰는 곳까지 흘려보낸다.
+    # 예전엔 호출자마다 따로 챙겨야 해서 자재 합치기·삭제·시드 경로가 각각
+    # 빠뜨렸다(감사 확인 누수 8건의 공통 뿌리). _seen 이 재방문을 막는다.
+    if updated:
+        seen = _seen if _seen is not None else set()
+        fresh = set(updated) - seen
+        seen.update(fresh)
+        if fresh:
+            # 방금 바뀐 메뉴를 품은 세트 — force=False: 수기 원가 세트는 보호
+            parents = {c["sku"] for c in components_all()
+                       if c["component_sku"] in fresh} - seen
+            if parents:
+                updated.update(recompute_costs(list(parents), _seen=seen))
+            # 방금 바뀐 반제품 — 짝 자재로 흘려보내고 그 자재를 쓰는 메뉴까지
+            prep_rows = (sb.table("menu_items").select("sku")
+                         .in_("sku", list(fresh)).eq("category", PREP_CATEGORY)
+                         .execute().data)
+            preps = [r["sku"] for r in prep_rows]
+            if preps:
+                _, more = prep_sync(preps, _seen=seen)
+                updated.update(more)
     return updated
 
 
