@@ -120,6 +120,33 @@
       .catch(function () { flash('설정을 저장하지 못했어요.', true); });
   }
 
+  // ── 시간 고르기 — 시/분 드롭다운 ──────────────────────────
+  // type=time 입력이 불편하다는 피드백(2026-09-02)으로 교체. 타이핑 없이
+  // 목록에서 고르고, 폰에서는 기본 휠 피커가 뜬다. 분은 5분 단위.
+  var _tpCb = {}, _tpSeq = 0;
+  function tpick(val, opts) {
+    opts = opts || {};
+    var n = 'tp' + (_tpSeq++);
+    if (opts.cb) _tpCb[n] = opts.cb;
+    var h = Math.floor(val), m = Math.round(((val % 1) * 60) / 5) * 5;
+    if (m >= 60) { h += 1; m = 0; }
+    var hs = '';
+    for (var i = 0; i <= 24; i++) {
+      hs += '<option value="' + i + '"' + (i === h ? ' selected' : '') + '>' + pad(i) + '</option>';
+    }
+    var ms = '';
+    for (var j = 0; j < 60; j += 5) {
+      ms += '<option value="' + j + '"' + (j === m ? ' selected' : '') + '>' + pad(j) + '</option>';
+    }
+    var lab = esc(opts.label || '시간');
+    return '<span class="tpick" id="' + n + '" data-hid="' + (opts.hiddenId || '') + '">'
+      + (opts.hiddenId ? '<input type="hidden" id="' + opts.hiddenId + '" value="' + hm(h + m / 60) + '">' : '')
+      + '<select class="fld" aria-label="' + lab + ' — 시" onchange="SCHED._tp(\'' + n + '\')">' + hs + '</select>'
+      + '<b>:</b>'
+      + '<select class="fld" aria-label="' + lab + ' — 분" onchange="SCHED._tp(\'' + n + '\')">' + ms + '</select>'
+      + '</span>';
+  }
+
   // ── 겹치는 근무를 세로줄로 나누기 ──────────────────────────
   function assignLanes(shifts) {
     var sorted = shifts.slice().sort(function (a, b) { return a.s - b.s || a.e - b.e; });
@@ -381,8 +408,8 @@
       return '<button class="' + ((p.s === md.s && p.e === md.e) ? 'on' : '') + '" onclick="SCHED.pickPreset(' + i + ')">'
         + esc(p.name) + ' <span class="num cap">' + hm(p.s) + '–' + hm(p.e) + '</span></button>';
     }).join('');
-    $('mdStart').value = hm(md.s);
-    $('mdEnd').value = hm(md.e);
+    $('mdStartWrap').innerHTML = tpick(md.s, { hiddenId: 'mdStart', label: '시작', cb: function () { window.SCHED.modalTime(); } });
+    $('mdEndWrap').innerHTML = tpick(md.e, { hiddenId: 'mdEnd', label: '종료', cb: function () { window.SCHED.modalTime(); } });
     $('mdLen').textContent = md.e > md.s ? hrs(md.e - md.s) + '시간' : '시간이 거꾸로예요';
     $('mdSave').textContent = md.mode === 'add' ? '추가' : '저장';
     $('mdSave').disabled = !(md.e > md.s && md.who);
@@ -604,8 +631,8 @@
             + '<button class="btn small" onclick="SCHED.toggleEdit(\'' + id + '\')">시간 수정</button>'
             + '<button class="btn small" onclick="SCHED.recAbsent(' + i + ')">결근</button></div>'
             + '<div class="editform"><div class="grid3">'
-            + '<div><label class="lbl" for="' + id + 's">실제 출근</label><input class="fld num" type="time" value="' + hm(sh.s) + '" id="' + id + 's"></div>'
-            + '<div><label class="lbl" for="' + id + 'e">실제 퇴근</label><input class="fld num" type="time" value="' + hm(sh.e) + '" id="' + id + 'e"></div>'
+            + '<div><label class="lbl">실제 출근</label>' + tpick(sh.s, { hiddenId: id + 's', label: '실제 출근' }) + '</div>'
+            + '<div><label class="lbl">실제 퇴근</label>' + tpick(sh.e, { hiddenId: id + 'e', label: '실제 퇴근' }) + '</div>'
             + '<div><label class="lbl" for="' + id + 'r">사유</label><select class="fld" id="' + id + 'r">'
             + '<option>지각</option><option>연장</option><option>조퇴</option><option>대타</option></select></div>'
             + '</div><div style="margin-top:10px;"><button class="btn small primary" onclick="SCHED.recDiff(' + i + ',\'' + id + '\')">기록 저장</button></div></div>')
@@ -707,11 +734,9 @@
     $('bizDowHost').innerHTML = d.map(function (p, i) {
       var color = i === 5 ? 'color:var(--sat)' : i === 6 ? 'color:var(--sun)' : '';
       return '<div class="erow"><b style="width:22px;' + color + '">' + DOW[i] + '</b>'
-        + '<input class="fld num" type="time" value="' + hm(p[0]) + '" aria-label="' + DOW[i] + '요일 영업 시작"'
-        + ' onchange="SCHED.editBizDow(' + i + ',0,this.value)">'
+        + tpick(p[0], { label: DOW[i] + '요일 영업 시작', cb: function (v) { window.SCHED.editBizDow(i, 0, v); } })
         + '<span class="cap">~</span>'
-        + '<input class="fld num" type="time" value="' + hm(p[1]) + '" aria-label="' + DOW[i] + '요일 영업 종료"'
-        + ' onchange="SCHED.editBizDow(' + i + ',1,this.value)">'
+        + tpick(p[1], { label: DOW[i] + '요일 영업 종료', cb: function (v) { window.SCHED.editBizDow(i, 1, v); } })
         + '<span class="cap num">' + (p[1] > p[0] ? hrs(p[1] - p[0]) + '시간' : '시간 거꾸로') + '</span></div>';
     }).join('');
 
@@ -755,9 +780,9 @@
     $('presetHost').innerHTML = (CFG.presets || []).map(function (p, i) {
       return '<div class="erow">'
         + '<input class="fld nameIn" type="text" value="' + esc(p.name) + '" aria-label="이름" onchange="SCHED.editPreset(' + i + ',\'name\',this.value)">'
-        + '<input class="fld num" type="time" value="' + hm(p.s) + '" aria-label="시작" onchange="SCHED.editPreset(' + i + ',\'s\',this.value)">'
+        + tpick(p.s, { label: p.name + ' 시작', cb: function (v) { window.SCHED.editPreset(i, 's', v); } })
         + '<span class="cap">~</span>'
-        + '<input class="fld num" type="time" value="' + hm(p.e) + '" aria-label="종료" onchange="SCHED.editPreset(' + i + ',\'e\',this.value)">'
+        + tpick(p.e, { label: p.name + ' 종료', cb: function (v) { window.SCHED.editPreset(i, 'e', v); } })
         + '<span class="cap num">' + (p.e > p.s ? hrs(p.e - p.s) + '시간' : '시간 거꾸로') + '</span>'
         + '<button class="del" title="삭제" onclick="SCHED.delPreset(' + i + ')">✕</button></div>';
     }).join('') || '<div class="cap">아래에서 근무 시간대를 추가해주세요.</div>';
@@ -803,6 +828,13 @@
     pickWho: function (n) { md.who = n; renderModal(); },
     pickPreset: function (i) { var p = CFG.presets[i]; md.s = p.s; md.e = p.e; renderModal(); },
     modalTime: function () { md.s = toH($('mdStart').value); md.e = toH($('mdEnd').value); renderModal(); },
+    _tp: function (n) {   // 시/분 드롭다운이 바뀌면 값을 합쳐서 전달한다
+      var box = $(n); if (!box) return;
+      var sels = box.querySelectorAll('select');
+      var v = pad(+sels[0].value) + ':' + pad(+sels[1].value);
+      if (box.dataset.hid) { var h = $(box.dataset.hid); if (h) h.value = v; }
+      if (_tpCb[n]) _tpCb[n](v);
+    },
     closeModal: function () { md = null; if ($('modal')) $('modal').hidden = true; },
     saveModal: function () {
       if (!md || !(md.e > md.s) || !md.who) return;

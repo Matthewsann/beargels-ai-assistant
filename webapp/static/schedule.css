@@ -244,6 +244,11 @@
   width: 34px; height: 34px; padding: 2px; border: 1px solid var(--line);
   border-radius: 8px; background: var(--card); cursor: pointer; flex: 0 0 auto;
 }
+/* 시/분 드롭다운 (tpick) */
+#sched .tpick { display: inline-flex; align-items: center; gap: 3px; }
+#sched .tpick b { color: var(--muted); font-weight: 400; }
+#sched .tpick select.fld { width: auto; padding: 9px 6px; font-variant-numeric: tabular-nums; }
+
 #sched .nameIn { width: 90px; }
 #sched .roleIn { width: 118px; }
 #sched .linkbox {
