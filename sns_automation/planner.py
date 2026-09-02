@@ -1,4 +1,4 @@
-"""기획·분석 에이전트 (Planner/Analyst).
+﻿"""기획·분석 에이전트 (Planner/Analyst).
 
 파이프라인의 '양끝'을 담당한다:
   앞단 — 주간 촬영 체크리스트 생성 (뭘 찍을지 AI가 미리 계획)
@@ -269,6 +269,22 @@ def _knowledge() -> str:
     return _load_knowledge() or "(지침 없음)"
 
 
+def _brand_core() -> str:
+    """릴스 전용 브랜드 핵심 발췌 — 지식금고 전체 덤프를 대체한다.
+
+    금고 26K자를 [:2500] 로 자르면 가나다순 첫 파일(AI행동지침)만 들어가고
+    정작 필요한 것('굽지 않음' 사실, 금지어 11개, 실판매 메뉴 표기)이 잘려
+    허위 문구 리스크가 열려 있었다(2026-09-02 발견). 이 파일은 통째 주입.
+    """
+    path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                        "knowledge", "릴스-브랜드핵심.md")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()[:3000]
+    except OSError:
+        return _knowledge()[:2500]      # 파일이 없으면 예전 방식 폴백
+
+
 def _editing_rules() -> str:
     """릴스 편집 문법 — 레퍼런스에서 학습해 새벽 점검이 갱신하는 파일.
 
@@ -386,7 +402,7 @@ async def suggest_hooks(title: str, menu: str, base_hook: str = "") -> dict:
             "너는 인스타 릴스 훅 카피라이터다. 첫 1.5초에 스크롤을 멈추게 하는 "
             "짧은 화면 자막을 쓴다. 과장 금지('미쳤다','인생' 금지), 12자 내외, "
             "각각 다른 각도로: ①호기심 ②숫자·구체성 ③지역(송도)·한정.\n\n"
-            f"[브랜드 지침 요약]\n{_knowledge()[:3000]}\n\n"
+            f"[브랜드 핵심 — 사실·금지어·메뉴 표기]\n{_brand_core()}\n\n"
             f"[성과가 좋았던 훅 참고]\n{_hook_summary()}\n\n"
             f"{_market()}"
         )
@@ -482,7 +498,7 @@ async def plan_from_footage(clips: list[dict], title: str, menu: str,
         "· 훅(hook 필드)은 반전·발견형. 지역명은 라벨로 따로 붙으니 넣지 말 것.\n"
         "· 사실(메뉴명·가격·한정)은 [사장님 메모]와 브랜드 지침에 있는 것만.\n\n"
         f"[릴스 편집 문법 — 반드시 따를 것]\n{_editing_rules()}\n\n"
-        f"[브랜드 지침 요약]\n{_knowledge()[:2500]}\n\n"
+        f"[브랜드 핵심 — 사실·금지어·메뉴 표기]\n{_brand_core()}\n\n"
         f"[성과가 좋았던 훅 참고]\n{_hook_summary()}\n\n{_market()}"
     )
     user = (
@@ -577,7 +593,7 @@ async def write_shot_captions(plan: dict, title: str, menu: str,
         "· 메뉴 이름·가격·한정/신메뉴 여부 같은 **사실은 [사장님 메모]와 브랜드\n"
         "  지침에 있는 것만** 쓴다. 화면은 묘사에만 쓰고, 화면만 보고 사실을\n"
         "  단정하지 않는다. 메모에 없는 건 사실 언급 없이 묘사·식감으로만 쓴다.\n\n"
-        f"[브랜드 지침 요약]\n{_knowledge()[:3000]}\n\n"
+        f"[브랜드 핵심 — 사실·금지어·메뉴 표기]\n{_brand_core()}\n\n"
         f"[성과가 좋았던 훅 참고]\n{_hook_summary()}\n\n"
         f"{_market()}"
     )

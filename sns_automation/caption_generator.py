@@ -108,8 +108,13 @@ def _prepare_image(image_bytes: bytes) -> tuple[str, bytes]:
 
 class CaptionGenerator:
     def __init__(self, api_key: str | None = None):
-        # api_key 인자는 예전 호출부와의 호환용 — 더 이상 쓰지 않는다.
-        self._system = SYSTEM_PROMPT.format(knowledge=_load_knowledge() or "(지침 파일 없음)")
+        # api_key 인자는 예전 호환용 — 더 이상 쓰지 않는다.
+        # 지침은 금고 전체(26K자, 희석+비용)가 아니라 릴스 전용 발췌를 쓴다:
+        # '굽지 않음' 사실·금지어 11개·실판매 메뉴 표기가 확실히 들어가게.
+        from .planner import _brand_core
+        core = _brand_core()
+        self._system = SYSTEM_PROMPT.format(
+            knowledge=core or _load_knowledge()[:3000] or "(지침 파일 없음)")
 
     async def generate(
         self,
