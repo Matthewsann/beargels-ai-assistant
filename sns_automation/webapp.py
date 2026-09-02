@@ -491,7 +491,48 @@ def create_app() -> FastAPI:
         _save_project(p)
         # 훅 라이브러리에 자동 기록 (발행·성과는 나중에 채움)
         planner.record_hook(pid, p.get("title", ""), p.get("hook", ""), reel_name)
-        return {"ok": True, "folder": folder, "file": reel_name}
+
+        # 직원 웹앱에서 받아볼 수 있게 클라우드에도 올린다.
+        # 실패해도 로컬 저장은 이미 끝났으므로 완성 자체를 막지 않는다.
+        cloud = None
+        try:
+            from . import cloud_sync
+            entry = await asyncio.to_thread(
+                cloud_sync.push_reel, pid, p.get("title", ""),
+                os.path.join(folder, reel_name), caption or p.get("hook", ""))
+            cloud = entry.get("video")
+        except Exception as e:
+            logger.warning("클라우드 업로드 실패(로컬 저장은 완료): %s", e)
+        return {"ok": True, "folder": folder, "file": reel_name, "cloud": cloud}
+
+    # ═══ 우편함 — 직원 웹앱에서 올린 촬영본 가져오기 ═══
+    @app.get("/api/inbox")
+    async def inbox_status():
+        def _run():
+            from . import cloud_sync
+            return cloud_sync.list_inbox()
+        try:
+            items = await asyncio.to_thread(_run)
+        except Exception as e:
+            return {"available": False, "error": str(e), "items": []}
+        return {"available": True, "items": items,
+                "files": sum(len(i["files"]) for i in items)}
+
+    @app.post("/api/inbox/pull")
+    async def inbox_pull():
+        """우편함의 촬영본을 소재 창고로 내려받는다(받은 것은 우편함에서 삭제)."""
+        root = source_watch.source_root()
+        if not root:
+            raise HTTPException(400, "소재 폴더를 찾지 못했어요.")
+
+        def _run():
+            from . import cloud_sync
+            return cloud_sync.pull_inbox(root)
+        try:
+            got = await asyncio.to_thread(_run)
+        except Exception as e:
+            raise HTTPException(400, f"가져오기 실패: {e}")
+        return {"ok": True, **got}
 
     # 📁 폴더 열기 (윈도우 탐색기) — 촬영본(raw) / 완성본(final)
     @app.post("/api/projects/{pid}/open")

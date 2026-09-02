@@ -1,0 +1,144 @@
+"""집 PC ↔ 직원 웹앱 다리 (Supabase Storage `sns-media`).
+
+편집·렌더는 집 PC에서만 되지만(사장님 확정 아키텍처), **업로드와 결과물
+받기는 어디서든** 돼야 한다. 그래서 공개 버킷 하나를 우편함처럼 쓴다.
+
+    sns-media/
+      inbox/<주제>/<파일>      ← 직원 웹앱에서 올린 촬영본. 집 PC가 가져간다.
+      reels/<프로젝트id>.mp4   ← 집 PC가 만든 완성본. 웹앱에서 받는다.
+      reels/<프로젝트id>.txt   ← 그 릴스의 캡션 (복사용)
+      reels/index.json         ← 완성본 목록 (웹앱이 이것만 읽으면 된다)
+
+**새 테이블을 만들지 않는다** — SQL 마이그레이션은 사장님이 직접 실행해야 하는
+블로커라, 이미 있는 공개 버킷(002_media_bucket.sql)만으로 끝낸다.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+
+logger = logging.getLogger(__name__)
+
+BUCKET = "sns-media"
+INBOX = "inbox"
+REELS = "reels"
+INDEX = f"{REELS}/index.json"
+
+
+class CloudError(RuntimeError):
+    """스토리지 접근 실패. 화면에 그대로 보여줄 한글 메시지."""
+
+
+def client():
+    """Supabase 클라이언트. 설정이 없으면 CloudError."""
+    try:
+        from database.supabase_client import get_client
+        return get_client()
+    except Exception as e:                       # 키 없음·네트워크 등
+        raise CloudError(f"Supabase 연결이 안 돼요: {e}") from e
+
+
+def _bucket(c=None):
+    return (c or client()).storage.from_(BUCKET)
+
+
+def public_url(path: str, c=None) -> str:
+    return _bucket(c).get_public_url(path).rstrip("?")
+
+
+# ── 집 PC → 클라우드 (완성본 올리기) ───────────────────────────
+def push_reel(pid: str, title: str, video_path: str, caption: str = "") -> dict:
+    """완성본 mp4 + 캡션을 올리고 목록(index.json)을 갱신한다."""
+    c = client()
+    b = _bucket(c)
+    with open(video_path, "rb") as f:
+        data = f.read()
+    b.upload(f"{REELS}/{pid}.mp4", data,
+             {"content-type": "video/mp4", "upsert": "true"})
+    b.upload(f"{REELS}/{pid}.txt", (caption or "").encode("utf-8"),
+             {"content-type": "text/plain; charset=utf-8", "upsert": "true"})
+
+    import time
+    entry = {
+        "id": pid,
+        "title": title,
+        "caption": caption or "",
+        "video": public_url(f"{REELS}/{pid}.mp4", c),
+        "size_mb": round(len(data) / 1e6, 1),
+        "uploaded": int(time.time()),
+    }
+    index = [e for e in load_index(c) if e.get("id") != pid]
+    index.insert(0, entry)
+    b.upload(INDEX, json.dumps(index[:50], ensure_ascii=False).encode("utf-8"),
+             {"content-type": "application/json; charset=utf-8", "upsert": "true"})
+    logger.info("완성본 클라우드 업로드: %s (%.1fMB)", pid, entry["size_mb"])
+    return entry
+
+
+def load_index(c=None) -> list[dict]:
+    """완성본 목록. 없으면 빈 목록(첫 실행)."""
+    try:
+        raw = _bucket(c).download(INDEX)
+        return json.loads(raw.decode("utf-8"))
+    except Exception:
+        return []
+
+
+# ── 클라우드 → 집 PC (올라온 촬영본 가져오기) ──────────────────
+def list_inbox(c=None) -> list[dict]:
+    """직원 웹앱에서 올라온 파일들을 주제별로 묶어 돌려준다."""
+    b = _bucket(c)
+    out: list[dict] = []
+    try:
+        topics = b.list(INBOX)
+    except Exception as e:
+        raise CloudError(f"우편함을 읽지 못했어요: {e}") from e
+    for t in topics or []:
+        name = t.get("name")
+        if not name or name.startswith("."):
+            continue
+        try:
+            files = b.list(f"{INBOX}/{name}")
+        except Exception:
+            continue
+        names = [f["name"] for f in (files or [])
+                 if f.get("name") and not f["name"].startswith(".")]
+        if names:
+            out.append({"topic": name, "files": names})
+    return out
+
+
+def pull_inbox(dest_root: str, *, delete: bool = True) -> dict:
+    """우편함의 파일을 주제 폴더로 내려받는다. 받은 것은 지운다(중복 방지).
+
+    dest_root: 소재 창고 경로(원본소재). 주제 폴더가 없으면 만든다.
+    """
+    c = client()
+    b = _bucket(c)
+    got, topics = 0, []
+    for item in list_inbox(c):
+        topic = item["topic"]
+        folder = os.path.join(dest_root, topic)
+        os.makedirs(folder, exist_ok=True)
+        done = []
+        for name in item["files"]:
+            key = f"{INBOX}/{topic}/{name}"
+            try:
+                data = b.download(key)
+            except Exception as e:
+                logger.warning("내려받기 실패 %s: %s", key, e)
+                continue
+            with open(os.path.join(folder, name), "wb") as f:
+                f.write(data)
+            done.append(key)
+            got += 1
+        if done:
+            topics.append(topic)
+            if delete:
+                try:
+                    b.remove(done)
+                except Exception:
+                    logger.warning("우편함 정리 실패(무시): %s", topic)
+    return {"files": got, "topics": topics}

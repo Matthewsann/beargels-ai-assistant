@@ -260,7 +260,9 @@
   <!-- 소재 창고 — 폰에서 드라이브 폴더에 올리면 여기 뜬다 -->
   <div class="section" id="sourceSec" style="display:none">
     <div class="eyebrow">소재 창고 · 드라이브 "원본소재"</div>
-    <h2>폰에서 올린 촬영본 <span class="muted" style="font-weight:600;font-size:.85rem">— 폴더가 곧 릴스 주제예요</span></h2>
+    <h2 class="row" style="gap:12px">폰에서 올린 촬영본
+      <button class="btn sm" id="inboxBtn" onclick="pullInbox()" style="display:none"></button>
+      <span class="muted" style="font-weight:600;font-size:.85rem">— 폴더가 곧 릴스 주제예요</span></h2>
     <div id="source" class="cards"></div>
     <p class="muted" style="font-size:.82rem;margin-top:10px">폰 갤러리 → 공유 → 드라이브 → <b>원본소재/(주제)</b> 폴더에 올리면 여기 자동으로 떠요. 새 주제는 드라이브에서 폴더만 만들면 됩니다.</p>
   </div>
@@ -348,10 +350,10 @@ async function api(url, opts){ const r=await fetch(url,opts); if(!r.ok){ let m=r
 async function init(){
   initGuide();
   const t = await api("/api/topics"); TOPICS = t.topics; renderTopics();
-  await loadProjects(); await loadSource();
+  await loadProjects(); await loadSource(); loadInbox();
   await loadPlan(); await loadQueue(); await loadReview(); loadMeta();
   // 폴더에 올린 게 자동으로 뜨게 — 새로고침 없이 15초마다 확인
-  setInterval(async()=>{ try{ await loadSource(); await loadProjects(); }catch(e){} }, 15000);
+  setInterval(async()=>{ try{ await loadSource(); await loadProjects(); loadInbox(); }catch(e){} }, 15000);
 }
 
 // ═══ 소재 창고 — "폴더에 올리면 시작된다" ═══
@@ -373,12 +375,33 @@ async function loadSource(){
     </div>`;
   }).join("");
 }
+// 직원 웹앱에서 올린 촬영본이 우편함에 있으면 버튼으로 알린다
+async function loadInbox(){
+  const btn=$("#inboxBtn"); if(!btn) return;
+  try{
+    const d = await api("/api/inbox");
+    if(d.available && d.files){
+      btn.style.display="inline-block";
+      btn.textContent = `📥 웹에서 올린 ${d.files}개 가져오기`;
+    }else{ btn.style.display="none"; }
+  }catch(e){ btn.style.display="none"; }
+}
+async function pullInbox(){
+  const btn=$("#inboxBtn");
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>가져오는 중…';
+  try{
+    const r = await api("/api/inbox/pull",{method:"POST"});
+    toast(`${r.files}개 가져왔어요 — ${(r.topics||[]).join(", ")}`);
+    await loadSource(); await loadInbox();
+  }catch(e){ toast("가져오기 실패: "+e.message); }
+  btn.disabled=false;
+}
 async function importTopic(topic){
   const fd=new FormData(); fd.append("topic",topic);
   try{
     const p = await api("/api/source/import",{method:"POST",body:fd});
     toast("창고 폴더를 프로젝트로 연결했어요 — 복사 없이 바로 씁니다");
-    await loadProjects(); await loadSource(); openProject(p.id);
+    await loadProjects(); await loadSource(); loadInbox(); openProject(p.id);
   }catch(e){ toast("연결 실패: "+e.message); }
 }
 function renderTopics(){

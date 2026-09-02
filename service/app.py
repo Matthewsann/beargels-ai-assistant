@@ -1343,33 +1343,75 @@ def _place_status_panel() -> str:
 """
 
 
-@app.route("/<path_key>/instagram")
-def instagram_info(path_key):
-    """인스타 파이프라인 안내 — 파이프라인 자체는 집 PC 웹앱(5051)에서 돌아간다.
+#: 업로드 기본 주제 목록 — 새 주제는 화면에서 직접 적을 수 있다.
+_INSTA_TOPICS = ["제철 과일산도 단면", "크림치즈 듬뿍 바르는 순간", "잠봉뵈르 베이글",
+                 "_상시_메뉴", "_상시_매장"]
 
-    여기(외부 서버)서는 영상 편집·파일 접근이 안 되므로, 메뉴 자리는 만들되
-    무엇을 어디서 하는지 알려주는 안내 페이지만 둔다.
+
+@app.route("/<path_key>/instagram")
+def instagram_page(path_key):
+    """인스타 릴스 — 촬영본 올리기 + 완성본 받기 + 캡션 복사.
+
+    편집·렌더는 집 PC에서만 된다(영상 처리). 하지만 **업로드와 결과물 받기는
+    어디서든** 돼야 해서, 공개 버킷(sns-media)을 우편함처럼 쓴다:
+      · 여기서 올린 촬영본 → inbox/<주제>/  → 집 PC가 가져감
+      · 집 PC가 만든 완성본 → reels/        → 여기서 받아 Edits 앱으로 발행
     """
     check(path_key)
-    sidebar = render_template("_sidebar.html", key=path_key)
-    return (
-        '<!doctype html>\n<html lang="ko">\n<meta charset="utf-8">\n'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-        '<body style="margin:0;background:#faf9f7;color:#232320;'
-        "font-family:-apple-system,'Malgun Gothic',sans-serif;\">\n"
-        f"{sidebar}\n"
-        '<div style="max-width:640px;margin:0 auto;padding:24px 16px;">\n'
-        '<h2 style="font-size:18px;">🎬 인스타 파이프라인</h2>\n'
-        '<div style="background:#fff;border:1px solid #e7e5de;border-radius:12px;'
-        'padding:18px;line-height:1.8;font-size:14px;">\n'
-        '릴스 기획 → 촬영 목록 → 자동 편집 → 완성본까지 만드는 파이프라인은\n'
-        '<b>집 PC 웹앱</b>에서 돌아갑니다 (영상 파일을 다뤄야 해서 이 서버에서는 안 돼요).\n'
-        '<ul style="margin:12px 0 0;padding-left:20px;">\n'
-        '<li>집 안 와이파이: <code>http://집PC주소:5051/instagram</code></li>\n'
-        '<li>밖에서: Tailscale 주소로 접속 (webapp/밖에서-쓰기.md 참고)</li>\n'
-        '<li>촬영 주제·대본 아이디어는 담당자(사장님)께 요청</li>\n'
-        '</ul>\n</div>\n</div>\n</body>\n</html>'
-    )
+    reels, reels_msg = [], None
+    try:
+        from sns_automation import cloud_sync
+        for e in cloud_sync.load_index():
+            when = ""
+            if e.get("uploaded"):
+                when = datetime.fromtimestamp(
+                    e["uploaded"], KST).strftime("%m/%d %H:%M")
+            reels.append({**e, "when": when})
+    except Exception as e:            # 스토리지가 막혀도 업로드 칸은 떠야 한다
+        app.logger.warning("완성본 목록 실패: %s", e)
+        reels_msg = "완성본 목록을 불러오지 못했어요. 잠시 뒤 새로고침해 주세요."
+    return render_template("instagram.html", key=path_key,
+                           sidebar=render_template("_sidebar.html", key=path_key),
+                           topics=_INSTA_TOPICS, reels=reels, reels_msg=reels_msg)
+
+
+@app.route("/<path_key>/instagram/upload", methods=["POST"])
+def instagram_upload(path_key):
+    """촬영본을 우편함(inbox/<주제>/)에 올린다. 집 PC가 가져가 편집한다."""
+    check(path_key)
+    topic = (request.form.get("topic") or "").strip()
+    if not topic:
+        return jsonify(error="주제를 골라주세요."), 400
+    # 경로 조작 방지 — 폴더 이름으로 쓸 수 있는 문자만
+    topic = re.sub(r"[^\w가-힣 _.-]", "", topic).strip(" .")[:60]
+    files = request.files.getlist("files")
+    if not files:
+        return jsonify(error="파일이 없어요."), 400
+    try:
+        from sns_automation import cloud_sync
+        bucket = cloud_sync._bucket()
+    except Exception as e:
+        return jsonify(error=f"저장소 연결 실패: {e}"), 500
+
+    saved = 0
+    for f in files:
+        name = os.path.basename(f.filename or "")
+        name = re.sub(r"[^\w가-힣 .()-]", "_", name)
+        if not name:
+            continue
+        data = f.read()
+        if not data:
+            continue
+        try:
+            bucket.upload(f"{cloud_sync.INBOX}/{topic}/{name}", data,
+                          {"content-type": f.mimetype or "application/octet-stream",
+                           "upsert": "true"})
+            saved += 1
+        except Exception as e:
+            app.logger.warning("업로드 실패 %s: %s", name, e)
+    if not saved:
+        return jsonify(error="올리지 못했어요. 파일을 다시 골라주세요."), 500
+    return jsonify(ok=True, saved=saved, topic=topic)
 
 
 @app.route("/<path_key>/collect", methods=["POST"])
