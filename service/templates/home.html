@@ -211,7 +211,7 @@
               onclick="setOwner(event, 'blog')" data-name="{{ owners.blog or '' }}">
         👤 {{ owners.blog or '담당자 지정' }}</button>
     </a>
-    <a class="app" href="{{ url_for('instagram_info', path_key=key) }}">
+    <a class="app" href="{{ url_for('instagram_page', path_key=key) }}">
       <div class="ico">🎬</div>
       <div class="nm">인스타</div>
       <div class="ds">릴스 파이프라인 (집 PC)</div>
