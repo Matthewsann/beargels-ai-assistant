@@ -22,8 +22,10 @@
          font:inherit; font-size:13px; font-weight:600; padding:9px 14px; border-radius:9px;
          cursor:pointer; text-decoration:none; }
   .btn.pri { background:var(--accent); border-color:var(--accent); color:#fff; }
-  .btn:disabled { opacity:.55; cursor:not-allowed; }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .steps { margin:0; padding-left:20px; font-size:13.5px; }
+  .steps li { margin-bottom:4px; }
+  .steps b { color:var(--accent); }
   .reel { border-top:1px solid var(--line); padding:12px 0 0; margin-top:12px; }
   .reel:first-of-type { border-top:0; margin-top:0; }
   .reel b { font-size:14px; }
@@ -36,35 +38,32 @@
           padding:10px 12px; font-size:12.5px; margin-top:10px; }
   .okmsg { background:var(--ok-bg); color:var(--ok); border-radius:9px;
            padding:10px 12px; font-size:13px; margin-top:10px; }
-  input[type=text], select { font:inherit; font-size:13px; padding:8px 10px;
-         border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--ink); }
-  #drop { border:2px dashed var(--line); border-radius:11px; padding:20px 14px;
-          text-align:center; color:var(--muted); font-size:13px; cursor:pointer; }
-  #drop.over { border-color:var(--accent); background:var(--accent-bg); }
-  .bar { height:6px; background:var(--line); border-radius:99px; overflow:hidden; margin-top:9px; display:none; }
-  .bar i { display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
 </style>
 </head>
 <body>
 {{ sidebar|safe }}
 <div class="wrap">
   <h2>🎬 인스타 릴스</h2>
-  <p class="sub">촬영본을 올리고, 완성된 릴스를 받아 인스타에 올리는 곳이에요.</p>
+  <p class="sub">촬영본은 드라이브로, 완성된 릴스는 여기서 받아요.</p>
 
-  <!-- ① 업로드 -->
+  <!-- ① 촬영본은 드라이브로 -->
   <div class="card">
-    <h3>① 촬영본 올리기</h3>
-    <div class="row" style="margin-bottom:10px">
-      <select id="topic">
-        {% for t in topics %}<option>{{ t }}</option>{% endfor %}
-      </select>
-      <input type="text" id="newTopic" placeholder="새 주제 이름 (선택)">
+    <h3>① 촬영본 올리기 — 구글 드라이브</h3>
+    <ol class="steps">
+      <li>폰 갤러리에서 영상·사진 선택 → <b>공유</b> → <b>드라이브</b></li>
+      <li>폴더: <b>콘텐츠 생성 / 원본소재 / (주제 폴더)</b>
+          — 새 주제는 폴더를 새로 만들면 돼요</li>
+      <li>끝! 집 PC가 자동으로 알아보고 릴스 소재로 올려둬요</li>
+    </ol>
+    <div class="row" style="margin-top:12px">
+      <a class="btn pri" target="_blank" rel="noopener"
+         href="https://drive.google.com/drive/folders/1cJf1C4C3LGAUqDdF9M8ckglPR0ViHBSw">
+        📂 원본소재 폴더 열기</a>
     </div>
-    <div id="drop">여기를 눌러 영상·사진 고르기<br><span style="font-size:12px">여러 개 한꺼번에 가능</span></div>
-    <input id="file" type="file" accept="video/*,image/*" multiple style="display:none">
-    <div class="bar" id="bar"><i></i></div>
-    <div id="upMsg"></div>
-    <div class="note">올린 파일은 집 PC가 가져가 편집합니다. 편집은 집 PC에서만 돼요(영상 처리 때문).</div>
+    <div class="note">드라이브 업로드가 제일 빨라요. 잘 찍혔는지 고르지 말고
+      <b>찍은 걸 다 올리세요</b> — 고르는 건 편집이 합니다.<br>
+      영상이 뭔지(메뉴 이름·포인트) 적는 <b>한 줄 메모</b>는 릴스 만들 때
+      파이프라인 화면에서 적어요.</div>
   </div>
 
   <!-- ② 완성본 -->
@@ -88,18 +87,11 @@
     {% else %}
       <div class="empty">{{ reels_msg or "아직 완성된 릴스가 없어요. 집 PC에서 만들면 여기 나타나요." }}</div>
     {% endif %}
+    <div id="msg"></div>
   </div>
 </div>
 
 <script>
-const $ = s => document.querySelector(s);
-const drop = $("#drop"), file = $("#file");
-drop.onclick = () => file.click();
-["dragover","dragenter"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add("over")}));
-["dragleave","drop"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove("over")}));
-drop.addEventListener("drop", ev => upload(ev.dataTransfer.files));
-file.onchange = () => upload(file.files);
-
 function copyCap(i){
   const t = document.getElementById("cap"+i).textContent;
   navigator.clipboard.writeText(t).then(
@@ -107,35 +99,8 @@ function copyCap(i){
     ()=>msg("복사가 안 됐어요. 글을 길게 눌러 직접 복사해주세요", false));
 }
 function msg(text, ok){
-  $("#upMsg").innerHTML = `<div class="${ok?'okmsg':'note'}">${text}</div>`;
-}
-async function upload(files){
-  if(!files || !files.length) return;
-  const topic = ($("#newTopic").value.trim() || $("#topic").value || "").trim();
-  if(!topic){ msg("주제를 고르거나 새 주제 이름을 적어주세요", false); return; }
-  const fd = new FormData();
-  fd.append("topic", topic);
-  for(const f of files) fd.append("files", f);
-  const bar = $("#bar"), fill = bar.querySelector("i");
-  bar.style.display="block"; fill.style.width="10%";
-  msg(`올리는 중… (${files.length}개)`, true);
-  try{
-    const xhr = new XMLHttpRequest();
-    await new Promise((res, rej) => {
-      xhr.open("POST", location.pathname.replace(/\/$/,"") + "/upload");
-      xhr.upload.onprogress = e => {
-        if(e.lengthComputable) fill.style.width = Math.round(e.loaded/e.total*100) + "%";
-      };
-      xhr.onload = () => xhr.status<400 ? res() : rej(new Error(xhr.responseText||xhr.statusText));
-      xhr.onerror = () => rej(new Error("네트워크 오류"));
-      xhr.send(fd);
-    });
-    fill.style.width="100%";
-    msg(`올렸어요 (${files.length}개) — 집 PC에서 «우편함 가져오기»를 누르면 편집할 수 있어요`, true);
-  }catch(e){
-    msg("업로드 실패: " + e.message, false);
-  }
-  setTimeout(()=>{ bar.style.display="none"; fill.style.width="0"; }, 1200);
+  document.querySelector("#msg").innerHTML =
+    `<div class="${ok?'okmsg':'note'}">${text}</div>`;
 }
 </script>
 </body>

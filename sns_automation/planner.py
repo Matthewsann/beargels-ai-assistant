@@ -406,12 +406,16 @@ _SHOT_WORDS_SCHEMA = {
 
 
 async def write_shot_captions(plan: dict, title: str, menu: str,
-                              frames: list[tuple[str, bytes]] | None = None) -> dict:
+                              frames: list[tuple[str, bytes]] | None = None,
+                              guide: str = "") -> dict:
     """구성표의 **말**(훅·샷별 자막·CTA)을 AI가 쓴다. 구조(샷·순서·길이)는 안 바꾼다.
 
     말투는 사장님과 인터뷰로 확정(2026-08-18):
     화자=사장님 본인 1인칭 · 목적=식욕 자극 · 한 줄 · 친근한 해요체.
     frames: 샷 순서대로 뽑은 프레임 [(mime, bytes)] — AI가 실제 화면을 보고 쓴다.
+    guide: 사장님의 촬영 메모/가이드 — **사실(메뉴명·한정·신메뉴)의 유일한 출처**.
+           화면은 '무엇이 보이는지'만 알려주고 '무엇인지'는 메모가 알려준다
+           (설계 확정 2026-09-02: 메모가 있어야 의도 파악과 정확성이 높아진다).
     실패하면 예외를 그대로 올린다(호출부가 기존 자막 유지).
     """
     shots = plan.get("shots") or []
@@ -434,14 +438,21 @@ async def write_shot_captions(plan: dict, title: str, menu: str,
         "· 페이오프 역할: 보이는 것 묘사가 아니라 **먹는 순간**을 상상하게\n"
         "  (예: '한 입에 귤이 통째로 들어와요').\n"
         "· 훅 역할 샷과 마무리 역할 샷의 captions 항목은 null (훅/CTA가 따로 뜬다).\n"
-        "· cta: 저장·방문을 부드럽게 유도 (예: '저장해두셨다가 놀러 오세요').\n\n"
+        "· cta: 저장·방문을 부드럽게 유도 (예: '저장해두셨다가 놀러 오세요').\n"
+        "사실 규칙(지어내기 금지):\n"
+        "· 메뉴 이름·가격·한정/신메뉴 여부 같은 **사실은 [사장님 메모]와 브랜드\n"
+        "  지침에 있는 것만** 쓴다. 화면은 묘사에만 쓰고, 화면만 보고 사실을\n"
+        "  단정하지 않는다. 메모에 없는 건 사실 언급 없이 묘사·식감으로만 쓴다.\n\n"
         f"[브랜드 지침 요약]\n{_knowledge()[:3000]}\n\n"
         f"[성과가 좋았던 훅 참고]\n{_hook_summary()}\n\n"
         f"{_market()}"
     )
+    memo = (guide or "").strip()
     user = (
-        f"주제: {title}\n메뉴: {menu}\n\n"
-        f"샷 구성 (사진은 이 순서대로 각 샷의 실제 화면이다):\n" + "\n".join(lines)
+        f"주제: {title}\n메뉴: {menu}\n"
+        + (f"\n[사장님 메모 — 사실과 의도의 출처]\n{memo[:1500]}\n"
+           if memo else "\n(사장님 메모 없음 — 사실 단정 없이 화면 묘사·식감만 쓸 것)\n")
+        + f"\n샷 구성 (사진은 이 순서대로 각 샷의 실제 화면이다):\n" + "\n".join(lines)
         + f"\n\ncaptions 배열은 정확히 {len(shots)}개. 각 샷의 실제 화면과 맞는 말을 써라."
     )
     data = await _ask(system, user, _SHOT_WORDS_SCHEMA, images=frames or None)

@@ -119,11 +119,14 @@ class CaptionGenerator:
         media_count: int = 1,
         previous_caption: str | None = None,
         feedback: str | None = None,
+        note: str = "",
     ) -> CaptionResult:
         """캡션 생성.
 
         images: 대표 프레임/사진 이미지 바이트 목록 (영상이면 썸네일).
         topic: 콘텐츠 주제(폴더명). feedback이 있으면 이전 캡션 기반 재생성.
+        note: 사장님의 촬영 메모 — 메뉴명·한정 같은 **사실의 출처**.
+              메모에 없는 사실은 캡션에 쓰지 않는다(지어내기 방지).
         """
         content: list[dict] = [_prepare_image(b) for b in images if b]
 
@@ -132,6 +135,16 @@ class CaptionGenerator:
             f"콘텐츠 주제: {topic}\n"
             f"형식: {kind} (미디어 {media_count}개)\n"
         )
+        note = (note or "").strip()
+        if note:
+            instruction += (
+                f"\n[사장님 메모 — 사실과 의도의 출처]\n{note[:1500]}\n"
+                "메뉴 이름·가격·한정/신메뉴 같은 사실은 이 메모와 브랜드 지침에 "
+                "있는 것만 쓴다. 사진은 묘사에만 쓴다.\n"
+            )
+        else:
+            instruction += ("\n(사장님 메모 없음 — 사실 단정 없이 "
+                            "화면 묘사·식감 중심으로 쓸 것)\n")
         if not content:
             instruction += "이미지를 분석할 수 없으니 주제명을 참고해 작성해줘.\n"
         instruction += "이 콘텐츠의 캡션과 해시태그를 작성해줘."

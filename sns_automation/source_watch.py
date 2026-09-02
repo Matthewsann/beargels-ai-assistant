@@ -98,13 +98,18 @@ def list_topics(root: str | None = None) -> list[dict]:
 
 
 def guide_text(folder: str) -> str:
-    """주제 폴더에 넣어둔 촬영 가이드 문서가 있으면 읽는다(있으면 기획에 쓴다)."""
+    """주제 폴더의 촬영 가이드/메모 문서를 읽는다(기획·자막의 사실 출처).
+
+    `촬영가이드.txt`(계획 먼저 흐름)와 `촬영메모.txt`(소재 먼저 흐름) 둘 다
+    읽어 합친다 — 어느 입구로 들어왔든 AI 가 같은 자리에서 근거를 얻는다.
+    """
+    parts = []
     for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
-        if re.search(r"촬영\s*가이드|shot.?guide", name, re.I) and name.lower().endswith(
-                (".txt", ".md")):
+        if re.search(r"촬영\s*(가이드|메모)|shot.?guide", name, re.I) \
+                and name.lower().endswith((".txt", ".md")):
             try:
                 with open(os.path.join(folder, name), encoding="utf-8") as f:
-                    return f.read()[:4000]
+                    parts.append(f.read())
             except OSError:
                 pass
-    return ""
+    return "\n\n".join(parts)[:4000]

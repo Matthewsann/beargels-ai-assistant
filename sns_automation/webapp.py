@@ -436,6 +436,7 @@ def create_app() -> FastAPI:
                     topic=p.get("title", ""),
                     is_reel=True,
                     media_count=max(1, len(videos)),
+                    note=p.get("guide", ""),   # 사장님 메모 = 사실의 출처
                 )
                 data = {"menu": res.menu, "caption": res.caption,
                         "hashtags": res.hashtags, "overlay_text": res.overlay_text}
@@ -590,6 +591,16 @@ def create_app() -> FastAPI:
         _save_project(p)
         return r
 
+    @app.post("/api/projects/{pid}/note")
+    async def save_note(pid: str, guide: str = Form("")):
+        """사장님 한 줄 메모 저장 — AI 자막·캡션이 사실의 출처로 쓴다."""
+        p = _load_project(pid)
+        if not p:
+            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
+        p["guide"] = guide.strip()[:2000]
+        _save_project(p)
+        return {"ok": True}
+
     # ═══ 샷 구성표 — 기획안이자 편집 명세 ═══
     @app.get("/api/projects/{pid}/shots")
     async def get_shots(pid: str):
@@ -666,7 +677,8 @@ def create_app() -> FastAPI:
         frames = await asyncio.to_thread(_shot_frames, p, plan)
         try:
             new_plan = await planner.write_shot_captions(
-                plan, p.get("title", ""), p.get("menu", ""), frames)
+                plan, p.get("title", ""), p.get("menu", ""), frames,
+                guide=p.get("guide", ""))
         except Exception as e:
             logger.warning("AI 자막 실패: %s", e)
             raise HTTPException(502, f"AI 자막 실패: {e}")

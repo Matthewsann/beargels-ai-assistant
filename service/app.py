@@ -1343,19 +1343,15 @@ def _place_status_panel() -> str:
 """
 
 
-#: 업로드 기본 주제 목록 — 새 주제는 화면에서 직접 적을 수 있다.
-_INSTA_TOPICS = ["제철 과일산도 단면", "크림치즈 듬뿍 바르는 순간", "잠봉뵈르 베이글",
-                 "_상시_메뉴", "_상시_매장"]
-
-
 @app.route("/<path_key>/instagram")
 def instagram_page(path_key):
-    """인스타 릴스 — 촬영본 올리기 + 완성본 받기 + 캡션 복사.
+    """인스타 릴스 — 드라이브 업로드 안내 + 완성본 받기 + 캡션 복사.
 
-    편집·렌더는 집 PC에서만 된다(영상 처리). 하지만 **업로드와 결과물 받기는
-    어디서든** 돼야 해서, 공개 버킷(sns-media)을 우편함처럼 쓴다:
-      · 여기서 올린 촬영본 → inbox/<주제>/  → 집 PC가 가져감
-      · 집 PC가 만든 완성본 → reels/        → 여기서 받아 Edits 앱으로 발행
+    촬영본 업로드는 **구글 드라이브**로 간다(사장님 확정 2026-09-02: 이 서버로
+    직접 올리는 건 폰에서 너무 느렸다 — 드라이브 앱이 압도적으로 빠름).
+    집 PC가 동기화 폴더를 자동 인식하므로 서버는 손댈 게 없다.
+    여기 남는 역할은 완성본 배달: 집 PC → reels/(공개 버킷) → 이 화면에서
+    다운로드 + 캡션 복사 → Edits 앱으로 발행.
     """
     check(path_key)
     reels, reels_msg = [], None
@@ -1367,53 +1363,12 @@ def instagram_page(path_key):
                 when = datetime.fromtimestamp(
                     e["uploaded"], KST).strftime("%m/%d %H:%M")
             reels.append({**e, "when": when})
-    except Exception as e:            # 스토리지가 막혀도 업로드 칸은 떠야 한다
+    except Exception as e:            # 스토리지가 막혀도 안내 칸은 떠야 한다
         app.logger.warning("완성본 목록 실패: %s", e)
         reels_msg = "완성본 목록을 불러오지 못했어요. 잠시 뒤 새로고침해 주세요."
     return render_template("instagram.html", key=path_key,
                            sidebar=render_template("_sidebar.html", key=path_key),
-                           topics=_INSTA_TOPICS, reels=reels, reels_msg=reels_msg)
-
-
-@app.route("/<path_key>/instagram/upload", methods=["POST"])
-def instagram_upload(path_key):
-    """촬영본을 우편함(inbox/<주제>/)에 올린다. 집 PC가 가져가 편집한다."""
-    check(path_key)
-    topic = (request.form.get("topic") or "").strip()
-    if not topic:
-        return jsonify(error="주제를 골라주세요."), 400
-    # 경로 조작 방지 — 폴더 이름으로 쓸 수 있는 문자만
-    topic = re.sub(r"[^\w가-힣 _.-]", "", topic).strip(" .")[:60]
-    files = request.files.getlist("files")
-    if not files:
-        return jsonify(error="파일이 없어요."), 400
-    try:
-        from sns_automation import cloud_sync
-        bucket = cloud_sync._bucket()
-    except Exception as e:
-        return jsonify(error=f"저장소 연결 실패: {e}"), 500
-
-    saved = 0
-    for f in files:
-        name = os.path.basename(f.filename or "")
-        name = re.sub(r"[^\w가-힣 .()-]", "_", name)
-        if not name:
-            continue
-        data = f.read()
-        if not data:
-            continue
-        # ⚠️ 스토리지 키는 ASCII 만 — 한글 주제·파일명은 base64url 로 감싼다
-        key = f"{cloud_sync.INBOX}/{cloud_sync.enc(topic)}/{cloud_sync.enc(name)}"
-        try:
-            bucket.upload(key, data,
-                          {"content-type": f.mimetype or "application/octet-stream",
-                           "upsert": "true"})
-            saved += 1
-        except Exception as e:
-            app.logger.warning("업로드 실패 %s: %s", name, e)
-    if not saved:
-        return jsonify(error="올리지 못했어요. 파일을 다시 골라주세요."), 500
-    return jsonify(ok=True, saved=saved, topic=topic)
+                           reels=reels, reels_msg=reels_msg)
 
 
 @app.route("/<path_key>/collect", methods=["POST"])

@@ -480,9 +480,18 @@ function renderDetail(){
       <div class="dhead">
         <div style="flex:1">
           <h2>${p.title}</h2>
-          <div class="muted" style="font-size:.82rem;margin-top:3px">${p.guide||""}</div>
         </div>
         <button class="btn ghost sm" onclick="delProject('${p.id}')">삭제</button>
+      </div>
+
+      <!-- 📝 사장님 메모 — AI 자막·캡션이 '사실'을 여기서 가져간다 -->
+      <div class="block" style="padding-top:0;border-top:0">
+        <div class="field" style="margin-top:6px">
+          <label>📝 이 영상 뭐예요? — 메뉴 이름·포인트 한 줄 <span class="muted" style="font-weight:500">(AI가 사실의 출처로 써요)</span></label>
+          <textarea id="noteBox" rows="2" placeholder="예) 무화과 산도 신메뉴. 크림 사이에 무화과 통째로 들어간 게 포인트. 주말 한정">${esc(p.guide||"")}</textarea>
+        </div>
+        <button class="btn sm" onclick="saveNote()">메모 저장</button>
+        <span class="muted" style="font-size:.78rem;margin-left:6px">메모에 없는 메뉴명·가격은 AI가 지어내지 않아요</span>
       </div>
       <div class="stepper">
         ${steps.map((s,i)=>`<div class="stp ${i+1<si?'done':(i+1===si?'on':'')}">${i+1}. ${s}</div>`).join("")}
@@ -548,6 +557,17 @@ function renderDetail(){
   </div>`;
   wireUpload();
   if(hasVideo) loadShots();
+}
+
+// 📝 사장님 메모 저장 (AI 자막·캡션의 사실 출처)
+async function saveNote(){
+  const v = $("#noteBox") ? $("#noteBox").value : "";
+  try{
+    const fd = new FormData(); fd.append("guide", v);
+    await api("/api/projects/"+CURRENT.id+"/note",{method:"POST",body:fd});
+    CURRENT.guide = v.trim();
+    toast("메모 저장 — AI가 이걸 근거로 써요");
+  }catch(e){ toast("저장 실패: "+e.message); }
 }
 
 // ═══ ③-b 샷 구성표 ═══
@@ -628,7 +648,10 @@ async function resetShots(){
 async function aiShots(){
   const btn=$("#aiShotsBtn"); if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>AI가 장면 보고 쓰는 중…';}
   try{
-    // 화면에서 고친 구조가 있으면 그 위에 쓰게 먼저 저장
+    // 화면의 메모·구조를 먼저 저장 — "적고 바로 AI"가 되게
+    if($("#noteBox")){ const nf=new FormData(); nf.append("guide",$("#noteBox").value);
+      await api("/api/projects/"+CURRENT.id+"/note",{method:"POST",body:nf});
+      CURRENT.guide = $("#noteBox").value.trim(); }
     if(PLAN){ const sf=new FormData(); sf.append("plan",JSON.stringify(PLAN));
       await api("/api/projects/"+CURRENT.id+"/shots",{method:"POST",body:sf}); }
     const r = await api("/api/projects/"+CURRENT.id+"/shots/ai",{method:"POST"});

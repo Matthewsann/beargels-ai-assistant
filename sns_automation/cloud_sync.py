@@ -104,15 +104,22 @@ def load_index(c=None) -> list[dict]:
 
 
 # ── 클라우드 → 집 PC (올라온 촬영본 가져오기) ──────────────────
+#
+# 설계 확정(2026-09-02): 업로드는 '주제'가 아니라 **묶음(batch) + 한 줄 메모**다.
+# 주제는 입력이 아니라 출력 — 집 PC에서 AI가 메모·화면을 보고 제안한다.
+# 메모는 사실(메뉴명·한정 여부)과 의도의 출처라서 캡션·자막의 근거가 된다.
+MEMO = "_memo.txt"
+
+
 def list_inbox(c=None) -> list[dict]:
-    """직원 웹앱에서 올라온 파일들을 주제별로 묶어 돌려준다."""
+    """직원 웹앱에서 올라온 촬영본 묶음들. [{batch, memo, files, keys}]."""
     b = _bucket(c)
     out: list[dict] = []
     try:
-        topics = b.list(INBOX)
+        batches = b.list(INBOX)
     except Exception as e:
         raise CloudError(f"우편함을 읽지 못했어요: {e}") from e
-    for t in topics or []:
+    for t in batches or []:
         key = t.get("name")
         if not key or key.startswith("."):
             continue
@@ -120,32 +127,54 @@ def list_inbox(c=None) -> list[dict]:
             files = b.list(f"{INBOX}/{key}")
         except Exception:
             continue
-        entries = [f["name"] for f in (files or [])
-                   if f.get("name") and not f["name"].startswith(".")]
-        if entries:
-            out.append({
-                "topic": dec(key),                 # 사람이 읽을 주제명
-                "key": key,                        # 스토리지 실제 키
-                "files": [dec(e) for e in entries],
-                "keys": entries,
-            })
+        names = [f["name"] for f in (files or [])
+                 if f.get("name") and not f["name"].startswith(".")]
+        media = [n for n in names if n != MEMO]
+        if not media:
+            continue
+        memo = ""
+        if MEMO in names:
+            try:
+                memo = b.download(f"{INBOX}/{key}/{MEMO}").decode("utf-8")
+            except Exception:
+                pass
+        out.append({
+            "batch": key,
+            "memo": memo,
+            "files": [dec(n) for n in media],   # 사람이 읽을 파일명
+            "keys": media,                       # 스토리지 실제 키
+        })
     return out
 
 
-def pull_inbox(dest_root: str, *, delete: bool = True) -> dict:
-    """우편함의 파일을 주제 폴더로 내려받는다. 받은 것은 지운다(중복 방지).
+def _folder_name(memo: str) -> str:
+    """메모 첫 줄로 소재 폴더 이름을 만든다. 비어 있으면 날짜로."""
+    import re
+    line = memo.splitlines()[0] if memo else ""
+    name = re.sub(r"[^\w가-힣 .-]", " ", line)
+    name = re.sub(r"\s+", " ", name).strip(" .")[:24].strip(" .")
+    if not name:
+        from datetime import datetime
+        name = "새소재 " + datetime.now().strftime("%m%d-%H%M")
+    return name
 
-    dest_root: 소재 창고 경로(원본소재). 주제 폴더가 없으면 만든다.
+
+def pull_inbox(dest_root: str, *, delete: bool = True) -> dict:
+    """우편함의 묶음을 소재 폴더로 내려받는다. 받은 것은 지운다(중복 방지).
+
+    폴더 이름은 메모 첫 줄에서 만들고, 메모 전문은 `촬영메모.txt` 로 같이
+    저장한다 — 기획·자막 AI 가 이 메모를 사실의 출처로 쓴다.
     """
     c = client()
     b = _bucket(c)
     got, topics = 0, []
     for item in list_inbox(c):
-        folder = os.path.join(dest_root, item["topic"])
+        folder_name = _folder_name(item["memo"])
+        folder = os.path.join(dest_root, folder_name)
         os.makedirs(folder, exist_ok=True)
         done = []
         for name, fkey in zip(item["files"], item["keys"]):
-            key = f"{INBOX}/{item['key']}/{fkey}"
+            key = f"{INBOX}/{item['batch']}/{fkey}"
             try:
                 data = b.download(key)
             except Exception as e:
@@ -156,10 +185,14 @@ def pull_inbox(dest_root: str, *, delete: bool = True) -> dict:
             done.append(key)
             got += 1
         if done:
-            topics.append(item["topic"])
+            if item["memo"]:
+                with open(os.path.join(folder, "촬영메모.txt"), "w",
+                          encoding="utf-8") as f:
+                    f.write(item["memo"])
+            topics.append(folder_name)
             if delete:
                 try:
-                    b.remove(done)
+                    b.remove(done + [f"{INBOX}/{item['batch']}/{MEMO}"])
                 except Exception:
-                    logger.warning("우편함 정리 실패(무시): %s", topic)
+                    logger.warning("우편함 정리 실패(무시): %s", item["batch"])
     return {"files": got, "topics": topics}
