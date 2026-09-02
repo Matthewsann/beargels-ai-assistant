@@ -19,6 +19,9 @@ on:
     branches: [main]
     paths:
       - 'service/**'
+      - 'webapp/schedule.py'
+      - 'webapp/static/schedule.css'
+      - 'webapp/static/schedule.js'
       - 'database/supabase_client.py'
       - 'database/blog_store.py'
       - 'database/mkt_store.py'
@@ -96,6 +99,12 @@ jobs:
           upload sns_automation/cloud_sync.py
           upload service/mkt_page.py
           upload service/menu_images.py
+          upload service/schedule_page.py
+          upload service/templates/schedule.html
+          upload service/templates/schedule_public.html
+          upload webapp/schedule.py
+          upload webapp/static/schedule.css
+          upload webapp/static/schedule.js
           upload data/ingredients_seed.json
           upload assistant/customer_requests.py
           upload assistant/beargels.py
