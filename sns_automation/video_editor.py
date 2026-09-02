@@ -386,6 +386,42 @@ def _chip_png(text: str, size: int, dst: str, font_path: str | None = None) -> t
     return img.size
 
 
+def sample_frames(path: str, duration: float, *, every: float = 2.0,
+                  max_frames: int = 8, px: int = 220) -> list[tuple[float, bytes]]:
+    """클립을 일정 간격으로 훑어 (시각, JPEG 바이트) 목록을 만든다.
+
+    AI 장면 선택의 눈이다 — 이 프레임들을 보고 "단면이 갈라지는 그 순간"의
+    정확한 시각을 고른다. 간격은 클립이 길면 자동으로 벌려 max_frames 를 지킨다.
+    """
+    if duration <= 0.3:
+        return []
+    ff = ffmpeg_exe()
+    step = max(every, duration / max_frames)
+    out: list[tuple[float, bytes]] = []
+    t = min(0.5, duration / 2)          # 맨 앞은 흔들리기 쉬워 살짝 안쪽부터
+    while t < duration - 0.2 and len(out) < max_frames:
+        fd, tmp = tempfile.mkstemp(suffix=".jpg")
+        os.close(fd)
+        try:
+            subprocess.run(
+                [ff, "-y", "-ss", f"{t:.2f}", "-i", path, "-frames:v", "1",
+                 "-vf", f"scale={px}:-2", "-q:v", "7", tmp],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+            with open(tmp, "rb") as f:
+                data = f.read()
+            if data:
+                out.append((round(t, 2), data))
+        except (subprocess.SubprocessError, OSError):
+            pass
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        t += step
+    return out
+
+
 def build_reel_from_plan(plan: dict, clip_dir: str, output_path: str, *,
                          transition: float = TRANSITION,
                          font_path: str | None = None) -> dict:

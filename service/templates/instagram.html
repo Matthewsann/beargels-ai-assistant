@@ -130,6 +130,18 @@
     {% endif %}
     <div id="msg"></div>
   </div>
+
+  <!-- ④ 세부 편집 — 집 PC 파이프라인 화면 -->
+  {% if pipeline_url %}
+  <div class="card">
+    <h3>④ 세부 편집이 필요하면 — 파이프라인 화면</h3>
+    <div style="font-size:13.5px;margin-bottom:10px">샷 순서·길이·자막 한 줄까지
+      직접 고치고 다시 편집할 수 있는 화면이에요.</div>
+    <a class="btn pri" href="{{ pipeline_url }}" target="_blank" rel="noopener">🎛 파이프라인 열기</a>
+    <div class="note" style="margin-top:10px">⚠️ <b>집·매장과 같은 와이파이</b>에서만 열려요
+      (영상 파일을 다루는 화면이라 집 PC에서 돌아요). 집 PC가 켜져 있어야 합니다.</div>
+  </div>
+  {% endif %}
 </div>
 
 <script>

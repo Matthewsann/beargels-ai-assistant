@@ -97,6 +97,44 @@ def _frames_for(p: dict, plan: dict, max_px: int = 480) -> list[tuple[str, bytes
     return frames
 
 
+#: 장면 선택용 프레임 예산 — 클립이 많아도 이 안에서 나눠 뽑는다(비용·속도 제어).
+FRAME_BUDGET = 48
+MAX_CLIPS_TO_SCAN = 12
+
+
+def footage_plan(p: dict, files: list[dict]) -> dict:
+    """AI 가 촬영본을 직접 보고 만든 구성표 (장면 선택 + 자막을 한 번에).
+
+    클립마다 일정 간격 프레임을 뽑아 전부 보여주고, "단면이 갈라지는 그 순간"
+    같은 결정적 구간의 시각을 AI 가 직접 찍는다. 실패하면 예외.
+    """
+    from . import planner, video_editor
+    from . import webapp as wa
+
+    folder = wa._media_dir(p)
+    durs = wa._durations(p, files)
+    videos = [(f["name"], durs.get(f["name"], 0.0))
+              for f in files if f["kind"] == "video"]
+    videos = [(n, d) for n, d in videos if d >= 1.0]
+    if not videos:
+        raise MakeError("쓸 수 있는 영상이 없어요(1초 이상 필요).")
+    # 클립이 수십 개면 다 못 본다 — 긴 것부터(내용이 많을 확률) 상위만 훑는다
+    videos.sort(key=lambda x: x[1], reverse=True)
+    videos = videos[:MAX_CLIPS_TO_SCAN]
+    per_clip = max(2, FRAME_BUDGET // len(videos))
+
+    clips = []
+    for name, d in videos:
+        frames = video_editor.sample_frames(
+            os.path.join(folder, name), d, max_frames=per_clip)
+        if frames:
+            clips.append({"name": name, "duration": round(d, 2), "frames": frames})
+    if not clips:
+        raise MakeError("프레임을 뽑지 못했어요.")
+    return asyncio.run(planner.plan_from_footage(
+        clips, p.get("title", ""), p.get("menu", ""), p.get("guide", "")))
+
+
 def make_reel(topic: str, memo: str = "") -> dict:
     """주제 폴더 하나로 릴스 완성본까지. 성공 시 요약 dict 반환."""
     from . import cloud_sync, planner, shot_plan, video_editor
@@ -112,20 +150,29 @@ def make_reel(topic: str, memo: str = "") -> dict:
     if not videos:
         raise MakeError(f"'{title}' 폴더에 영상이 없어요. 릴스는 영상이 필요해요.")
 
-    # ① 구성표 (저장본 우선, 없으면 자동)
-    plan = wa._ensure_plan(p, files)
+    # ① 구성표 — 사장님이 저장한 게 있으면 그것(구조 존중),
+    #    없으면 **AI 장면 선택**(1순위 설계), 그것도 실패하면 어림짐작 뼈대.
+    plan, ai_captions, ai_selected = None, False, False
+    if not p.get("shot_plan"):
+        try:
+            plan = footage_plan(p, files)
+            ai_captions = ai_selected = True     # 장면과 말을 한 번에 골랐다
+        except Exception as e:
+            logger.warning("AI 장면 선택 실패(어림짐작 뼈대로 진행): %s", e)
+    if plan is None:
+        plan = wa._ensure_plan(p, files)
     if not plan:
         raise MakeError("영상 길이를 읽지 못해 구성표를 만들 수 없었어요.")
 
-    # ② AI 자막 — 실패해도 뼈대 자막으로 계속 간다(기능이 죽지 않게)
+    # ② AI 자막 — 장면 선택이 이미 말까지 썼으면 건너뛴다
     frames = _frames_for(p, plan)
-    ai_captions = False
-    try:
-        plan = asyncio.run(planner.write_shot_captions(
-            plan, title, p.get("menu", title), frames, guide=guide))
-        ai_captions = True
-    except Exception as e:
-        logger.warning("AI 자막 실패(뼈대 자막으로 진행): %s", e)
+    if not ai_captions:
+        try:
+            plan = asyncio.run(planner.write_shot_captions(
+                plan, title, p.get("menu", title), frames, guide=guide))
+            ai_captions = True
+        except Exception as e:
+            logger.warning("AI 자막 실패(뼈대 자막으로 진행): %s", e)
     p["shot_plan"] = plan
     wa._save_project(p)
 
@@ -178,7 +225,28 @@ def make_reel(topic: str, memo: str = "") -> dict:
         logger.warning("클라우드 업로드 실패(로컬 저장은 완료): %s", e)
 
     return {"title": title, "seconds": res.get("seconds"),
-            "ai_captions": ai_captions, "cloud": bool(cloud), "file": reel_name}
+            "ai_captions": ai_captions, "ai_selected": ai_selected,
+            "cloud": bool(cloud), "file": reel_name}
+
+
+def _pipeline_url() -> str:
+    """집 PC 파이프라인 화면 주소 — 같은 와이파이의 폰에서 열 수 있는 링크.
+
+    IP 가 바뀔 수 있어(DHCP) 목록을 올릴 때마다 현재 값을 다시 잰다.
+    접속 코드가 설정돼 있으면 ?code= 를 붙여 바로 열리게 한다.
+    """
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+    except OSError:
+        return ""
+    port = os.getenv("PIPELINE_PORT", "8000")
+    url = f"http://{ip}:{port}"
+    code = os.getenv("PIPELINE_ACCESS_CODE", "").strip()
+    return f"{url}/?code={code}" if code else url
 
 
 def push_topics() -> None:
@@ -192,7 +260,8 @@ def push_topics() -> None:
     topics = [{"topic": t["topic"], "videos": t["videos"],
                "images": t["images"], "ready": t["ready"]}
               for t in source_watch.list_topics(root)]
-    data = _json.dumps({"updated": int(_time.time()), "topics": topics},
+    data = _json.dumps({"updated": int(_time.time()), "topics": topics,
+                        "pipeline_url": _pipeline_url()},
                        ensure_ascii=False).encode("utf-8")
     cloud_sync._bucket().upload(
         "state/topics.json", data,

@@ -687,6 +687,31 @@ def create_app() -> FastAPI:
         return {"ok": True, "plan": new_plan,
                 "seconds": shot_plan.total_seconds(new_plan)}
 
+    @app.post("/api/projects/{pid}/shots/ai_full")
+    async def ai_full_shots(pid: str):
+        """AI가 촬영본을 직접 보고 **장면 선택부터** 다시 — 자막까지 한 번에.
+
+        기존 구성표를 버리고 새로 고른다(유료, 1회 ≈ $0.15~0.2).
+        """
+        p = _load_project(pid)
+        if not p:
+            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
+        files = _raw_files(pid, p)
+
+        def _run():
+            from . import auto_make
+            return auto_make.footage_plan(p, files)
+        try:
+            new_plan = await asyncio.to_thread(_run)
+        except Exception as e:
+            logger.warning("AI 장면 선택 실패: %s", e)
+            raise HTTPException(502, f"AI 장면 선택 실패: {e}")
+        p["shot_plan"] = new_plan
+        _save_project(p)
+        return {"ok": True, "plan": new_plan,
+                "seconds": shot_plan.total_seconds(new_plan),
+                "rejected": new_plan.get("rejected", [])}
+
     @app.post("/api/projects/{pid}/shots/reset")
     async def reset_shots(pid: str):
         """자동 생성으로 되돌리기."""

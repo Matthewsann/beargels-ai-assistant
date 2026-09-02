@@ -389,6 +389,118 @@ async def suggest_hooks(title: str, menu: str, base_hook: str = "") -> dict:
         return {"ai": False, "hooks": hooks[:3]}
 
 
+_FOOTAGE_PLAN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "hook": {"type": "string", "description": "첫 화면 훅. 반전·발견형, 12자 내외"},
+        "shots": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 7,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "clip": {"type": "string", "description": "클립 파일명 그대로"},
+                    "in": {"type": "number", "description": "시작 시각(초)"},
+                    "dur": {"type": "number", "description": "길이(초), 1.5~4.0"},
+                    "role": {"type": "string",
+                             "enum": ["훅", "과정", "디테일", "긴장", "페이오프", "마무리"]},
+                    "caption": {"type": ["string", "null"],
+                                "description": "한 줄 자막. 훅·마무리는 null"},
+                    "why": {"type": "string", "description": "이 구간을 고른 이유 한 줄"},
+                },
+                "required": ["clip", "in", "dur", "role", "caption", "why"],
+                "additionalProperties": False,
+            },
+        },
+        "cta": {"type": "string", "description": "마지막 방문 유도 한 줄"},
+        "rejected": {"type": "array", "items": {"type": "string"},
+                     "description": "못 쓸 클립과 이유 (흔들림·어두움 등)"},
+    },
+    "required": ["hook", "shots", "cta", "rejected"],
+    "additionalProperties": False,
+}
+
+
+async def plan_from_footage(clips: list[dict], title: str, menu: str,
+                            guide: str = "") -> dict:
+    """촬영본을 **직접 보고** 샷 구성표를 만든다 — 장면 선택 + 말을 한 번에.
+
+    이전엔 구간을 어림짐작 규칙(긴 클립의 뒷부분…)이 골랐다. 이 함수는 클립을
+    일정 간격으로 훑은 프레임을 전부 보여주고, AI 가 "단면이 갈라지는 그 순간"
+    같은 결정적 구간의 시각을 직접 찍게 한다 (설계 1순위, 사장님 승인 2026-09-02).
+
+    clips: [{"name": 파일명, "duration": 초, "frames": [(시각, JPEG바이트), ...]}]
+    반환: shot_plan.normalize 를 통과한 구성표.
+    """
+    from . import shot_plan as sp
+
+    images: list[tuple[str, bytes]] = []
+    legend: list[str] = []
+    for c in clips:
+        for t, data in c.get("frames") or []:
+            images.append(("image/jpeg", data))
+            legend.append(f"사진{len(images)} = {c['name']} 의 {t}초 지점")
+    if not images:
+        raise ValueError("보여줄 프레임이 없습니다.")
+    durs = "\n".join(f"· {c['name']}: 총 {c.get('duration', 0)}초" for c in clips)
+
+    memo = (guide or "").strip()
+    system = (
+        "너는 베이글 카페 '베어글스 송도점'의 릴스 편집자이자 사장님이다.\n"
+        "촬영 원본에서 **가장 좋은 순간들만 골라** 15초 안팎 릴스의 샷 구성표를 짠다.\n"
+        "구성 원칙:\n"
+        "· 순서: 훅 → 과정 → 디테일 → 긴장 → 페이오프 → 마무리 (일부 생략 가능, 3~7샷)\n"
+        "· 훅: 가장 시선을 끄는 화면을 **첫 샷**으로 (완성 단면·클로즈업 등). 1.5~2.5초.\n"
+        "· 긴장→페이오프 는 붙어야 한다: 자르기/가르기 직전 → 단면·속이 드러나는 순간.\n"
+        "· 페이오프가 이 릴스의 심장이다 — 프레임에서 그 '결정적 순간'의 시각을 정확히 찍어라.\n"
+        "· 같은 클립의 다른 구간을 여러 샷에 써도 된다. 비슷한 장면 반복은 금지.\n"
+        "· 흔들리거나 어둡거나 의미 없는 클립은 rejected 에 이유와 함께 버려라.\n"
+        "· in/dur 은 그 클립 길이 안에 있어야 한다. dur 은 1.5~4.0초.\n"
+        "자막 말투(사장님 확정 — 어기면 안 됨):\n"
+        "· 화자=사장님 1인칭 · 목적=식욕 자극 · 한 줄 15자 내외 · 친근한 해요체.\n"
+        "· 금지어: 역대급, 미쳤다, 인생맛집, 대박, 혜자. 격식체(합니다) 금지.\n"
+        "· 긴장 역할=말 걸기('궁금하시죠?'), 페이오프=먹는 순간 상상.\n"
+        "· 훅(hook 필드)은 반전·발견형. 지역명은 라벨로 따로 붙으니 넣지 말 것.\n"
+        "· 사실(메뉴명·가격·한정)은 [사장님 메모]와 브랜드 지침에 있는 것만.\n\n"
+        f"[브랜드 지침 요약]\n{_knowledge()[:2500]}\n\n"
+        f"[성과가 좋았던 훅 참고]\n{_hook_summary()}\n\n{_market()}"
+    )
+    user = (
+        f"주제: {title}\n메뉴: {menu}\n"
+        + (f"\n[사장님 메모 — 사실과 의도의 출처]\n{memo[:1500]}\n"
+           if memo else "\n(사장님 메모 없음 — 사실 단정 없이 화면 묘사·식감만)\n")
+        + f"\n[클립 길이]\n{durs}\n\n[프레임 색인]\n" + "\n".join(legend)
+        + "\n\n사진들을 보고 샷 구성표를 짜라. 각 샷의 why 에 무엇이 보여서 골랐는지 적어라."
+    )
+    data = await _ask(system, user, _FOOTAGE_PLAN_SCHEMA, images=images)
+
+    # AI 가 찍은 구간을 클립 길이 안으로 다듬는다 (환각 방지 클램프)
+    dur_by = {c["name"]: float(c.get("duration") or 0) for c in clips}
+    shots = []
+    for s in data.get("shots") or []:
+        total = dur_by.get(s.get("clip"), 0)
+        if total <= 0.5:
+            continue
+        d = min(max(float(s.get("dur") or 2.5), 1.5), 4.0)
+        start = min(max(float(s.get("in") or 0), 0.0), max(0.0, total - 1.0))
+        d = min(d, total - start)
+        shots.append({"clip": s["clip"], "in": round(start, 2), "dur": round(d, 2),
+                      "caption": s.get("caption"), "role": s.get("role") or "과정",
+                      "slow": sp.PAYOFF_SLOW if s.get("role") == sp.ROLE_PAYOFF else 1.0,
+                      "audio": s.get("role") in sp.AUDIO_ROLES})
+    plan = sp.normalize({
+        "template": "T1",
+        "hook": {"text": data.get("hook", ""), "seconds": 2.4},
+        "label": os.getenv("REEL_BRAND_LABEL", "송도 베어글스"),
+        "shots": shots,
+        "cta": {"text": data.get("cta", "")},
+    })
+    plan["ai_selected"] = True
+    plan["rejected"] = data.get("rejected") or []
+    return plan
+
+
 _SHOT_WORDS_SCHEMA = {
     "type": "object",
     "properties": {

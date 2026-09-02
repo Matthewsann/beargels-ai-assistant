@@ -622,9 +622,10 @@ function renderShots(seconds){
     </div>
     <div class="row" style="margin-top:10px">
       <button class="btn pri sm" onclick="saveShots()">💾 구성표 저장</button>
-      <button class="btn sm" id="aiShotsBtn" onclick="aiShots()">✨ AI가 자막 쓰기</button>
-      <button class="btn ghost sm" onclick="resetShots()">자동 구성으로 되돌리기</button>
-      <span class="muted" style="font-size:.75rem">AI 자막은 사장님 말투(해요체)로 장면을 보고 써요 · 1회 약 150원</span>
+      <button class="btn sm" id="aiFullBtn" onclick="aiFullShots()">🎯 장면부터 AI가 다시 고르기</button>
+      <button class="btn sm" id="aiShotsBtn" onclick="aiShots()">✨ 자막만 다시 쓰기</button>
+      <button class="btn ghost sm" onclick="resetShots()">되돌리기</button>
+      <span class="muted" style="font-size:.75rem">🎯은 촬영본 전체를 보고 좋은 순간을 새로 골라요(~200원) · ✨는 지금 구조에 말만(~150원)</span>
     </div>`;
 }
 function estSeconds(){ if(!PLAN||!PLAN.shots.length) return 0;
@@ -646,6 +647,19 @@ async function resetShots(){
   try{ await api("/api/projects/"+CURRENT.id+"/shots/reset",{method:"POST"});
     toast("자동 구성으로 되돌렸어요"); await loadShots();
   }catch(e){ toast("실패: "+e.message); }
+}
+async function aiFullShots(){
+  const btn=$("#aiFullBtn"); if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>촬영본 전체를 보는 중… (30초~1분)';}
+  try{
+    if($("#noteBox")){ const nf=new FormData(); nf.append("guide",$("#noteBox").value);
+      await api("/api/projects/"+CURRENT.id+"/note",{method:"POST",body:nf});
+      CURRENT.guide = $("#noteBox").value.trim(); }
+    const r = await api("/api/projects/"+CURRENT.id+"/shots/ai_full",{method:"POST"});
+    PLAN=r.plan; PLAN._saved=true; renderShots(r.seconds);
+    const rej=(r.rejected||[]).length;
+    toast("장면을 새로 골랐어요 🎯"+(rej?` (못 쓸 클립 ${rej}개 제외)`:""));
+  }catch(e){ toast("실패: "+e.message); }
+  if(btn){btn.disabled=false;btn.textContent="🎯 장면부터 AI가 다시 고르기";}
 }
 async function aiShots(){
   const btn=$("#aiShotsBtn"); if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>AI가 장면 보고 쓰는 중…';}
