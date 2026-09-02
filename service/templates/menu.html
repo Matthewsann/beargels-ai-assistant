@@ -62,6 +62,15 @@ border-radius:6px;font-size:11px;padding:3px 9px;cursor:pointer;text-decoration:
 .lc-grp{font-size:11px;font-weight:700;color:var(--sub);margin:8px 0 2px}
 /* 채널 노출 점 — 기본 보기의 매장/배달/네이버 토글 */
 td.chdot{text-align:center}
+/* 폰: 점 3개가 화면 밖이라 밀어야 보였다 — 이름 칸 안의 라벨 점으로 */
+.mdots{display:inline-flex;gap:9px;align-items:center;margin-left:8px;vertical-align:middle}
+.mdots .lab{font-size:10px;color:var(--sub)}
+.mdots .dot{width:20px;height:20px}
+/* 네이버 점: 수동 표시는 실선, 수집에서만 확인된 것은 점선(참고용) */
+.dot.auto{border-style:dashed;border-color:var(--green)}
+.dot.auto i{background:var(--greenbg)}
+/* 분류 머리행 고정 — 표 머리글 바로 아래에 붙는다 */
+tr.cat td{position:sticky;top:var(--thH,34px);z-index:2;background:var(--brownbg)}
 .dot{width:30px;height:30px;border:none;background:none;cursor:pointer;
 display:inline-flex;align-items:center;justify-content:center;padding:0}
 .dot i{display:block;width:13px;height:13px;border-radius:50%;
@@ -301,6 +310,7 @@ z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
   <div id="launchBand" style="display:none"></div>
   <div class="chips" id="chips"></div>
   <div class="chips" id="pchips"></div>
+  <div class="cnt" id="cntBar" style="padding:2px 2px 4px"></div>
 </header>
 <main>
   <div class="wrap">
@@ -904,18 +914,26 @@ function render(){
   // 채널 불일치도 여기 배지로 — 이 화면의 목적이 채널 통일 작업이라서.
   const minOrd = +om().min_order || 12500;
   const nDiff = SDIFF ? diffList().length : null;
+  // 칩 숫자는 '지금 걸린 다른 필터' 기준 — 누르면 보이는 개수와 같아야 한다.
+  // 전체 기준으로 세면 분류·검색을 걸어둔 채 칩을 눌렀을 때 숫자가 안 맞았다.
+  const base = DATA.items.filter(i=>(CAT==="전체"||i.category===CAT) &&
+    (!q || i.name.includes(q) || (i.sku||"").includes(q) || (i.name_en||"").toLowerCase().includes(q.toLowerCase())) &&
+    (!LFILTER || launchList().includes(i.sku)));
   document.getElementById("pchips").innerHTML =
     STATES.map(([k,label,fn])=>{
-      const n = DATA.items.filter(fn).length;
+      const n = base.filter(i=>!probFn||probFn(i)).filter(fn).length;
       return `<span class="chip ${k==="off"?"offc":"okc"} ${STATE===k?"on":""}" data-state="${k}">${label} ${n}</span>`;}).join("")
     + `<span class="sep"></span>`
     + PROBS.map(([k,label,fn,cls])=>{
-      const n = DATA.items.filter(fn).length;
+      const n = base.filter(i=>!stFn||stFn(i)).filter(fn).length;
       return `<span class="chip ${cls} ${PROB===k?"on":""}" data-prob="${k}">${label} ${n}</span>`;}).join("")
     + (nDiff==null ? `<span class="chip bluec" data-act="diff">📡 채널 대조</span>`
-       : `<span class="chip ${nDiff?"bluec":""}" data-act="diff">📡 채널 불일치 ${nDiff}</span>`)
-    + `<span class="cnt">총 <b>${DATA.items.length}</b>개 중 <b>${items.length}</b>개 표시`
-    + `<span class="qm" onclick="dlgHelp.showModal()" title="계산 기준">?</span></span>`;
+       : `<span class="chip ${nDiff?"bluec":""}" data-act="diff">📡 채널 불일치 ${nDiff}</span>`);
+  // '총 N개 중 M개' 는 칩 줄 끝이 아니라 표 바로 위 — 폰에선 칩이 줄바꿈돼
+  // 카운터가 어디 있는지 보이지도 않았다.
+  const cb = document.getElementById("cntBar");
+  if (cb) cb.innerHTML = `총 <b>${DATA.items.length}</b>개 중 <b>${items.length}</b>개 표시
+    <span class="qm" onclick="dlgHelp.showModal()" title="계산 기준">?</span>`;
   const nm = document.getElementById("noteMin"); if(nm) nm.textContent = won(minOrd);
 
   // 정렬 — 순서를 손보는 중에 정렬이 끼면 뭘 옮긴 건지 알 수 없다.
@@ -957,12 +975,19 @@ function render(){
                  <th title="이 원가율로 주문이 채워질 때 배달비를 감당하는 최소 주문금액 (쿠팡 기준)">배달<br>손익분기</th>
                  <th>판매</th>`
               :`<th data-sort="rate" title="재료원가 ÷ 매장가. 분류별 목표를 넘으면 빨간색">원가율<br><span style="font-weight:400">매장가</span>${arr("rate")}</th>
-                <th title="포스·키오스크 노출 (store_active)">매장<br>키오스크</th>
+                ${isMobile()?"":`<th title="포스·키오스크 노출 (store_active)">매장<br>키오스크</th>
                 <th title="배민·쿠팡 공통 (delivery_active) — 두 앱은 같은 값을 쓴다">배달</th>
-                <th title="네이버 스마트플레이스 등록 여부 — 자동 감지가 아니라 직접 표시하는 체크입니다">네이버</th>`}</tr>`;
-  const span = BULK ? 6 : (COLS ? 9 : 7);
-  document.getElementById("tbl").style.minWidth = BULK ? "760px" : (COLS ? "900px" : (isMobile()?"620px":"760px"));
+                <th title="네이버 스마트플레이스 등록 여부 — 자동 감지가 아니라 직접 표시하는 체크입니다">네이버</th>`}`}</tr>`;
+  // 폰 기본 보기는 점 3열을 이름 칸 안으로 옮겨 4열 — 375px 에 다 들어온다.
+  const span = BULK ? 6 : (COLS ? 9 : (isMobile() ? 4 : 7));
+  document.getElementById("tbl").style.minWidth = BULK ? "760px" : (COLS ? "900px" : (isMobile()?"430px":"760px"));
   document.getElementById("tbl").className = BULK ? "fixed" : "";
+  // 분류 머리행은 표 머리글 '바로 아래' 에 붙어야 한다 — 머리글 높이는
+  // 모드·폰 여부에 따라 달라서 그릴 때마다 재서 CSS 변수로 넘긴다.
+  requestAnimationFrame(()=>{
+    const th0 = document.querySelector("#th th");
+    if (th0) document.documentElement.style.setProperty("--thH", th0.offsetHeight + "px");
+  });
 
   // 일괄 모드는 메뉴 하나에 입력칸 4개를 만든다. 190개면 760개가 되어 폰에서
   // 화면이 얼어붙는다(실측). 한 번에 고치는 건 보통 한 분류이므로 잘라 놓고,
@@ -980,10 +1005,12 @@ function render(){
     const folded = foldOn && FOLDED.has(it.category);
     if(it.category !== lastCat && !SORT){ lastCat = it.category;
       const nCat = items.filter(x=>x.category===it.category).length;
+      const nProb = items.filter(x=>x.category===it.category &&
+        (probNocost(x)||probOver(x)||probBe(x)||probNophoto(x))).length;
       html += `<tr class="cat"><td colspan="${span}"><span class="catlab"
         ${foldOn?`style="cursor:pointer" data-fold="${esc(it.category)}" title="탭하면 ${folded?"펼칩니다":"접습니다"}"`:""}>
         ${SEL?`<input type="checkbox" class="catbox" onclick="event.stopPropagation()" onchange="selCat('${esc(it.category).replace(/'/g,"\\'")}',this.checked)">`:""}${foldOn?(folded?"▸ ":"▾ "):""}${esc(it.category)}
-        <small style="font-weight:400">${folded?`${nCat}개 접힘`:`목표 원가율 ${(target(it.category)*100).toFixed(0)}%`}</small></span></td></tr>`; }
+        <small style="font-weight:400">${folded?`${nCat}개 접힘`:`${nCat}개 · 목표 ${(target(it.category)*100).toFixed(0)}%`}${nProb?` <span class="warn" style="padding:0 4px;border-radius:5px">⚠ ${nProb}</span>`:""}</small></span></td></tr>`; }
     if (folded){ r++; continue; }
     const rs = costRate(it,"store"), rd = costRate(it,"baemin");
     const tg = target(it.category);
@@ -1029,6 +1056,13 @@ function render(){
         ${probNophoto(it)?'<span class="badge miss" title="메뉴 사진이 아직 없습니다 — 상세에서 올리면 채널 규격 4장이 자동으로 만들어집니다">📷</span>':""}
         ${ovrCnt?`<span class="badge ovr">채널예외 ${ovrCnt}</span>`:""}
         <br><span class="sku">${it.sku}</span><span class="grp">${esc(it.group_name||"")}</span>
+        ${(!BULK&&!COLS&&isMobile())?`<span class="mdots" onclick="event.stopPropagation()">
+          <span class="lab">매</span><button class="dot ${it.store_active?"on":""}"
+            onclick="toggleActive('${it.sku}','store_active',${!it.store_active})"><i></i></button>
+          <span class="lab">배</span><button class="dot ${it.delivery_active?"on":""}"
+            onclick="toggleActive('${it.sku}','delivery_active',${!it.delivery_active})"><i></i></button>
+          <span class="lab">N</span><button class="dot ${naverDotCls(it.sku)}" title="${naverDotTitle(it.sku)}"
+            onclick="toggleNaver('${it.sku}',${!naverOn(it.sku)})"><i></i></button></span>`:""}
         <span class="chev">▶</span></td>
       <td class="ed" onclick="editCell(this,'${it.sku}','store_price')">${won(it.store_price)}</td>
       <td class="ed" onclick="editCell(this,'${it.sku}','delivery_price')">${won(it.delivery_price)}</td>
@@ -1053,12 +1087,12 @@ function render(){
         <label class="sw"><input type="checkbox" ${it.delivery_active?"checked":""}
           onchange="toggleActive('${it.sku}','delivery_active',this.checked)">배달</label></td>`
       :`<td class="rates"><span class="rt ${rs!=null&&rs>tg?"bad":""}">${pct(rs)}</span></td>
-       <td class="chdot"><button class="dot ${it.store_active?"on":""}" title="매장·키오스크 노출"
+       ${isMobile()?"":`<td class="chdot"><button class="dot ${it.store_active?"on":""}" title="매장·키오스크 노출"
           onclick="toggleActive('${it.sku}','store_active',${!it.store_active})"><i></i></button></td>
        <td class="chdot"><button class="dot ${it.delivery_active?"on":""}" title="배민·쿠팡 노출"
           onclick="toggleActive('${it.sku}','delivery_active',${!it.delivery_active})"><i></i></button></td>
-       <td class="chdot"><button class="dot ${naverOn(it.sku)?"on":""}" title="네이버 등록 표시(수동)"
-          onclick="toggleNaver('${it.sku}',${!naverOn(it.sku)})"><i></i></button></td>`}
+       <td class="chdot"><button class="dot ${naverDotCls(it.sku)}" title="${naverDotTitle(it.sku)}"
+          onclick="toggleNaver('${it.sku}',${!naverOn(it.sku)})"><i></i></button></td>`}`}
     </tr>
     <tr class="detail" id="d-${it.sku}" style="display:none"><td colspan="${span}"></td></tr>`;
   }
@@ -1276,6 +1310,13 @@ async function launchAdd(sku){
 // 아니라 공개 URL 로 확인한다(onerror = 아직 없음).
 // 채널 대조는 서버 정본(/menu/diff) 하나를 그린다 — 예전엔 이 파일과
 // 작업지시서·집 PC 리포트가 각자 계산해 화면마다 개수가 달랐다(감사 확인).
+// 네이버 점 — 수동 표시(naverOn)가 실선. 수동이 없어도 수집에서 그 메뉴가
+// 확인되면 점선으로 참고 표시한다(클릭하면 수동 표시가 되고 실선이 된다).
+const naverDotCls = sku => naverOn(sku) ? "on" : (snapHas(sku,"naver") ? "auto" : "");
+const naverDotTitle = sku => naverOn(sku) ? "네이버 등록 표시(수동)"
+  : snapHas(sku,"naver") ? "수집에서 확인됨(참고) — 탭하면 수동 표시로 굳힙니다"
+  : "네이버 등록 표시(수동)";
+
 // 접힌 분류 — 탭해서 접고 편다. 새로고침해도 유지(localStorage).
 let FOLDED = new Set();
 try{ FOLDED = new Set(JSON.parse(localStorage.getItem("menu-folded")||"[]")); }catch(e){}
@@ -1284,6 +1325,10 @@ function toggleFold(cat){
   try{ localStorage.setItem("menu-folded", JSON.stringify([...FOLDED])); }catch(e){}
   render();
 }
+// 폰↔PC 폭이 바뀌면 열 구성이 달라진다(점 3열 ↔ 이름 칸 점)
+try{ matchMedia("(max-width:640px)").addEventListener("change", ()=>render()); }catch(e){}
+let _rzT=null;
+addEventListener("resize", ()=>{ clearTimeout(_rzT); _rzT=setTimeout(()=>render(), 250); });
 let SDIFF = null;          // {ch: {items,obs,counts,collected_at}} | null(아직)
 let SDIFF_STALE = false;   // 정본을 고친 뒤 — 다음에 대조를 볼 때 다시 받는다
 async function fetchDiff(){
