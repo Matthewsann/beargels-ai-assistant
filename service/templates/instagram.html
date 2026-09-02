@@ -69,9 +69,9 @@
       ⚠️ 릴스를 시작한 뒤에는 <b>폴더 이름을 바꾸지 마세요</b> — 연결이 끊겨요.</div>
   </div>
 
-  <!-- ② 릴스 만들기 (집 PC 일꾼에게 요청) -->
+  <!-- ② 대본 만들기 (집 PC 일꾼에게 요청) -->
   <div class="card">
-    <h3>② 릴스 만들기</h3>
+    <h3>② 대본 만들기</h3>
     <div style="margin-bottom:8px;font-size:13px;">
       <label style="display:block;color:var(--muted);font-size:12.5px;margin-bottom:4px">어느 폴더(주제)로 만들까요?
         <button class="btn" id="tpBtn" onclick="refreshTopics()"
@@ -100,15 +100,61 @@
         style="font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;width:100%"></textarea>
       <div style="color:var(--muted);font-size:11.5px">AI는 여기 적힌 사실만 써요 — 없는 메뉴명·가격은 지어내지 않아요</div>
     </div>
-    <button class="btn pri" id="mkBtn" onclick="makeReel()">🎬 릴스 만들기</button>
+    <button class="btn pri" id="mkBtn" onclick="makeReel()">📝 대본 만들기</button>
     <div id="mkStatus"></div>
-    <div class="note" style="margin-top:10px">집 PC가 AI 자막 → 편집까지 해요(2~4분).
-      끝나면 아래 ③ 목록에 자동으로 떠요. 페이지를 닫아도 계속 만들어요.</div>
+    <div class="note" style="margin-top:10px">AI가 장면을 고르고 대본(훅·자막·캡션)을
+      써서 아래 <b>③ 대본 검수</b>에 올려요(1~2분). <b>영상은 검수 후에</b> 만들어져요 —
+      메뉴 이름·재료가 틀렸으면 여기서 고칠 수 있어요.</div>
   </div>
 
-  <!-- ③ 완성본 -->
+  <!-- ③ 대본 검수 — 영상 만들기 전 사람 게이트 -->
+  <div class="card" id="scriptCard">
+    <h3>③ 대본 검수 — 틀린 건 고치고, 영상 만들기</h3>
+    {% if scripts %}
+      {% for s in scripts %}
+      <div class="reel" data-pid="{{ s.pid }}">
+        <b>{{ s.title }}</b>
+        {% if s.memo %}<div class="meta">메모: {{ s.memo }}</div>{% endif %}
+        <div style="margin-top:8px">
+          <label style="display:block;color:var(--muted);font-size:12px">훅 (첫 화면, 크게)</label>
+          <input type="text" class="sc-hook" value="{{ s.hook }}"
+            style="font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;width:100%">
+        </div>
+        {% for sh in s.shots %}
+        <div style="margin-top:6px;display:flex;gap:6px;align-items:center">
+          <span style="flex:0 0 58px;color:var(--muted);font-size:12px;text-align:right">{{ sh.role }} {{ sh.dur }}s</span>
+          <input type="text" class="sc-cap" value="{{ sh.caption }}" placeholder="(자막 없음)"
+            style="font:inherit;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;flex:1">
+        </div>
+        {% endfor %}
+        <div style="margin-top:6px">
+          <label style="display:block;color:var(--muted);font-size:12px">마지막 한 줄 (CTA)</label>
+          <input type="text" class="sc-cta" value="{{ s.cta }}"
+            style="font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;width:100%">
+        </div>
+        <div style="margin-top:6px">
+          <label style="display:block;color:var(--muted);font-size:12px">인스타 캡션 (본문)</label>
+          <textarea class="sc-caption" rows="4"
+            style="font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;width:100%">{{ s.caption }}</textarea>
+        </div>
+        {% if s.missing %}
+        <div class="note" style="margin-top:8px">📋 다음 촬영 때: {{ s.missing|join(" · ") }}</div>
+        {% endif %}
+        <div class="row" style="margin-top:10px">
+          <button class="btn pri" onclick="makeVideo(this)">✅ 이대로 영상 만들기</button>
+        </div>
+      </div>
+      {% endfor %}
+      <div class="note" style="margin-top:10px">메뉴 이름·재료 같은 <b>사실</b>이 틀렸는지
+        꼭 봐주세요 (예: 산딸기 ❌ → 자몽 ⭕). 여기서 고친 문구가 그대로 영상에 들어가요.</div>
+    {% else %}
+      <div class="empty">검수할 대본이 없어요. ②에서 대본을 만들면 여기 떠요.</div>
+    {% endif %}
+  </div>
+
+  <!-- ④ 완성본 -->
   <div class="card">
-    <h3>③ 완성된 릴스 받기</h3>
+    <h3>④ 완성된 릴스 받기</h3>
     {% if reels %}
       {% for r in reels %}
       <div class="reel">
@@ -131,10 +177,10 @@
     <div id="msg"></div>
   </div>
 
-  <!-- ④ 세부 편집 — 집 PC 파이프라인 화면 -->
+  <!-- ⑤ 세부 편집 — 집 PC 파이프라인 화면 -->
   {% if pipeline_url %}
   <div class="card">
-    <h3>④ 세부 편집이 필요하면 — 파이프라인 화면</h3>
+    <h3>⑤ 세부 편집이 필요하면 — 파이프라인 화면</h3>
     <div style="font-size:13.5px;margin-bottom:10px">샷 순서·길이·자막 한 줄까지
       직접 고치고 다시 편집할 수 있는 화면이에요.</div>
     <a class="btn pri" href="{{ pipeline_url }}" target="_blank" rel="noopener">🎛 파이프라인 열기</a>
@@ -219,7 +265,7 @@ function startPoll(){
       else if(d.status === "pending")
         st.innerHTML = `<div class="okmsg">⏳ 집 PC 차례를 기다리는 중… (${d.message})</div>`;
       else if(d.status === "done"){
-        st.innerHTML = `<div class="okmsg">✅ ${d.message} — 아래 ③에서 받으세요. <a href="javascript:location.reload()">목록 새로고침</a></div>`;
+        st.innerHTML = `<div class="okmsg">✅ ${d.message} <a href="javascript:location.reload()">새로고침해서 보기</a></div>`;
         clearInterval(pollTimer);
       }else if(d.status === "error"){
         st.innerHTML = `<div class="note">❌ 실패: ${d.message}</div>`;
@@ -229,6 +275,31 @@ function startPoll(){
   }, 5000);
 }
 {% if job and job.status in ("pending","running") %}startPoll();{% endif %}
+
+// ③ 대본 검수 → [이대로 영상 만들기]
+async function makeVideo(btn){
+  const card = btn.closest(".reel");
+  const st = document.querySelector("#mkStatus");
+  const caps = [...card.querySelectorAll(".sc-cap")].map(i => i.value);
+  const fd = new FormData();
+  fd.append("pid", card.dataset.pid);
+  fd.append("hook", card.querySelector(".sc-hook").value);
+  fd.append("cta", card.querySelector(".sc-cta").value);
+  fd.append("captions", JSON.stringify(caps));
+  fd.append("caption", card.querySelector(".sc-caption").value);
+  btn.disabled = true; btn.textContent = "요청 넣는 중…";
+  try{
+    const r = await fetch(location.pathname.replace(/\/$/,"") + "/video", {method:"POST", body:fd});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || "요청 실패");
+    st.innerHTML = '<div class="okmsg">⏳ 검수한 대본으로 영상을 만들기 시작했어요 (2~3분).</div>';
+    st.scrollIntoView({behavior:"smooth", block:"center"});
+    startPoll();
+  }catch(e){
+    st.innerHTML = `<div class="note">실패: ${e.message}</div>`;
+  }
+  btn.disabled = false; btn.textContent = "✅ 이대로 영상 만들기";
+}
 
 function copyCap(i){
   const t = document.getElementById("cap"+i).textContent;

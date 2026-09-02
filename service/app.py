@@ -1414,6 +1414,13 @@ def instagram_page(path_key):
         reels_msg = "완성본 목록을 불러오지 못했어요. 잠시 뒤 새로고침해 주세요."
     # 집 PC 일꾼이 올려두는 소재 폴더 목록 → 주제 선택칸 ([새로고침]으로 즉시 갱신 가능)
     topics_updated, topics_when, topics, pipeline_url = _load_cloud_topics()
+    # 대본 검수함 — 영상 만들기 전 사람 게이트 (사장님 확정 2026-09-02)
+    scripts = []
+    try:
+        from sns_automation import cloud_sync
+        scripts = cloud_sync.load_scripts()
+    except Exception:
+        pass
     try:
         job = db.last_reel_job()       # '만드는 중/완료/실패' 표시용
     except Exception:
@@ -1422,7 +1429,8 @@ def instagram_page(path_key):
                            sidebar=render_template("_sidebar.html", key=path_key),
                            reels=reels, reels_msg=reels_msg,
                            topics=topics, topics_when=topics_when,
-                           topics_updated=topics_updated, pipeline_url=pipeline_url, job=job)
+                           topics_updated=topics_updated, pipeline_url=pipeline_url,
+                           scripts=scripts, job=job)
 
 
 @app.route("/<path_key>/instagram/make", methods=["POST"])
@@ -1483,6 +1491,39 @@ def instagram_topics_refresh(path_key):
     except Exception as e:
         return jsonify(error=f"요청 실패: {e}"), 500
     return jsonify(ok=True)
+
+
+@app.route("/<path_key>/instagram/video", methods=["POST"])
+def instagram_video(path_key):
+    """[이대로 영상 만들기] — 사람이 검수한 대본으로 렌더를 요청한다.
+
+    사람이 승인한 문구가 정본이 된다(AI 가 다시 덮어쓰지 않음).
+    산딸기→자몽처럼 메모 자체가 틀린 사실을 여기서 사람이 바로잡는다.
+    """
+    check(path_key)
+    pid = (request.form.get("pid") or "").strip()
+    if not pid:
+        return jsonify(error="대본 정보가 없어요. 새로고침 후 다시 시도해주세요."), 400
+    try:
+        import json as _json
+        captions = _json.loads(request.form.get("captions") or "[]")
+        if not isinstance(captions, list):
+            captions = []
+    except ValueError:
+        captions = []
+    script = {
+        "hook": (request.form.get("hook") or "").strip()[:60],
+        "cta": (request.form.get("cta") or "").strip()[:60],
+        "captions": [str(c)[:60] for c in captions][:8],
+        "caption": (request.form.get("caption") or "").strip()[:2000],
+    }
+    if not script["hook"]:
+        return jsonify(error="훅이 비어 있어요 — 첫 화면 문구는 꼭 필요해요."), 400
+    try:
+        row = db.request_reel_video(pid, script, by="직원웹")
+    except Exception as e:
+        return jsonify(error=f"요청을 넣지 못했어요: {e}"), 500
+    return jsonify(ok=True, job_id=row.get("id"))
 
 
 @app.route("/<path_key>/instagram/job")

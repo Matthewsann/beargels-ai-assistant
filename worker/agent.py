@@ -1495,32 +1495,61 @@ def run_reel_job(job) -> None:
     if not topic:
         db.finish_job(jid, "error", "주제가 비어 있어요.", 0)
         return
-    logger.info("릴스 잡 #%s 시작 — %s", jid, topic)
-    db.worker_ping("working", f"릴스 만드는 중 ({topic})")
+    logger.info("릴스 대본 잡 #%s 시작 — %s", jid, topic)
+    db.worker_ping("working", f"대본 만드는 중 ({topic})")
     try:
         sys.path.insert(0, str(ROOT))
         from sns_automation import auto_make
-        res = auto_make.make_reel(topic, req.get("memo") or "")
-        qc_note = ("검수 통과" if res.get("qc_passed") and not res.get("qc_fixed")
-                   else "검수 지적 1회 수정 후 출하" if res.get("qc_passed")
-                   else "⚠️ 검수 경고와 함께 출하 — 발행 전 확인 권장")
-        msg = (f"'{res['title']}' 릴스 완성 ({res['seconds']}초 · {qc_note}"
-               + ("" if res["ai_captions"] else " · AI 자막 실패—뼈대 자막")
-               + ("" if res["cloud"] else " · 클라우드 업로드 실패—집 PC에만 저장")
-               + ")")
+        res = auto_make.make_script(topic, req.get("memo") or "")
+        msg = (f"'{res['title']}' 대본 준비 완료 ({res['shots']}샷) — "
+               "웹에서 문구를 검수하고 [이대로 영상 만들기]를 누르세요")
         if res.get("missing_shots"):
             msg += " / 다음 촬영 때: " + " · ".join(res["missing_shots"])
         db.finish_job(jid, "done", msg, 1)
-        logger.info("릴스 잡 #%s 완료 — %s", jid, msg)
+        logger.info("대본 잡 #%s 완료 — %s", jid, msg)
         try:
             auto_make.push_topics()
         except Exception:
             pass
     except Exception as e:  # noqa: BLE001
-        logger.error("릴스 잡 #%s 실패: %s", jid, e)
+        logger.error("대본 잡 #%s 실패: %s", jid, e)
         logger.debug(traceback.format_exc())
-        db.log_error("worker", f"릴스 잡 실패({topic}): {e}",
+        db.log_error("worker", f"대본 잡 실패({topic}): {e}",
                      kind=type(e).__name__, path="run_reel_job",
+                     detail=traceback.format_exc())
+        db.finish_job(jid, "error", str(e)[:200], 0)
+
+
+def run_reel_video_job(job) -> None:
+    """검수된 대본으로 영상 렌더 — 사람 승인 뒤의 2단계."""
+    import json as _json
+    jid = job["id"]
+    try:
+        req = _json.loads(job.get("message") or "{}")
+    except ValueError:
+        req = {}
+    pid = (req.get("pid") or "").strip()
+    if not pid:
+        db.finish_job(jid, "error", "대본 정보가 비어 있어요.", 0)
+        return
+    logger.info("릴스 영상 잡 #%s 시작 — %s", jid, pid)
+    db.worker_ping("working", "검수된 대본으로 영상 만드는 중")
+    try:
+        sys.path.insert(0, str(ROOT))
+        from sns_automation import auto_make
+        res = auto_make.make_video(pid, req.get("script") or None)
+        qc_note = ("검수 통과" if res.get("qc_passed")
+                   else "⚠️ 검수 경고: " + " · ".join(res.get("qc_warnings") or []))
+        msg = (f"'{res['title']}' 릴스 완성 ({res['seconds']}초 · {qc_note}"
+               + ("" if res["cloud"] else " · 클라우드 업로드 실패—집 PC에만 저장")
+               + ")")
+        db.finish_job(jid, "done", msg, 1)
+        logger.info("영상 잡 #%s 완료 — %s", jid, msg)
+    except Exception as e:  # noqa: BLE001
+        logger.error("영상 잡 #%s 실패: %s", jid, e)
+        logger.debug(traceback.format_exc())
+        db.log_error("worker", f"영상 잡 실패({pid}): {e}",
+                     kind=type(e).__name__, path="run_reel_video_job",
                      detail=traceback.format_exc())
         db.finish_job(jid, "error", str(e)[:200], 0)
 
@@ -1562,6 +1591,8 @@ def run_job(job) -> None:
         return run_meeting_organize_job(job)
     if job.get("kind") == "reel":
         return run_reel_job(job)
+    if job.get("kind") == "reel_video":
+        return run_reel_video_job(job)
     if job.get("kind") == "reel_topics":
         # 직원 웹 [새로고침] — 소재 폴더 목록만 즉시 다시 올린다(수 초).
         try:

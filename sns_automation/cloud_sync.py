@@ -103,6 +103,42 @@ def load_index(c=None) -> list[dict]:
         return []
 
 
+# ── 대본 검수함 (영상 만들기 전 사람 게이트) ──────────────────
+# 사장님 지적(2026-09-02): 메모가 틀리면(산딸기 vs 자몽) AI 는 그대로 쓴다.
+# 그래서 영상 전에 대본(훅·자막·캡션)을 웹에서 검수·수정하는 단계를 둔다.
+SCRIPTS = "state/scripts.json"
+
+
+def load_scripts(c=None) -> list[dict]:
+    """검수 대기 중인 대본 목록."""
+    try:
+        raw = _bucket(c).download(SCRIPTS)
+        return json.loads(raw.decode("utf-8"))
+    except Exception:
+        return []
+
+
+def _save_scripts(items: list[dict], c=None) -> None:
+    _bucket(c).upload(SCRIPTS,
+                      json.dumps(items[:20], ensure_ascii=False).encode("utf-8"),
+                      {"content-type": "application/json; charset=utf-8",
+                       "upsert": "true"})
+
+
+def push_script(entry: dict) -> None:
+    """대본 하나를 검수함에 넣는다(같은 프로젝트는 교체)."""
+    c = client()
+    items = [s for s in load_scripts(c) if s.get("pid") != entry.get("pid")]
+    items.insert(0, entry)
+    _save_scripts(items, c)
+
+
+def remove_script(pid: str) -> None:
+    """영상까지 만들어졌으면 검수함에서 뺀다."""
+    c = client()
+    _save_scripts([s for s in load_scripts(c) if s.get("pid") != pid], c)
+
+
 # ── 클라우드 → 집 PC (올라온 촬영본 가져오기) ──────────────────
 #
 # 설계 확정(2026-09-02): 업로드는 '주제'가 아니라 **묶음(batch) + 한 줄 메모**다.

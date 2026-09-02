@@ -135,6 +135,161 @@ def footage_plan(p: dict, files: list[dict]) -> dict:
         clips, p.get("title", ""), p.get("menu", ""), p.get("guide", "")))
 
 
+def make_script(topic: str, memo: str = "") -> dict:
+    """1단계 — 대본까지만 만든다(영상 없음). 사람 검수 게이트 앞까지.
+
+    사장님 지적(2026-09-02): 메모가 틀리면(산딸기 vs 자몽) AI 는 그대로 쓴다.
+    그래서 영상을 만들기 **전에** 훅·샷별 자막·CTA·캡션을 웹 검수함에 올리고,
+    사장님이 고쳐서 승인하면 2단계(make_video)가 그 대본대로 렌더한다.
+    """
+    from . import cloud_sync, planner
+    from . import webapp as wa
+
+    folder = _find_folder(topic)
+    p = _project_for(folder, memo)
+    pid, title = p["id"], p.get("title", topic)
+    guide = p.get("guide", "")
+
+    files = wa._raw_files(pid, p)
+    if not any(f["kind"] == "video" for f in files):
+        raise MakeError(f"'{title}' 폴더에 영상이 없어요. 릴스는 영상이 필요해요.")
+
+    # 구성표 — 저장본 존중, 없으면 AI 장면 선택, 그것도 안 되면 뼈대
+    plan, ai_selected = None, False
+    if not p.get("shot_plan"):
+        try:
+            plan = footage_plan(p, files)
+            ai_selected = True
+        except Exception as e:
+            logger.warning("AI 장면 선택 실패(뼈대로 진행): %s", e)
+    if plan is None:
+        plan = wa._ensure_plan(p, files)
+    if not plan:
+        raise MakeError("영상 길이를 읽지 못해 구성표를 만들 수 없었어요.")
+
+    frames = _frames_for(p, plan)
+    if not ai_selected:                 # 뼈대 구성이면 말이라도 AI 가 쓴다
+        try:
+            plan = asyncio.run(planner.write_shot_captions(
+                plan, title, p.get("menu", title), frames, guide=guide))
+        except Exception as e:
+            logger.warning("AI 자막 실패(뼈대 자막 유지): %s", e)
+
+    caption = ""
+    try:
+        gen = wa._get_caption_gen()
+        if gen and frames:
+            r = asyncio.run(gen.generate(
+                images=[frames[0][1]], topic=title, is_reel=True,
+                media_count=sum(1 for f in files if f["kind"] == "video"),
+                note=guide))
+            caption = r.full_text
+            p["caption"], p["hashtags"] = r.caption, r.hashtags
+    except Exception as e:
+        logger.warning("AI 캡션 실패(템플릿 폴백): %s", e)
+    if not caption:
+        fb = wa._fallback_caption(p)
+        caption = fb["caption"] + "\n\n" + " ".join(fb["hashtags"])
+
+    p["shot_plan"] = plan
+    p["script_caption"] = caption
+    wa._save_project(p)
+
+    import time as _time
+    entry = {
+        "pid": pid, "title": title, "memo": guide,
+        "hook": (plan.get("hook") or {}).get("text", ""),
+        "cta": (plan.get("cta") or {}).get("text", ""),
+        "shots": [{"role": s.get("role", ""), "dur": s.get("dur", 0),
+                   "caption": s.get("caption") or ""}
+                  for s in plan.get("shots") or []],
+        "caption": caption,
+        "missing": [m.get("need", "") for m in (plan.get("missing") or [])][:3],
+        "created": int(_time.time()),
+    }
+    cloud_sync.push_script(entry)
+    return {"title": title, "pid": pid, "shots": len(entry["shots"]),
+            "ai_selected": ai_selected,
+            "missing_shots": entry["missing"]}
+
+
+def make_video(pid: str, script: dict | None = None) -> dict:
+    """2단계 — 사람이 검수한 대본대로 영상을 만든다.
+
+    script: 웹에서 고친 {hook, cta, captions[], caption}. 사람이 승인한
+    문구이므로 검수는 **경고만** 하고 자동 재작성으로 덮어쓰지 않는다.
+    """
+    from . import cloud_sync, planner, qc, shot_plan, video_editor
+    from . import webapp as wa
+
+    p = wa._load_project(pid)
+    if not p:
+        raise MakeError("대본의 프로젝트를 찾지 못했어요. 대본을 다시 만들어주세요.")
+    plan = p.get("shot_plan")
+    if not plan:
+        raise MakeError("저장된 구성표가 없어요. 대본을 다시 만들어주세요.")
+    title = p.get("title", "")
+    caption = p.get("script_caption", "")
+
+    if script:                          # 사람이 고친 문구를 구성표에 반영
+        if script.get("hook") is not None:
+            plan.setdefault("hook", {})["text"] = str(script["hook"]).strip()
+        if script.get("cta") is not None:
+            plan.setdefault("cta", {})["text"] = str(script["cta"]).strip()
+        caps = script.get("captions")
+        if isinstance(caps, list):
+            for i, c in enumerate(caps[:len(plan.get("shots") or [])]):
+                plan["shots"][i]["caption"] = (str(c).strip() or None) if c is not None else None
+        if script.get("caption") is not None:
+            caption = str(script["caption"]).strip()
+    plan = shot_plan.normalize(plan)
+    p["shot_plan"], p["script_caption"] = plan, caption
+    wa._save_project(p)
+
+    out = os.path.join(wa._proj_dir(pid), "reel.mp4")
+    res = video_editor.build_reel_from_plan(plan, wa._media_dir(p), out)
+    p["status"] = wa.ST_EDITED
+    wa._save_project(p)
+
+    # 검수 — 승인된 대본은 고치지 않는다. 경고만 남긴다(사람이 권위자).
+    report = qc.run_qc(plan, out, caption, p.get("guide", ""))
+    p["qc"] = {**report, "fixed": False, "approved": True,
+               "missing": plan.get("missing") or []}
+    wa._save_project(p)
+
+    final_dir = os.path.join(wa.FINAL_DIR, wa._slug(title))
+    os.makedirs(final_dir, exist_ok=True)
+    n = 1
+    while os.path.exists(os.path.join(
+            final_dir, "reel.mp4" if n == 1 else f"reel_{n}.mp4")):
+        n += 1
+    reel_name = "reel.mp4" if n == 1 else f"reel_{n}.mp4"
+    cap_name = "caption.txt" if n == 1 else f"caption_{n}.txt"
+    shutil.copy2(out, os.path.join(final_dir, reel_name))
+    with open(os.path.join(final_dir, cap_name), "w", encoding="utf-8") as f:
+        f.write(caption)
+    p["status"] = wa.ST_DONE
+    p["final_path"] = final_dir
+    wa._save_project(p)
+    planner.record_hook(pid, title, (plan.get("hook") or {}).get("text", ""), reel_name)
+
+    cloud = None
+    try:
+        entry = cloud_sync.push_reel(pid, title,
+                                     os.path.join(final_dir, reel_name), caption)
+        cloud = entry.get("video")
+    except Exception as e:
+        logger.warning("클라우드 업로드 실패(로컬 저장은 완료): %s", e)
+    try:
+        cloud_sync.remove_script(pid)   # 검수함 정리
+    except Exception:
+        pass
+    return {"title": title, "seconds": res.get("seconds"), "file": reel_name,
+            "cloud": bool(cloud),
+            "qc_passed": report["passed"],
+            "qc_warnings": (report["critical"] + report["warnings"])[:3]}
+
+
 def make_reel(topic: str, memo: str = "") -> dict:
     """주제 폴더 하나로 릴스 완성본까지. 성공 시 요약 dict 반환."""
     from . import cloud_sync, planner, shot_plan, video_editor

@@ -329,9 +329,28 @@ def request_reel_topics(by=None):
     return (get_client().table("jobs").insert(row).execute().data or [None])[0]
 
 
+def request_reel_video(pid, script, by=None):
+    """직원 웹의 [이대로 영상 만들기] — 검수된 대본으로 렌더를 요청한다."""
+    import json as _json
+    live = (get_client().table("jobs").select("*")
+            .eq("kind", "reel_video").in_("status", ["pending", "running"])
+            .order("requested_at", desc=True).limit(5).execute().data)
+    for row in live or []:
+        try:
+            if _json.loads(row.get("message") or "{}").get("pid") == pid:
+                return row
+        except ValueError:
+            continue
+    row = {"kind": "reel_video", "status": "pending", "requested_by": by or "",
+           "message": _json.dumps({"pid": pid, "script": script},
+                                  ensure_ascii=False)}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
 def last_reel_job():
-    """가장 최근 릴스 잡 1건 — 직원 웹이 '만드는 중/완료/실패'를 보여줄 때."""
-    rows = (get_client().table("jobs").select("*").eq("kind", "reel")
+    """가장 최근 릴스 잡 1건(대본/영상) — 직원 웹의 진행 표시용."""
+    rows = (get_client().table("jobs").select("*")
+            .in_("kind", ["reel", "reel_video"])
             .order("requested_at", desc=True).limit(1).execute().data)
     return rows[0] if rows else None
 
@@ -404,7 +423,8 @@ def last_collect_at():
 
 # 직원이 화면 앞에서 결과를 기다리는 작업 — 리뷰수집(수 분) 뒤에 밀리면
 # 3분 폴링 안에 끝나지 않아 '아직 확인이 안 돼요'로 보인다. 먼저 집는다.
-INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "wake", "reel", "reel_topics")
+INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "wake",
+                         "reel", "reel_video", "reel_topics")
 
 
 def claim_next_job(interactive_only=False):
