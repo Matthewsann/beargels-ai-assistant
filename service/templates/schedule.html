@@ -50,6 +50,10 @@
   .fld:focus { outline:2px solid var(--accent-bg); border-color:var(--accent); }
   .lbl { display:block; font-size:13px; font-weight:700; margin-bottom:5px; }
   @media print { .sbar, .themebtn { display:none !important; } body { padding-left:0 !important; } }
+  /* 나이트모드 — 이 블록이 하드코딩한 색 패치 (_theme.html 이 .dk 를 붙인다) */
+  html.dk .btn:hover { background:#2c2c28; }
+  html.dk .stat { background:#26261f; }
+  html.dk #mdLen { background:#26261f !important; }
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='schedule.css') }}">
 </head>

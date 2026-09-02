@@ -301,6 +301,41 @@
   #sched .wkcal-inner { min-width: 640px; }
 }
 
+/* ── 나이트모드 패치 ──────────────────────────────────────────
+   클라우드 서비스(_theme.html)가 다크일 때 html 에 .dk 를 붙이고 --bg 계열
+   변수를 덮어쓴다. var() 를 쓴 곳은 저절로 어두워지고, 여기서는 이 파일이
+   하드코딩한 색(빗금 바탕·오늘 열·머리행 등)만 마저 덮는다.
+   집 PC 웹앱에는 .dk 가 없어서 이 블록은 그냥 무시된다. */
+html.dk #sched {
+  --hair: #2e2e29;
+  --offhour: #211f1c;
+  --sat: #7fb3e8;
+  --sun: #e8968c;
+}
+html.dk #sched .dcol {
+  background: repeating-linear-gradient(45deg, transparent 0 5px, rgba(160,158,147,.10) 5px 10px), var(--offhour);
+}
+html.dk #sched .dcol.today .bizband { background: #26261f; }
+html.dk #sched .dcol.closed {
+  background: repeating-linear-gradient(45deg, transparent 0 6px, rgba(224,176,96,.16) 6px 12px), var(--warn-bg);
+}
+html.dk #sched .stabs button:hover { background: #2c2c28; }
+html.dk #sched .drow.head > div { background: #26261f; }
+html.dk #sched .drow.cover > div { background: #211f1c; }
+html.dk #sched .linkbox { background: #26261f; }
+html.dk #sched .schip { background: #2c2c28; }
+html.dk #sched .legend .sw,
+html.dk #sched .tcell .off,
+html.dk #sched .plot .off {
+  background: repeating-linear-gradient(45deg, transparent 0 5px, rgba(160,158,147,.10) 5px 10px), var(--offhour);
+}
+html.dk #sched .row:hover { background: #26261f; }
+html.dk #sched .dbrk { background: rgba(35,35,32,.92); border-color: rgba(255,255,255,.25); color: #eceae4; }
+html.dk #sched .ev .mk { background: rgba(25,25,23,.85); }
+html.dk #sched .covcell.zero { color: #4a4a44; }
+html.dk #sched .nowline b { background: var(--card); }
+html.dk #sched .bar b { color: var(--muted); }
+
 /* ── 인쇄: A4 가로 한 장 ──────────────────────────────────── */
 @page { size: A4 landscape; margin: 8mm; }
 @media print {
