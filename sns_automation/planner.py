@@ -269,6 +269,21 @@ def _knowledge() -> str:
     return _load_knowledge() or "(지침 없음)"
 
 
+def _editing_rules() -> str:
+    """릴스 편집 문법 — 레퍼런스에서 학습해 새벽 점검이 갱신하는 파일.
+
+    지식금고 전체 덤프는 프롬프트에서 잘려나갈 수 있어(26K자 중 앞부분만
+    들어감) 이 파일만은 **전용으로** 통째 주입한다.
+    """
+    path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                        "knowledge", "릴스-편집문법.md")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()[:3500]
+    except OSError:
+        return ""
+
+
 def _market() -> str:
     """메타 그래프로 수집한 '지금 잘 되는 게시물' 요약. 없으면 빈 문자열.
 
@@ -407,9 +422,12 @@ _FOOTAGE_PLAN_SCHEMA = {
                              "enum": ["훅", "과정", "디테일", "긴장", "페이오프", "마무리"]},
                     "caption": {"type": ["string", "null"],
                                 "description": "한 줄 자막. 훅·마무리는 null"},
+                    "audio": {"type": "boolean",
+                              "description": "원본 소리를 살릴까 — 자르기·붓기·"
+                                             "바르기·바삭처럼 소리가 매력인 순간만 true"},
                     "why": {"type": "string", "description": "이 구간을 고른 이유 한 줄"},
                 },
-                "required": ["clip", "in", "dur", "role", "caption", "why"],
+                "required": ["clip", "in", "dur", "role", "caption", "audio", "why"],
                 "additionalProperties": False,
             },
         },
@@ -463,6 +481,7 @@ async def plan_from_footage(clips: list[dict], title: str, menu: str,
         "· 긴장 역할=말 걸기('궁금하시죠?'), 페이오프=먹는 순간 상상.\n"
         "· 훅(hook 필드)은 반전·발견형. 지역명은 라벨로 따로 붙으니 넣지 말 것.\n"
         "· 사실(메뉴명·가격·한정)은 [사장님 메모]와 브랜드 지침에 있는 것만.\n\n"
+        f"[릴스 편집 문법 — 반드시 따를 것]\n{_editing_rules()}\n\n"
         f"[브랜드 지침 요약]\n{_knowledge()[:2500]}\n\n"
         f"[성과가 좋았던 훅 참고]\n{_hook_summary()}\n\n{_market()}"
     )
@@ -488,7 +507,10 @@ async def plan_from_footage(clips: list[dict], title: str, menu: str,
         shots.append({"clip": s["clip"], "in": round(start, 2), "dur": round(d, 2),
                       "caption": s.get("caption"), "role": s.get("role") or "과정",
                       "slow": sp.PAYOFF_SLOW if s.get("role") == sp.ROLE_PAYOFF else 1.0,
-                      "audio": s.get("role") in sp.AUDIO_ROLES})
+                      # AI 가 '소리가 매력인 순간'을 직접 고른다(편집 문법).
+                      # 응답에 없으면 예전 규칙(긴장 역할만)으로.
+                      "audio": bool(s.get("audio",
+                                          s.get("role") in sp.AUDIO_ROLES))})
     plan = sp.normalize({
         "template": "T1",
         "hook": {"text": data.get("hook", ""), "seconds": 2.4},
