@@ -785,7 +785,7 @@
         + tpick(p.e, { label: p.name + ' 종료', cb: function (v) { window.SCHED.editPreset(i, 'e', v); } })
         + '<span class="cap num">' + (p.e > p.s ? hrs(p.e - p.s) + '시간' : '시간 거꾸로') + '</span>'
         + '<button class="del" title="삭제" onclick="SCHED.delPreset(' + i + ')">✕</button></div>';
-    }).join('') || '<div class="cap">아래에서 근무 시간대를 추가해주세요.</div>';
+    }).join('') || '<div class="cap">아래에서 고정 근무 시간대를 추가해주세요.</div>';
 
     $('staffHost').innerHTML = (CFG.staff || []).map(function (s, i) {
       var cnt = 0;
