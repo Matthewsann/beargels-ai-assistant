@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -25,6 +26,21 @@ BUCKET = "sns-media"
 INBOX = "inbox"
 REELS = "reels"
 INDEX = f"{REELS}/index.json"
+
+
+# ⚠️ Supabase Storage 키는 **ASCII 만** 받는다(한글이면 400 InvalidKey).
+# 주제·파일명이 한글이라 그대로 못 쓰므로 base64url 로 감쌌다 풀어서 쓴다.
+# 스토리지에는 알아볼 수 없는 이름으로 들어가지만, 사람은 화면에서만 보므로 무방.
+def enc(name: str) -> str:
+    return base64.urlsafe_b64encode(name.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def dec(key: str) -> str:
+    pad = "=" * (-len(key) % 4)
+    try:
+        return base64.urlsafe_b64decode(key + pad).decode("utf-8")
+    except Exception:
+        return key          # 예전 방식으로 올라온 것(ASCII)은 그대로 쓴다
 
 
 class CloudError(RuntimeError):
@@ -53,11 +69,12 @@ def push_reel(pid: str, title: str, video_path: str, caption: str = "") -> dict:
     """완성본 mp4 + 캡션을 올리고 목록(index.json)을 갱신한다."""
     c = client()
     b = _bucket(c)
+    key = enc(pid)                     # 프로젝트 id 에도 한글이 들어간다
     with open(video_path, "rb") as f:
         data = f.read()
-    b.upload(f"{REELS}/{pid}.mp4", data,
+    b.upload(f"{REELS}/{key}.mp4", data,
              {"content-type": "video/mp4", "upsert": "true"})
-    b.upload(f"{REELS}/{pid}.txt", (caption or "").encode("utf-8"),
+    b.upload(f"{REELS}/{key}.txt", (caption or "").encode("utf-8"),
              {"content-type": "text/plain; charset=utf-8", "upsert": "true"})
 
     import time
@@ -65,7 +82,7 @@ def push_reel(pid: str, title: str, video_path: str, caption: str = "") -> dict:
         "id": pid,
         "title": title,
         "caption": caption or "",
-        "video": public_url(f"{REELS}/{pid}.mp4", c),
+        "video": public_url(f"{REELS}/{key}.mp4", c),
         "size_mb": round(len(data) / 1e6, 1),
         "uploaded": int(time.time()),
     }
@@ -96,17 +113,22 @@ def list_inbox(c=None) -> list[dict]:
     except Exception as e:
         raise CloudError(f"우편함을 읽지 못했어요: {e}") from e
     for t in topics or []:
-        name = t.get("name")
-        if not name or name.startswith("."):
+        key = t.get("name")
+        if not key or key.startswith("."):
             continue
         try:
-            files = b.list(f"{INBOX}/{name}")
+            files = b.list(f"{INBOX}/{key}")
         except Exception:
             continue
-        names = [f["name"] for f in (files or [])
-                 if f.get("name") and not f["name"].startswith(".")]
-        if names:
-            out.append({"topic": name, "files": names})
+        entries = [f["name"] for f in (files or [])
+                   if f.get("name") and not f["name"].startswith(".")]
+        if entries:
+            out.append({
+                "topic": dec(key),                 # 사람이 읽을 주제명
+                "key": key,                        # 스토리지 실제 키
+                "files": [dec(e) for e in entries],
+                "keys": entries,
+            })
     return out
 
 
@@ -119,23 +141,22 @@ def pull_inbox(dest_root: str, *, delete: bool = True) -> dict:
     b = _bucket(c)
     got, topics = 0, []
     for item in list_inbox(c):
-        topic = item["topic"]
-        folder = os.path.join(dest_root, topic)
+        folder = os.path.join(dest_root, item["topic"])
         os.makedirs(folder, exist_ok=True)
         done = []
-        for name in item["files"]:
-            key = f"{INBOX}/{topic}/{name}"
+        for name, fkey in zip(item["files"], item["keys"]):
+            key = f"{INBOX}/{item['key']}/{fkey}"
             try:
                 data = b.download(key)
             except Exception as e:
                 logger.warning("내려받기 실패 %s: %s", key, e)
                 continue
-            with open(os.path.join(folder, name), "wb") as f:
+            with open(os.path.join(folder, os.path.basename(name)), "wb") as f:
                 f.write(data)
             done.append(key)
             got += 1
         if done:
-            topics.append(topic)
+            topics.append(item["topic"])
             if delete:
                 try:
                     b.remove(done)

@@ -1402,8 +1402,10 @@ def instagram_upload(path_key):
         data = f.read()
         if not data:
             continue
+        # ⚠️ 스토리지 키는 ASCII 만 — 한글 주제·파일명은 base64url 로 감싼다
+        key = f"{cloud_sync.INBOX}/{cloud_sync.enc(topic)}/{cloud_sync.enc(name)}"
         try:
-            bucket.upload(f"{cloud_sync.INBOX}/{topic}/{name}", data,
+            bucket.upload(key, data,
                           {"content-type": f.mimetype or "application/octet-stream",
                            "upsert": "true"})
             saved += 1
