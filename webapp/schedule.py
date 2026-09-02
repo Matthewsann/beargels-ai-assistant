@@ -84,16 +84,19 @@ def default_config() -> dict:
 def load_config() -> dict:
     cfg = default_config()
     path = DATA / "config.json"
+    saved = {}
     if path.exists():
         try:
-            saved = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(saved, dict):
-                cfg.update(saved)
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                saved = data
         except (json.JSONDecodeError, OSError):
             pass  # 손상된 설정은 무시하고 기본값으로 뜬다
-    # 토큰이 없던 예전 파일이면 새로 만들어 붙인다
-    if not cfg.get("publicToken"):
-        cfg["publicToken"] = secrets.token_urlsafe(12)
+    cfg.update(saved)
+    # 직원용 링크 토큰은 저장된 것만 진짜다. 파일에 없으면(첫 실행 등) 지금 만든
+    # 토큰을 바로 저장해 붙박이로 만든다 — 안 그러면 요청마다 새 토큰이 나와서
+    # 화면에 보여준 직원용 링크가 다음 요청에서 바로 죽는다(첫 실행 때 실제로 그랬다).
+    if not saved.get("publicToken"):
         save_config(cfg)
     return cfg
 
@@ -386,9 +389,14 @@ def collect_rows(start: date, end: date) -> list[dict]:
 def export_data():
     start = parse_iso(request.args.get("from"), date.today().replace(day=1))
     end = parse_iso(request.args.get("to"), date.today())
+    fmt = (request.args.get("fmt") or "md").lower()
+    return build_export(start, end, fmt)
+
+
+def build_export(start: date, end: date, fmt: str) -> Response:
+    """내보내기 응답 만들기 — 클라우드 서비스(service/)도 이 함수를 그대로 쓴다."""
     if end < start:
         start, end = end, start
-    fmt = (request.args.get("fmt") or "md").lower()
     rows = collect_rows(start, end)
 
     totals: dict[str, float] = {}

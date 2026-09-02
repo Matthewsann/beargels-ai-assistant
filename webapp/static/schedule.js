@@ -17,6 +17,9 @@
   var DOW = B.dow || ['월', '화', '수', '목', '금', '토', '일'];
   var TODAY = B.todayIso;
 
+  // API 주소 앞부분 — 집 PC 웹앱은 /schedule, 클라우드는 /<비밀주소>/schedule
+  var API = B.api || '/schedule';
+
   var HH = 36;                    // 캘린더에서 1시간 = 36px
   var AXIS_START = 6, AXIS_END = 22;
   var wkIdx = 0, meName = null, dayGaps = [], bizDraft = null;
@@ -102,14 +105,14 @@
       var idxs = Object.keys(pendingWeeks); pendingWeeks = {};
       Promise.all(idxs.map(function (k) {
         var w = WEEKS[k];
-        return post('/schedule/api/week', { week_start: w.start, locked: w.locked, days: w.days });
+        return post(API + '/api/week', { week_start: w.start, locked: w.locked, days: w.days });
       })).then(function () { flash('저장했어요'); })
         .catch(function () { flash('저장하지 못했어요 — 창을 닫지 말고 다시 시도해주세요.', true); });
     }, 400);
   }
   function saveConfig() {
     if (MODE !== 'admin') return;
-    post('/schedule/api/config', {
+    post(API + '/api/config', {
       bizHours: CFG.bizHours, closedDows: CFG.closedDows, closedDates: CFG.closedDates,
       presets: CFG.presets, staff: CFG.staff, salesPerHead: CFG.salesPerHead,
       showHoliday: CFG.showHoliday, showWeather: CFG.showWeather,
@@ -951,7 +954,7 @@
     setFlag: function (key, on) { CFG[key] = !!on; saveConfig(); renderAll(); },
     newToken: function () {
       if (!confirm('직원용 링크를 새로 만들까요?\n지금 링크는 더 이상 열리지 않아요.')) return;
-      post('/schedule/api/token', {}).then(function (r) {
+      post(API + '/api/token', {}).then(function (r) {
         if ($('pubLink')) $('pubLink').textContent = r.url;
         flash('새 링크를 만들었어요. 단톡방에 다시 공유해주세요.');
       }).catch(function () { flash('링크를 새로 만들지 못했어요.', true); });

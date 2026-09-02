@@ -74,7 +74,9 @@ class _SafeRequest(Request):
             parse_qsl(qs, keep_blank_values=True, errors="werkzeug.url_quote"))
 
 
-app = Flask(__name__)
+# 정적 파일은 집 PC 웹앱 것을 그대로 쓴다 (근무표 CSS/JS — 화면이 같아야 해서
+# 한 벌만 둔다). service/ 에는 원래 static 폴더가 없어서 부딪힐 게 없다.
+app = Flask(__name__, static_folder=str(ROOT / "webapp" / "static"))
 app.request_class = _SafeRequest
 
 # 비밀 주소 조각 — 없으면 앱이 뜨지 않는다(실수로 전체 공개되는 걸 막는다).
@@ -131,6 +133,48 @@ def root():
 def check(path_key: str) -> None:
     if not SERVICE_PATH or path_key != SERVICE_PATH:
         abort(404)
+
+
+# ---------------------------------------------------------------------------
+# 근무표 — 화면 로직은 schedule_page.py, 데이터는 webapp/schedule.py 재사용
+# ---------------------------------------------------------------------------
+import schedule_page as sched  # noqa: E402
+
+
+@app.route("/<path_key>/schedule")
+def schedule_home(path_key):
+    check(path_key)
+    return sched.admin_page(path_key)
+
+
+@app.route("/<path_key>/schedule/api/week", methods=["POST"])
+def schedule_save_week(path_key):
+    check(path_key)
+    return sched.save_week_api()
+
+
+@app.route("/<path_key>/schedule/api/config", methods=["POST"])
+def schedule_save_config(path_key):
+    check(path_key)
+    return sched.save_config_api()
+
+
+@app.route("/<path_key>/schedule/api/token", methods=["POST"])
+def schedule_new_token(path_key):
+    check(path_key)
+    return sched.new_token_api()
+
+
+@app.route("/<path_key>/schedule/export")
+def schedule_export(path_key):
+    check(path_key)
+    return sched.export()
+
+
+@app.route("/s/<token>")
+def schedule_staff(token):
+    """직원용 근무표 열람 — 비밀주소와 별개의 토큰. 스케줄만 보인다."""
+    return sched.staff_page(token)
 
 
 # ---------------------------------------------------------------------------
@@ -1355,6 +1399,8 @@ def instagram_page(path_key):
     """
     check(path_key)
     reels, reels_msg = [], None
+    topics, topics_when = [], None
+    job = None
     try:
         from sns_automation import cloud_sync
         for e in cloud_sync.load_index():
@@ -1363,12 +1409,63 @@ def instagram_page(path_key):
                 when = datetime.fromtimestamp(
                     e["uploaded"], KST).strftime("%m/%d %H:%M")
             reels.append({**e, "when": when})
+        # 집 PC 일꾼이 30분마다 올려두는 소재 폴더 목록 → 주제 선택칸
+        try:
+            import json as _json
+            raw = cloud_sync._bucket().download("state/topics.json")
+            st = _json.loads(raw.decode("utf-8"))
+            topics = [t for t in st.get("topics", []) if t.get("ready")]
+            if st.get("updated"):
+                topics_when = datetime.fromtimestamp(
+                    st["updated"], KST).strftime("%m/%d %H:%M")
+        except Exception:
+            pass                       # 목록이 없으면 직접 입력칸만 보여준다
     except Exception as e:            # 스토리지가 막혀도 안내 칸은 떠야 한다
         app.logger.warning("완성본 목록 실패: %s", e)
         reels_msg = "완성본 목록을 불러오지 못했어요. 잠시 뒤 새로고침해 주세요."
+    try:
+        job = db.last_reel_job()       # '만드는 중/완료/실패' 표시용
+    except Exception:
+        pass
     return render_template("instagram.html", key=path_key,
                            sidebar=render_template("_sidebar.html", key=path_key),
-                           reels=reels, reels_msg=reels_msg)
+                           reels=reels, reels_msg=reels_msg,
+                           topics=topics, topics_when=topics_when, job=job)
+
+
+@app.route("/<path_key>/instagram/make", methods=["POST"])
+def instagram_make(path_key):
+    """[릴스 만들기] — 집 PC 일꾼에게 전 과정을 요청한다(잡 큐).
+
+    영상 설명(메모)은 필수 — 메뉴명·한정 같은 사실의 출처라서
+    AI 가 이것 없이는 지어내지 않고 묘사만 하게 된다(설계 2026-09-02).
+    """
+    check(path_key)
+    topic = (request.form.get("topic") or "").strip()[:60]
+    memo = (request.form.get("memo") or "").strip()[:2000]
+    if not topic:
+        return jsonify(error="어느 폴더(주제)인지 골라주세요."), 400
+    if len(memo) < 4:
+        return jsonify(error="이 영상이 뭔지 한 줄만 적어주세요 (메뉴 이름·포인트)."), 400
+    try:
+        row = db.request_reel(topic, memo, by="직원웹")
+    except Exception as e:
+        return jsonify(error=f"요청을 넣지 못했어요: {e}"), 500
+    return jsonify(ok=True, job_id=row.get("id"), status=row.get("status"))
+
+
+@app.route("/<path_key>/instagram/job")
+def instagram_job(path_key):
+    """최근 릴스 잡 상태 — 화면이 몇 초마다 물어봐서 진행 표시."""
+    check(path_key)
+    try:
+        job = db.last_reel_job()
+    except Exception:
+        job = None
+    if not job:
+        return jsonify(status="none")
+    return jsonify(status=job.get("status"), message=job.get("message") or "",
+                   result=job.get("result_note") or job.get("result") or "")
 
 
 @app.route("/<path_key>/collect", methods=["POST"])

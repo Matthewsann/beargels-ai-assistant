@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>베어글스 근무표</title>
+<style>
+  /* 직원용 열람 페이지는 사이드바 없이 혼자 선다.
+     base.html 을 상속하지 않으므로 색·버튼 토큰을 여기서 정의한다. */
+  :root {
+    --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+    --accent:#185fa5; --accent-bg:#e6f1fb;
+    --warn:#854f0b; --warn-bg:#faeeda;
+    --ok:#3b6d11; --ok-bg:#eaf3de;
+    color-scheme: only light;
+  }
+  * { box-sizing:border-box; }
+  html { background:var(--bg); }
+  body {
+    margin:0; background:var(--bg); color:var(--ink); line-height:1.6; font-size:15px;
+    font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif;
+  }
+  button { font-family:inherit; cursor:pointer; }
+  button:focus-visible, a:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .tag { display:inline-block; font-size:12px; padding:3px 10px; border-radius:20px; vertical-align:middle; }
+  .tag.warning { background:var(--warn-bg); color:var(--warn); }
+  .tag.accent { background:var(--accent-bg); color:var(--accent); }
+  .tag.success { background:var(--ok-bg); color:var(--ok); }
+  .btn {
+    display:inline-flex; align-items:center; gap:5px; border:1px solid var(--line); background:var(--card);
+    border-radius:8px; padding:9px 14px; font-size:14px; color:var(--ink); text-decoration:none;
+  }
+  .btn.primary { border-color:var(--accent); color:var(--accent); font-weight:700; }
+  .note { background:var(--accent-bg); color:var(--accent); border-radius:8px; font-size:13px; padding:10px 14px; margin:14px 0; }
+  .post { border:1px solid var(--line); border-radius:12px; background:var(--card); padding:16px; margin-bottom:14px; }
+  .list { border:1px solid var(--line); border-radius:12px; background:var(--card); overflow:hidden; }
+  .row { display:flex; align-items:center; gap:10px; padding:12px 14px; border-bottom:1px solid var(--line); font-size:14px; flex-wrap:wrap; }
+  .row:last-child { border-bottom:none; }
+  .sec { margin:22px 0 10px; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .sec b { font-size:16px; }
+  .sec small { color:var(--muted); }
+</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='schedule.css') }}">
+</head>
+<body>
+<div class="pubwrap">
+  <header class="pubbar">
+    <span class="ico">🐻</span>
+    <div><b>베어글스 근무표</b><br><small style="color:var(--muted);" id="sHeadState"></small></div>
+  </header>
+
+  <div id="sched">
+    <div class="stabs">
+      <button class="on" data-tab="stab-week" onclick="STAB('stab-week',this)">📅 이번 주</button>
+      <button data-tab="stab-me" onclick="STAB('stab-me',this)">⭐ 내 근무</button>
+    </div>
+
+    <section id="stab-week">
+      <div class="sec" style="margin-top:0;"><b class="num" id="sWeekLabel"></b></div>
+      <div id="sWeekList"></div>
+      <div class="note">이 링크는 <b>스케줄만</b> 보여요. 홈 화면에 추가해두면 앱처럼 쓸 수 있어요.</div>
+    </section>
+
+    <section id="stab-me" hidden>
+      <div class="chiprow" id="mePicker"></div>
+      <div style="font-size:12px;color:var(--muted);margin:0 0 12px;">처음 한 번만 자기 이름을 고르면 폰이 기억해요.</div>
+      <div class="post nextshift" id="meNext"></div>
+      <div class="sec"><b id="meTitle"></b><small>앞으로의 근무</small></div>
+      <div class="list" id="meList"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+  window.SCHED_BOOT = {{ boot | tojson }};
+  window.SCHED_MODE = 'public';
+  function STAB(id, btn) {
+    ['stab-week', 'stab-me'].forEach(function (t) { document.getElementById(t).hidden = (t !== id); });
+    btn.parentElement.querySelectorAll('button').forEach(function (b) { b.classList.toggle('on', b === btn); });
+  }
+</script>
+<script src="{{ url_for('static', filename='schedule.js') }}"></script>
+</body>
+</html>

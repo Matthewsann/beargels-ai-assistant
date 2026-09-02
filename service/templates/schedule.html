@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>근무표 — 베어글스</title>
+<style>
+  /* 이 화면이 쓰는 공통 토큰 — 집 PC 웹앱 base.html 과 같은 값 */
+  :root {
+    --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+    --accent:#185fa5; --accent-bg:#e6f1fb;
+    --warn:#854f0b; --warn-bg:#faeeda;
+    --ok:#3b6d11; --ok-bg:#eaf3de;
+  }
+  * { box-sizing:border-box; }
+  html { background:var(--bg); }
+  body {
+    margin:0; background:var(--bg); color:var(--ink); line-height:1.6; font-size:15px;
+    font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif;
+  }
+  .wrap { max-width:980px; margin:0 auto; padding:20px 16px 60px; }
+  .top { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+  button { font-family:inherit; cursor:pointer; }
+  button:focus-visible, a:focus-visible, input:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .tag { display:inline-block; font-size:12px; padding:3px 10px; border-radius:20px; vertical-align:middle; }
+  .tag.warning { background:var(--warn-bg); color:var(--warn); }
+  .tag.accent { background:var(--accent-bg); color:var(--accent); }
+  .tag.success { background:var(--ok-bg); color:var(--ok); }
+  .btn {
+    display:inline-flex; align-items:center; gap:5px; border:1px solid var(--line); background:var(--card);
+    border-radius:8px; padding:9px 14px; font-size:14px; color:var(--ink); text-decoration:none;
+  }
+  .btn:hover { background:#f4f2ec; }
+  .btn.primary { border-color:var(--accent); color:var(--accent); font-weight:700; }
+  .note { background:var(--accent-bg); color:var(--accent); border-radius:8px; font-size:13px; padding:10px 14px; margin:14px 0; }
+  .post { border:1px solid var(--line); border-radius:12px; background:var(--card); padding:16px; margin-bottom:14px; }
+  .list { border:1px solid var(--line); border-radius:12px; background:var(--card); overflow:hidden; }
+  .row { display:flex; align-items:center; gap:10px; padding:12px 14px; border-bottom:1px solid var(--line); font-size:14px; flex-wrap:wrap; }
+  .row:last-child { border-bottom:none; }
+  .sec { margin:22px 0 10px; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .sec b { font-size:16px; }
+  .sec small { color:var(--muted); }
+  .stat { background:#f1efe8; border-radius:8px; padding:12px 14px; }
+  .stat .n { font-size:22px; font-weight:700; display:block; line-height:1.3; }
+  .stat small { color:var(--muted); font-size:12px; }
+  .fld {
+    border:1px solid var(--line); border-radius:8px; padding:9px 12px;
+    font-family:inherit; font-size:14px; background:var(--card); color:var(--ink);
+  }
+  .fld:focus { outline:2px solid var(--accent-bg); border-color:var(--accent); }
+  .lbl { display:block; font-size:13px; font-weight:700; margin-bottom:5px; }
+  @media print { .sbar, .themebtn { display:none !important; } body { padding-left:0 !important; } }
+</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='schedule.css') }}">
+</head>
+<body>
+{% include "_sidebar.html" %}
+
+<div class="wrap">
+  <div class="top">
+    <div>
+      <b style="font-size:18px;">🕒 근무표</b><br>
+      <small style="color:var(--muted);">주간 스케줄 작성 · 데일리 근무시간표 · 데이터 내보내기</small>
+    </div>
+  </div>
+
+  <div id="sched">
+    <div class="note" id="savenote" hidden></div>
+
+    <div class="stabs no-print">
+      <button class="on" data-tab="tab-week" onclick="SCHEDTAB('tab-week',this)">📅 주간</button>
+      <button data-tab="tab-day" onclick="SCHEDTAB('tab-day',this)">☀️ 오늘</button>
+      <button data-tab="tab-set" onclick="SCHEDTAB('tab-set',this)">⚙️ 설정</button>
+      <button data-tab="tab-data" onclick="SCHEDTAB('tab-data',this)">📄 데이터</button>
+    </div>
+
+    <!-- ── 주간 캘린더 ── -->
+    <section id="tab-week">
+      <div class="rowbar no-print">
+        <button class="btn small" onclick="SCHED.moveWeek(-1)">‹ 지난주</button>
+        <span class="sp"></span>
+        <span id="wkpos" class="cap"></span>
+        <span class="sp"></span>
+        <button class="btn small" onclick="SCHED.moveWeek(1)">다음 주 ›</button>
+      </div>
+      <div id="weekhost"></div>
+      <div class="legend no-print">
+        <span><span class="sw"></span>영업 전·후 준비/마감 시간</span>
+        <span style="color:var(--accent)">┄ 영업 시작·종료</span>
+        <span style="color:var(--ok)">✓ 예정대로 근무</span>
+        <span style="color:var(--warn)">⚠ 변동(지각·연장·결근)</span>
+        <span>빈 곳을 누르면 추가 · 근무를 끌어서 옮기기</span>
+      </div>
+    </section>
+
+    <!-- ── 오늘 (인쇄되는 부분) ── -->
+    <section id="tab-day" hidden>
+      <div class="rowbar no-print">
+        <span class="sp"></span>
+        <button class="btn small" onclick="window.print()">🖨 A4 가로로 인쇄</button>
+      </div>
+
+      <div class="psheet">
+        <div class="psheet-head">
+          <div class="ph-title"><b>베어글스 송도 타임스페이스점</b><span class="ph-date num" id="phDate"></span></div>
+          <div class="ph-meta num" id="phMeta"></div>
+        </div>
+        <div id="dayChart"></div>
+        <div id="dayGrid"></div>
+        <div class="psheet-sign" id="phSign"></div>
+      </div>
+
+      <div class="note warn" id="dayGapNote" hidden></div>
+      <div class="legend no-print">
+        <span><b>WT</b> = 실제 근무시간 (퇴근 − 출근 − 휴게)</span>
+        <span>흰 칸 = 휴게 (30분 <b>B</b> / 1시간 <b>M</b>)</span>
+        <span style="color:var(--now)">빨간 칸 = 영업 중인데 0명</span>
+      </div>
+
+      <div class="sec no-print" style="margin-top:22px;"><b>오늘 마감 기록</b>
+        <small>변동 없으면 "예정대로" 한 번이면 끝</small></div>
+      <div class="no-print" id="closeHost"></div>
+      <div class="note no-print">💡 지각·연장·결근만 고치면 돼요. 나머지는 예정대로 처리됩니다.</div>
+    </section>
+
+    <!-- ── 설정 ── -->
+    <section id="tab-set" hidden>
+      <div class="sec"><b>직원용 링크</b><small>단톡방에 이 링크만 공유하면 끝</small></div>
+      <div class="post">
+        <div class="linkbox">
+          <code id="pubLink">{{ public_url }}</code>
+          <button class="btn small" onclick="SCHED.copyLink()">복사</button>
+          <button class="btn small danger" onclick="SCHED.newToken()">새 링크 만들기</button>
+        </div>
+        <div class="note" style="margin-bottom:0;">
+          이 링크로 들어오면 <b>스케줄만</b> 보여요. 관리자 비밀주소와 다른 주소라서, 직원이
+          회의기록·MKT캘린더 같은 다른 메뉴로 들어갈 수 없습니다. 퇴사자가 생기면
+          <b>새 링크</b>를 만들어 다시 공유하세요.
+        </div>
+      </div>
+
+      <div class="sec"><b>매장 영업시간</b><small>요일마다 다르게 · 바뀐 날짜부터 적용</small></div>
+      <div class="post">
+        <div id="bizDowHost"></div>
+        <div class="rowbar" style="margin-top:12px;">
+          <label class="cap" for="bizFromIn">이 날짜부터 적용</label>
+          <input class="fld num" type="date" id="bizFromIn" value="{{ boot.todayIso }}" style="width:auto;">
+          <button class="btn small primary" onclick="SCHED.applyBiz()">적용</button>
+          <button class="btn small" onclick="SCHED.fillBizAll()">모든 요일 같게</button>
+        </div>
+        <div class="note" id="bizHint"></div>
+        <div class="sec" style="margin-bottom:6px;"><b style="font-size:14px;">영업시간 바뀐 기록</b></div>
+        <div id="bizHistHost"></div>
+      </div>
+
+      <div class="sec"><b>매장 휴무</b><small>쉬는 날엔 근무를 넣을 수 없어요</small></div>
+      <div class="post">
+        <label class="lbl">정기 휴무 요일</label>
+        <div class="chiprow" id="closedDowHost"></div>
+        <label class="lbl" for="closedDateIn" style="margin-top:6px;">임시 휴무 날짜</label>
+        <div class="rowbar">
+          <input class="fld num" type="date" id="closedDateIn" style="width:auto;">
+          <button class="btn small" onclick="SCHED.addClosedDate()">＋ 휴무일 추가</button>
+        </div>
+        <div id="closedDateHost" style="margin-top:10px;"></div>
+      </div>
+
+      <div class="sec"><b>공휴일 · 날씨</b><small>캘린더에 함께 표시돼요</small></div>
+      <div class="post">
+        <div class="erow">
+          <label class="lbl" style="margin:0;" for="holChk">🇰🇷 공휴일 표시</label>
+          <input type="checkbox" id="holChk" onchange="SCHED.setFlag('showHoliday',this.checked)">
+          <span class="cap">빨간날을 날짜 밑에 표시</span>
+        </div>
+        <div class="erow">
+          <label class="lbl" style="margin:0;" for="wxChk">🌤 날씨 표시</label>
+          <input type="checkbox" id="wxChk" onchange="SCHED.setFlag('showWeather',this.checked)">
+          <span class="cap">
+            {% if boot.weather %}날짜별 날씨와 최고기온{% else %}아직 날씨 데이터가 없어요{% endif %}
+          </span>
+        </div>
+        <div class="note" style="margin-bottom:0;">
+          💰 공휴일은 <b>1년에 한 번</b>, 날씨는 <b>하루에 한 번</b>만 받아서 저장해두고 보여줍니다.
+          화면을 열 때마다 부르지 않아요. 둘 다 정부 공공데이터라 무료입니다.
+        </div>
+      </div>
+
+      <div class="sec"><b>근무 시간대</b><small>근무 추가할 때 버튼 한 번으로 시간이 채워져요</small></div>
+      <div class="post">
+        <div id="presetHost"></div>
+        <div style="margin-top:12px;"><button class="btn small" onclick="SCHED.addPreset()">＋ 근무 시간대 추가</button></div>
+      </div>
+
+      <div class="sec"><b>직원</b><small>이름 · 색 · 역할</small></div>
+      <div class="post">
+        <div id="staffHost"></div>
+        <div style="margin-top:12px;"><button class="btn small" onclick="SCHED.addStaff()">＋ 직원 추가</button></div>
+        <div class="note" style="margin-bottom:0;">
+          이름을 고치면 이미 짜둔 근무의 이름도 같이 바뀌어요. 직원을 지우면 그 사람의 근무도 함께 지워집니다.
+        </div>
+      </div>
+
+      <div class="sec"><b>인원 부족 판단 기준</b><small>오늘 화면의 인원 그래프 색을 정해요</small></div>
+      <div class="post">
+        <div class="erow">
+          <label class="cap" for="sphIn">1명이 감당하는 30분 매출</label>
+          <input class="fld num" type="number" id="sphIn" min="1" step="1" style="width:90px;"
+                 onchange="SCHED.setSalesPerHead(this.value)">
+          <span class="cap">천원</span>
+        </div>
+        <div class="note" style="margin-bottom:0;">
+          예상 매출을 이 값으로 나눠 필요 인원을 구해요. 바쁜 날 체감으로 몇 번 조정해보면 맞아갑니다.
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 데이터 내보내기 ── -->
+    <section id="tab-data" hidden>
+      <div class="sec" style="margin-top:0;"><b>실제 근무 데이터 내보내기</b><small>기간을 정해서 뽑아요</small></div>
+      <form class="post" method="get" action="/{{ key }}/schedule/export" target="_blank">
+        <label class="lbl" for="exFrom">기간</label>
+        <div class="rowbar">
+          <input class="fld num" type="date" id="exFrom" name="from" value="{{ boot.todayIso[:8] }}01" style="width:auto;">
+          <span class="cap">~</span>
+          <input class="fld num" type="date" id="exTo" name="to" value="{{ boot.todayIso }}" style="width:auto;">
+        </div>
+        <div class="rowbar" style="margin-top:12px;">
+          <button class="btn primary" type="submit" name="fmt" value="md">⬇ Markdown 내려받기</button>
+          <button class="btn" type="submit" name="fmt" value="csv">⬇ CSV 내려받기</button>
+        </div>
+        <div class="note" style="margin-bottom:0;">
+          선택한 기간의 실제 근무 기록(누가·언제·몇 시간, 휴게와 변동 사유 포함)을 표로 뽑아요.
+          <b>급여 계산은 여기서 하지 않아요</b> — 뽑은 파일을 쓰시던 급여명세서 프로그램에 넣으시면 됩니다.
+        </div>
+      </form>
+    </section>
+
+    <!-- ── 근무 추가/수정 ── -->
+    <div class="modal" id="modal" hidden onclick="if(event.target===this) SCHED.closeModal()">
+      <div class="modal-card" role="dialog" aria-modal="true">
+        <h3 id="mdTitle"></h3>
+        <div class="sub" id="mdSub"></div>
+        <div id="mdStaffWrap" hidden>
+          <label class="lbl">직원</label>
+          <div class="chiprow" id="mdStaff"></div>
+        </div>
+        <label class="lbl">근무 시간대</label>
+        <div class="chiprow" id="mdPresets"></div>
+        <div class="grid3">
+          <div><label class="lbl" for="mdStart">시작</label>
+            <input class="fld num" type="time" id="mdStart" onchange="SCHED.modalTime()"></div>
+          <div><label class="lbl" for="mdEnd">종료</label>
+            <input class="fld num" type="time" id="mdEnd" onchange="SCHED.modalTime()"></div>
+          <div><label class="lbl">근무 시간</label>
+            <div class="fld num" id="mdLen" style="background:#f1efe8;"></div></div>
+        </div>
+        <div class="modal-acts">
+          <button class="btn primary" id="mdSave" onclick="SCHED.saveModal()"></button>
+          <button class="btn danger" id="mdDelete" onclick="SCHED.deleteModal()" hidden>삭제</button>
+          <span class="sp"></span>
+          <button class="btn" onclick="SCHED.closeModal()">취소</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  window.SCHED_BOOT = {{ boot | tojson }};
+  window.SCHED_MODE = 'admin';
+  function SCHEDTAB(id, btn) {
+    ['tab-week', 'tab-day', 'tab-set', 'tab-data'].forEach(function (t) {
+      document.getElementById(t).hidden = (t !== id);
+    });
+    btn.parentElement.querySelectorAll('button').forEach(function (b) { b.classList.toggle('on', b === btn); });
+    if (window.SCHED) window.SCHED.render();
+  }
+</script>
+<script src="{{ url_for('static', filename='schedule.js') }}"></script>
+</body>
+</html>
