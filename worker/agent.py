@@ -1557,6 +1557,16 @@ def run_job(job) -> None:
         return run_meeting_organize_job(job)
     if job.get("kind") == "reel":
         return run_reel_job(job)
+    if job.get("kind") == "reel_topics":
+        # 직원 웹 [새로고침] — 소재 폴더 목록만 즉시 다시 올린다(수 초).
+        try:
+            sys.path.insert(0, str(ROOT))
+            from sns_automation import auto_make
+            auto_make.push_topics()
+            db.finish_job(job["id"], "done", "소재 목록 갱신")
+        except Exception as e:  # noqa: BLE001
+            db.finish_job(job["id"], "error", str(e)[:200], 0)
+        return None
     # ⚠️ 블로그 분기는 '알 수 없는 잡' 가드보다 반드시 먼저 —
     # 가드가 앞에 있던 동안 blog_* 잡 전부가 에러로 죽어 블로그 버튼이
     # 통째로 먹통이었다(2026-08-30 감사에서 발견).

@@ -318,6 +318,17 @@ def request_reel(topic, memo="", by=None):
     return (get_client().table("jobs").insert(row).execute().data or [None])[0]
 
 
+def request_reel_topics(by=None):
+    """직원 웹의 소재 목록 [새로고침] — 집 PC가 폴더 목록을 즉시 다시 올린다."""
+    live = (get_client().table("jobs").select("*")
+            .eq("kind", "reel_topics").in_("status", ["pending", "running"])
+            .order("requested_at", desc=True).limit(1).execute().data)
+    if live:
+        return live[0]
+    row = {"kind": "reel_topics", "status": "pending", "requested_by": by or ""}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
 def last_reel_job():
     """가장 최근 릴스 잡 1건 — 직원 웹이 '만드는 중/완료/실패'를 보여줄 때."""
     rows = (get_client().table("jobs").select("*").eq("kind", "reel")
@@ -393,7 +404,7 @@ def last_collect_at():
 
 # 직원이 화면 앞에서 결과를 기다리는 작업 — 리뷰수집(수 분) 뒤에 밀리면
 # 3분 폴링 안에 끝나지 않아 '아직 확인이 안 돼요'로 보인다. 먼저 집는다.
-INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "wake", "reel")
+INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "wake", "reel", "reel_topics")
 
 
 def claim_next_job(interactive_only=False):
