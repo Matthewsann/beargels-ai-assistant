@@ -227,8 +227,9 @@
             <b>인스타 앱에서 발행 (사람이 직접)</b>
             <p>완성본은 <b>무음</b>이에요. Meta <b>Edits</b> 앱에서 <b>인기 음원</b>을 얹어 올리세요.
             인기 음원은 앱에서만 붙일 수 있고, 도달에 가장 크게 영향을 줍니다.</p>
-            <p class="tip">발행 후 «발행 대기»에서 <b>[✅ 발행 완료]</b>를 눌러주세요.
-            그래야 성과 기록이 시작돼요.</p>
+            <p class="tip">첫 한 달은 <b>발행 전에 꼭 한 번 훑어보세요</b>(파일럿 기간 —
+            특히 "검수 경고"가 붙은 것). 발행 후 «발행 대기»에서 <b>[✅ 발행 완료]</b>를
+            눌러주세요. 그래야 성과 기록이 시작돼요.</p>
           </div>
         </div>
 
@@ -494,6 +495,7 @@ function renderDetail(){
         </div>
         <button class="btn sm" onclick="saveNote()">메모 저장</button>
         <span class="muted" style="font-size:.78rem;margin-left:6px">메모에 없는 메뉴명·가격은 AI가 지어내지 않아요</span>
+        ${qcLine(p.qc)}
       </div>
       <div class="stepper">
         ${steps.map((s,i)=>`<div class="stp ${i+1<si?'done':(i+1===si?'on':'')}">${i+1}. ${s}</div>`).join("")}
@@ -559,6 +561,18 @@ function renderDetail(){
   </div>`;
   wireUpload();
   if(hasVideo) loadShots();
+}
+
+// 출하 검수 결과 표시 (자동 생성 릴스에 붙는다)
+function qcLine(q){
+  if(!q) return "";
+  const parts=[];
+  if(q.passed && !q.fixed) parts.push(`<span style="color:var(--good)">✅ 검수 통과</span>`);
+  else if(q.passed) parts.push(`<span style="color:var(--good)">✅ 검수 지적 수정 후 통과</span>`);
+  else parts.push(`<span style="color:var(--warn)">⚠️ 검수 경고: ${esc((q.critical||q.warnings||[]).join(" · "))}</span>`);
+  if((q.missing||[]).length)
+    parts.push(`📋 다음 촬영 때: ${q.missing.map(m=>esc(m.need||"")).join(" · ")}`);
+  return `<div class="muted" style="font-size:.78rem;margin-top:8px">${parts.join("<br>")}</div>`;
 }
 
 // 📝 사장님 메모 저장 (AI 자막·캡션의 사실 출처)

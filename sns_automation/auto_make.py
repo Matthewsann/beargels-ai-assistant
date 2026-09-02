@@ -198,6 +198,30 @@ def make_reel(topic: str, memo: str = "") -> dict:
         fb = wa._fallback_caption(p)
         caption = fb["caption"] + "\n\n" + " ".join(fb["hashtags"])
 
+    # ④-b 출하 전 검수 — 치명 불량이면 말을 한 번 고쳐 재렌더(두 번은 안 함)
+    from . import qc
+    report = qc.run_qc(plan, out, caption, guide)
+    qc_fixed = False
+    if not report["passed"] and report["fix_words"]:
+        try:
+            feedback = (guide + "\n[검수 지적 — 반드시 고칠 것]\n"
+                        + "\n".join(f"- {i}" for i in report["critical"]))
+            plan = asyncio.run(planner.write_shot_captions(
+                plan, title, p.get("menu", title), frames, guide=feedback))
+            res = video_editor.build_reel_from_plan(plan, wa._media_dir(p), out)
+            p["shot_plan"] = plan
+            wa._save_project(p)
+            report2 = {"passed": not qc.deterministic_issues(plan, caption),
+                       "critical": qc.deterministic_issues(plan, caption),
+                       "warnings": report["warnings"], "fix_words": False}
+            report, qc_fixed = report2, True
+        except Exception as e:
+            logger.warning("검수 재작업 실패(경고 출하): %s", e)
+    p["qc"] = {**report, "fixed": qc_fixed,
+               "missing": plan.get("missing") or [],
+               "rejected": plan.get("rejected") or []}
+    wa._save_project(p)
+
     # ⑤ 완성본 저장 (웹 finalize 와 같은 규칙: 버전 번호 붙여 안 덮어씀)
     final_dir = os.path.join(wa.FINAL_DIR, wa._slug(title))
     os.makedirs(final_dir, exist_ok=True)
@@ -226,7 +250,10 @@ def make_reel(topic: str, memo: str = "") -> dict:
 
     return {"title": title, "seconds": res.get("seconds"),
             "ai_captions": ai_captions, "ai_selected": ai_selected,
-            "cloud": bool(cloud), "file": reel_name}
+            "cloud": bool(cloud), "file": reel_name,
+            "qc_passed": report["passed"], "qc_fixed": qc_fixed,
+            "qc_warnings": report["warnings"][:3],
+            "missing_shots": [m.get("need", "") for m in (plan.get("missing") or [])][:3]}
 
 
 def _pipeline_url() -> str:

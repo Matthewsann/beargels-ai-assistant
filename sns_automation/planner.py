@@ -450,8 +450,24 @@ _FOOTAGE_PLAN_SCHEMA = {
         "cta": {"type": "string", "description": "마지막 방문 유도 한 줄"},
         "rejected": {"type": "array", "items": {"type": "string"},
                      "description": "못 쓸 클립과 이유 (흔들림·어두움 등)"},
+        "missing": {
+            "type": "array",
+            "description": "촬영본에 없어서 못 채운 것 — 다음 촬영 때 찍을 샷."
+                           " 소재로 충분히 채웠으면 빈 배열.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "role": {"type": "string"},
+                    "need": {"type": "string",
+                             "description": "무엇을 몇 초 찍으면 되는지 한 줄"
+                                            " (예: '단면 정면 클로즈업 4초')"},
+                },
+                "required": ["role", "need"],
+                "additionalProperties": False,
+            },
+        },
     },
-    "required": ["hook", "shots", "cta", "rejected"],
+    "required": ["hook", "shots", "cta", "rejected", "missing"],
     "additionalProperties": False,
 }
 
@@ -536,6 +552,9 @@ async def plan_from_footage(clips: list[dict], title: str, menu: str,
     })
     plan["ai_selected"] = True
     plan["rejected"] = data.get("rejected") or []
+    # 입고 검수 보고: 소재에 없어서 못 채운 샷 — 촬영자(사장님)에게 전달된다
+    plan["missing"] = [m for m in (data.get("missing") or [])
+                       if isinstance(m, dict) and m.get("need")][:4]
     return plan
 
 

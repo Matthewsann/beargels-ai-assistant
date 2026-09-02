@@ -1501,10 +1501,15 @@ def run_reel_job(job) -> None:
         sys.path.insert(0, str(ROOT))
         from sns_automation import auto_make
         res = auto_make.make_reel(topic, req.get("memo") or "")
-        msg = (f"'{res['title']}' 릴스 완성 ({res['seconds']}초"
+        qc_note = ("검수 통과" if res.get("qc_passed") and not res.get("qc_fixed")
+                   else "검수 지적 1회 수정 후 출하" if res.get("qc_passed")
+                   else "⚠️ 검수 경고와 함께 출하 — 발행 전 확인 권장")
+        msg = (f"'{res['title']}' 릴스 완성 ({res['seconds']}초 · {qc_note}"
                + ("" if res["ai_captions"] else " · AI 자막 실패—뼈대 자막")
                + ("" if res["cloud"] else " · 클라우드 업로드 실패—집 PC에만 저장")
                + ")")
+        if res.get("missing_shots"):
+            msg += " / 다음 촬영 때: " + " · ".join(res["missing_shots"])
         db.finish_job(jid, "done", msg, 1)
         logger.info("릴스 잡 #%s 완료 — %s", jid, msg)
         try:
