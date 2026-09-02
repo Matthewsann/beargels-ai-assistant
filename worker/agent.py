@@ -1479,6 +1479,64 @@ def maybe_rescue_stuck() -> None:
         logger.warning("등록 대기 점검 실패: %s", e)
 
 
+def run_reel_job(job) -> None:
+    """직원 웹 [릴스 만들기] — 소재 폴더 하나로 완성본까지 전 과정.
+
+    AI 자막·캡션은 유료 Claude(릴스당 ≈ $0.15), 렌더는 이 PC의 ffmpeg.
+    끝나면 완성본이 클라우드에 올라가 직원 웹 ② 목록에 뜬다.
+    """
+    import json as _json
+    jid = job["id"]
+    try:
+        req = _json.loads(job.get("message") or "{}")
+    except ValueError:
+        req = {}
+    topic = (req.get("topic") or "").strip()
+    if not topic:
+        db.finish_job(jid, "error", "주제가 비어 있어요.", 0)
+        return
+    logger.info("릴스 잡 #%s 시작 — %s", jid, topic)
+    db.worker_ping("working", f"릴스 만드는 중 ({topic})")
+    try:
+        sys.path.insert(0, str(ROOT))
+        from sns_automation import auto_make
+        res = auto_make.make_reel(topic, req.get("memo") or "")
+        msg = (f"'{res['title']}' 릴스 완성 ({res['seconds']}초"
+               + ("" if res["ai_captions"] else " · AI 자막 실패—뼈대 자막")
+               + ("" if res["cloud"] else " · 클라우드 업로드 실패—집 PC에만 저장")
+               + ")")
+        db.finish_job(jid, "done", msg, 1)
+        logger.info("릴스 잡 #%s 완료 — %s", jid, msg)
+        try:
+            auto_make.push_topics()
+        except Exception:
+            pass
+    except Exception as e:  # noqa: BLE001
+        logger.error("릴스 잡 #%s 실패: %s", jid, e)
+        logger.debug(traceback.format_exc())
+        db.log_error("worker", f"릴스 잡 실패({topic}): {e}",
+                     kind=type(e).__name__, path="run_reel_job",
+                     detail=traceback.format_exc())
+        db.finish_job(jid, "error", str(e)[:200], 0)
+
+
+_last_topics_push = 0.0
+
+
+def maybe_push_reel_topics() -> None:
+    """30분마다 소재 폴더 목록을 클라우드로 — 직원 웹 주제 선택칸이 읽는다."""
+    global _last_topics_push
+    if time.monotonic() - _last_topics_push < 1800:
+        return
+    _last_topics_push = time.monotonic()
+    try:
+        sys.path.insert(0, str(ROOT))
+        from sns_automation import auto_make
+        auto_make.push_topics()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("소재 목록 업로드 실패(무시): %s", e)
+
+
 def run_job(job) -> None:
     """요청 1건 처리. 종류(kind)에 따라 리뷰 수집 / 블로그 / 메뉴 수집으로 나뉜다."""
     if job.get("kind") == "wake":
@@ -1497,6 +1555,8 @@ def run_job(job) -> None:
         return run_pos_import_job(job)
     if job.get("kind") == "meeting_organize":
         return run_meeting_organize_job(job)
+    if job.get("kind") == "reel":
+        return run_reel_job(job)
     # ⚠️ 블로그 분기는 '알 수 없는 잡' 가드보다 반드시 먼저 —
     # 가드가 앞에 있던 동안 blog_* 잡 전부가 에러로 죽어 블로그 버튼이
     # 통째로 먹통이었다(2026-08-30 감사에서 발견).
@@ -1629,6 +1689,7 @@ def main() -> int:
                     maybe_pa_expiry_check()
                     maybe_blog_react()
                     maybe_rescue_stuck()
+                    maybe_push_reel_topics()
                     db.worker_ping("idle", "대기 중")
             if job:
                 # 일감이 있으면 쉬지 않고 바로 다음 것을 집는다. 예전엔 한 건

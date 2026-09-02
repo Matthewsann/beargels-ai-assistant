@@ -1464,8 +1464,16 @@ def instagram_job(path_key):
         job = None
     if not job:
         return jsonify(status="none")
-    return jsonify(status=job.get("status"), message=job.get("message") or "",
-                   result=job.get("result_note") or job.get("result") or "")
+    # 대기/진행 중엔 message 가 요청 JSON({topic,memo})이고,
+    # 끝나면 finish_job 이 결과 문장으로 덮어쓴다 — 화면엔 사람 말만 보낸다.
+    msg = job.get("message") or ""
+    if job.get("status") in ("pending", "running"):
+        try:
+            import json as _json
+            msg = _json.loads(msg).get("topic", "")
+        except ValueError:
+            pass
+    return jsonify(status=job.get("status"), message=msg)
 
 
 @app.route("/<path_key>/collect", methods=["POST"])

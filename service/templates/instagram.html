@@ -64,15 +64,43 @@
           <b>찍은 걸 다</b> 올리세요. 고르는 건 편집이 합니다</li>
       <li>끝! 집 PC가 자동으로 알아봐요</li>
     </ol>
-    <div class="note">📝 영상 설명(메뉴 이름·포인트)은 여기서 안 적어요 —
-      <b>릴스 만들 때</b> 파이프라인 화면 맨 위 메모칸에 한 줄 적으면
-      AI가 그걸 사실의 근거로 씁니다.<br>
+    <div class="note">올렸으면 아래 <b>② 릴스 만들기</b>에서 폴더를 고르고
+      설명 한 줄 적고 버튼만 누르면 끝이에요.<br>
       ⚠️ 릴스를 시작한 뒤에는 <b>폴더 이름을 바꾸지 마세요</b> — 연결이 끊겨요.</div>
   </div>
 
-  <!-- ② 완성본 -->
+  <!-- ② 릴스 만들기 (집 PC 일꾼에게 요청) -->
   <div class="card">
-    <h3>② 완성된 릴스 받기</h3>
+    <h3>② 릴스 만들기</h3>
+    <div style="margin-bottom:8px;font-size:13px;">
+      <label style="display:block;color:var(--muted);font-size:12.5px;margin-bottom:4px">어느 폴더(주제)로 만들까요?</label>
+      {% if topics %}
+        <select id="mkTopic" style="font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;max-width:100%">
+          {% for t in topics %}<option>{{ t.topic }}</option>{% endfor %}
+        </select>
+        <span style="color:var(--muted);font-size:11.5px">영상 있는 폴더만 · {{ topics_when }} 기준</span>
+      {% else %}
+        <input id="mkTopic" type="text" placeholder="드라이브 폴더 이름 그대로 (예: 무화과 산도)"
+               style="font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;width:100%">
+      {% endif %}
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="display:block;color:var(--muted);font-size:12.5px;margin-bottom:4px">
+        📝 이 영상 뭐예요? — 메뉴 이름·포인트 한 줄 <b>(필수)</b></label>
+      <textarea id="mkMemo" rows="2"
+        placeholder="예) 무화과 산도 신메뉴. 크림 사이에 무화과 통째로가 포인트. 주말 한정"
+        style="font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;width:100%"></textarea>
+      <div style="color:var(--muted);font-size:11.5px">AI는 여기 적힌 사실만 써요 — 없는 메뉴명·가격은 지어내지 않아요</div>
+    </div>
+    <button class="btn pri" id="mkBtn" onclick="makeReel()">🎬 릴스 만들기</button>
+    <div id="mkStatus"></div>
+    <div class="note" style="margin-top:10px">집 PC가 AI 자막 → 편집까지 해요(2~4분).
+      끝나면 아래 ③ 목록에 자동으로 떠요. 페이지를 닫아도 계속 만들어요.</div>
+  </div>
+
+  <!-- ③ 완성본 -->
+  <div class="card">
+    <h3>③ 완성된 릴스 받기</h3>
     {% if reels %}
       {% for r in reels %}
       <div class="reel">
@@ -97,6 +125,51 @@
 </div>
 
 <script>
+// ② 릴스 만들기 — 집 PC 일꾼에게 요청하고, 상태를 몇 초마다 확인
+let pollTimer = null;
+async function makeReel(){
+  const topic = (document.querySelector("#mkTopic").value || "").trim();
+  const memo = (document.querySelector("#mkMemo").value || "").trim();
+  const st = document.querySelector("#mkStatus");
+  if(!topic){ st.innerHTML = '<div class="note">어느 폴더(주제)인지 골라주세요.</div>'; return; }
+  if(memo.length < 4){ st.innerHTML = '<div class="note">이 영상이 뭔지 한 줄만 적어주세요 (메뉴 이름·포인트).</div>'; return; }
+  const btn = document.querySelector("#mkBtn");
+  btn.disabled = true; btn.textContent = "요청 넣는 중…";
+  try{
+    const fd = new FormData(); fd.append("topic", topic); fd.append("memo", memo);
+    const r = await fetch(location.pathname.replace(/\/$/,"") + "/make", {method:"POST", body:fd});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || "요청 실패");
+    st.innerHTML = '<div class="okmsg">⏳ 집 PC가 만들기 시작했어요 — 여기서 기다리면 진행이 보여요.</div>';
+    startPoll();
+  }catch(e){
+    st.innerHTML = `<div class="note">실패: ${e.message}</div>`;
+  }
+  btn.disabled = false; btn.textContent = "🎬 릴스 만들기";
+}
+function startPoll(){
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    try{
+      const r = await fetch(location.pathname.replace(/\/$/,"") + "/job");
+      const d = await r.json();
+      const st = document.querySelector("#mkStatus");
+      if(d.status === "running")
+        st.innerHTML = `<div class="okmsg">🎬 만드는 중… (${d.message}) — AI 자막 → 편집, 2~4분 걸려요</div>`;
+      else if(d.status === "pending")
+        st.innerHTML = `<div class="okmsg">⏳ 집 PC 차례를 기다리는 중… (${d.message})</div>`;
+      else if(d.status === "done"){
+        st.innerHTML = `<div class="okmsg">✅ ${d.message} — 아래 ③에서 받으세요. <a href="javascript:location.reload()">목록 새로고침</a></div>`;
+        clearInterval(pollTimer);
+      }else if(d.status === "error"){
+        st.innerHTML = `<div class="note">❌ 실패: ${d.message}</div>`;
+        clearInterval(pollTimer);
+      }
+    }catch(e){}
+  }, 5000);
+}
+{% if job and job.status in ("pending","running") %}startPoll();{% endif %}
+
 function copyCap(i){
   const t = document.getElementById("cap"+i).textContent;
   navigator.clipboard.writeText(t).then(

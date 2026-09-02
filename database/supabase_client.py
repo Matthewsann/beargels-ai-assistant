@@ -297,6 +297,34 @@ def request_collect_all(by=None):
     return (get_client().table("jobs").insert(row).execute().data or [None])[0]
 
 
+def request_reel(topic, memo="", by=None):
+    """직원 웹의 [릴스 만들기] — 집 PC 일꾼에게 전 과정을 요청한다.
+
+    jobs 에 payload 컬럼이 없어(DDL 회피) 주제·메모를 message 에 JSON 으로 담는다.
+    같은 주제가 이미 대기/진행 중이면 재사용(연타 방지).
+    """
+    import json as _json
+    live = (get_client().table("jobs").select("*")
+            .eq("kind", "reel").in_("status", ["pending", "running"])
+            .order("requested_at", desc=True).limit(5).execute().data)
+    for row in live or []:
+        try:
+            if _json.loads(row.get("message") or "{}").get("topic") == topic:
+                return row
+        except ValueError:
+            continue
+    row = {"kind": "reel", "status": "pending", "requested_by": by or "",
+           "message": _json.dumps({"topic": topic, "memo": memo}, ensure_ascii=False)}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
+def last_reel_job():
+    """가장 최근 릴스 잡 1건 — 직원 웹이 '만드는 중/완료/실패'를 보여줄 때."""
+    rows = (get_client().table("jobs").select("*").eq("kind", "reel")
+            .order("requested_at", desc=True).limit(1).execute().data)
+    return rows[0] if rows else None
+
+
 def request_wake():
     """웹의 '프로그램 깨우기' — wake 요청 1건을 대기열에 넣는다.
 
@@ -365,7 +393,7 @@ def last_collect_at():
 
 # 직원이 화면 앞에서 결과를 기다리는 작업 — 리뷰수집(수 분) 뒤에 밀리면
 # 3분 폴링 안에 끝나지 않아 '아직 확인이 안 돼요'로 보인다. 먼저 집는다.
-INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "wake")
+INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "wake", "reel")
 
 
 def claim_next_job(interactive_only=False):
