@@ -398,8 +398,8 @@
     if (!md || !$('modal')) return;
     var wk = WEEKS[md.wi];
     $('mdTitle').textContent = md.mode === 'add' ? '근무 추가' : '근무 수정';
-    $('mdSub').textContent = wk.dates[md.di] + ' (' + DOW[md.di] + ')' + (md.mode === 'edit' ? ' · ' + md.who : '');
-    $('mdStaffWrap').hidden = md.mode !== 'add';
+    $('mdSub').textContent = wk.dates[md.di] + ' (' + DOW[md.di] + ')';
+    $('mdStaffWrap').hidden = false;   // 수정할 때도 직원을 바꿀 수 있다 (대타 지정)
     $('mdStaff').innerHTML = (CFG.staff || []).map(function (s) {
       return '<button class="' + (s.name === md.who ? 'on' : '') + '" onclick="SCHED.pickWho(\'' + esc(s.name) + '\')">'
         + '<i class="pdot" style="background:' + s.c + '"></i>' + esc(s.name) + '</button>';
