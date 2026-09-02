@@ -91,6 +91,9 @@ jobs:
           upload service/templates/meeting.html
           upload service/templates/meeting_detail.html
           upload service/templates/meeting_form.html
+          upload service/templates/instagram.html
+          upload sns_automation/__init__.py
+          upload sns_automation/cloud_sync.py
           upload service/mkt_page.py
           upload service/menu_images.py
           upload data/ingredients_seed.json
