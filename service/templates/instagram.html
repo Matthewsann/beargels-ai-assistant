@@ -49,21 +49,25 @@
   <!-- ① 촬영본은 드라이브로 -->
   <div class="card">
     <h3>① 촬영본 올리기 — 구글 드라이브</h3>
-    <ol class="steps">
-      <li>폰 갤러리에서 영상·사진 선택 → <b>공유</b> → <b>드라이브</b></li>
-      <li>폴더: <b>콘텐츠 생성 / 원본소재 / (주제 폴더)</b>
-          — 새 주제는 폴더를 새로 만들면 돼요</li>
-      <li>끝! 집 PC가 자동으로 알아보고 릴스 소재로 올려둬요</li>
-    </ol>
-    <div class="row" style="margin-top:12px">
+    <div class="row" style="margin-bottom:12px">
       <a class="btn pri" target="_blank" rel="noopener"
          href="https://drive.google.com/drive/folders/1cJf1C4C3LGAUqDdF9M8ckglPR0ViHBSw">
         📂 원본소재 폴더 열기</a>
     </div>
-    <div class="note">드라이브 업로드가 제일 빨라요. 잘 찍혔는지 고르지 말고
-      <b>찍은 걸 다 올리세요</b> — 고르는 건 편집이 합니다.<br>
-      영상이 뭔지(메뉴 이름·포인트) 적는 <b>한 줄 메모</b>는 릴스 만들 때
-      파이프라인 화면에서 적어요.</div>
+    <ol class="steps">
+      <li>위 버튼으로 폴더 열기 → 오른쪽 아래 <b>＋</b> → <b>폴더</b></li>
+      <li>폴더 이름은 <b>메뉴·소재 이름 짧게</b> — 예) <b>무화과 산도</b><br>
+          <span style="color:var(--muted);font-size:12.5px">
+          이 이름이 그대로 릴스 제목이 되고, 아래 ② 목록에서 찾을 이름이 돼요.
+          멋있게 지을 필요 없어요 — 훅·캡션은 AI가 써요.</span></li>
+      <li>그 폴더에 영상·사진 올리기 — 잘 찍혔는지 고르지 말고
+          <b>찍은 걸 다</b> 올리세요. 고르는 건 편집이 합니다</li>
+      <li>끝! 집 PC가 자동으로 알아봐요</li>
+    </ol>
+    <div class="note">📝 영상 설명(메뉴 이름·포인트)은 여기서 안 적어요 —
+      <b>릴스 만들 때</b> 파이프라인 화면 맨 위 메모칸에 한 줄 적으면
+      AI가 그걸 사실의 근거로 씁니다.<br>
+      ⚠️ 릴스를 시작한 뒤에는 <b>폴더 이름을 바꾸지 마세요</b> — 연결이 끊겨요.</div>
   </div>
 
   <!-- ② 완성본 -->
@@ -83,7 +87,8 @@
         {% if r.caption %}<div class="cap" id="cap{{ loop.index0 }}">{{ r.caption }}</div>{% endif %}
       </div>
       {% endfor %}
-      <div class="note">영상은 <b>무음</b>이에요. 인스타 <b>Edits</b> 앱에서 인기 음원을 얹어 올리세요.</div>
+      <div class="note">영상은 <b>무음</b>이에요. 인스타 <b>Edits</b> 앱에서 인기 음원을 얹어 올리세요.<br>
+        같은 릴스를 다시 만들면 여기엔 <b>최신본 하나</b>로 바뀌어요.</div>
     {% else %}
       <div class="empty">{{ reels_msg or "아직 완성된 릴스가 없어요. 집 PC에서 만들면 여기 나타나요." }}</div>
     {% endif %}
