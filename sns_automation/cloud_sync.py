@@ -139,6 +139,26 @@ def remove_script(pid: str) -> None:
     _save_scripts([s for s in load_scripts(c) if s.get("pid") != pid], c)
 
 
+def push_script_thumbs(pid: str, jpegs: list[bytes]) -> list[str]:
+    """대본 검수용 샷 썸네일 업로드 → 공개 URL 목록(샷 순서 유지).
+
+    자막만 보고는 산딸기인지 자몽인지 알 수 없다(사장님 지적 2026-09-02) —
+    검수 화면에 그 샷의 실제 화면을 같이 보여주기 위한 것. 빈 항목은 "" 유지.
+    """
+    c = client()
+    b = _bucket(c)
+    key = enc(pid)
+    urls: list[str] = []
+    for i, data in enumerate(jpegs):
+        if not data:
+            urls.append("")
+            continue
+        path = f"state/thumbs/{key}/{i}.jpg"
+        b.upload(path, data, {"content-type": "image/jpeg", "upsert": "true"})
+        urls.append(public_url(path, c))
+    return urls
+
+
 # ── 클라우드 → 집 PC (올라온 촬영본 가져오기) ──────────────────
 #
 # 설계 확정(2026-09-02): 업로드는 '주제'가 아니라 **묶음(batch) + 한 줄 메모**다.

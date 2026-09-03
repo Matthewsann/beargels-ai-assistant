@@ -46,6 +46,13 @@
   <h2>🎬 인스타 릴스</h2>
   <p class="sub">촬영본은 드라이브로, 완성된 릴스는 여기서 받아요.</p>
 
+  {% if scripts %}
+  <a href="#scriptCard" style="display:block;background:var(--accent-bg);color:var(--accent);
+     border-radius:10px;padding:11px 13px;font-size:13.5px;font-weight:700;
+     text-decoration:none;margin-bottom:12px">
+    ✍️ 검수 기다리는 대본 {{ scripts|length }}건 — 눌러서 바로 가기 ↓</a>
+  {% endif %}
+
   <!-- ① 촬영본은 드라이브로 -->
   <div class="card">
     <h3>① 촬영본 올리기 — 구글 드라이브</h3>
@@ -121,10 +128,19 @@
             style="font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;width:100%">
         </div>
         {% for sh in s.shots %}
-        <div style="margin-top:6px;display:flex;gap:6px;align-items:center">
-          <span style="flex:0 0 58px;color:var(--muted);font-size:12px;text-align:right">{{ sh.role }} {{ sh.dur }}s</span>
-          <input type="text" class="sc-cap" value="{{ sh.caption }}" placeholder="(자막 없음)"
-            style="font:inherit;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;flex:1">
+        <div style="margin-top:6px;display:flex;gap:8px;align-items:center">
+          {% if sh.thumb %}
+          <img src="{{ sh.thumb }}" alt="" loading="lazy"
+            style="flex:0 0 46px;width:46px;height:76px;object-fit:cover;border-radius:7px;border:1px solid var(--line);cursor:pointer"
+            onclick="zoomThumb(this.src)">
+          {% else %}
+          <span style="flex:0 0 46px;height:76px;border-radius:7px;border:1px dashed var(--line)"></span>
+          {% endif %}
+          <div style="flex:1">
+            <div style="color:var(--muted);font-size:11.5px">{{ sh.role }} · {{ sh.dur }}초</div>
+            <input type="text" class="sc-cap" value="{{ sh.caption }}" placeholder="(자막 없음)"
+              style="font:inherit;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;width:100%">
+          </div>
         </div>
         {% endfor %}
         <div style="margin-top:6px">
@@ -160,6 +176,8 @@
       <div class="reel">
         <b>{{ r.title }}</b>
         <div class="meta">{{ r.size_mb }}MB{% if r.when %} · {{ r.when }}{% endif %}</div>
+        <video controls playsinline preload="metadata" src="{{ r.video }}"
+          style="width:100%;max-width:220px;border-radius:10px;border:1px solid var(--line);display:block;margin:4px 0 8px"></video>
         <div class="row">
           <a class="btn pri" href="{{ r.video }}" download>⬇️ 영상 받기</a>
           {% if r.caption %}
@@ -251,7 +269,21 @@ async function makeReel(){
   }catch(e){
     st.innerHTML = `<div class="note">실패: ${e.message}</div>`;
   }
-  btn.disabled = false; btn.textContent = "🎬 릴스 만들기";
+  btn.disabled = false; btn.textContent = "📝 대본 만들기";
+}
+// 방금 끝난 작업 메시지를 새 화면에서 보여준다 (자동 새로고침 뒤)
+try{
+  const m = sessionStorage.getItem("reelMsg");
+  if(m){ sessionStorage.removeItem("reelMsg");
+    document.querySelector("#mkStatus").innerHTML = `<div class="okmsg">✅ ${m}</div>`; }
+}catch(e){}
+// 썸네일 탭하면 크게 보기
+function zoomThumb(src){
+  const ov = document.createElement("div");
+  ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:99;display:flex;align-items:center;justify-content:center";
+  ov.innerHTML = `<img src="${src}" style="max-width:92vw;max-height:88vh;border-radius:12px">`;
+  ov.onclick = ()=>ov.remove();
+  document.body.appendChild(ov);
 }
 function startPoll(){
   clearInterval(pollTimer);
@@ -265,8 +297,11 @@ function startPoll(){
       else if(d.status === "pending")
         st.innerHTML = `<div class="okmsg">⏳ 집 PC 차례를 기다리는 중… (${d.message})</div>`;
       else if(d.status === "done"){
-        st.innerHTML = `<div class="okmsg">✅ ${d.message} <a href="javascript:location.reload()">새로고침해서 보기</a></div>`;
         clearInterval(pollTimer);
+        // 자동 새로고침 — 메시지는 저장해뒀다 새 화면에서 보여준다
+        try{ sessionStorage.setItem("reelMsg", d.message); }catch(e){}
+        st.innerHTML = `<div class="okmsg">✅ ${d.message}<br>화면을 새로 불러오는 중…</div>`;
+        setTimeout(()=>location.reload(), 1500);
       }else if(d.status === "error"){
         st.innerHTML = `<div class="note">❌ 실패: ${d.message}</div>`;
         clearInterval(pollTimer);

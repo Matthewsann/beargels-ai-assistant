@@ -68,13 +68,19 @@ def _project_for(folder: str, memo: str):
 
 
 def _frames_for(p: dict, plan: dict, max_px: int = 480) -> list[tuple[str, bytes]]:
-    """샷 중간 지점의 프레임들 — AI가 실제 화면을 보고 자막을 쓰게."""
+    """샷 중간 지점의 프레임들 — AI 자막·검수 썸네일의 눈.
+
+    ⚠️ 샷 순서와 **자리를 맞춘다**: 뽑기에 실패한 샷도 (mime, b"") 로 자리를
+    남긴다 — 건너뛰면 몇 번째 샷의 화면인지 어긋난다(썸네일이 밀림).
+    AI 에 보낼 때는 빈 항목을 걸러 쓸 것.
+    """
     from . import video_editor
     from . import webapp as wa
     ff = video_editor.ffmpeg_exe()
     folder = wa._media_dir(p)
     frames: list[tuple[str, bytes]] = []
     for s in plan.get("shots") or []:
+        data = b""
         fd, tmp = tempfile.mkstemp(suffix=".jpg")
         os.close(fd)
         try:
@@ -85,8 +91,6 @@ def _frames_for(p: dict, plan: dict, max_px: int = 480) -> list[tuple[str, bytes
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
             with open(tmp, "rb") as f:
                 data = f.read()
-            if data:
-                frames.append(("image/jpeg", data))
         except (subprocess.SubprocessError, OSError):
             pass
         finally:
@@ -94,6 +98,7 @@ def _frames_for(p: dict, plan: dict, max_px: int = 480) -> list[tuple[str, bytes
                 os.unlink(tmp)
             except OSError:
                 pass
+        frames.append(("image/jpeg", data))
     return frames
 
 
@@ -167,20 +172,21 @@ def make_script(topic: str, memo: str = "") -> dict:
     if not plan:
         raise MakeError("영상 길이를 읽지 못해 구성표를 만들 수 없었어요.")
 
-    frames = _frames_for(p, plan)
+    frames = _frames_for(p, plan)       # 샷과 자리 맞춤(실패 샷은 빈 항목)
+    valid = [f for f in frames if f[1]]
     if not ai_selected:                 # 뼈대 구성이면 말이라도 AI 가 쓴다
         try:
             plan = asyncio.run(planner.write_shot_captions(
-                plan, title, p.get("menu", title), frames, guide=guide))
+                plan, title, p.get("menu", title), valid, guide=guide))
         except Exception as e:
             logger.warning("AI 자막 실패(뼈대 자막 유지): %s", e)
 
     caption = ""
     try:
         gen = wa._get_caption_gen()
-        if gen and frames:
+        if gen and valid:
             r = asyncio.run(gen.generate(
-                images=[frames[0][1]], topic=title, is_reel=True,
+                images=[valid[0][1]], topic=title, is_reel=True,
                 media_count=sum(1 for f in files if f["kind"] == "video"),
                 note=guide))
             caption = r.full_text
@@ -190,6 +196,13 @@ def make_script(topic: str, memo: str = "") -> dict:
     if not caption:
         fb = wa._fallback_caption(p)
         caption = fb["caption"] + "\n\n" + " ".join(fb["hashtags"])
+
+    # 검수 화면에 보여줄 샷 썸네일 — 자막만 보고는 재료를 판단할 수 없다
+    thumbs: list[str] = []
+    try:
+        thumbs = cloud_sync.push_script_thumbs(pid, [b for _m, b in frames])
+    except Exception as e:
+        logger.warning("썸네일 업로드 실패(텍스트만 검수): %s", e)
 
     p["shot_plan"] = plan
     p["script_caption"] = caption
@@ -201,8 +214,9 @@ def make_script(topic: str, memo: str = "") -> dict:
         "hook": (plan.get("hook") or {}).get("text", ""),
         "cta": (plan.get("cta") or {}).get("text", ""),
         "shots": [{"role": s.get("role", ""), "dur": s.get("dur", 0),
-                   "caption": s.get("caption") or ""}
-                  for s in plan.get("shots") or []],
+                   "caption": s.get("caption") or "",
+                   "thumb": thumbs[i] if i < len(thumbs) else ""}
+                  for i, s in enumerate(plan.get("shots") or [])],
         "caption": caption,
         "missing": [m.get("need", "") for m in (plan.get("missing") or [])][:3],
         "created": int(_time.time()),
@@ -320,7 +334,7 @@ def make_reel(topic: str, memo: str = "") -> dict:
         raise MakeError("영상 길이를 읽지 못해 구성표를 만들 수 없었어요.")
 
     # ② AI 자막 — 장면 선택이 이미 말까지 썼으면 건너뛴다
-    frames = _frames_for(p, plan)
+    frames = [f for f in _frames_for(p, plan) if f[1]]
     if not ai_captions:
         try:
             plan = asyncio.run(planner.write_shot_captions(
