@@ -111,12 +111,25 @@
       <div class="reel" data-pid="{{ r.id }}">
         <b>{{ r.title }}</b>
         <div class="meta">{{ r.size_mb }}MB{% if r.when %} · {{ r.when }}{% endif %}</div>
+        {% if r.published_at %}
+        <div class="okmsg" style="margin:0 0 8px;padding:6px 10px;font-size:12.5px">
+          ✅ 인스타에 올렸어요{% if r.pub_when %} · {{ r.pub_when }}{% endif %}{% if r.likes is defined and r.likes is not none %} · ♥ {{ r.likes }}{% endif %}{% if r.comments %} · 💬 {{ r.comments }}{% endif %}{% if r.reach %} · 도달 {{ r.reach }}{% endif %}{% if r.permalink %} · <a href="{{ r.permalink }}" target="_blank" rel="noopener" style="color:inherit">게시물 보기</a>{% endif %}
+          {% if r.pub_pending == 'undo' %}<span style="opacity:.75"> · ⏳ 기록 취소 중…</span>{% else %} · <a href="javascript:void(0)" data-auto="{{ 1 if r.published_source == 'auto' else 0 }}" onclick="unmarkPublished(this)" style="color:inherit;opacity:.7">{{ '이 게시물이 아니에요' if r.published_source == 'auto' else '잘못 눌렀어요' }}</a>{% endif %}
+        </div>
+        {% endif %}
         <video controls playsinline preload="metadata" src="{{ r.video }}"
           style="width:100%;max-width:220px;border-radius:10px;border:1px solid var(--line);display:block;margin:4px 0 8px"></video>
         <div class="row">
           <a class="btn pri" href="{{ r.video }}" download>⬇️ 영상 받기</a>
           {% if r.caption %}
           <button class="btn" onclick="copyCap({{ loop.index0 }})">📋 캡션 복사</button>
+          {% endif %}
+          {% if not r.published_at %}
+            {% if r.pub_pending %}
+            <span class="meta" style="display:inline;margin:0">⏳ 발행 기록 중… (집 PC 가 받으면 ✅)</span>
+            {% else %}
+            <button class="btn" onclick="markPublished(this)">📤 인스타에 올렸어요</button>
+            {% endif %}
           {% endif %}
         </div>
         {% if r.caption %}<div class="cap" id="cap{{ loop.index0 }}">{{ r.caption }}</div>{% endif %}
@@ -143,7 +156,9 @@
         {% endif %}
       </div>
       {% endfor %}
-      <div class="note">영상은 <b>무음</b>이에요 — 인스타 <b>Edits</b> 앱에서 인기 음원을 얹어 올리세요.</div>
+      <div class="note">영상은 <b>무음</b>이에요 — 인스타 <b>Edits</b> 앱에서 인기 음원을 얹어 올리세요.
+        올린 뒤 <b>📤 올렸어요</b>를 누르면 바로 기록돼요. 안 눌러도 집 PC 가 6시간 안에 알아채고,
+        좋아요·댓글은 두 경우 모두 자동으로 따라와 다음 기획에 반영돼요.</div>
     {% else %}
       <div class="empty">{{ reels_msg or "아직 완성된 릴스가 없어요. 위에서 만들면 여기 떠요." }}</div>
     {% endif %}
@@ -158,6 +173,12 @@
 <script>
 let pollTimer = null;
 function stBox(){ return document.querySelector("#mkStatus"); }
+// 서버가 준 문장은 데이터다 — innerHTML 에 넣기 전에 태그를 글자로 바꾼다.
+function esc(s){
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/\x22/g, "&quot;");
+}
 
 // 🎬 원버튼 — 소재 카드에서 바로 완성본까지
 async function makeFull(btn){
@@ -173,7 +194,7 @@ async function makeFull(btn){
     stBox().innerHTML = '<div class="okmsg">⏳ 만들기 시작 — 2~4분 뒤 완성본에 떠요. 여기서 기다리면 진행이 보여요.</div>';
     window.scrollTo({top:0, behavior:"smooth"});
     startPoll();
-  }catch(e){ stBox().innerHTML = `<div class="note">실패: ${e.message}</div>`; }
+  }catch(e){ stBox().innerHTML = `<div class="note">실패: ${esc(e.message)}</div>`; }
   btn.disabled = false; btn.textContent = "🎬 릴스 만들기";
 }
 
@@ -188,7 +209,7 @@ async function askIdeas(desc){
     stBox().innerHTML = `<div class="okmsg">⏳ ${desc ? "레퍼런스를 분석해서 우리 버전 기획을 만드는 중…" : "이번 주 아이디어를 짜는 중…"} (30초~1분)</div>`;
     window.scrollTo({top:0, behavior:"smooth"});
     startPoll();
-  }catch(e){ stBox().innerHTML = `<div class="note">실패: ${e.message}</div>`; }
+  }catch(e){ stBox().innerHTML = `<div class="note">실패: ${esc(e.message)}</div>`; }
 }
 
 // ✏️ 완성본 자막 고치기 → 다시 만들기
@@ -208,8 +229,59 @@ async function fixReel(btn){
     stBox().innerHTML = '<div class="okmsg">⏳ 고친 문구로 다시 만드는 중 (2~3분) — 끝나면 여기 목록이 새 걸로 바뀌어요.</div>';
     window.scrollTo({top:0, behavior:"smooth"});
     startPoll();
-  }catch(e){ stBox().innerHTML = `<div class="note">실패: ${e.message}</div>`; }
+  }catch(e){ stBox().innerHTML = `<div class="note">실패: ${esc(e.message)}</div>`; }
   btn.disabled = false;
+}
+
+// 📤 인스타에 올렸어요 — 발행 사실을 집 PC 에 기록 요청 (발행 자체는 사람이)
+async function markPublished(btn){
+  const root = btn.closest("[data-pid]");
+  if(!confirm("이 릴스를 인스타에 올리셨나요? 발행 기록으로 남겨요.")) return;
+  const fd = new FormData();
+  fd.append("pid", root.dataset.pid);
+  btn.disabled = true; btn.textContent = "기록 중…";
+  try{
+    const r = await fetch(location.pathname.replace(/\/$/,"") + "/published", {method:"POST", body:fd});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || "요청 실패");
+    stBox().innerHTML = '<div class="okmsg">📤 발행 기록을 남기는 중 — 집 PC 가 받으면 이 카드에 ✅ 가 붙어요. 좋아요·댓글은 자동으로 따라와요.</div>';
+    window.scrollTo({top:0, behavior:"smooth"});
+    startPoll();
+  }catch(e){
+    stBox().innerHTML = `<div class="note">실패: ${esc(e.message)}</div>`;
+    btn.disabled = false; btn.textContent = "📤 인스타에 올렸어요";
+  }
+}
+
+// 잘못 눌렀어요 — 발행 기록 되돌리기 (훅·캘린더·카드에서 함께 지운다)
+async function unmarkPublished(a){
+  const root = a.closest("[data-pid]");
+  const auto = a.dataset.auto === "1";
+  const q = auto
+    ? "자동으로 찾은 게시물을 이 릴스에서 떼어낼까요? 같은 게시물은 다시 붙지 않고, 좋아요·댓글 기록도 지워요."
+    : "이 릴스의 발행 기록을 취소할까요? 좋아요·댓글 기록도 함께 지워요.";
+  if(!confirm(q)) return;
+  const label = a.textContent;
+  const fd = new FormData();
+  fd.append("pid", root.dataset.pid);
+  fd.append("undo", "1");
+  a.textContent = "취소 중…";
+  a.onclick = null;                                   // 연타 방지 — 서버가 그리는 상태와 같게
+  try{
+    const r = await fetch(location.pathname.replace(/\/$/,"") + "/published", {method:"POST", body:fd});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || "요청 실패");
+    const s = document.createElement("span");
+    s.style.opacity = ".75"; s.textContent = "⏳ 기록 취소 중…";
+    a.replaceWith(s);
+    stBox().innerHTML = '<div class="okmsg">⏳ 발행 기록을 취소하는 중 — 집 PC 가 받으면 카드가 원래대로 돌아와요.</div>';
+    window.scrollTo({top:0, behavior:"smooth"});
+    startPoll();
+  }catch(e){
+    stBox().innerHTML = `<div class="note">실패: ${esc(e.message)}</div>`;
+    a.textContent = label;
+    a.onclick = function(){ unmarkPublished(a); };
+  }
 }
 
 // 🔄 소재 다시 확인 — 집 PC에 목록 갱신 요청 후 페이지 리로드
@@ -229,18 +301,20 @@ function startPoll(){
     try{
       const r = await fetch(location.pathname.replace(/\/$/,"") + "/job");
       const d = await r.json();
+      const m = esc(d.message);
+      const isRecord = /기록/.test(d.message || "");   // 발행 기록·기록 취소는 영상을 만드는 게 아니다
       if(d.status === "running")
-        stBox().innerHTML = `<div class="okmsg">🔧 만드는 중… (${d.message})</div>`;
+        stBox().innerHTML = `<div class="okmsg">${isRecord ? "📤 기록하는 중…" : "🔧 만드는 중…"} (${m})</div>`;
       else if(d.status === "pending")
-        stBox().innerHTML = `<div class="okmsg">⏳ 집 PC 차례를 기다리는 중… (${d.message})</div>`;
+        stBox().innerHTML = `<div class="okmsg">⏳ 집 PC 차례를 기다리는 중… (${m})</div>`;
       else if(d.status === "done"){
         clearInterval(pollTimer);
         try{ sessionStorage.setItem("reelMsg", d.message); }catch(e){}
-        stBox().innerHTML = `<div class="okmsg">✅ ${d.message}<br>화면을 새로 불러오는 중…</div>`;
+        stBox().innerHTML = `<div class="okmsg">✅ ${m}<br>화면을 새로 불러오는 중…</div>`;
         setTimeout(()=>location.reload(), 1500);
       }else if(d.status === "error"){
         clearInterval(pollTimer);
-        stBox().innerHTML = `<div class="note">❌ 실패: ${d.message}</div>`;
+        stBox().innerHTML = `<div class="note">❌ 실패: ${m}</div>`;
       }
     }catch(e){}
   }, 5000);
@@ -249,7 +323,7 @@ function startPoll(){
 try{
   const m = sessionStorage.getItem("reelMsg");
   if(m){ sessionStorage.removeItem("reelMsg");
-    stBox().innerHTML = `<div class="okmsg">✅ ${m}</div>`; }
+    stBox().innerHTML = `<div class="okmsg">✅ ${esc(m)}</div>`; }
 }catch(e){}
 
 function copyCap(i){

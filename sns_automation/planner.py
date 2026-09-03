@@ -144,26 +144,105 @@ def record_hook(project_id: str, title: str, hook: str, file: str) -> dict:
     return entry
 
 
-def mark_published(project_id: str) -> None:
+def _active(e: dict, project_id: str) -> bool:
+    """이 프로젝트의 '지금 판' 훅인가 — 다시 만든 뒤의 옛 판(archived)은 손대지 않는다."""
+    return e.get("project_id") == project_id and not e.get("archived")
+
+
+def archive_hooks(project_id: str, version: int | None = None) -> int:
+    """완성본을 다시 만들 때 — 지금까지의 훅 기록을 옛 판으로 봉인한다.
+
+    옛 판의 발행·성과는 그대로 남아 _hook_summary 의 학습 재료가 되지만,
+    새 판의 발행 기록·성과 갱신·되돌리기는 여기에 닿지 않는다. 반환: 봉인한 수.
+    """
     lib = get_hook_library()
+    n = 0
     for e in lib:
-        if e["project_id"] == project_id and not e["published"]:
+        if _active(e, project_id):
+            e["archived"] = True
+            if version:
+                e["version"] = int(version)
+            n += 1
+    if n:
+        _save(HOOKS_FILE, lib)
+    return n
+
+
+def mark_published(project_id: str, *, at: int | None = None,
+                   url: str | None = None, media_id: str | None = None) -> int:
+    """이 프로젝트의 지금 판 훅 기록을 발행됨으로. 게시물 주소·ID 가 오면 같이 적는다.
+
+    한 판 안에 파일이 여럿(reel.mp4, reel_2.mp4…)이면 어느 걸 올렸는지
+    알 수 없으므로 전부 발행됨으로 본다. 반환: 손댄 기록 수.
+    """
+    lib = get_hook_library()
+    ts = int(at or time.time())
+    n = 0
+    for e in lib:
+        if not _active(e, project_id):
+            continue
+        if not e["published"]:
             e["published"] = True
-            e["published_at"] = int(time.time())
-    _save(HOOKS_FILE, lib)
+            e["published_at"] = ts
+        if url:
+            e["permalink"] = url
+        if media_id:
+            e["media_id"] = media_id
+        n += 1
+    if n:
+        _save(HOOKS_FILE, lib)
+    return n
 
 
-def record_result(entry_id: str, reach=None, saves=None, shares=None, likes=None) -> bool:
+_RESULT_KEYS = ("reach", "saves", "shares", "likes", "comments")
+
+
+def unmark_published(project_id: str) -> int:
+    """[잘못 눌렀어요] — 지금 판의 훅 기록을 미발행으로 되돌리고 성과도 지운다."""
+    lib = get_hook_library()
+    n = 0
+    for e in lib:
+        if not _active(e, project_id):
+            continue
+        e["published"], e["published_at"] = False, 0
+        e.pop("permalink", None)
+        e.pop("media_id", None)
+        for k in _RESULT_KEYS:
+            e[k] = None
+        n += 1
+    if n:
+        _save(HOOKS_FILE, lib)
+    return n
+
+
+def record_result(entry_id: str, reach=None, saves=None, shares=None, likes=None,
+                  comments=None) -> bool:
     lib = get_hook_library()
     for e in lib:
         if e["id"] == entry_id:
-            for k, v in (("reach", reach), ("saves", saves),
-                         ("shares", shares), ("likes", likes)):
+            for k, v in zip(_RESULT_KEYS, (reach, saves, shares, likes, comments)):
                 if v is not None:
                     e[k] = v
             _save(HOOKS_FILE, lib)
             return True
     return False
+
+
+def record_project_result(project_id: str, **metrics) -> int:
+    """프로젝트 지금 판의 발행된 훅 기록에 성과를 적는다(자동 수집용). 반환: 기록 수."""
+    lib = get_hook_library()
+    n = 0
+    for e in lib:
+        if not _active(e, project_id) or not e.get("published"):
+            continue
+        for k in _RESULT_KEYS:
+            v = metrics.get(k)
+            if v is not None:
+                e[k] = v
+        n += 1
+    if n:
+        _save(HOOKS_FILE, lib)
+    return n
 
 
 def _hook_summary() -> str:
@@ -175,7 +254,7 @@ def _hook_summary() -> str:
     for e in lib[-15:]:
         perf = []
         for k, label in (("reach", "도달"), ("saves", "저장"),
-                         ("shares", "공유"), ("likes", "좋아요")):
+                         ("shares", "공유"), ("likes", "좋아요"), ("comments", "댓글")):
             if e.get(k) is not None:
                 perf.append(f"{label} {e[k]}")
         lines.append(f"- 「{e['hook']}」 ({e['title']}) — {', '.join(perf) or '성과 미입력'}")

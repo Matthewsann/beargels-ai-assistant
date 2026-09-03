@@ -1402,14 +1402,29 @@ def instagram_page(path_key):
     reels, reels_msg = [], None
     topics, topics_when = [], None
     job = None
+    # 발행 기록 요청이 집 PC 에 아직 안 닿은 릴스 — 카드에 '기록 중' 으로
+    pub_pending = {}
+    try:
+        pub_pending = db.pending_reel_published()
+    except Exception:
+        pass
     try:
         from sns_automation import cloud_sync
         for e in cloud_sync.load_index():
-            when = ""
+            when, pub_when = "", ""
             if e.get("uploaded"):
                 when = datetime.fromtimestamp(
                     e["uploaded"], KST).strftime("%m/%d %H:%M")
-            reels.append({**e, "when": when})
+            if e.get("published_at"):
+                pub_when = datetime.fromtimestamp(
+                    e["published_at"], KST).strftime("%m/%d")
+            # 성과 칸은 키가 없을 수도 있다 — 템플릿의 `is not none` 이 Undefined 를
+            # 통과시켜 '♥ ' 만 찍히지 않게 항상 채워 넘긴다.
+            reels.append({"likes": None, "comments": None, "reach": None,
+                          "permalink": None, "published_at": None,
+                          "published_source": None, **e,
+                          "when": when, "pub_when": pub_when,
+                          "pub_pending": pub_pending.get(e.get("id"))})
     except Exception as e:            # 스토리지가 막혀도 안내 칸은 떠야 한다
         app.logger.warning("완성본 목록 실패: %s", e)
         reels_msg = "완성본 목록을 불러오지 못했어요. 잠시 뒤 새로고침해 주세요."
@@ -1559,6 +1574,33 @@ def instagram_ideas(path_key):
     return jsonify(ok=True)
 
 
+@app.route("/<path_key>/instagram/published", methods=["POST"])
+def instagram_published(path_key):
+    """[📤 인스타에 올렸어요] — 발행 사실을 집 PC 에 기록 요청한다(잡 큐).
+
+    발행은 사람이, 발행 사실은 시스템이 반드시 안다(사장님 확정 2026-09-04).
+    이 기록이 훅 라이브러리·MKT 캘린더·완성본 카드에 한 번에 남고, 그 뒤
+    좋아요·댓글이 자동으로 따라와 다음 기획 프롬프트에 들어간다.
+    안 눌러도 집 PC 가 6시간마다 내 계정 게시물을 읽어 알아챈다 — 이 버튼은
+    '지금 바로' 남기고 싶을 때와 자동 감지가 못 맞췄을 때의 확실한 길.
+    """
+    check(path_key)
+    pid = (request.form.get("pid") or "").strip()
+    url = (request.form.get("url") or "").strip()[:300]
+    undo = (request.form.get("undo") or "") == "1"       # [잘못 눌렀어요]
+    # 프로젝트 id 는 `<epoch>-<슬러그>` 꼴 — 집 PC 에서 폴더 이름·오류 문구에
+    # 그대로 쓰이므로 그 밖의 문자(경로 구분자·꺾쇠 등)는 여기서 막는다.
+    if not pid or not re.fullmatch(r"[\w가-힣][\w가-힣.\-]{0,119}", pid):
+        return jsonify(error="어느 릴스인지 알 수 없어요. 새로고침 후 다시 눌러주세요."), 400
+    if url and not re.match(r"https?://", url):
+        url = ""
+    try:
+        row = db.request_reel_published(pid, url or None, by="직원웹", undo=undo)
+    except Exception as e:
+        return jsonify(error=f"요청을 넣지 못했어요: {e}"), 500
+    return jsonify(ok=True, job_id=(row or {}).get("id"))
+
+
 @app.route("/<path_key>/instagram/fix", methods=["POST"])
 def instagram_fix(path_key):
     """완성본 카드의 '자막 고치기' — 고친 문구로 다시 만든다(사람 문구=정본)."""
@@ -1654,6 +1696,8 @@ def instagram_job(path_key):
                       "finalize": "완성본 확정"}
             msg = (req.get("topic")
                    or labels.get(req.get("action"), "")
+                   or (("기록 취소" if req.get("undo") else "발행 기록")
+                       if job.get("kind") == "reel_published" else "")
                    or ("영상 만들기" if req.get("pid") else "")
                    or ("아이디어 만들기" if "desc" in req else ""))
         except ValueError:

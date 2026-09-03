@@ -21,6 +21,18 @@
       }
     },
     {
+      "name": "service-preview",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "service/app.py"
+      ],
+      "port": 5070,
+      "env": {
+        "PYTHONUTF8": "1",
+        "PORT": "5070"
+      }
+    },
+    {
       "name": "insta-pipeline",
       "runtimeExecutable": "python",
       "runtimeArgs": [

@@ -401,11 +401,58 @@ def request_reel_ideas(desc=None, by=None):
     return (get_client().table("jobs").insert(row).execute().data or [None])[0]
 
 
+def request_reel_published(pid, url=None, by=None, undo=False):
+    """[📤 인스타에 올렸어요] — 발행 사실을 집 PC 에 기록 요청. undo=True 면 되돌리기.
+
+    같은 릴스·같은 방향의 요청이 이미 대기·진행 중이면 그 잡을 돌려준다(연타 방지).
+    집 PC 가 훅 라이브러리·MKT 캘린더·완성본 카드에 한 번에 남긴다(또는 지운다).
+    """
+    import json as _json
+    live = (get_client().table("jobs").select("*")
+            .eq("kind", "reel_published").in_("status", ["pending", "running"])
+            .order("requested_at", desc=True).limit(50).execute().data)
+    for row in live or []:
+        try:
+            req = _json.loads(row.get("message") or "{}")
+        except ValueError:
+            continue
+        if req.get("pid") == pid and bool(req.get("undo")) == bool(undo):
+            return row
+    msg = {"pid": pid, "url": url or ""}
+    if undo:
+        msg["undo"] = True
+    row = {"kind": "reel_published", "status": "pending", "requested_by": by or "",
+           "message": _json.dumps(msg, ensure_ascii=False)}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
+def pending_reel_published():
+    """아직 집 PC 가 받지 않은 발행 기록 요청 — {pid: 'pending'|'running'|'undo'}.
+
+    카드에 '기록 중' / '기록 취소 중' 을 보여 주기 위한 것.
+    """
+    import json as _json
+    # 오래된 순으로 받아 같은 릴스에 기록·취소가 둘 다 살아 있으면 **마지막 요청**이 이긴다.
+    rows = (get_client().table("jobs").select("message,status,requested_at")
+            .eq("kind", "reel_published").in_("status", ["pending", "running"])
+            .order("requested_at").limit(50).execute().data)
+    out = {}
+    for row in rows or []:
+        try:
+            req = _json.loads(row.get("message") or "{}")
+        except ValueError:
+            continue
+        pid = req.get("pid")
+        if pid:
+            out[pid] = "undo" if req.get("undo") else row.get("status")
+    return out
+
+
 def last_reel_job():
     """가장 최근 릴스 잡 1건 — 직원 웹의 진행 표시용."""
     rows = (get_client().table("jobs").select("*")
             .in_("kind", ["reel", "reel_video", "pipe",
-                          "reel_full", "reel_ideas", "reel_ref"])
+                          "reel_full", "reel_ideas", "reel_ref", "reel_published"])
             .order("requested_at", desc=True).limit(1).execute().data)
     return rows[0] if rows else None
 
@@ -480,7 +527,7 @@ def last_collect_at():
 # 3분 폴링 안에 끝나지 않아 '아직 확인이 안 돼요'로 보인다. 먼저 집는다.
 INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "wake", "reel",
                          "reel_video", "reel_topics", "pipe",
-                         "reel_full", "reel_ideas", "reel_ref")
+                         "reel_full", "reel_ideas", "reel_ref", "reel_published")
 
 
 def claim_next_job(interactive_only=False):

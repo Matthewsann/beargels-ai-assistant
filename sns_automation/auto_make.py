@@ -282,6 +282,10 @@ def make_video(pid: str, script: dict | None = None) -> dict:
     shutil.copy2(out, os.path.join(final_dir, reel_name))
     with open(os.path.join(final_dir, cap_name), "w", encoding="utf-8") as f:
         f.write(caption)
+    # 다시 만든 판은 아직 안 올린 것 — 이전 발행 기록은 history 로 내리고
+    # 카드엔 [올렸어요]가 다시 뜬다(publish_sync 의 '새 판' 규칙).
+    from . import publish_sync as _ps
+    _ps.start_new_version(p)
     p["status"] = wa.ST_DONE
     p["final_path"] = final_dir
     wa._save_project(p)
@@ -407,6 +411,10 @@ def make_reel(topic: str, memo: str = "") -> dict:
     shutil.copy2(out, os.path.join(final_dir, reel_name))
     with open(os.path.join(final_dir, cap_name), "w", encoding="utf-8") as f:
         f.write(caption)
+    # 다시 만든 판은 아직 안 올린 것 — 이전 발행 기록은 history 로 내리고
+    # 카드엔 [올렸어요]가 다시 뜬다(publish_sync 의 '새 판' 규칙).
+    from . import publish_sync as _ps
+    _ps.start_new_version(p)
     p["status"] = wa.ST_DONE
     p["final_path"] = final_dir
     wa._save_project(p)

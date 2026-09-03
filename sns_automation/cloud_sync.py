@@ -93,12 +93,19 @@ def push_reel(pid: str, title: str, video_path: str, caption: str = "",
         "size_mb": round(len(data) / 1e6, 1),
         "uploaded": int(time.time()),
     }
+    # 같은 pid 의 옛 항목은 통째로 바꾼다 — 발행 표시(published_at·좋아요)도 함께
+    # 사라지는데, 이건 의도다: 다시 만든 완성본은 '새 판'이라 아직 안 올린 것이다
+    # (publish_sync.new_version 이 project.json 쪽도 같은 규칙으로 되돌린다).
     index = [e for e in load_index(c) if e.get("id") != pid]
     index.insert(0, entry)
-    b.upload(INDEX, json.dumps(index[:50], ensure_ascii=False).encode("utf-8"),
-             {"content-type": "application/json; charset=utf-8", "upsert": "true"})
+    _save_index(index, c)
     logger.info("완성본 클라우드 업로드: %s (%.1fMB)", pid, entry["size_mb"])
     return entry
+
+
+def _save_index(index: list[dict], c=None) -> None:
+    _bucket(c).upload(INDEX, json.dumps(index[:50], ensure_ascii=False).encode("utf-8"),
+                      {"content-type": "application/json; charset=utf-8", "upsert": "true"})
 
 
 def load_index(c=None) -> list[dict]:
@@ -108,6 +115,49 @@ def load_index(c=None) -> list[dict]:
         return json.loads(raw.decode("utf-8"))
     except Exception:
         return []
+
+
+def mark_published(pid: str, at: int, url: str | None = None, likes=None,
+                   comments=None, reach=None, source: str | None = None, c=None) -> bool:
+    """완성본 카드에 '✅ 올렸어요' 와 성과 숫자를 붙인다(집 PC 만 쓴다 — index.json
+    의 쓰는 쪽은 집 PC 하나여야 서로 덮어쓰지 않는다). 반환: 목록에 있었는가.
+
+    source: 'manual' | 'auto' — 카드의 되돌리기 문구가 갈린다(자동 감지면 '이 게시물이 아니에요').
+    """
+    c = c or client()
+    index = load_index(c)
+    hit = False
+    for e in index:
+        if e.get("id") != pid:
+            continue
+        e["published_at"] = int(at)
+        if url:
+            e["permalink"] = url
+        if source:
+            e["published_source"] = source
+        for k, v in (("likes", likes), ("comments", comments), ("reach", reach)):
+            if v is not None:
+                e[k] = v
+        hit = True
+    if hit:
+        _save_index(index, c)
+    return hit
+
+
+def unmark_published(pid: str, c=None) -> bool:
+    """[잘못 눌렀어요] — 카드의 ✅ 와 성과 숫자를 뗀다. 반환: 목록에 있었는가."""
+    c = c or client()
+    index = load_index(c)
+    hit = False
+    for e in index:
+        if e.get("id") != pid:
+            continue
+        for k in ("published_at", "permalink", "published_source", "likes", "comments", "reach"):
+            e.pop(k, None)
+        hit = True
+    if hit:
+        _save_index(index, c)
+    return hit
 
 
 # ── 대본 검수함 (영상 만들기 전 사람 게이트) ──────────────────

@@ -136,6 +136,20 @@ def delete_campaign(cid):
     get_client().table(CAMPAIGNS).delete().eq("id", cid).execute()
 
 
+def delete_auto_record(source_ref):
+    """auto_record 로 자동 생성된 기록을 지운다([잘못 눌렀어요]). 반환: 지운 수.
+
+    사람이 [수정]으로 손댄 기록도 마커가 남아 있으면 같이 지워진다 — 자동 기록은
+    당일 1일짜리 한 줄이라 다시 만들기 쉽고, 틀린 발행 기록을 남기는 쪽이 더 나쁘다.
+    """
+    marker = f"[자동:{source_ref}]"
+    rows = (get_client().table(CAMPAIGNS).select("id")
+            .like("memo", f"%{marker}%").limit(20).execute().data) or []
+    for r in rows:
+        delete_campaign(r["id"])
+    return len(rows)
+
+
 def get_campaign(cid):
     res = get_client().table(CAMPAIGNS).select("*").eq("id", cid).execute()
     return res.data[0] if res.data else None

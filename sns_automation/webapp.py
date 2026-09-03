@@ -524,6 +524,9 @@ def create_app() -> FastAPI:
         shutil.copy2(reel_path, os.path.join(folder, reel_name))
         with open(os.path.join(folder, cap_name), "w", encoding="utf-8") as f:
             f.write(caption or p.get("hook", ""))
+        # 다시 만든 판은 아직 안 올린 것 — 이전 발행 기록·훅은 옛 판으로(publish_sync 규칙)
+        from . import publish_sync as _ps
+        _ps.start_new_version(p)
         p["status"] = ST_DONE
         p["final_path"] = folder
         if caption:
@@ -949,24 +952,13 @@ def create_app() -> FastAPI:
 
     @app.post("/api/projects/{pid}/published")
     async def mark_published(pid: str):
-        p = _load_project(pid)
-        if not p:
-            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
-        p["published"] = True
-        p["published_at"] = int(time.time())
-        _save_project(p)
-        planner.mark_published(pid)
-        # 릴스 발행 = 마케팅 실행 — MKT 캘린더에 자동 기록 (사장님 지시
-        # 2026-08-30). 실패해도 발행 완료 처리를 막지 않는다.
+        # 직원 웹 [올렸어요]·인스타 자동 감지와 같은 함수 — 프로젝트·훅
+        # 라이브러리·MKT 캘린더·완성본 카드에 한 번에 남긴다(publish_sync).
+        from . import publish_sync
         try:
-            from database import mkt_store
-            title = (p.get("title") or p.get("menu") or p.get("name") or "").strip()
-            mkt_store.auto_record(
-                title=f"릴스: {title}" if title else "릴스 발행",
-                source_ref=f"reel#{pid}",
-                memo="릴스 발행 완료 시 자동 기록")
-        except Exception:  # noqa: BLE001
-            pass
+            await asyncio.to_thread(publish_sync.mark_reel_published, pid)
+        except publish_sync.PublishError as e:
+            raise HTTPException(404, str(e))
         return {"ok": True}
 
     # ═══ ④ 주간 리뷰 (성과 피드백 루프) ═══

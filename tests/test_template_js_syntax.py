@@ -34,7 +34,7 @@ SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", re.S)
 
 # 검사할 화면 — 버튼이 있는 곳은 전부.
 PAGES = ["", "todo", "care", "history", "reviews", "review", "menu",
-         "meeting", "meeting/new"]
+         "meeting", "meeting/new", "instagram"]
 
 
 def _client():

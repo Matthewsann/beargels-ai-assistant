@@ -1695,6 +1695,132 @@ def run_reel_ideas_job(job) -> None:
         db.finish_job(jid, "error", str(e)[:200], 0)
 
 
+def run_reel_published_job(job) -> None:
+    """[📤 인스타에 올렸어요] — 발행 사실을 세 곳(훅 라이브러리·캘린더·카드)에 남긴다.
+
+    발행은 사람이, 발행 사실은 시스템이 반드시 안다(사장님 확정 2026-09-04).
+    이 기록이 있어야 6단계(성과 → 다음 기획)가 처음으로 데이터를 받는다.
+    """
+    import json as _json
+    jid = job["id"]
+    try:
+        req = _json.loads(job.get("message") or "{}")
+    except ValueError:
+        req = {}
+    pid = (req.get("pid") or "").strip()
+    undo = bool(req.get("undo"))
+    if not pid:
+        db.finish_job(jid, "error", "어느 릴스인지 비어 있어요.", 0)
+        return
+    # 발행 시각 = 직원이 버튼을 누른 때(requested_at). 집 PC 가 며칠 꺼져 있다
+    # 나중에 처리해도 캘린더·훅 기록 날짜가 밀리지 않는다.
+    at = None
+    try:
+        at = int(datetime.fromisoformat(str(job.get("requested_at"))).timestamp())
+    except (TypeError, ValueError):
+        pass
+    db.worker_ping("working", "릴스 발행 기록 취소 중" if undo else "릴스 발행 기록 중")
+    try:
+        sys.path.insert(0, str(ROOT))
+        from sns_automation import publish_sync
+        if undo:
+            res = publish_sync.unmark_reel_published(pid)
+            msg = f"'{res['title'] or '릴스'}' 발행 기록을 취소했어요"
+        else:
+            res = publish_sync.mark_reel_published(
+                pid, url=(req.get("url") or "").strip() or None, at=at, source="manual")
+            msg = f"'{res['title'] or '릴스'}' 인스타 발행 기록 완료"
+            if res.get("already"):
+                msg += " (이미 기록돼 있었어요)"
+            msg += " — 좋아요·댓글은 6시간 안에 자동으로 따라와요"
+        db.finish_job(jid, "done", msg, 1)
+        logger.info("발행 기록 잡 #%s 완료 — %s", jid, msg)
+    except Exception as e:  # noqa: BLE001
+        logger.error("발행 기록 잡 #%s 실패: %s", jid, e)
+        logger.debug(traceback.format_exc())
+        db.log_error("worker", f"발행 기록 실패: {e}",
+                     kind=type(e).__name__, path="run_reel_published_job",
+                     detail=traceback.format_exc())
+        db.finish_job(jid, "error", str(e)[:200], 0)
+
+
+_REEL_SYNC_STAMP = ROOT / "state" / "reel_sync_at.txt"
+REEL_SYNC_HOURS = float(os.getenv("REEL_SYNC_HOURS", "6"))
+_reel_sync_skipped_logged = False
+
+
+def _reel_sync_retry_in(hours: float) -> None:
+    """스탬프의 수정시각을 옮겨 다음 시도를 `hours` 뒤로 맞춘다."""
+    try:
+        t = time.time() - REEL_SYNC_HOURS * 3600 + hours * 3600
+        os.utime(_REEL_SYNC_STAMP, (t, t))
+    except OSError:
+        pass
+
+
+def maybe_reel_sync() -> None:
+    """6시간마다 내 인스타 게시물을 읽어 ①올린 릴스 자동 감지·게시물 연결 ②성과 갱신.
+
+    [올렸어요]를 안 눌러도 발행을 알아채고(블로그 RSS 감지와 같은 원리),
+    좋아요·댓글(권한 있으면 도달·저장·공유)을 훅 라이브러리에 적어 다음
+    기획 프롬프트(_hook_summary)에 실제 숫자가 들어가게 한다.
+    그래프 API 호출은 회당 1~2번 — 한도와 무관하다.
+
+    실패 처리: 네트워크 같은 일시 장애는 1시간 뒤 다시(6시간 약속을 지킨다).
+    토큰·권한 문제(MetaGraphError)는 사람이 고쳐야 하니 하루 한 번만 다시 시도하고,
+    같은 오류는 error_log 에 한 번만 남긴다(스탬프 파일에 마지막 오류를 적어 둔다).
+    """
+    global _reel_sync_skipped_logged
+    if not os.getenv("META_ACCESS_TOKEN", "").strip():
+        if not _reel_sync_skipped_logged:       # 설정이 없는 건 오류가 아니다
+            logger.info("META_ACCESS_TOKEN 없음 — 인스타 발행 자동 감지는 건너뜀")
+            _reel_sync_skipped_logged = True
+        return
+    try:
+        if _REEL_SYNC_STAMP.exists():
+            if time.time() - _REEL_SYNC_STAMP.stat().st_mtime < REEL_SYNC_HOURS * 3600:
+                return
+    except OSError:
+        pass
+    _REEL_SYNC_STAMP.parent.mkdir(exist_ok=True)
+    try:
+        last = _REEL_SYNC_STAMP.read_text(encoding="utf-8") if _REEL_SYNC_STAMP.exists() else ""
+    except OSError:
+        last = ""
+    _REEL_SYNC_STAMP.write_text("ok", encoding="utf-8")
+    try:
+        sys.path.insert(0, str(ROOT))
+        from sns_automation import publish_sync
+        from sns_automation.meta_graph import MetaGraphError
+    except Exception as e:  # noqa: BLE001
+        logger.warning("인스타 발행 동기화 모듈 로드 실패: %s", e)
+        return
+    try:
+        notes = publish_sync.sync_published_reels()
+        logger.info("인스타 발행 동기화: %s", " / ".join(notes))
+    except MetaGraphError as e:
+        # meta_graph 는 연결 끊김도 MetaGraphError("메타 API 연결 실패…")로 감싼다 —
+        # 그건 일시 장애라 아래 일반 예외와 같이 1시간 뒤 다시 본다.
+        if "연결 실패" in str(e):
+            logger.warning("인스타 발행 동기화 일시 실패(1시간 뒤 재시도): %s", str(e)[:150])
+            _reel_sync_retry_in(1)
+            return
+        key = f"meta:{str(e)[:80]}"
+        logger.error("인스타 발행 동기화 실패(토큰·권한): %s", e)
+        if last != key:
+            db.log_error("worker", f"인스타 발행 동기화 — 메타 API 오류: {e}",
+                         kind="MetaGraphError", path="maybe_reel_sync")
+        try:
+            _REEL_SYNC_STAMP.write_text(key, encoding="utf-8")
+        except OSError:
+            pass
+        _reel_sync_retry_in(24)
+    except Exception as e:  # noqa: BLE001 — 일시 장애: 조용히, 1시간 뒤 다시
+        logger.warning("인스타 발행 동기화 일시 실패(1시간 뒤 재시도): %s", str(e)[:150])
+        logger.debug(traceback.format_exc())
+        _reel_sync_retry_in(1)
+
+
 _PIPE_LABEL = {"save": "구성표 저장", "render": "다시 편집(렌더)",
                "ai_full": "AI 장면 다시 고르기", "ai_words": "AI 자막 다시 쓰기",
                "finalize": "완성본 확정"}
@@ -1815,6 +1941,8 @@ def run_job(job) -> None:
         return run_reel_full_job(job)
     if job.get("kind") in ("reel_ideas", "reel_ref"):
         return run_reel_ideas_job(job)
+    if job.get("kind") == "reel_published":
+        return run_reel_published_job(job)
     if job.get("kind") == "reel_topics":
         # 직원 웹 [새로고침] — 소재 폴더 목록만 즉시 다시 올린다(수 초).
         try:
@@ -1959,6 +2087,7 @@ def main() -> int:
                     maybe_rescue_stuck()
                     maybe_push_reel_topics()
                     maybe_market_scan()
+                    maybe_reel_sync()
                     db.worker_ping("idle", "대기 중")
             if job:
                 # 일감이 있으면 쉬지 않고 바로 다음 것을 집는다. 예전엔 한 건

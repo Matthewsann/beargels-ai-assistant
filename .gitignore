@@ -87,3 +87,6 @@ projects/
 data/
 data/media_ledger.json
 data/archive_media/
+
+# 집 PC 일꾼의 정기 점검 스탬프(market_scan_at.txt 등) — 기기 로컬 런타임 상태
+state/
