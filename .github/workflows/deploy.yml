@@ -49,19 +49,27 @@ jobs:
 
           upload() {
             # PythonAnywhere 파일 API가 가끔 504/타임아웃을 낸다(2026-08-10 실사고).
-            # 파일당 최대 3회, 60초 타임아웃으로 재시도한다.
+            # 파일이 40개를 넘으며 요청 제한(429)도 맞는다(2026-09-02~03, 3연속
+            # 배포 실패 실사고) — 429 는 서버가 알려주는 대기 시간만큼 기다린다.
             local rel="$1"
             local url="$PA_HOST/api/v0/user/$PA_USER/files/path$PA_ROOT/$rel"
-            local code try
-            for try in 1 2 3; do
+            local code try wait
+            for try in 1 2 3 4; do
               code=$(curl -s -o /tmp/up.out -w '%{http_code}' --max-time 60 -X POST \
                        -H "$AUTH" -F "content=@$rel" "$url" || echo 000)
               if [ "$code" = "200" ] || [ "$code" = "201" ]; then
                 echo "  올림: $rel (HTTP $code, ${try}번째 시도)"
                 return 0
               fi
-              echo "  재시도 $try/3: $rel (HTTP $code)"
-              sleep 5
+              if [ "$code" = "429" ]; then
+                wait=$(grep -o 'available in [0-9]*' /tmp/up.out | grep -o '[0-9]*' | head -1)
+                wait=$(( ${wait:-45} + 3 ))
+                echo "  요청 제한 — ${wait}초 대기 후 재시도 $try/4: $rel"
+                sleep "$wait"
+              else
+                echo "  재시도 $try/4: $rel (HTTP $code)"
+                sleep 5
+              fi
             done
             echo "::error::업로드 실패 $rel (HTTP $code)"
             head -c 300 /tmp/up.out; echo
@@ -99,6 +107,8 @@ jobs:
           upload sns_automation/__init__.py
           upload sns_automation/cloud_sync.py
           upload service/mkt_page.py
+          upload service/sales_page.py
+          upload service/templates/sales.html
           upload service/menu_images.py
           upload service/schedule_page.py
           upload service/templates/schedule.html
