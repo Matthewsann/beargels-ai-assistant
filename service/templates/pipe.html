@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>파이프라인 — 베어글스</title>
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
+          --ok:#3b6d11; --ok-bg:#eaf3de; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.65;
+         font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px 14px 64px; }
+  h2 { font-size:16px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:12.5px; margin:0 0 14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:14px; margin-bottom:12px; font-size:14px; }
+  .btn { display:inline-block; border:1px solid var(--line); background:#fff; color:var(--ink);
+         font:inherit; font-size:12.5px; font-weight:600; padding:8px 12px; border-radius:9px;
+         cursor:pointer; text-decoration:none; }
+  .btn.pri { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn.mini { padding:3px 8px; font-size:12px; }
+  .row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .note { background:var(--warn-bg); color:var(--warn); border-radius:9px;
+          padding:9px 11px; font-size:12.5px; margin-top:10px; }
+  .okmsg { background:var(--ok-bg); color:var(--ok); border-radius:9px;
+           padding:9px 11px; font-size:13px; margin-top:10px; }
+  .empty { color:var(--muted); font-size:13px; padding:8px 0; }
+  input[type=text], textarea { font:inherit; font-size:13px; padding:6px 9px;
+    border:1px solid var(--line); border-radius:8px; width:100%; }
+  input[type=number] { font:inherit; font-size:12.5px; padding:5px 6px;
+    border:1px solid var(--line); border-radius:7px; width:60px; }
+  .shot { display:flex; gap:8px; margin-top:8px; align-items:flex-start; }
+  .shot img { width:46px; height:76px; object-fit:cover; border-radius:7px;
+              border:1px solid var(--line); cursor:pointer; flex:0 0 46px; }
+  .shot .ph { width:46px; height:76px; border-radius:7px; border:1px dashed var(--line); flex:0 0 46px; }
+  .lbl { color:var(--muted); font-size:11.5px; }
+  details.proj > summary { cursor:pointer; font-weight:700; font-size:14px; list-style:none; }
+  details.proj > summary::-webkit-details-marker { display:none; }
+</style>
+</head>
+<body>
+{{ sidebar|safe }}
+<div class="wrap">
+  <h2>🎛 파이프라인 — 세부 편집</h2>
+  <p class="sub">여기서 고치고 누르면 집 PC가 실행해요{% if when %} · 상태 {{ when }} 기준{% endif %}
+    · <a href="./" style="color:var(--accent)">← 릴스 화면으로</a></p>
+
+  <div id="mkStatus"></div>
+
+  {% if projects %}
+    {% for p in projects %}
+    <div class="card">
+    <details class="proj" {% if loop.first %}open{% endif %}>
+      <summary>{{ p.title }} <span class="lbl">· {{ p.status }} · 샷 {{ p.shots|length }}개</span></summary>
+      <div data-pid="{{ p.pid }}" style="margin-top:10px">
+        {% if p.preview %}
+        <video controls playsinline preload="metadata" src="{{ p.preview }}?v={{ p.preview_ver }}"
+          style="width:100%;max-width:200px;border-radius:10px;border:1px solid var(--line);display:block;margin-bottom:8px"></video>
+        {% endif %}
+        {% if p.memo %}<div class="lbl" style="margin-bottom:6px">📝 {{ p.memo }}</div>{% endif %}
+
+        <div class="lbl">훅 (첫 화면)</div>
+        <input type="text" class="pp-hook" value="{{ p.hook }}">
+
+        <div id="shots-{{ loop.index0 }}">
+        {% for s in p.shots %}
+          <div class="shot" data-clip="{{ s.clip }}" data-in="{{ s.in }}" data-role="{{ s.role }}" data-audio="{{ 1 if s.audio else 0 }}">
+            {% if s.thumb %}<img src="{{ s.thumb }}" loading="lazy" onclick="zoomThumb(this.src)">
+            {% else %}<span class="ph"></span>{% endif %}
+            <div style="flex:1">
+              <div class="lbl">{{ s.role }}{% if s.audio %} 🔊{% endif %} ·
+                길이 <input type="number" class="pp-dur" value="{{ s.dur }}" step="0.1" min="1" max="6">초
+                <span style="float:right">
+                  <button class="btn mini" onclick="mv(this,-1)">↑</button>
+                  <button class="btn mini" onclick="mv(this,1)">↓</button>
+                  <button class="btn mini" onclick="rm(this)">✕</button>
+                </span>
+              </div>
+              <input type="text" class="pp-cap" value="{{ s.caption }}" placeholder="(자막 없음)" style="margin-top:3px">
+            </div>
+          </div>
+        {% endfor %}
+        </div>
+
+        <div class="lbl" style="margin-top:8px">마지막 한 줄 (CTA)</div>
+        <input type="text" class="pp-cta" value="{{ p.cta }}">
+        <div class="lbl" style="margin-top:8px">인스타 캡션</div>
+        <textarea class="pp-caption" rows="3">{{ p.caption }}</textarea>
+
+        {% if p.missing %}<div class="note">📋 다음 촬영 때: {{ p.missing|join(" · ") }}</div>{% endif %}
+        {% if p.qc %}<div class="note">🔍 검수 메모: {{ p.qc|join(" · ") }}</div>{% endif %}
+
+        <div class="row" style="margin-top:12px">
+          <button class="btn pri" onclick="act(this,'render')">🎬 저장하고 다시 편집</button>
+          <button class="btn" onclick="act(this,'finalize')">✅ 완성본 확정</button>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button class="btn" onclick="act(this,'save')">💾 저장만</button>
+          <button class="btn" onclick="act(this,'ai_words')">✨ AI 자막 다시</button>
+          <button class="btn" onclick="act(this,'ai_full')">🎯 AI 장면 다시</button>
+        </div>
+      </div>
+    </details>
+    </div>
+    {% endfor %}
+    <div class="note">순서(↑↓)·빼기(✕)·길이·자막을 고친 뒤 <b>🎬 저장하고 다시 편집</b>을
+      누르면 2~3분 뒤 미리보기가 새로 떠요. 마음에 들면 <b>✅ 완성본 확정</b> —
+      릴스 화면 ④에서 받을 수 있게 돼요.</div>
+  {% else %}
+    <div class="card"><div class="empty">아직 프로젝트 상태가 안 올라왔어요.
+      집 PC가 켜져 있으면 30분 안에 올라오고, 릴스 화면에서 대본을 만들면 바로 떠요.</div></div>
+  {% endif %}
+</div>
+
+<script>
+let pollTimer = null;
+function box(){ return document.querySelector("#mkStatus"); }
+function mv(btn, d){
+  const s = btn.closest(".shot"), list = s.parentNode;
+  const kids = [...list.children], i = kids.indexOf(s), j = i + d;
+  if(j < 0 || j >= kids.length) return;
+  list.insertBefore(s, d > 0 ? kids[j].nextSibling : kids[j]);
+}
+function rm(btn){
+  const s = btn.closest(".shot");
+  if(s.parentNode.children.length <= 3){ box().innerHTML = '<div class="note">샷은 3개 이상 필요해요.</div>'; return; }
+  s.remove();
+}
+function collect(root){
+  return [...root.querySelectorAll(".shot")].map(s => ({
+    clip: s.dataset.clip, in: parseFloat(s.dataset.in),
+    dur: parseFloat(s.querySelector(".pp-dur").value) || 2.5,
+    role: s.dataset.role, audio: s.dataset.audio === "1",
+    caption: s.querySelector(".pp-cap").value
+  }));
+}
+async function act(btn, action){
+  const root = btn.closest("[data-pid]");
+  const payload = (action === "ai_full" || action === "ai_words") ? {} : {
+    hook: root.querySelector(".pp-hook").value,
+    cta: root.querySelector(".pp-cta").value,
+    caption: root.querySelector(".pp-caption").value,
+    shots: collect(root)
+  };
+  if(action === "finalize" && !confirm("이 상태로 완성본을 확정할까요?")) return;
+  const fd = new FormData();
+  fd.append("pid", root.dataset.pid);
+  fd.append("action", action);
+  fd.append("payload", JSON.stringify(payload));
+  btn.disabled = true;
+  try{
+    const r = await fetch(location.pathname + "/action", {method:"POST", body:fd});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || "요청 실패");
+    box().innerHTML = '<div class="okmsg">⏳ 집 PC에 보냈어요 — 여기서 기다리면 진행이 보여요.</div>';
+    window.scrollTo({top:0, behavior:"smooth"});
+    startPoll();
+  }catch(e){
+    box().innerHTML = `<div class="note">실패: ${e.message}</div>`;
+  }
+  btn.disabled = false;
+}
+function startPoll(){
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    try{
+      const r = await fetch(location.pathname.replace(/\/pipe$/,"") + "/job");
+      const d = await r.json();
+      if(d.status === "running")
+        box().innerHTML = `<div class="okmsg">🔧 집 PC가 작업 중… (${d.message})</div>`;
+      else if(d.status === "pending")
+        box().innerHTML = `<div class="okmsg">⏳ 집 PC 차례를 기다리는 중… (${d.message})</div>`;
+      else if(d.status === "done"){
+        clearInterval(pollTimer);
+        try{ sessionStorage.setItem("pipeMsg", d.message); }catch(e){}
+        box().innerHTML = `<div class="okmsg">✅ ${d.message}<br>화면을 새로 불러오는 중…</div>`;
+        setTimeout(()=>location.reload(), 1500);
+      }else if(d.status === "error"){
+        clearInterval(pollTimer);
+        box().innerHTML = `<div class="note">❌ 실패: ${d.message}</div>`;
+      }
+    }catch(e){}
+  }, 5000);
+}
+{% if job and job.status in ("pending","running") %}startPoll();{% endif %}
+try{
+  const m = sessionStorage.getItem("pipeMsg");
+  if(m){ sessionStorage.removeItem("pipeMsg");
+    box().innerHTML = `<div class="okmsg">✅ ${m}</div>`; }
+}catch(e){}
+function zoomThumb(src){
+  const ov = document.createElement("div");
+  ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:99;display:flex;align-items:center;justify-content:center";
+  ov.innerHTML = `<img src="${src}" style="max-width:92vw;max-height:88vh;border-radius:12px">`;
+  ov.onclick = ()=>ov.remove();
+  document.body.appendChild(ov);
+}
+</script>
+</body>
+</html>

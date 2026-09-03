@@ -445,6 +445,142 @@ def _pipeline_url() -> str:
     return f"{url}/?code={code}" if code else url
 
 
+#: PA 파이프라인 화면에 올리는 최근 프로젝트 수
+PIPE_RECENT = 6
+
+
+def push_pipe_state(refresh_pid: str | None = None) -> None:
+    """파이프라인 상태를 PA 웹사이트용으로 클라우드에 올린다.
+
+    refresh_pid 를 주면 그 프로젝트의 썸네일·미리보기까지 새로 올린다
+    (렌더·저장 직후). 평소(30분 주기)에는 구성표 JSON 만 가볍게 갱신.
+    """
+    import time as _time
+    from . import cloud_sync
+    from . import webapp as wa
+
+    if refresh_pid:
+        p = wa._load_project(refresh_pid)
+        if p and p.get("shot_plan"):
+            try:
+                frames = _frames_for(p, p["shot_plan"])
+                p["thumb_urls"] = cloud_sync.push_script_thumbs(
+                    refresh_pid, [b for _m, b in frames])
+            except Exception as e:
+                logger.warning("파이프 썸네일 실패: %s", e)
+            reel = os.path.join(wa._proj_dir(refresh_pid), "reel.mp4")
+            if os.path.exists(reel):
+                try:
+                    p["preview_url"] = cloud_sync.push_preview(refresh_pid, reel)
+                    p["preview_ver"] = int(_time.time())
+                except Exception as e:
+                    logger.warning("미리보기 업로드 실패: %s", e)
+            wa._save_project(p)
+
+    items = []
+    if os.path.isdir(wa.PROJECTS_DIR):
+        pids = sorted(
+            (x for x in os.listdir(wa.PROJECTS_DIR)
+             if os.path.exists(os.path.join(wa.PROJECTS_DIR, x, "project.json"))),
+            key=lambda x: os.path.getmtime(
+                os.path.join(wa.PROJECTS_DIR, x, "project.json")),
+            reverse=True)[:PIPE_RECENT]
+        for pid in pids:
+            p = wa._load_project(pid)
+            if not p:
+                continue
+            plan = p.get("shot_plan") or {}
+            thumbs = p.get("thumb_urls") or []
+            items.append({
+                "pid": pid, "title": p.get("title", pid),
+                "status": p.get("status", ""), "memo": p.get("guide", ""),
+                "hook": (plan.get("hook") or {}).get("text", ""),
+                "cta": (plan.get("cta") or {}).get("text", ""),
+                "shots": [{"clip": s.get("clip", ""), "in": s.get("in", 0),
+                           "dur": s.get("dur", 0), "role": s.get("role", ""),
+                           "caption": s.get("caption") or "",
+                           "audio": bool(s.get("audio")),
+                           "thumb": thumbs[i] if i < len(thumbs) else ""}
+                          for i, s in enumerate(plan.get("shots") or [])],
+                "caption": p.get("script_caption", ""),
+                "qc": (p.get("qc") or {}).get("warnings") or
+                      (p.get("qc") or {}).get("critical") or [],
+                "missing": [m.get("need", "") for m in (plan.get("missing") or [])][:3],
+                "preview": p.get("preview_url", ""),
+                "preview_ver": p.get("preview_ver", 0),
+            })
+    cloud_sync.push_pipe({"updated": int(_time.time()), "projects": items})
+
+
+def run_pipe_action(pid: str, action: str, payload: dict | None = None) -> str:
+    """PA 파이프라인 화면의 버튼 하나를 집 PC 에서 실행한다. 반환=결과 문장."""
+    from . import planner, shot_plan, video_editor
+    from . import webapp as wa
+
+    p = wa._load_project(pid)
+    if not p:
+        raise MakeError("프로젝트를 찾지 못했어요.")
+    title = p.get("title", pid)
+    payload = payload or {}
+
+    def _apply_edits():
+        plan = p.get("shot_plan") or {}
+        if payload.get("hook") is not None:
+            plan.setdefault("hook", {})["text"] = str(payload["hook"]).strip()
+        if payload.get("cta") is not None:
+            plan.setdefault("cta", {})["text"] = str(payload["cta"]).strip()
+        if isinstance(payload.get("shots"), list):
+            plan["shots"] = [
+                {"clip": s.get("clip", ""), "in": float(s.get("in") or 0),
+                 "dur": float(s.get("dur") or 2.5),
+                 "caption": (str(s.get("caption") or "").strip() or None),
+                 "role": s.get("role") or "과정",
+                 "audio": bool(s.get("audio")),
+                 "slow": shot_plan.PAYOFF_SLOW
+                         if s.get("role") == shot_plan.ROLE_PAYOFF else 1.0}
+                for s in payload["shots"] if s.get("clip")]
+        p["shot_plan"] = shot_plan.normalize(plan)
+        if payload.get("caption") is not None:
+            p["script_caption"] = str(payload["caption"]).strip()
+        wa._save_project(p)
+
+    if action == "save":
+        _apply_edits()
+        push_pipe_state(pid)
+        return f"'{title}' 구성표 저장"
+    if action == "render":
+        _apply_edits()
+        out = os.path.join(wa._proj_dir(pid), "reel.mp4")
+        res = video_editor.build_reel_from_plan(
+            p["shot_plan"], wa._media_dir(p), out)
+        p["status"] = wa.ST_EDITED
+        wa._save_project(p)
+        push_pipe_state(pid)
+        return f"'{title}' 다시 편집 완료 ({res.get('seconds')}초) — 미리보기 갱신됨"
+    if action == "ai_full":
+        files = wa._raw_files(pid, p)
+        p["shot_plan"] = footage_plan(p, files)
+        wa._save_project(p)
+        push_pipe_state(pid)
+        return f"'{title}' 장면을 AI 가 새로 골랐어요 — 확인 후 [다시 편집]을 누르세요"
+    if action == "ai_words":
+        plan = p.get("shot_plan")
+        if not plan:
+            raise MakeError("구성표가 없어요.")
+        frames = [f for f in _frames_for(p, plan) if f[1]]
+        p["shot_plan"] = asyncio.run(planner.write_shot_captions(
+            plan, title, p.get("menu", title), frames, guide=p.get("guide", "")))
+        wa._save_project(p)
+        push_pipe_state(pid)
+        return f"'{title}' 자막을 새로 썼어요 — 확인 후 [다시 편집]을 누르세요"
+    if action == "finalize":
+        res = make_video(pid, None)     # 렌더+검수+완성본+목록까지 한 번에
+        push_pipe_state(pid)
+        note = "검수 통과" if res.get("qc_passed") else "⚠️ 검수 경고 있음"
+        return f"'{title}' 완성본 확정 ({res.get('seconds')}초 · {note}) — 완성본 목록에 올라감"
+    raise MakeError(f"모르는 동작: {action}")
+
+
 def push_topics() -> None:
     """소재 폴더 목록을 클라우드에 올린다 — 직원 웹의 주제 선택칸이 읽는다."""
     from . import cloud_sync, source_watch

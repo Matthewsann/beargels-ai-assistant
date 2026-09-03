@@ -139,6 +139,37 @@ def remove_script(pid: str) -> None:
     _save_scripts([s for s in load_scripts(c) if s.get("pid") != pid], c)
 
 
+# ── 파이프라인 미러 (PA 웹사이트에서 세부 편집) ────────────────
+# 사장님 확정(2026-09-03): 파이프라인 화면을 PA 웹사이트 안에서 쓴다.
+# 집 PC 가 구성표·썸네일·미리보기를 여기로 올리고, PA 는 보여주고
+# 수정·버튼을 잡 큐로 되돌려보낸다. 영상 파일·렌더만 집 PC 몫.
+PIPE = "state/pipeline.json"
+
+
+def load_pipe(c=None) -> dict:
+    try:
+        raw = _bucket(c).download(PIPE)
+        return json.loads(raw.decode("utf-8"))
+    except Exception:
+        return {}
+
+
+def push_pipe(data: dict) -> None:
+    _bucket(client()).upload(
+        PIPE, json.dumps(data, ensure_ascii=False).encode("utf-8"),
+        {"content-type": "application/json; charset=utf-8", "upsert": "true"})
+
+
+def push_preview(pid: str, video_path: str) -> str:
+    """편집 미리보기 mp4 업로드 → 공개 URL (완성 전 확인용)."""
+    c = client()
+    path = f"state/previews/{enc(pid)}.mp4"
+    with open(video_path, "rb") as f:
+        _bucket(c).upload(path, f.read(),
+                          {"content-type": "video/mp4", "upsert": "true"})
+    return public_url(path, c)
+
+
 def push_script_thumbs(pid: str, jpegs: list[bytes]) -> list[str]:
     """대본 검수용 샷 썸네일 업로드 → 공개 URL 목록(샷 순서 유지).
 

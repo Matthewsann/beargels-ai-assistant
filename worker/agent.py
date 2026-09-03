@@ -1554,6 +1554,41 @@ def run_reel_video_job(job) -> None:
         db.finish_job(jid, "error", str(e)[:200], 0)
 
 
+_PIPE_LABEL = {"save": "구성표 저장", "render": "다시 편집(렌더)",
+               "ai_full": "AI 장면 다시 고르기", "ai_words": "AI 자막 다시 쓰기",
+               "finalize": "완성본 확정"}
+
+
+def run_pipe_job(job) -> None:
+    """PA 파이프라인 화면의 버튼 하나 — 집 PC 에서 실행하고 상태를 되올린다."""
+    import json as _json
+    jid = job["id"]
+    try:
+        req = _json.loads(job.get("message") or "{}")
+    except ValueError:
+        req = {}
+    pid, action = (req.get("pid") or "").strip(), (req.get("action") or "").strip()
+    if not pid or not action:
+        db.finish_job(jid, "error", "요청 정보가 비어 있어요.", 0)
+        return
+    label = _PIPE_LABEL.get(action, action)
+    logger.info("파이프 잡 #%s — %s / %s", jid, pid, action)
+    db.worker_ping("working", f"{label} 중")
+    try:
+        sys.path.insert(0, str(ROOT))
+        from sns_automation import auto_make
+        msg = auto_make.run_pipe_action(pid, action, req.get("payload") or {})
+        db.finish_job(jid, "done", msg, 1)
+        logger.info("파이프 잡 #%s 완료 — %s", jid, msg)
+    except Exception as e:  # noqa: BLE001
+        logger.error("파이프 잡 #%s 실패: %s", jid, e)
+        logger.debug(traceback.format_exc())
+        db.log_error("worker", f"파이프 잡 실패({action}/{pid}): {e}",
+                     kind=type(e).__name__, path="run_pipe_job",
+                     detail=traceback.format_exc())
+        db.finish_job(jid, "error", str(e)[:200], 0)
+
+
 _last_topics_push = 0.0
 
 
@@ -1567,6 +1602,7 @@ def maybe_push_reel_topics() -> None:
         sys.path.insert(0, str(ROOT))
         from sns_automation import auto_make
         auto_make.push_topics()
+        auto_make.push_pipe_state()      # PA 파이프라인 화면용 상태(가벼움)
     except Exception as e:  # noqa: BLE001
         logger.debug("소재 목록 업로드 실패(무시): %s", e)
 
@@ -1593,6 +1629,8 @@ def run_job(job) -> None:
         return run_reel_job(job)
     if job.get("kind") == "reel_video":
         return run_reel_video_job(job)
+    if job.get("kind") == "pipe":
+        return run_pipe_job(job)
     if job.get("kind") == "reel_topics":
         # 직원 웹 [새로고침] — 소재 폴더 목록만 즉시 다시 올린다(수 초).
         try:

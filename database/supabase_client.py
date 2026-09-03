@@ -347,10 +347,33 @@ def request_reel_video(pid, script, by=None):
     return (get_client().table("jobs").insert(row).execute().data or [None])[0]
 
 
+def request_pipe(pid, action, payload=None, by=None):
+    """PA 파이프라인 화면의 버튼 — 같은 프로젝트·동작이 대기 중이면
+    **최신 수정으로 덮어쓴다**(옛 편집이 이기면 안 되니까)."""
+    import json as _json
+    msg = _json.dumps({"pid": pid, "action": action,
+                       "payload": payload or {}}, ensure_ascii=False)
+    live = (get_client().table("jobs").select("*")
+            .eq("kind", "pipe").eq("status", "pending")
+            .order("requested_at", desc=True).limit(5).execute().data)
+    for row in live or []:
+        try:
+            req = _json.loads(row.get("message") or "{}")
+        except ValueError:
+            continue
+        if req.get("pid") == pid and req.get("action") == action:
+            (get_client().table("jobs").update({"message": msg})
+             .eq("id", row["id"]).execute())
+            return row
+    row = {"kind": "pipe", "status": "pending",
+           "requested_by": by or "", "message": msg}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
 def last_reel_job():
-    """가장 최근 릴스 잡 1건(대본/영상) — 직원 웹의 진행 표시용."""
+    """가장 최근 릴스 잡 1건(대본/영상/파이프) — 직원 웹의 진행 표시용."""
     rows = (get_client().table("jobs").select("*")
-            .in_("kind", ["reel", "reel_video"])
+            .in_("kind", ["reel", "reel_video", "pipe"])
             .order("requested_at", desc=True).limit(1).execute().data)
     return rows[0] if rows else None
 
@@ -424,7 +447,7 @@ def last_collect_at():
 # 직원이 화면 앞에서 결과를 기다리는 작업 — 리뷰수집(수 분) 뒤에 밀리면
 # 3분 폴링 안에 끝나지 않아 '아직 확인이 안 돼요'로 보인다. 먼저 집는다.
 INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "wake",
-                         "reel", "reel_video", "reel_topics")
+                         "reel", "reel_video", "reel_topics", "pipe")
 
 
 def claim_next_job(interactive_only=False):

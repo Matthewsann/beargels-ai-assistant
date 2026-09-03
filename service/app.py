@@ -1526,6 +1526,54 @@ def instagram_video(path_key):
     return jsonify(ok=True, job_id=row.get("id"))
 
 
+@app.route("/<path_key>/instagram/pipe")
+def instagram_pipe(path_key):
+    """파이프라인 화면 — 웹사이트 안에서 세부 편집 (사장님 확정 2026-09-03).
+
+    집 PC 가 올려둔 구성표·썸네일·미리보기를 보여주고, 수정·버튼은
+    잡 큐(kind='pipe')로 집 PC 에 보낸다. 영상 렌더만 집 PC 몫.
+    """
+    check(path_key)
+    state, when = {}, None
+    try:
+        from sns_automation import cloud_sync
+        state = cloud_sync.load_pipe()
+        if state.get("updated"):
+            when = datetime.fromtimestamp(state["updated"], KST).strftime("%m/%d %H:%M")
+    except Exception as e:
+        app.logger.warning("파이프 상태 로드 실패: %s", e)
+    job = None
+    try:
+        job = db.last_reel_job()
+    except Exception:
+        pass
+    return render_template("pipe.html", key=path_key,
+                           sidebar=render_template("_sidebar.html", key=path_key),
+                           projects=state.get("projects", []), when=when, job=job)
+
+
+@app.route("/<path_key>/instagram/pipe/action", methods=["POST"])
+def instagram_pipe_action(path_key):
+    """파이프라인 버튼 → 집 PC 잡 큐. 같은 동작 대기 중이면 최신 수정으로 교체."""
+    check(path_key)
+    pid = (request.form.get("pid") or "").strip()
+    action = (request.form.get("action") or "").strip()
+    if not pid or action not in ("save", "render", "ai_full", "ai_words", "finalize"):
+        return jsonify(error="요청이 올바르지 않아요. 새로고침 후 다시 시도해주세요."), 400
+    try:
+        import json as _json
+        payload = _json.loads(request.form.get("payload") or "{}")
+        if not isinstance(payload, dict):
+            payload = {}
+    except ValueError:
+        payload = {}
+    try:
+        row = db.request_pipe(pid, action, payload, by="직원웹")
+    except Exception as e:
+        return jsonify(error=f"요청을 넣지 못했어요: {e}"), 500
+    return jsonify(ok=True, job_id=row.get("id"))
+
+
 @app.route("/<path_key>/instagram/job")
 def instagram_job(path_key):
     """최근 릴스 잡 상태 — 화면이 몇 초마다 물어봐서 진행 표시."""
@@ -1542,7 +1590,13 @@ def instagram_job(path_key):
     if job.get("status") in ("pending", "running"):
         try:
             import json as _json
-            msg = _json.loads(msg).get("topic", "")
+            req = _json.loads(msg)
+            labels = {"save": "구성표 저장", "render": "다시 편집",
+                      "ai_full": "AI 장면 다시", "ai_words": "AI 자막 다시",
+                      "finalize": "완성본 확정"}
+            msg = (req.get("topic")
+                   or labels.get(req.get("action"), "")
+                   or ("영상 만들기" if req.get("pid") else ""))
         except ValueError:
             pass
     return jsonify(status=job.get("status"), message=msg)

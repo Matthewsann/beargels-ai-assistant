@@ -195,17 +195,18 @@
     <div id="msg"></div>
   </div>
 
-  <!-- ⑤ 세부 편집 — 집 PC 파이프라인 화면 -->
-  {% if pipeline_url %}
+  <!-- ⑤ 세부 편집 — 파이프라인 (이 사이트 안에서) -->
   <div class="card">
-    <h3>⑤ 세부 편집이 필요하면 — 파이프라인 화면</h3>
-    <div style="font-size:13.5px;margin-bottom:10px">샷 순서·길이·자막 한 줄까지
-      직접 고치고 다시 편집할 수 있는 화면이에요.</div>
-    <a class="btn pri" href="{{ pipeline_url }}" target="_blank" rel="noopener">🎛 파이프라인 열기</a>
-    <div class="note" style="margin-top:10px">⚠️ <b>집·매장과 같은 와이파이</b>에서만 열려요
-      (영상 파일을 다루는 화면이라 집 PC에서 돌아요). 집 PC가 켜져 있어야 합니다.</div>
+    <h3>⑤ 세부 편집 — 파이프라인</h3>
+    <div style="font-size:13.5px;margin-bottom:10px">샷 순서·길이·자막을 여기서 직접
+      고치고 [다시 편집]을 누르면 집 PC가 만들어서 미리보기로 보여줘요.
+      <b>어디서나 열려요.</b></div>
+    <a class="btn pri" href="{{ url_for('instagram_pipe', path_key=key) }}">🎛 파이프라인 열기</a>
+    {% if pipeline_url %}
+    <div style="color:var(--muted);font-size:11.5px;margin-top:8px">
+      집 와이파이에서는 <a href="{{ pipeline_url }}" target="_blank" rel="noopener">집 PC 원본 화면</a>도 열 수 있어요(더 빠름).</div>
+    {% endif %}
   </div>
-  {% endif %}
 </div>
 
 <script>
