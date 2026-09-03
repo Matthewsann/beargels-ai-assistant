@@ -20,7 +20,10 @@
   // API 주소 앞부분 — 집 PC 웹앱은 /schedule, 클라우드는 /<비밀주소>/schedule
   var API = B.api || '/schedule';
 
-  var HH = 36;                    // 캘린더에서 1시간 = 36px
+  // 캘린더에서 1시간 = 30px. 36px 였을 땐 하루 16시간이 576px 라 주간이 한
+  // 화면에 안 들어와 저녁 근무를 보려면 늘 스크롤해야 했다(사장님: "한눈에
+  // 안 들어온다", 2026-08-31). 30px 면 480px — 노트북에서 요약표까지 한 화면.
+  var HH = 30;
   var AXIS_START = 6, AXIS_END = 22;
   var wkIdx = 0, meName = null, dayGaps = [], bizDraft = null;
   var $ = function (id) { return document.getElementById(id); };
@@ -30,6 +33,9 @@
   function hm(h) { return pad(Math.floor(h)) + ':' + pad(Math.round((h % 1) * 60)); }
   function toH(v) { var p = String(v).split(':'); return (+p[0] || 0) + (+p[1] || 0) / 60; }
   function span(sh) { return hm(sh.s) + '–' + hm(sh.e); }
+  // 요약표용 짧은 시각: 7 · 7:30 · 19  (07:00 처럼 늘어지지 않게)
+  function hshort(h) { var m = Math.round((h % 1) * 60); return Math.floor(h) + (m ? ':' + pad(m) : ''); }
+  function spanShort(sh) { return hshort(sh.s) + '–' + hshort(sh.e); }
   function dur(sh) { return sh.e - sh.s; }
   function hrs(n) { return String(Math.round(n * 10) / 10); }
   function esc(s) {
@@ -203,6 +209,22 @@
         + hours.map(function () { return '<div class="hl" style="height:' + HH + 'px"></div>'; }).join('')
         + (closed ? '<span class="closedlab">휴 무</span>' : '');
 
+      // 영업 중인데 아무도 없는 구멍 — 주간 화면에서도 바로 보이게 빨간 빗금.
+      // 근무가 하나도 없는 날은 통째로 빨개져 소음이라 제외(헤더의 '—'가 말해준다).
+      if (!closed && day.length) {
+        var gs = null;
+        for (var t = bz.open; t < bz.close; t += 0.5) {
+          var n = 0;
+          for (var k = 0; k < day.length; k++) if (day[k].s <= t && day[k].e > t) n++;
+          if (n === 0 && gs === null) gs = t;
+          if (n > 0 && gs !== null) {
+            body += '<div class="gap" style="top:' + y(gs) + 'px;height:' + ((t - gs) * HH) + 'px"></div>';
+            gs = null;
+          }
+        }
+        if (gs !== null) body += '<div class="gap" style="top:' + y(gs) + 'px;height:' + ((bz.close - gs) * HH) + 'px"></div>';
+      }
+
       assignLanes(day).forEach(function (sh) {
         var w = 100 / sh._lanes;
         var dim = (mine && sh.w !== mine) ? 'opacity:.4;' : '';
@@ -211,7 +233,7 @@
                : sh.st === 'pend' ? '<span class="mk pend">기록 전</span>' : '';
         var attr = ro ? '' : ' data-di="' + di + '" data-idx="' + day.indexOf(sh) + '"';
         var rz = ro ? '' : '<i class="rz top"></i><i class="rz bot"></i>';
-        body += '<div class="ev' + (ro ? ' ro' : '') + (sh.st === 'diff' ? ' diff' : '') + '"'
+        body += '<div class="ev' + (ro ? ' ro' : '') + (sh.st === 'diff' ? ' diff' : '') + (dur(sh) < 1.25 ? ' short' : '') + '"'
           + ' style="top:' + y(sh.s) + 'px;height:' + Math.max(14, dur(sh) * HH - 4) + 'px;'
           + 'left:calc(' + (sh._lane * w) + '% + 2px);width:calc(' + w + '% - 4px);'
           + 'background:' + colorOf(sh.w) + ';' + dim + '"'
@@ -229,6 +251,50 @@
       body += '<div class="nowline" style="top:' + y(nh) + 'px"><b class="num">지금 ' + hm(nh) + '</b></div>';
     }
     return '<div class="wkcal"><div class="wkcal-inner">' + head + body + '</div></div></div>';
+  }
+
+  // ── 직원별 주간 요약표 ────────────────────────────────────
+  // 세로 시간축 캘린더는 '언제 겹치나'엔 좋지만 '누가 이번 주 며칠·몇 시간'은
+  // 7개 막대를 눈으로 더해야 보였다. 종이 근무표처럼 사람 행 × 요일 열로
+  // 한 줄에 한 사람 — 사장님이 첫눈에 보는 건 이 표, 고칠 땐 아래 캘린더.
+  function weekSummaryHTML(wk, wi) {
+    var names = (CFG.staff || []).map(function (s) { return s.name; });
+    wk.days.forEach(function (day) {
+      day.forEach(function (sh) { if (names.indexOf(sh.w) < 0) names.push(sh.w); });
+    });
+    var canEdit = MODE === 'admin' && !wk.locked;
+    var h = '<div class="wksum-wrap"><table class="wksum"><thead><tr><th class="who">직원</th>';
+    wk.dates.forEach(function (d, i) {
+      var iso = wk.iso[i];
+      var cls = [iso === TODAY ? 'today' : '', i === 5 ? 'sat' : (i === 6 ? 'sun' : ''),
+                 isClosed(iso, i) ? 'closed' : ''].filter(Boolean).join(' ');
+      h += '<th class="' + cls + '"><span class="w">' + DOW[i] + '</span><span class="num">' + d + '</span></th>';
+    });
+    h += '<th class="tot">합계</th></tr></thead><tbody>';
+    names.forEach(function (name) {
+      var total = 0, cnt = 0;
+      var row = '<tr><td class="who"><span class="pdot" style="background:' + colorOf(name) + '"></span>' + esc(name) + '</td>';
+      wk.days.forEach(function (day, di) {
+        var mine = day.map(function (sh, idx) { return { sh: sh, idx: idx }; })
+          .filter(function (x) { return x.sh.w === name; })
+          .sort(function (a, b) { return a.sh.s - b.sh.s; });
+        var cell = '';
+        mine.forEach(function (x) {
+          total += dur(x.sh); cnt++;
+          cell += '<span class="sc' + (x.sh.st === 'diff' ? ' diff' : '') + (canEdit ? ' can' : '') + '"'
+            + ' style="border-color:' + colorOf(name) + '"'
+            + (canEdit ? ' data-di="' + di + '" data-idx="' + x.idx + '"' : '')
+            + ' title="' + esc(name) + ' ' + span(x.sh) + ' (' + hrs(dur(x.sh)) + '시간)">'
+            + '<span class="num">' + spanShort(x.sh) + '</span>'
+            + (x.sh.st === 'diff' ? '<i>⚠</i>' : '') + '</span>';
+        });
+        row += '<td class="' + (wk.iso[di] === TODAY ? 'today' : '') + (isClosed(wk.iso[di], di) ? ' closed' : '') + '">'
+          + (cell || '<span class="none">·</span>') + '</td>';
+      });
+      row += '<td class="tot num">' + (cnt ? '<b>' + hrs(total) + '</b>h <small>' + cnt + '회</small>' : '<span class="none">0</span>') + '</td></tr>';
+      h += row;
+    });
+    return h + '</tbody></table></div>';
   }
 
   function fitEvents(root) {
@@ -263,6 +329,7 @@
       html += '<div class="post emptywk"><p>이 주는 아직 안 짰어요. 지난주를 그대로 가져와서 달라지는 근무만 고치면 돼요.</p>'
         + '<button class="btn primary" onclick="SCHED.copyPrev()">📋 지난주 그대로 가져오기</button></div>';
     }
+    if (!isEmpty) html += weekSummaryHTML(wk, wkIdx);
     html += weekCalHTML(wk, wkIdx);
 
     var hols = wk.iso.map(function (iso, i) { return { iso: iso, i: i, name: holidayOf(iso) }; })
@@ -300,6 +367,10 @@
       });
       host.querySelectorAll('.ev[data-idx]').forEach(function (el) {
         el.addEventListener('pointerdown', function (e) { startDrag(e, el, wkIdx); });
+      });
+      // 요약표의 칸을 누르면 그 근무의 수정창이 바로 열린다
+      host.querySelectorAll('.sc.can').forEach(function (el) {
+        el.onclick = function (e) { e.stopPropagation(); openEdit(wkIdx, +el.dataset.di, +el.dataset.idx); };
       });
     }
   }
