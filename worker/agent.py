@@ -1609,6 +1609,74 @@ def run_reel_video_job(job) -> None:
         db.finish_job(jid, "error", str(e)[:200], 0)
 
 
+def run_reel_full_job(job) -> None:
+    """[릴스 만들기] 원버튼 — 대본 게이트 없이 완성본까지 한 번에.
+
+    검수(QC)가 자동으로 돌고, 틀린 자막은 완성본 카드에서 고치면
+    reel_video 잡으로 다시 만들어진다(선택적 수정, 2026-09-03 단순화).
+    """
+    import json as _json
+    jid = job["id"]
+    try:
+        req = _json.loads(job.get("message") or "{}")
+    except ValueError:
+        req = {}
+    topic = (req.get("topic") or "").strip()
+    if not topic:
+        db.finish_job(jid, "error", "주제가 비어 있어요.", 0)
+        return
+    logger.info("릴스 원버튼 잡 #%s — %s", jid, topic)
+    db.worker_ping("working", f"릴스 만드는 중 ({topic})")
+    try:
+        sys.path.insert(0, str(ROOT))
+        from sns_automation import auto_make
+        res = auto_make.make_reel(topic, req.get("memo") or "")
+        qc_note = ("검수 통과" if res.get("qc_passed") and not res.get("qc_fixed")
+                   else "검수 지적 수정 후 완성" if res.get("qc_passed")
+                   else "⚠️ 검수 경고 있음 — 자막 확인 권장")
+        msg = f"'{res['title']}' 릴스 완성 ({res['seconds']}초 · {qc_note})"
+        if res.get("missing_shots"):
+            msg += " / 다음 촬영 때: " + " · ".join(res["missing_shots"])
+        db.finish_job(jid, "done", msg, 1)
+        try:
+            auto_make.push_topics()
+        except Exception:
+            pass
+    except Exception as e:  # noqa: BLE001
+        logger.error("릴스 원버튼 잡 #%s 실패: %s", jid, e)
+        logger.debug(traceback.format_exc())
+        db.log_error("worker", f"릴스 잡 실패({topic}): {e}",
+                     kind=type(e).__name__, path="run_reel_full_job",
+                     detail=traceback.format_exc())
+        db.finish_job(jid, "error", str(e)[:200], 0)
+
+
+def run_reel_ideas_job(job) -> None:
+    """촬영 아이디어(주간 제안·레퍼런스 변환) — MKT 파트너 두뇌."""
+    import json as _json
+    jid = job["id"]
+    try:
+        req = _json.loads(job.get("message") or "{}")
+    except ValueError:
+        req = {}
+    is_ref = job.get("kind") == "reel_ref"
+    db.worker_ping("working", "레퍼런스 분석 중" if is_ref else "촬영 아이디어 짜는 중")
+    try:
+        sys.path.insert(0, str(ROOT))
+        from sns_automation import auto_make
+        if is_ref:
+            title = auto_make.run_reference(req.get("desc") or "")
+            msg = f"레퍼런스를 우리 버전 기획으로 옮겼어요 — '{title}'"
+        else:
+            n = auto_make.run_ideas()
+            msg = f"이번 주 촬영 아이디어 {n}개 준비 완료"
+        db.finish_job(jid, "done", msg, 1)
+    except Exception as e:  # noqa: BLE001
+        logger.error("아이디어 잡 #%s 실패: %s", jid, e)
+        logger.debug(traceback.format_exc())
+        db.finish_job(jid, "error", str(e)[:200], 0)
+
+
 _PIPE_LABEL = {"save": "구성표 저장", "render": "다시 편집(렌더)",
                "ai_full": "AI 장면 다시 고르기", "ai_words": "AI 자막 다시 쓰기",
                "finalize": "완성본 확정"}
@@ -1686,6 +1754,10 @@ def run_job(job) -> None:
         return run_reel_video_job(job)
     if job.get("kind") == "pipe":
         return run_pipe_job(job)
+    if job.get("kind") == "reel_full":
+        return run_reel_full_job(job)
+    if job.get("kind") in ("reel_ideas", "reel_ref"):
+        return run_reel_ideas_job(job)
     if job.get("kind") == "reel_topics":
         # 직원 웹 [새로고침] — 소재 폴더 목록만 즉시 다시 올린다(수 초).
         try:

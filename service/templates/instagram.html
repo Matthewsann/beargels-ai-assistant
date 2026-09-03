@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
@@ -44,136 +44,71 @@
 {{ sidebar|safe }}
 <div class="wrap">
   <h2>🎬 인스타 릴스</h2>
-  <p class="sub">촬영본은 드라이브로, 완성된 릴스는 여기서 받아요.</p>
+  <p class="sub">찍어서 올리면 제가 만들어요. 뭘 찍을지는 아래에서 같이 정해요.</p>
+  <div id="mkStatus"></div>
 
-  {% if scripts %}
-  <a href="#scriptCard" style="display:block;background:var(--accent-bg);color:var(--accent);
-     border-radius:10px;padding:11px 13px;font-size:13.5px;font-weight:700;
-     text-decoration:none;margin-bottom:12px">
-    ✍️ 검수 기다리는 대본 {{ scripts|length }}건 — 눌러서 바로 가기 ↓</a>
-  {% endif %}
-
-  <!-- ① 촬영본은 드라이브로 -->
+  <!-- 💡 뭘 찍을까요 — MKT 파트너의 제안 -->
   <div class="card">
-    <h3>① 촬영본 올리기 — 구글 드라이브</h3>
-    <div class="row" style="margin-bottom:12px">
-      <a class="btn pri" target="_blank" rel="noopener"
-         href="https://drive.google.com/drive/folders/1cJf1C4C3LGAUqDdF9M8ckglPR0ViHBSw">
-        📂 원본소재 폴더 열기</a>
-    </div>
-    <ol class="steps">
-      <li>위 버튼으로 폴더 열기 → 오른쪽 아래 <b>＋</b> → <b>폴더</b></li>
-      <li>폴더 이름은 <b>메뉴·소재 이름 짧게</b> — 예) <b>무화과 산도</b><br>
-          <span style="color:var(--muted);font-size:12.5px">
-          이 이름이 그대로 릴스 제목이 되고, 아래 ② 목록에서 찾을 이름이 돼요.
-          멋있게 지을 필요 없어요 — 훅·캡션은 AI가 써요.</span></li>
-      <li>그 폴더에 영상·사진 올리기 — 잘 찍혔는지 고르지 말고
-          <b>찍은 걸 다</b> 올리세요. 고르는 건 편집이 합니다</li>
-      <li>끝! 집 PC가 자동으로 알아봐요</li>
-    </ol>
-    <div class="note">올렸으면 아래 <b>② 릴스 만들기</b>에서 폴더를 고르고
-      설명 한 줄 적고 버튼만 누르면 끝이에요.<br>
-      ⚠️ 릴스를 시작한 뒤에는 <b>폴더 이름을 바꾸지 마세요</b> — 연결이 끊겨요.</div>
-  </div>
-
-  <!-- ② 대본 만들기 (집 PC 일꾼에게 요청) -->
-  <div class="card">
-    <h3>② 대본 만들기</h3>
-    <div style="margin-bottom:8px;font-size:13px;">
-      <label style="display:block;color:var(--muted);font-size:12.5px;margin-bottom:4px">어느 폴더(주제)로 만들까요?
-        <button class="btn" id="tpBtn" onclick="refreshTopics()"
-          style="padding:4px 9px;font-size:11.5px;margin-left:6px">🔄 새로고침</button>
-      </label>
-      <div id="topicArea">
-      {% if topics %}
-        <select id="mkTopic" style="font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;max-width:100%">
-          {% for t in topics %}<option>{{ t.topic }}</option>{% endfor %}
-        </select>
-        <span style="color:var(--muted);font-size:11.5px">영상 있는 폴더만 · {{ topics_when }} 기준</span>
-      {% else %}
-        <input id="mkTopic" type="text" placeholder="드라이브 폴더 이름 그대로 (예: 무화과 산도)"
-               style="font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;width:100%">
-      {% endif %}
-      </div>
-      <div style="color:var(--muted);font-size:11.5px;margin-top:3px">
-        방금 드라이브에 올렸는데 폴더가 안 보이면 <b>🔄 새로고침</b>을 누르세요
-        (집 PC가 다시 확인해요, 몇 초 걸려요)</div>
-    </div>
-    <div style="margin-bottom:10px">
-      <label style="display:block;color:var(--muted);font-size:12.5px;margin-bottom:4px">
-        📝 이 영상 뭐예요? — 메뉴 이름·포인트 한 줄 <b>(필수)</b></label>
-      <textarea id="mkMemo" rows="2"
-        placeholder="예) 무화과 산도 신메뉴. 크림 사이에 무화과 통째로가 포인트. 주말 한정"
-        style="font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;width:100%"></textarea>
-      <div style="color:var(--muted);font-size:11.5px">AI는 여기 적힌 사실만 써요 — 없는 메뉴명·가격은 지어내지 않아요</div>
-    </div>
-    <button class="btn pri" id="mkBtn" onclick="makeReel()">📝 대본 만들기</button>
-    <div id="mkStatus"></div>
-    <div class="note" style="margin-top:10px">AI가 장면을 고르고 대본(훅·자막·캡션)을
-      써서 아래 <b>③ 대본 검수</b>에 올려요(1~2분). <b>영상은 검수 후에</b> 만들어져요 —
-      메뉴 이름·재료가 틀렸으면 여기서 고칠 수 있어요.</div>
-  </div>
-
-  <!-- ③ 대본 검수 — 영상 만들기 전 사람 게이트 -->
-  <div class="card" id="scriptCard">
-    <h3>③ 대본 검수 — 틀린 건 고치고, 영상 만들기</h3>
-    {% if scripts %}
-      {% for s in scripts %}
-      <div class="reel" data-pid="{{ s.pid }}">
-        <b>{{ s.title }}</b>
-        {% if s.memo %}<div class="meta">메모: {{ s.memo }}</div>{% endif %}
-        <div style="margin-top:8px">
-          <label style="display:block;color:var(--muted);font-size:12px">훅 (첫 화면, 크게)</label>
-          <input type="text" class="sc-hook" value="{{ s.hook }}"
-            style="font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;width:100%">
+    <h3>💡 뭘 찍을까요 — 제가 제안해요</h3>
+    {% if ideas %}
+      {% for i in ideas %}
+      <div class="reel">
+        <b>{{ i.title }}</b>{% if i.source == 'ref' %} <span style="color:var(--accent);font-size:11.5px">📎 사장님 레퍼런스 기반</span>{% endif %}
+        <div class="meta">{{ i.why }}</div>
+        <div style="font-size:13px;margin:4px 0 6px">예상 훅: “{{ i.hook_angle }}”</div>
+        <div style="font-size:12.5px;color:var(--muted)">
+          {% for s in i.shots %}📹 {{ s.what }} ({{ s.secs|int }}초)<br>{% endfor %}
         </div>
-        {% for sh in s.shots %}
-        <div style="margin-top:6px;display:flex;gap:8px;align-items:center">
-          {% if sh.thumb %}
-          <img src="{{ sh.thumb }}" alt="" loading="lazy"
-            style="flex:0 0 46px;width:46px;height:76px;object-fit:cover;border-radius:7px;border:1px solid var(--line);cursor:pointer"
-            onclick="zoomThumb(this.src)">
-          {% else %}
-          <span style="flex:0 0 46px;height:76px;border-radius:7px;border:1px dashed var(--line)"></span>
-          {% endif %}
-          <div style="flex:1">
-            <div style="color:var(--muted);font-size:11.5px">{{ sh.role }} · {{ sh.dur }}초</div>
-            <input type="text" class="sc-cap" value="{{ sh.caption }}" placeholder="(자막 없음)"
-              style="font:inherit;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;width:100%">
-          </div>
-        </div>
-        {% endfor %}
-        <div style="margin-top:6px">
-          <label style="display:block;color:var(--muted);font-size:12px">마지막 한 줄 (CTA)</label>
-          <input type="text" class="sc-cta" value="{{ s.cta }}"
-            style="font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;width:100%">
-        </div>
-        <div style="margin-top:6px">
-          <label style="display:block;color:var(--muted);font-size:12px">인스타 캡션 (본문)</label>
-          <textarea class="sc-caption" rows="4"
-            style="font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;width:100%">{{ s.caption }}</textarea>
-        </div>
-        {% if s.missing %}
-        <div class="note" style="margin-top:8px">📋 다음 촬영 때: {{ s.missing|join(" · ") }}</div>
-        {% endif %}
-        <div class="row" style="margin-top:10px">
-          <button class="btn pri" onclick="makeVideo(this)">✅ 이대로 영상 만들기</button>
-        </div>
+        <div style="font-size:12px;color:var(--accent);margin-top:6px">
+          → 찍어서 드라이브에 <b>“{{ i.title }}”</b> 폴더로 올리면 아래에 떠요</div>
       </div>
       {% endfor %}
-      <div class="note" style="margin-top:10px">메뉴 이름·재료 같은 <b>사실</b>이 틀렸는지
-        꼭 봐주세요 (예: 산딸기 ❌ → 자몽 ⭕). 여기서 고친 문구가 그대로 영상에 들어가요.</div>
     {% else %}
-      <div class="empty">검수할 대본이 없어요. ②에서 대본을 만들면 여기 떠요.</div>
+      <div class="empty">아직 제안이 없어요 — 아래 버튼을 눌러보세요.</div>
     {% endif %}
+    <div class="row" style="margin-top:10px">
+      <button class="btn" onclick="askIdeas('')">💡 새 아이디어 주세요</button>
+      <a class="btn" target="_blank" rel="noopener"
+         href="https://drive.google.com/drive/folders/1cJf1C4C3LGAUqDdF9M8ckglPR0ViHBSw">📂 드라이브 열기</a>
+    </div>
+    <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
+      <label style="display:block;color:var(--muted);font-size:12.5px;margin-bottom:4px">
+        📎 마음에 드는 릴스를 봤어요? — 링크와 <b>뭐가 좋았는지</b> 한 줄</label>
+      <textarea id="refDesc" rows="2"
+        placeholder="예) instagram.com/reel/... 치즈가 쭉 늘어나는 걸 계속 보게 됨. 우리 크림치즈로 하고 싶어"
+        style="font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;width:100%"></textarea>
+      <button class="btn" style="margin-top:6px" onclick="askIdeas(document.querySelector('#refDesc').value)">우리 버전 기획 받기</button>
+    </div>
   </div>
 
-  <!-- ④ 완성본 -->
+  <!-- 📥 소재 도착 → 릴스 만들기 (원버튼) -->
   <div class="card">
-    <h3>④ 완성된 릴스 받기</h3>
+    <h3>📥 올린 소재로 릴스 만들기</h3>
+    {% if topics %}
+      {% for t in topics %}
+      <div class="reel" data-topic="{{ t.topic }}">
+        <b>{{ t.topic }}</b> <span class="meta" style="display:inline">영상 {{ t.videos }}개</span>
+        <input type="text" class="mk-memo" placeholder="이 영상 뭐예요? 한 줄 (선택 — 적으면 더 정확해요)"
+          style="font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;width:100%;margin:6px 0">
+        <button class="btn pri" onclick="makeFull(this)">🎬 릴스 만들기</button>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">아직 올라온 소재가 없어요.</div>
+    {% endif %}
+    <div style="color:var(--muted);font-size:11.5px;margin-top:8px">
+      방금 올렸는데 안 보이면 <a href="javascript:void(0)" onclick="refreshTopics()" id="tpBtn">🔄 다시 확인</a>
+      (드라이브 동기화까지 1~2분) · 폴더 이름이 곧 제목이에요{% if topics_when %} · {{ topics_when }} 기준{% endif %}</div>
+    <div class="note" style="margin-top:8px">버튼 하나면 끝 — 장면 고르기·자막·검수까지 자동으로 하고
+      2~4분 뒤 아래 완성본에 떠요. 페이지 닫아도 계속 만들어요.</div>
+  </div>
+
+  <!-- ✅ 완성본 -->
+  <div class="card">
+    <h3>✅ 완성된 릴스 — 받아서 올리기</h3>
     {% if reels %}
       {% for r in reels %}
-      <div class="reel">
+      <div class="reel" data-pid="{{ r.id }}">
         <b>{{ r.title }}</b>
         <div class="meta">{{ r.size_mb }}MB{% if r.when %} · {{ r.when }}{% endif %}</div>
         <video controls playsinline preload="metadata" src="{{ r.video }}"
@@ -185,157 +120,137 @@
           {% endif %}
         </div>
         {% if r.caption %}<div class="cap" id="cap{{ loop.index0 }}">{{ r.caption }}</div>{% endif %}
+        {% if r.script and r.script.hook %}
+        <details style="margin-top:6px">
+          <summary style="cursor:pointer;font-size:12.5px;color:var(--accent)">✏️ 틀린 말 고치기 (메뉴명·재료가 틀렸을 때만)</summary>
+          <div style="margin-top:8px">
+            <div style="color:var(--muted);font-size:11.5px">훅</div>
+            <input type="text" class="fx-hook" value="{{ r.script.hook }}"
+              style="font:inherit;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;width:100%">
+            {% for c in r.script.captions %}
+            <input type="text" class="fx-cap" value="{{ c }}" placeholder="(자막 없음)"
+              style="font:inherit;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;width:100%;margin-top:4px">
+            {% endfor %}
+            <div style="color:var(--muted);font-size:11.5px;margin-top:4px">마지막 한 줄</div>
+            <input type="text" class="fx-cta" value="{{ r.script.cta }}"
+              style="font:inherit;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;width:100%">
+            <div style="color:var(--muted);font-size:11.5px;margin-top:4px">인스타 캡션</div>
+            <textarea class="fx-caption" rows="3"
+              style="font:inherit;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;width:100%">{{ r.caption }}</textarea>
+            <button class="btn pri" style="margin-top:6px" onclick="fixReel(this)">🔁 고친 걸로 다시 만들기 (2~3분)</button>
+          </div>
+        </details>
+        {% endif %}
       </div>
       {% endfor %}
-      <div class="note">영상은 <b>무음</b>이에요. 인스타 <b>Edits</b> 앱에서 인기 음원을 얹어 올리세요.<br>
-        같은 릴스를 다시 만들면 여기엔 <b>최신본 하나</b>로 바뀌어요.</div>
+      <div class="note">영상은 <b>무음</b>이에요 — 인스타 <b>Edits</b> 앱에서 인기 음원을 얹어 올리세요.</div>
     {% else %}
-      <div class="empty">{{ reels_msg or "아직 완성된 릴스가 없어요. 집 PC에서 만들면 여기 나타나요." }}</div>
+      <div class="empty">{{ reels_msg or "아직 완성된 릴스가 없어요. 위에서 만들면 여기 떠요." }}</div>
     {% endif %}
     <div id="msg"></div>
   </div>
 
-  <!-- ⑤ 세부 편집 — 파이프라인 (이 사이트 안에서) -->
-  <div class="card">
-    <h3>⑤ 세부 편집 — 파이프라인</h3>
-    <div style="font-size:13.5px;margin-bottom:10px">샷 순서·길이·자막을 여기서 직접
-      고치고 [다시 편집]을 누르면 집 PC가 만들어서 미리보기로 보여줘요.
-      <b>어디서나 열려요.</b></div>
-    <a class="btn pri" href="{{ url_for('instagram_pipe', path_key=key) }}">🎛 파이프라인 열기</a>
-    {% if pipeline_url %}
-    <div style="color:var(--muted);font-size:11.5px;margin-top:8px">
-      집 와이파이에서는 <a href="{{ pipeline_url }}" target="_blank" rel="noopener">집 PC 원본 화면</a>도 열 수 있어요(더 빠름).</div>
-    {% endif %}
+  <div style="text-align:center;color:var(--muted);font-size:11.5px;margin-top:4px">
+    샷 단위 세부 편집이 필요하면 → <a href="{{ url_for('instagram_pipe', path_key=key) }}" style="color:var(--muted)">파이프라인 화면</a>
   </div>
 </div>
 
 <script>
-// 🔄 소재 폴더 새로고침 — 집 PC에 목록을 다시 올리라고 요청하고, 바뀌면 다시 그림
-let TP_UPDATED = {{ topics_updated or 0 }};
-function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
-function renderTopicArea(d){
-  const area = document.querySelector("#topicArea");
-  if(d.topics && d.topics.length){
-    area.innerHTML =
-      `<select id="mkTopic" style="font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;max-width:100%">`
-      + d.topics.map(t=>`<option>${esc(t.topic)}</option>`).join("")
-      + `</select> <span style="color:var(--muted);font-size:11.5px">영상 있는 폴더만 · ${esc(d.when||"")} 기준</span>`;
-  }else{
-    area.innerHTML = `<input id="mkTopic" type="text" placeholder="드라이브 폴더 이름 그대로 (예: 무화과 산도)"
-      style="font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;width:100%">`;
-  }
-}
-async function refreshTopics(){
-  const btn = document.querySelector("#tpBtn"), st = document.querySelector("#mkStatus");
-  btn.disabled = true; btn.textContent = "확인 중…";
-  try{
-    const r = await fetch(location.pathname.replace(/\/$/,"") + "/topics/refresh", {method:"POST"});
-    if(!r.ok) throw new Error((await r.json()).error || "요청 실패");
-    for(let i = 0; i < 15; i++){                       // 최대 45초 기다림
-      await new Promise(res => setTimeout(res, 3000));
-      const d = await (await fetch(location.pathname.replace(/\/$/,"") + "/topics")).json();
-      if(d.updated && d.updated !== TP_UPDATED){
-        TP_UPDATED = d.updated;
-        renderTopicArea(d);
-        st.innerHTML = '<div class="okmsg">폴더 목록을 새로 받았어요.</div>';
-        btn.disabled = false; btn.textContent = "🔄 새로고침";
-        return;
-      }
-    }
-    st.innerHTML = '<div class="note">새 목록을 못 받았어요 — 집 PC가 꺼져 있거나, '
-      + '방금 올린 영상은 드라이브 동기화까지 1~2분 더 걸릴 수 있어요.</div>';
-  }catch(e){
-    st.innerHTML = `<div class="note">새로고침 실패: ${e.message}</div>`;
-  }
-  btn.disabled = false; btn.textContent = "🔄 새로고침";
-}
-
-// ② 릴스 만들기 — 집 PC 일꾼에게 요청하고, 상태를 몇 초마다 확인
 let pollTimer = null;
-async function makeReel(){
-  const topic = (document.querySelector("#mkTopic").value || "").trim();
-  const memo = (document.querySelector("#mkMemo").value || "").trim();
-  const st = document.querySelector("#mkStatus");
-  if(!topic){ st.innerHTML = '<div class="note">어느 폴더(주제)인지 골라주세요.</div>'; return; }
-  if(memo.length < 4){ st.innerHTML = '<div class="note">이 영상이 뭔지 한 줄만 적어주세요 (메뉴 이름·포인트).</div>'; return; }
-  const btn = document.querySelector("#mkBtn");
-  btn.disabled = true; btn.textContent = "요청 넣는 중…";
+function stBox(){ return document.querySelector("#mkStatus"); }
+
+// 🎬 원버튼 — 소재 카드에서 바로 완성본까지
+async function makeFull(btn){
+  const card = btn.closest(".reel");
+  const fd = new FormData();
+  fd.append("topic", card.dataset.topic);
+  fd.append("memo", card.querySelector(".mk-memo").value.trim());
+  btn.disabled = true; btn.textContent = "보내는 중…";
   try{
-    const fd = new FormData(); fd.append("topic", topic); fd.append("memo", memo);
-    const r = await fetch(location.pathname.replace(/\/$/,"") + "/make", {method:"POST", body:fd});
+    const r = await fetch(location.pathname.replace(/\/$/,"") + "/full", {method:"POST", body:fd});
     const d = await r.json();
     if(!r.ok) throw new Error(d.error || "요청 실패");
-    st.innerHTML = '<div class="okmsg">⏳ 집 PC가 만들기 시작했어요 — 여기서 기다리면 진행이 보여요.</div>';
+    stBox().innerHTML = '<div class="okmsg">⏳ 만들기 시작 — 2~4분 뒤 완성본에 떠요. 여기서 기다리면 진행이 보여요.</div>';
+    window.scrollTo({top:0, behavior:"smooth"});
     startPoll();
-  }catch(e){
-    st.innerHTML = `<div class="note">실패: ${e.message}</div>`;
-  }
-  btn.disabled = false; btn.textContent = "📝 대본 만들기";
+  }catch(e){ stBox().innerHTML = `<div class="note">실패: ${e.message}</div>`; }
+  btn.disabled = false; btn.textContent = "🎬 릴스 만들기";
 }
-// 방금 끝난 작업 메시지를 새 화면에서 보여준다 (자동 새로고침 뒤)
-try{
-  const m = sessionStorage.getItem("reelMsg");
-  if(m){ sessionStorage.removeItem("reelMsg");
-    document.querySelector("#mkStatus").innerHTML = `<div class="okmsg">✅ ${m}</div>`; }
-}catch(e){}
-// 썸네일 탭하면 크게 보기
-function zoomThumb(src){
-  const ov = document.createElement("div");
-  ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:99;display:flex;align-items:center;justify-content:center";
-  ov.innerHTML = `<img src="${src}" style="max-width:92vw;max-height:88vh;border-radius:12px">`;
-  ov.onclick = ()=>ov.remove();
-  document.body.appendChild(ov);
+
+// 💡 아이디어 / 📎 레퍼런스
+async function askIdeas(desc){
+  desc = (desc || "").trim();
+  const fd = new FormData(); fd.append("desc", desc);
+  try{
+    const r = await fetch(location.pathname.replace(/\/$/,"") + "/ideas", {method:"POST", body:fd});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || "요청 실패");
+    stBox().innerHTML = `<div class="okmsg">⏳ ${desc ? "레퍼런스를 분석해서 우리 버전 기획을 만드는 중…" : "이번 주 아이디어를 짜는 중…"} (30초~1분)</div>`;
+    window.scrollTo({top:0, behavior:"smooth"});
+    startPoll();
+  }catch(e){ stBox().innerHTML = `<div class="note">실패: ${e.message}</div>`; }
 }
+
+// ✏️ 완성본 자막 고치기 → 다시 만들기
+async function fixReel(btn){
+  const root = btn.closest("[data-pid]");
+  const fd = new FormData();
+  fd.append("pid", root.dataset.pid);
+  fd.append("hook", root.querySelector(".fx-hook").value);
+  fd.append("cta", root.querySelector(".fx-cta").value);
+  fd.append("captions", JSON.stringify([...root.querySelectorAll(".fx-cap")].map(i=>i.value)));
+  fd.append("caption", root.querySelector(".fx-caption").value);
+  btn.disabled = true;
+  try{
+    const r = await fetch(location.pathname.replace(/\/$/,"") + "/fix", {method:"POST", body:fd});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || "요청 실패");
+    stBox().innerHTML = '<div class="okmsg">⏳ 고친 문구로 다시 만드는 중 (2~3분) — 끝나면 여기 목록이 새 걸로 바뀌어요.</div>';
+    window.scrollTo({top:0, behavior:"smooth"});
+    startPoll();
+  }catch(e){ stBox().innerHTML = `<div class="note">실패: ${e.message}</div>`; }
+  btn.disabled = false;
+}
+
+// 🔄 소재 다시 확인 — 집 PC에 목록 갱신 요청 후 페이지 리로드
+async function refreshTopics(){
+  const a = document.querySelector("#tpBtn");
+  a.textContent = "확인 중…";
+  try{
+    await fetch(location.pathname.replace(/\/$/,"") + "/topics/refresh", {method:"POST"});
+    setTimeout(()=>location.reload(), 8000);
+  }catch(e){ a.textContent = "🔄 다시 확인"; }
+}
+
+// 진행 표시 — 끝나면 자동 새로고침
 function startPoll(){
   clearInterval(pollTimer);
   pollTimer = setInterval(async () => {
     try{
       const r = await fetch(location.pathname.replace(/\/$/,"") + "/job");
       const d = await r.json();
-      const st = document.querySelector("#mkStatus");
       if(d.status === "running")
-        st.innerHTML = `<div class="okmsg">🎬 만드는 중… (${d.message}) — AI 자막 → 편집, 2~4분 걸려요</div>`;
+        stBox().innerHTML = `<div class="okmsg">🔧 만드는 중… (${d.message})</div>`;
       else if(d.status === "pending")
-        st.innerHTML = `<div class="okmsg">⏳ 집 PC 차례를 기다리는 중… (${d.message})</div>`;
+        stBox().innerHTML = `<div class="okmsg">⏳ 집 PC 차례를 기다리는 중… (${d.message})</div>`;
       else if(d.status === "done"){
         clearInterval(pollTimer);
-        // 자동 새로고침 — 메시지는 저장해뒀다 새 화면에서 보여준다
         try{ sessionStorage.setItem("reelMsg", d.message); }catch(e){}
-        st.innerHTML = `<div class="okmsg">✅ ${d.message}<br>화면을 새로 불러오는 중…</div>`;
+        stBox().innerHTML = `<div class="okmsg">✅ ${d.message}<br>화면을 새로 불러오는 중…</div>`;
         setTimeout(()=>location.reload(), 1500);
       }else if(d.status === "error"){
-        st.innerHTML = `<div class="note">❌ 실패: ${d.message}</div>`;
         clearInterval(pollTimer);
+        stBox().innerHTML = `<div class="note">❌ 실패: ${d.message}</div>`;
       }
     }catch(e){}
   }, 5000);
 }
 {% if job and job.status in ("pending","running") %}startPoll();{% endif %}
-
-// ③ 대본 검수 → [이대로 영상 만들기]
-async function makeVideo(btn){
-  const card = btn.closest(".reel");
-  const st = document.querySelector("#mkStatus");
-  const caps = [...card.querySelectorAll(".sc-cap")].map(i => i.value);
-  const fd = new FormData();
-  fd.append("pid", card.dataset.pid);
-  fd.append("hook", card.querySelector(".sc-hook").value);
-  fd.append("cta", card.querySelector(".sc-cta").value);
-  fd.append("captions", JSON.stringify(caps));
-  fd.append("caption", card.querySelector(".sc-caption").value);
-  btn.disabled = true; btn.textContent = "요청 넣는 중…";
-  try{
-    const r = await fetch(location.pathname.replace(/\/$/,"") + "/video", {method:"POST", body:fd});
-    const d = await r.json();
-    if(!r.ok) throw new Error(d.error || "요청 실패");
-    st.innerHTML = '<div class="okmsg">⏳ 검수한 대본으로 영상을 만들기 시작했어요 (2~3분).</div>';
-    st.scrollIntoView({behavior:"smooth", block:"center"});
-    startPoll();
-  }catch(e){
-    st.innerHTML = `<div class="note">실패: ${e.message}</div>`;
-  }
-  btn.disabled = false; btn.textContent = "✅ 이대로 영상 만들기";
-}
+try{
+  const m = sessionStorage.getItem("reelMsg");
+  if(m){ sessionStorage.removeItem("reelMsg");
+    stBox().innerHTML = `<div class="okmsg">✅ ${m}</div>`; }
+}catch(e){}
 
 function copyCap(i){
   const t = document.getElementById("cap"+i).textContent;

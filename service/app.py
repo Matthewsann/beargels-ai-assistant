@@ -1415,11 +1415,12 @@ def instagram_page(path_key):
         reels_msg = "완성본 목록을 불러오지 못했어요. 잠시 뒤 새로고침해 주세요."
     # 집 PC 일꾼이 올려두는 소재 폴더 목록 → 주제 선택칸 ([새로고침]으로 즉시 갱신 가능)
     topics_updated, topics_when, topics, pipeline_url = _load_cloud_topics()
-    # 대본 검수함 — 영상 만들기 전 사람 게이트 (사장님 확정 2026-09-02)
-    scripts = []
+    # 촬영 아이디어함 — MKT 파트너의 '먼저 제안' (사장님 확정 2026-09-03)
+    ideas, scripts = [], []
     try:
         from sns_automation import cloud_sync
-        scripts = cloud_sync.load_scripts()
+        ideas = (cloud_sync.load_ideas() or {}).get("ideas") or []
+        scripts = cloud_sync.load_scripts()   # 옛 검수함(호환용, UI 미사용)
     except Exception:
         pass
     try:
@@ -1431,7 +1432,7 @@ def instagram_page(path_key):
                            reels=reels, reels_msg=reels_msg,
                            topics=topics, topics_when=topics_when,
                            topics_updated=topics_updated, pipeline_url=pipeline_url,
-                           scripts=scripts, job=job)
+                           scripts=scripts, ideas=ideas, job=job)
 
 
 @app.route("/<path_key>/instagram/make", methods=["POST"])
@@ -1527,6 +1528,62 @@ def instagram_video(path_key):
     return jsonify(ok=True, job_id=row.get("id"))
 
 
+@app.route("/<path_key>/instagram/full", methods=["POST"])
+def instagram_full(path_key):
+    """[🎬 릴스 만들기] 원버튼 — 완성본까지 한 번에 (단순화 2026-09-03).
+
+    메모는 선택 — 있으면 사실의 근거로 쓰고, 없으면 화면 묘사만 한다.
+    틀린 자막은 완성본 카드의 '자막 고치기'로 수정(선택적 검수).
+    """
+    check(path_key)
+    topic = (request.form.get("topic") or "").strip()[:60]
+    memo = (request.form.get("memo") or "").strip()[:2000]
+    if not topic:
+        return jsonify(error="어느 폴더인지 알 수 없어요."), 400
+    try:
+        row = db.request_reel_full(topic, memo, by="직원웹")
+    except Exception as e:
+        return jsonify(error=f"요청을 넣지 못했어요: {e}"), 500
+    return jsonify(ok=True, job_id=row.get("id"))
+
+
+@app.route("/<path_key>/instagram/ideas", methods=["POST"])
+def instagram_ideas(path_key):
+    """💡 촬영 아이디어 — 비우면 주간 제안, desc 를 주면 레퍼런스 변환."""
+    check(path_key)
+    desc = (request.form.get("desc") or "").strip()[:1500]
+    try:
+        db.request_reel_ideas(desc or None, by="직원웹")
+    except Exception as e:
+        return jsonify(error=f"요청을 넣지 못했어요: {e}"), 500
+    return jsonify(ok=True)
+
+
+@app.route("/<path_key>/instagram/fix", methods=["POST"])
+def instagram_fix(path_key):
+    """완성본 카드의 '자막 고치기' — 고친 문구로 다시 만든다(사람 문구=정본)."""
+    check(path_key)
+    pid = (request.form.get("pid") or "").strip()
+    if not pid:
+        return jsonify(error="어느 릴스인지 알 수 없어요."), 400
+    try:
+        import json as _json
+        captions = _json.loads(request.form.get("captions") or "[]")
+        if not isinstance(captions, list):
+            captions = []
+    except ValueError:
+        captions = []
+    script = {"hook": (request.form.get("hook") or "").strip()[:60],
+              "cta": (request.form.get("cta") or "").strip()[:60],
+              "captions": [str(x)[:60] for x in captions][:8],
+              "caption": (request.form.get("caption") or "").strip()[:2000]}
+    try:
+        row = db.request_reel_video(pid, script, by="직원웹")
+    except Exception as e:
+        return jsonify(error=f"요청을 넣지 못했어요: {e}"), 500
+    return jsonify(ok=True, job_id=row.get("id"))
+
+
 @app.route("/<path_key>/instagram/pipe")
 def instagram_pipe(path_key):
     """파이프라인 화면 — 웹사이트 안에서 세부 편집 (사장님 확정 2026-09-03).
@@ -1597,7 +1654,8 @@ def instagram_job(path_key):
                       "finalize": "완성본 확정"}
             msg = (req.get("topic")
                    or labels.get(req.get("action"), "")
-                   or ("영상 만들기" if req.get("pid") else ""))
+                   or ("영상 만들기" if req.get("pid") else "")
+                   or ("아이디어 만들기" if "desc" in req else ""))
         except ValueError:
             pass
     return jsonify(status=job.get("status"), message=msg)

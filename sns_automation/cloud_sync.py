@@ -65,8 +65,14 @@ def public_url(path: str, c=None) -> str:
 
 
 # ── 집 PC → 클라우드 (완성본 올리기) ───────────────────────────
-def push_reel(pid: str, title: str, video_path: str, caption: str = "") -> dict:
-    """완성본 mp4 + 캡션을 올리고 목록(index.json)을 갱신한다."""
+def push_reel(pid: str, title: str, video_path: str, caption: str = "",
+              script: dict | None = None) -> dict:
+    """완성본 mp4 + 캡션을 올리고 목록(index.json)을 갱신한다.
+
+    script: {hook, cta, captions[]} — 완성본 카드의 '자막 고치기'가 보여줄
+    텍스트. 사장님이 틀린 단어(산딸기→자몽)를 발견하면 그 자리에서 고쳐
+    다시 만들 수 있게 한다.
+    """
     c = client()
     b = _bucket(c)
     key = enc(pid)                     # 프로젝트 id 에도 한글이 들어간다
@@ -82,6 +88,7 @@ def push_reel(pid: str, title: str, video_path: str, caption: str = "") -> dict:
         "id": pid,
         "title": title,
         "caption": caption or "",
+        "script": script or {},
         "video": public_url(f"{REELS}/{key}.mp4", c),
         "size_mb": round(len(data) / 1e6, 1),
         "uploaded": int(time.time()),
@@ -137,6 +144,34 @@ def remove_script(pid: str) -> None:
     """영상까지 만들어졌으면 검수함에서 뺀다."""
     c = client()
     _save_scripts([s for s in load_scripts(c) if s.get("pid") != pid], c)
+
+
+# ── 촬영 아이디어함 (MKT 파트너의 '먼저 제안') ─────────────────
+IDEAS = "state/ideas.json"
+
+
+def load_ideas(c=None) -> dict:
+    try:
+        raw = _bucket(c).download(IDEAS)
+        return json.loads(raw.decode("utf-8"))
+    except Exception:
+        return {}
+
+
+def push_ideas(ideas: list[dict], *, source: str = "weekly") -> None:
+    """촬영 아이디어를 올린다. source='ref' 는 레퍼런스 기반(앞에 붙임)."""
+    import time
+    c = client()
+    cur = load_ideas(c).get("ideas") or []
+    for i in ideas:
+        i["source"] = source
+        i["created"] = int(time.time())
+    items = (ideas + cur) if source == "ref" else ideas + [
+        x for x in cur if x.get("source") == "ref"]
+    _bucket(c).upload(IDEAS, json.dumps(
+        {"updated": int(time.time()), "ideas": items[:6]},
+        ensure_ascii=False).encode("utf-8"),
+        {"content-type": "application/json; charset=utf-8", "upsert": "true"})
 
 
 # ── 파이프라인 미러 (PA 웹사이트에서 세부 편집) ────────────────

@@ -395,6 +395,83 @@ async def generate_weekly_plan(count: int = 3) -> dict:
     return plan
 
 
+_SHOOT_IDEAS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "ideas": {
+            "type": "array", "minItems": 1, "maxItems": 3,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string",
+                              "description": "드라이브 폴더 이름으로 쓸 짧은 제목 (예: 무화과 산도 단면)"},
+                    "why": {"type": "string",
+                            "description": "왜 지금 이걸 찍어야 하는지 한두 문장 (계절·성과 근거)"},
+                    "hook_angle": {"type": "string",
+                                   "description": "예상 훅 한 줄 (반전·발견형)"},
+                    "shots": {
+                        "type": "array", "minItems": 3, "maxItems": 6,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "what": {"type": "string",
+                                         "description": "무엇을 어떻게 찍는지 구체적으로 (클로즈업 여부 포함)"},
+                                "secs": {"type": "number", "description": "몇 초"},
+                            },
+                            "required": ["what", "secs"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": ["title", "why", "hook_angle", "shots"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["ideas"],
+    "additionalProperties": False,
+}
+
+
+def _ideas_system() -> str:
+    from datetime import date
+    return (
+        "너는 베이글 카페 '베어글스 송도점'의 릴스 편집 전문가이자 마케팅 파트너다.\n"
+        "사장님이 매장에서 폰으로 2~3분 안에 찍을 수 있는 릴스 촬영 아이디어를 낸다.\n"
+        "원칙:\n"
+        "· 실판매 메뉴(브랜드 핵심의 표기)만 소재로 쓴다 — 없는 메뉴 금지.\n"
+        f"· 오늘은 {date.today():%Y-%m-%d} — 계절감(제철 과일·날씨)을 반영한다.\n"
+        "· 각 샷은 '무엇을 어떻게'까지 구체적으로 (예: '단면 정면 클로즈업, 칼이 다\n"
+        "  내려간 뒤 3초 유지'). 결정적 순간(단면·크림 늘어남·붓는 소리)을 꼭 넣는다.\n"
+        "· 소리가 매력인 샷은 조용할 때 찍으라고 표시한다.\n"
+        "· 성과 데이터가 있으면 먹힌 각도(반전형)를 우선한다.\n\n"
+        f"[브랜드 핵심 — 사실·금지어·메뉴 표기]\n{_brand_core()}\n\n"
+        f"[릴스 편집 문법]\n{_editing_rules()}\n\n"
+        f"[성과가 좋았던 훅]\n{_hook_summary()}\n\n{_market()}"
+    )
+
+
+async def suggest_shoots(recent_titles: list[str] | None = None) -> list[dict]:
+    """이번 주 촬영 아이디어 2~3개 — MKT 파트너의 '먼저 제안'."""
+    user = "이번 주 촬영 아이디어를 내라."
+    if recent_titles:
+        user += ("\n최근 이미 만든 릴스(겹치지 않게): "
+                 + ", ".join(recent_titles[:8]))
+    data = await _ask(_ideas_system(), user, _SHOOT_IDEAS_SCHEMA)
+    return data.get("ideas") or []
+
+
+async def plan_from_reference(desc: str) -> list[dict]:
+    """사장님이 가져온 레퍼런스(링크·설명) → 베어글스 버전 촬영 기획 1개."""
+    user = (
+        "[사장님이 마음에 들어한 릴스]\n" + desc.strip()[:1200] + "\n\n"
+        "이 릴스의 좋은 점(구성·훅·연출)을 분석해서, 베어글스의 실판매 메뉴로\n"
+        "옮긴 우리 버전 촬영 기획 1개를 내라. 따라하기가 아니라 구조를 빌리는 것."
+    )
+    data = await _ask(_ideas_system(), user, _SHOOT_IDEAS_SCHEMA)
+    return (data.get("ideas") or [])[:1]
+
+
 async def suggest_hooks(title: str, menu: str, base_hook: str = "") -> dict:
     """같은 소재로 훅 자막 3버전 (1→N 변형용)."""
     try:

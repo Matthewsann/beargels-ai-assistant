@@ -1,4 +1,4 @@
-"""릴스 전 과정 자동 실행 — 직원 웹의 [릴스 만들기] 버튼이 부르는 일.
+﻿"""릴스 전 과정 자동 실행 — 직원 웹의 [릴스 만들기] 버튼이 부르는 일.
 
 직원 웹앱(외부 서버)은 영상을 못 만지므로, 버튼은 jobs 큐(kind='reel')에
 요청만 넣고 **집 PC 일꾼이 이 모듈로 전 과정을 돌린다**:
@@ -289,8 +289,12 @@ def make_video(pid: str, script: dict | None = None) -> dict:
 
     cloud = None
     try:
-        entry = cloud_sync.push_reel(pid, title,
-                                     os.path.join(final_dir, reel_name), caption)
+        entry = cloud_sync.push_reel(
+            pid, title, os.path.join(final_dir, reel_name), caption,
+            script={"hook": (plan.get("hook") or {}).get("text", ""),
+                    "cta": (plan.get("cta") or {}).get("text", ""),
+                    "captions": [s.get("caption") or ""
+                                 for s in plan.get("shots") or []]})
         cloud = entry.get("video")
     except Exception as e:
         logger.warning("클라우드 업로드 실패(로컬 저장은 완료): %s", e)
@@ -411,8 +415,12 @@ def make_reel(topic: str, memo: str = "") -> dict:
     # ⑥ 클라우드 업로드 → 직원 웹 ② 목록
     cloud = None
     try:
-        entry = cloud_sync.push_reel(pid, title,
-                                     os.path.join(final_dir, reel_name), caption)
+        entry = cloud_sync.push_reel(
+            pid, title, os.path.join(final_dir, reel_name), caption,
+            script={"hook": (plan.get("hook") or {}).get("text", ""),
+                    "cta": (plan.get("cta") or {}).get("text", ""),
+                    "captions": [s.get("caption") or ""
+                                 for s in plan.get("shots") or []]})
         cloud = entry.get("video")
     except Exception as e:
         logger.warning("클라우드 업로드 실패(로컬 저장은 완료): %s", e)
@@ -443,6 +451,27 @@ def _pipeline_url() -> str:
     url = f"http://{ip}:{port}"
     code = os.getenv("PIPELINE_ACCESS_CODE", "").strip()
     return f"{url}/?code={code}" if code else url
+
+
+def run_ideas() -> int:
+    """MKT 파트너의 '먼저 제안' — 촬영 아이디어를 만들어 올린다."""
+    from . import cloud_sync, planner
+    recent = [e.get("title", "") for e in cloud_sync.load_index()[:8]]
+    ideas = asyncio.run(planner.suggest_shoots(recent))
+    if not ideas:
+        raise MakeError("아이디어를 만들지 못했어요.")
+    cloud_sync.push_ideas(ideas, source="weekly")
+    return len(ideas)
+
+
+def run_reference(desc: str) -> str:
+    """사장님이 가져온 레퍼런스 → 우리 버전 촬영 기획 1개."""
+    from . import cloud_sync, planner
+    ideas = asyncio.run(planner.plan_from_reference(desc))
+    if not ideas:
+        raise MakeError("레퍼런스를 기획으로 옮기지 못했어요.")
+    cloud_sync.push_ideas(ideas, source="ref")
+    return ideas[0].get("title", "")
 
 
 #: PA 파이프라인 화면에 올리는 최근 프로젝트 수

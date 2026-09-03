@@ -370,10 +370,42 @@ def request_pipe(pid, action, payload=None, by=None):
     return (get_client().table("jobs").insert(row).execute().data or [None])[0]
 
 
+def request_reel_full(topic, memo="", by=None):
+    """[릴스 만들기] 원버튼 — 완성본까지 한 번에. 같은 주제 대기 중이면 재사용."""
+    import json as _json
+    live = (get_client().table("jobs").select("*")
+            .eq("kind", "reel_full").in_("status", ["pending", "running"])
+            .order("requested_at", desc=True).limit(5).execute().data)
+    for row in live or []:
+        try:
+            if _json.loads(row.get("message") or "{}").get("topic") == topic:
+                return row
+        except ValueError:
+            continue
+    row = {"kind": "reel_full", "status": "pending", "requested_by": by or "",
+           "message": _json.dumps({"topic": topic, "memo": memo}, ensure_ascii=False)}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
+def request_reel_ideas(desc=None, by=None):
+    """촬영 아이디어 요청. desc 가 있으면 레퍼런스 변환(reel_ref)."""
+    import json as _json
+    kind = "reel_ref" if desc else "reel_ideas"
+    live = (get_client().table("jobs").select("*")
+            .eq("kind", kind).in_("status", ["pending", "running"])
+            .limit(1).execute().data)
+    if live and not desc:
+        return live[0]
+    row = {"kind": kind, "status": "pending", "requested_by": by or "",
+           "message": _json.dumps({"desc": desc or ""}, ensure_ascii=False)}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
 def last_reel_job():
-    """가장 최근 릴스 잡 1건(대본/영상/파이프) — 직원 웹의 진행 표시용."""
+    """가장 최근 릴스 잡 1건 — 직원 웹의 진행 표시용."""
     rows = (get_client().table("jobs").select("*")
-            .in_("kind", ["reel", "reel_video", "pipe"])
+            .in_("kind", ["reel", "reel_video", "pipe",
+                          "reel_full", "reel_ideas", "reel_ref"])
             .order("requested_at", desc=True).limit(1).execute().data)
     return rows[0] if rows else None
 
@@ -446,8 +478,9 @@ def last_collect_at():
 
 # 직원이 화면 앞에서 결과를 기다리는 작업 — 리뷰수집(수 분) 뒤에 밀리면
 # 3분 폴링 안에 끝나지 않아 '아직 확인이 안 돼요'로 보인다. 먼저 집는다.
-INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "wake",
-                         "reel", "reel_video", "reel_topics", "pipe")
+INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "wake", "reel",
+                         "reel_video", "reel_topics", "pipe",
+                         "reel_full", "reel_ideas", "reel_ref")
 
 
 def claim_next_job(interactive_only=False):
