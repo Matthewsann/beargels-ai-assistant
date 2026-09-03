@@ -98,6 +98,94 @@ def scan(hashtags: list[str] | None = None, *, client: MetaGraph | None = None,
     return result
 
 
+def scan_web(page, hashtags: list[str] | None = None, *, limit: int = 24) -> dict:
+    """해시태그 인기글을 **인스타 웹**에서 긁는다 — 앱 심사 없이 되는 길.
+
+    공식 해시태그 API 는 앱 심사가 필요해 막혀 있다(2026-08). 대신 전용
+    크롬(리뷰 수집과 같은 debug Chrome)으로 태그 페이지를 열어 격자의
+    img alt(캡션 전문이 들어 있음)를 모은다. 좋아요 수는 격자에선 안 보여
+    훅 문장·릴스 비중 위주의 요약이 된다.
+
+    ⚠️ 그 크롬에 인스타 로그인이 되어 있어야 한다 — 로그인 벽을 만나면
+    LoginRequired 예외를 던져 호출부가 사장님에게 알리게 한다.
+    """
+    tags = hashtags or DEFAULT_HASHTAGS
+    result: dict = {
+        "scanned_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "source": "web",
+        "hashtags": {},
+        "errors": {},
+    }
+    for tag in tags:
+        try:
+            page.goto(f"https://www.instagram.com/explore/tags/{tag}/",
+                      wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(4000)
+            if "/accounts/login" in page.url:
+                raise LoginRequired("인스타 로그인이 필요합니다")
+            rows = page.evaluate(
+                """() => Array.from(
+                     document.querySelectorAll('main a[href*="/p/"], main a[href*="/reel/"]')
+                   ).slice(0, %d).map(a => ({
+                     href: a.getAttribute('href') || '',
+                     alt: (a.querySelector('img') || {}).alt || ''
+                   }))""" % limit)
+            posts = [{
+                "caption": r["alt"],
+                "media_type": "REELS" if "/reel/" in r["href"] else "IMAGE",
+                "like_count": None, "comments_count": None,
+                "permalink": "https://www.instagram.com" + r["href"],
+            } for r in rows if r.get("alt")]
+            if not posts:
+                result["errors"][tag] = "게시물을 못 읽음(화면 구조 변경?)"
+                continue
+            result["hashtags"][tag] = summarize(posts)
+            logger.info("#%s(웹): 게시물 %d개", tag, len(posts))
+        except LoginRequired:
+            raise
+        except Exception as e:  # noqa: BLE001 — 태그 하나 실패로 전체를 죽이지 않는다
+            result["errors"][tag] = str(e)
+            logger.warning("#%s 웹 스캔 실패: %s", tag, e)
+    return result
+
+
+class LoginRequired(RuntimeError):
+    """전용 크롬에 인스타 로그인이 안 되어 있음 — 사장님 조치 필요."""
+
+
+def run_weekly() -> list[str]:
+    """주간 시장조사 한 바퀴: 내 계정(API) + 해시태그(웹). 결과 요약 문장 반환.
+
+    실패는 문장으로 남기고 계속 간다 — 절반이라도 갱신되는 게 낫다.
+    전부 실패한 항목은 기존 파일을 보존한다(덮어쓰면 옛 데이터도 잃는다).
+    """
+    notes: list[str] = []
+    try:
+        own = scan_own()
+        save(own, OWN_PATH)
+        notes.append(f"내 계정 {own['count']}개(평균 ♥{own['avg_likes']})")
+    except Exception as e:  # noqa: BLE001
+        notes.append(f"내 계정 실패: {e}")
+
+    try:
+        import sys as _sys
+        _sys.path.insert(0, os.path.dirname(_DATA_DIR))
+        from crawler.browser import BrowserSession
+        with BrowserSession() as sess:
+            data = scan_web(sess.page)
+        ok = sum(1 for s in data["hashtags"].values() if s.get("count"))
+        if ok:
+            save(data)
+            notes.append(f"해시태그 {ok}개 갱신")
+        else:
+            notes.append("해시태그 0개 — 기존 데이터 보존")
+    except LoginRequired:
+        notes.append("⚠️ 전용 크롬에 인스타 로그인 필요(해시태그 조사 건너뜀)")
+    except Exception as e:  # noqa: BLE001
+        notes.append(f"해시태그 실패: {str(e)[:80]}")
+    return notes
+
+
 OWN_PATH = os.path.join(_DATA_DIR, "own_media.json")
 
 

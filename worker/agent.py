@@ -1730,6 +1730,45 @@ def run_pipe_job(job) -> None:
         db.finish_job(jid, "error", str(e)[:200], 0)
 
 
+_MARKET_STAMP = ROOT / "state" / "market_scan_at.txt"
+
+
+def maybe_market_scan() -> None:
+    """주 1회 인스타 시장조사(내 계정 API + 해시태그 웹) → 주제 추천 갱신.
+
+    사장님 확정(2026-09-03): 아이디어는 **그 주의 실측 시장** 위에서 나와야
+    한다. 조사가 끝나면 run_ideas 로 제안 카드도 새 데이터로 다시 짠다.
+    """
+    try:
+        if _MARKET_STAMP.exists():
+            age = time.time() - _MARKET_STAMP.stat().st_mtime
+            if age < 7 * 86400:
+                return
+    except OSError:
+        pass
+    _MARKET_STAMP.parent.mkdir(exist_ok=True)
+    _MARKET_STAMP.write_text(datetime.now().isoformat(), encoding="utf-8")
+    logger.info("주간 인스타 시장조사 시작")
+    db.worker_ping("working", "인스타 시장조사 중")
+    try:
+        sys.path.insert(0, str(ROOT))
+        from sns_automation import auto_make, market_scan
+        notes = market_scan.run_weekly()
+        logger.info("시장조사: %s", " / ".join(notes))
+        if any("로그인 필요" in n for n in notes):
+            db.log_error("worker", "인스타 시장조사 — 전용 크롬에 인스타 로그인이 "
+                         "필요합니다(launch_chrome.bat 크롬에서 인스타 로그인 한 번)",
+                         kind="SessionExpired", path="maybe_market_scan")
+        try:
+            auto_make.run_ideas()      # 새 시장 데이터로 제안 카드 갱신
+            logger.info("시장조사 반영 — 촬영 아이디어 갱신 완료")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("아이디어 갱신 실패(다음 기회에): %s", e)
+    except Exception as e:  # noqa: BLE001
+        logger.error("시장조사 실패: %s", e)
+        logger.debug(traceback.format_exc())
+
+
 _last_topics_push = 0.0
 
 
@@ -1919,6 +1958,7 @@ def main() -> int:
                     maybe_blog_react()
                     maybe_rescue_stuck()
                     maybe_push_reel_topics()
+                    maybe_market_scan()
                     db.worker_ping("idle", "대기 중")
             if job:
                 # 일감이 있으면 쉬지 않고 바로 다음 것을 집는다. 예전엔 한 건
