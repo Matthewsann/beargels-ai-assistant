@@ -504,12 +504,17 @@ function renderDetail(){
       <!-- ③ 업로드 -->
       <div class="block">
         <h3>③ 매장에서 찍은 영상 올리기</h3>
-        <div id="drop" class="drop">여기로 영상을 끌어다 놓거나 클릭해서 선택<br><span class="muted" style="font-size:.8rem">여러 개 가능 · 세로/가로 상관없음</span></div>
-        <input id="file" type="file" accept="video/*,image/*" multiple style="display:none">
-        <div class="files">${(p.files||[]).map(f=>`<span class="chip ${f.kind}">${f.name}</span>`).join("")||'<span class="muted" style="font-size:.82rem">아직 올린 파일이 없어요</span>'}</div>
-        <div class="pathrow">📂 사진/영상 넣는 곳<span class="path">${p.raw_dir||''}</span>
-          <button class="btn sm" onclick="openFolder('${p.id}','raw')">폴더 열기</button>
-          <span class="muted" style="font-weight:500">— 드래그 대신 이 폴더에 직접 넣어도 돼요</span></div>
+        <!-- 업로드 입구 = 드라이브 소재 폴더 하나 (사장님 확정 2026-08-30:
+             블로그·인스타가 같은 창고를 쓰므로 여기 올리면 둘 다 쓴다) -->
+        <div class="pathrow" style="flex-wrap:wrap; gap:8px">
+          <a class="btn pri sm" target="_blank" rel="noopener"
+             href="https://drive.google.com/drive/folders/1cJf1C4C3LGAUqDdF9M8ckglPR0ViHBSw">📂 드라이브 소재함 열기</a>
+          <button class="btn sm" onclick="openFolder('${p.id}','raw')">💻 PC에서 폴더 열기</button>
+          <button class="btn sm" onclick="openProject(CURRENT.id)">🔄 파일 새로고침</button>
+          <span class="muted" style="font-size:.8rem">폰은 드라이브 앱 → <b>원본소재/${esc(p.title||'')}</b> · 여기 올리면 블로그도 같이 씁니다</span>
+        </div>
+        <div class="files">${(p.files||[]).map(f=>`<span class="chip ${f.kind}">${f.name}</span>`).join("")||'<span class="muted" style="font-size:.82rem">아직 소재가 없어요 — 위 폴더에 넣고 새로고침</span>'}</div>
+        <div class="pathrow">📂 소재 폴더<span class="path">${p.raw_dir||''}</span></div>
       </div>
 
       <!-- ③-b 샷 구성표: 기획안이자 편집 명세 -->
@@ -691,7 +696,7 @@ async function aiShots(){
 }
 
 // 업로드 배선
-function wireUpload(){
+function wireUpload(){ /* 업로드 입구는 드라이브 폴더로 일원화(2026-08-30) — 드롭존 없음 */ return;
   const drop=$("#drop"), file=$("#file"); if(!drop) return;
   drop.onclick=()=>file.click();
   file.onchange=()=>upload(file.files);

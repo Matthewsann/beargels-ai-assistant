@@ -21,6 +21,7 @@ import os
 import re
 from datetime import datetime
 import shutil
+import sys
 import subprocess
 import tempfile
 import time
@@ -144,6 +145,32 @@ def _new_project(title: str, *, hook: str = "", menu: str = "", guide: str = "",
     os.makedirs(os.path.join(_proj_dir(pid), "raw"), exist_ok=True)
     _save_project(data)
     return data
+
+
+def _record_usage_to_ledger(p: dict) -> None:
+    """완성된 릴스가 쓴 소재를 공용 사용 원장(worker/media_ledger)에 기록."""
+    root = source_watch.source_root()
+    src = p.get("source_dir")
+    if not (root and src):
+        return                       # 허브 연결이 아닌 옛 프로젝트는 기록할 곳이 없다
+    worker_dir = os.path.join(_ROOT, "worker")
+    if worker_dir not in sys.path:
+        sys.path.insert(0, worker_dir)
+    import media_ledger
+    ref = f"릴스 {p['id']}"
+    for u in p.get("used_media") or []:
+        f = os.path.join(src, u["name"])
+        try:
+            rel = os.path.relpath(f, root).replace(os.sep, "/")
+        except ValueError:           # 다른 드라이브 문자 등
+            continue
+        if rel.startswith(".."):
+            continue
+        seg = None
+        if u.get("in") is not None and u.get("dur"):
+            seg = [float(u["in"]), float(u["in"]) + float(u["dur"])]
+        media_ledger.record(rel, "insta", ref=ref, segment=seg)
+    logger.info("원장 기록: %s — 소재 %d개", ref, len(p.get("used_media") or []))
 
 
 def _media_dir(p: dict) -> str:
@@ -358,7 +385,9 @@ def create_app() -> FastAPI:
         p = _load_project(pid)
         if not p:
             raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
-        raw = os.path.join(_proj_dir(pid), "raw")
+        # 저장 위치는 이 프로젝트의 소재 폴더 — 허브 연결분이면 원본소재/<주제>/.
+        # (한 곳 업로드 원칙: 어느 입구로 넣어도 창고는 하나 — 2026-08-30)
+        raw = _media_dir(p)
         os.makedirs(raw, exist_ok=True)
         saved = []
         for f in files:
@@ -389,6 +418,16 @@ def create_app() -> FastAPI:
         p["menu"] = menu or p.get("menu", "")
         tmpl = get_template(p.get("template"))
         out = os.path.join(_proj_dir(pid), "reel.mp4")
+        # 이번 릴스가 실제로 쓰는 소재 — 완성(finalize) 때 사용 원장에 기록한다.
+        # 구성표가 있으면 그 샷들의 클립(+구간), 없으면 영상 전부(통짜 이어붙이기).
+        plan_for_used = _ensure_plan(p, files)
+        if plan_for_used and plan_for_used.get("shots"):
+            p["used_media"] = [
+                {"name": sh["clip"], "in": sh.get("in"), "dur": sh.get("dur")}
+                for sh in plan_for_used["shots"] if isinstance(sh, dict) and sh.get("clip")
+            ]
+        else:
+            p["used_media"] = [{"name": os.path.basename(v)} for v in videos]
         music = os.getenv("REEL_MUSIC_PATH") or None
         plan = _ensure_plan(p, files)   # 구성표가 있으면(또는 만들 수 있으면) 그걸로
 
@@ -493,6 +532,15 @@ def create_app() -> FastAPI:
         # 훅 라이브러리에 자동 기록 (발행·성과는 나중에 채움)
         planner.record_hook(pid, p.get("title", ""), p.get("hook", ""), reel_name)
 
+        # ★ 사용 원장 기록 — 블로그와 같은 장부(media_ledger)에 "인스타가
+        #   이 소재(영상은 구간까지)를 씀"을 남긴다. 이게 있어야 상시 소재
+        #   회전과 '같은 원본은 다른 구간으로'가 채널을 넘어 작동한다
+        #   (한 곳 업로드 → 두 프로그램 공용, 사장님 확정 2026-08-30).
+        try:
+            _record_usage_to_ledger(p)
+        except Exception as e:  # noqa: BLE001 — 기록 실패가 완성 저장을 막으면 안 된다
+            logger.warning("사용 원장 기록 실패: %s", str(e)[:120])
+
         # 직원 웹앱에서 받아볼 수 있게 클라우드에도 올린다.
         # 실패해도 로컬 저장은 이미 끝났으므로 완성 자체를 막지 않는다.
         cloud = None
@@ -544,7 +592,7 @@ def create_app() -> FastAPI:
         if which == "final":
             target = os.path.join(FINAL_DIR, _slug(p.get("title", "")))
         else:
-            target = os.path.join(_proj_dir(pid), "raw")
+            target = _media_dir(p)   # 허브 연결분이면 원본소재/<주제>/ 를 연다
         target = os.path.abspath(target)
         os.makedirs(target, exist_ok=True)
         opened = False
