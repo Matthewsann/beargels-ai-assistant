@@ -8,6 +8,8 @@
   · sales_daily         — 포스 장부에서 온 일별 채널별 매출
   · product_sales_daily — 일별 상품별 매출 (타겟 상품 효과 분석용)
   · pos_files           — 장부 파일 반영 로그 (같은 파일 재파싱 방지)
+  · sales_hourly        — 시간대별 채널별 매출 (schema_v11, 매출 대시보드 히트맵)
+  · menu_settings.sales_goals — 월 목표(매장/배달), 표 대신 key-value
 
 효과 계산(요일 보정)은 순수 함수로 아래에 같이 둔다 — 테스트 대상.
 """
@@ -18,7 +20,7 @@ import re
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
-from .supabase_client import get_client
+from .supabase_client import get_client, get_setting, menu_set_setting
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,8 @@ CAMPAIGNS = "mkt_campaigns"
 SALES = "sales_daily"
 PRODUCTS = "product_sales_daily"
 POS_FILES = "pos_files"
+HOURLY = "sales_hourly"            # schema_v11 — 시간대별 (매출 대시보드)
+GOALS_KEY = "sales_goals"          # menu_settings 키 — 월 목표 {"YYYY-MM": {store, delivery}}
 
 # 카테고리 (화면 표기와 색은 service 쪽에서)
 CATEGORIES = ("delivery", "sns", "place", "store", "var")
@@ -193,6 +197,38 @@ def product_sales_between(d1, d2, products=None):
     return _fetch_all(q)
 
 
+def hourly_between(d1, d2):
+    """[d1,d2] sales_hourly 원본 행들 (매출 대시보드 요일×시간대 히트맵용)."""
+    return _fetch_all(lambda: (
+        get_client().table(HOURLY)
+        .select("sale_date,hour,channel,amount,orders_count,source")
+        .gte("sale_date", str(_d(d1))).lte("sale_date", str(_d(d2)))
+        .order("sale_date")))
+
+
+def sales_goals() -> dict:
+    """월 목표 전부 — {"2026-09": {"store": 15000000, "delivery": 20000000}}."""
+    return get_setting(GOALS_KEY, {}) or {}
+
+
+def set_sales_goal(ym, store=None, delivery=None):
+    """한 달 목표 저장(원 단위). None/0 은 '목표 없음'으로 지운다."""
+    if not re.fullmatch(r"\d{4}-\d{2}", str(ym or "")):
+        raise ValueError("ym 은 YYYY-MM")
+    goals = sales_goals()
+    cur = {}
+    if store:
+        cur["store"] = int(store)
+    if delivery:
+        cur["delivery"] = int(delivery)
+    if cur:
+        goals[ym] = cur
+    else:
+        goals.pop(ym, None)
+    menu_set_setting(GOALS_KEY, goals)
+    return goals
+
+
 def last_pos_date():
     """장부(포스)가 반영된 마지막 날짜. 없으면 None."""
     res = (get_client().table(SALES).select("sale_date")
@@ -274,6 +310,18 @@ def upsert_product_sales(rows):
     for i in range(0, len(rows), 500):
         get_client().table(PRODUCTS).upsert(
             rows[i:i + 500], on_conflict="sale_date,product,source").execute()
+    return len(rows)
+
+
+def upsert_sales_hourly(rows):
+    """[{sale_date, hour, channel, amount, orders_count, source}] 일괄 반영."""
+    if not rows:
+        return 0
+    for r in rows:
+        r["imported_at"] = _now()
+    for i in range(0, len(rows), 500):
+        get_client().table(HOURLY).upsert(
+            rows[i:i + 500], on_conflict="sale_date,hour,channel,source").execute()
     return len(rows)
 
 

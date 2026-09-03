@@ -207,7 +207,8 @@ def _filter_helpers():
     def is_on(name, value=None):
         cur = request.args.get(name) or ""
         return cur == (str(value) if value is not None else "")
-    return {"url_with": url_with, "is_on": is_on}
+    return {"url_with": url_with, "is_on": is_on,
+            "sales_menu": _sales_menu_visible()}
 
 
 def _ajax() -> bool:
@@ -3041,6 +3042,109 @@ def mkt_import(path_key):
         mkt_store.request_pos_import(by="mkt")
         return jsonify({"ok": True})
     except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+# ---------------------------------------------------------------------------
+# 매출 대시보드 (/sales) — 사장님 전용 (인터뷰 확정 2026-09-03)
+#
+# 다섯 질문에 답한다: 이번 달 잘 가나(목표·지난달·작년·요일평균) / 일별 /
+# 채널별 / 뭐가 잘 팔리나 / 요일×시간대. 계산은 service/sales_page.py.
+#
+# 잠금: 이 앱은 로그인이 없고 주소가 비밀번호다. 매출은 직원에게 안 보여야
+# 하므로(사장님 확정) 두 번째 비밀을 하나 더 둔다 — OWNER_KEY(환경변수,
+# 없으면 menu_settings.owner_key). `/sales?k=<키>` 로 한 번 열면 브라우저에
+# 1년짜리 쿠키가 남고 그 뒤로는 사이드바에 '💰 매출'이 보인다. 키가 없거나
+# 틀리면 다른 비밀 주소처럼 404 — 화면이 있다는 사실도 알려주지 않는다.
+# 키를 아예 안 정해 두면 잠금 없이 열린다(로컬 테스트용).
+# ---------------------------------------------------------------------------
+
+from service import sales_page  # noqa: E402
+
+OWNER_COOKIE = "bg_owner"
+_owner_key_cache = [0.0, ""]        # [읽은 시각, 키] — 설정 조회를 페이지마다 안 하게
+
+
+def _owner_key() -> str:
+    """사장님 잠금 키. 환경변수 OWNER_KEY 우선, 없으면 설정(10분 캐시)."""
+    k = (os.getenv("OWNER_KEY") or "").strip()
+    if k:
+        return k
+    now = time.time()
+    if now - _owner_key_cache[0] < 600:
+        return _owner_key_cache[1]
+    try:
+        k = str(db.get_setting("owner_key") or "").strip()
+    except Exception:  # noqa: BLE001 — 설정을 못 읽으면 잠근 채로 둔다
+        k = _owner_key_cache[1] or "-"
+    _owner_key_cache[0], _owner_key_cache[1] = now, k
+    return k
+
+
+def _owner_token(key: str) -> str:
+    """쿠키에는 키 자체가 아니라 해시를 둔다."""
+    import hashlib
+    return hashlib.sha256(f"bg-owner:{key}".encode()).hexdigest()[:32]
+
+
+def _owner_ok() -> bool:
+    key = _owner_key()
+    if not key:
+        return True                       # 잠금 미설정 — 열려 있음
+    return request.cookies.get(OWNER_COOKIE) == _owner_token(key)
+
+
+def _sales_menu_visible() -> bool:
+    """사이드바에 '매출' 메뉴를 보일지 — 쿠키 없는 브라우저(직원)에는 안 보인다."""
+    try:
+        if not request.cookies.get(OWNER_COOKIE):
+            return not _owner_key()
+        return _owner_ok()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+@app.route("/<path_key>/sales")
+def sales_home(path_key):
+    check(path_key)
+    key = _owner_key()
+    k = (request.args.get("k") or "").strip()
+    if key and k:
+        if k != key:
+            abort(404)
+        resp = redirect(f"/{path_key}/sales")
+        resp.set_cookie(OWNER_COOKIE, _owner_token(key), max_age=365 * 86400,
+                        httponly=True, samesite="Lax", secure=request.is_secure)
+        return resp
+    if not _owner_ok():
+        abort(404)
+    today = datetime.now(KST).date()
+    y, m, explicit = today.year, today.month, False
+    mm = re.fullmatch(r"(\d{4})-(\d{2})", request.args.get("ym") or "")
+    if mm and 1 <= int(mm.group(2)) <= 12 and 2024 <= int(mm.group(1)) <= 2100:
+        y, m, explicit = int(mm.group(1)), int(mm.group(2)), True
+    view = sales_page.build_view(y, m, today, explicit=explicit)
+    return render_template("sales.html", key=path_key, v=view,
+                           won=sales_page.won_short)
+
+
+@app.route("/<path_key>/sales/goal", methods=["POST"])
+def sales_goal(path_key):
+    """월 목표 저장 — 매장/배달 따로(원 단위). 비우면 목표 없음."""
+    check(path_key)
+    if not _owner_ok():
+        abort(404)
+    f = request.get_json(force=True, silent=True) or {}
+    ym = str(f.get("ym") or "")
+    try:
+        goals = mkt_store.set_sales_goal(ym, f.get("store"), f.get("delivery"))
+        return jsonify({"ok": True, "goal": goals.get(ym)})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"매출 목표 저장 실패({ym}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 

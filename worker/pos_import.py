@@ -15,6 +15,11 @@
 
 같은 (파일명, 수정시각)은 pos_files 로그로 재파싱을 막고, 반영은 전부
 (날짜, 채널/상품, 출처) upsert 라 몇 번을 다시 돌려도 안전하다.
+
+시간대별(sales_hourly, schema_v11 · 2026-09-03): 매출 대시보드의 요일×시간대
+히트맵용. TOS 는 '결제 상세내역' 시트(결제 한 건마다 결제시각·주문채널·매입사),
+IMU 는 건별 내역의 매출일시에서 '시'를 뽑아 (날짜, 시, 채널, 출처)로 모은다.
+파서는 (sales, products, hourly) 세 묶음을 돌려준다.
 """
 
 import glob
@@ -63,6 +68,28 @@ def _to_date(v):
         except ValueError:
             return None
     return None
+
+
+_TIME_RE = re.compile(r"(\d{1,2}):(\d{2})")
+
+
+def _to_hour(v):
+    """셀 값 → 0~23 시. datetime 이면 .hour, 'YYYY-MM-DD HH:MM:SS' 문자열이면
+    시각 부분. 시각이 없으면 None (날짜만 있는 셀은 0시로 오해하면 안 된다)."""
+    if isinstance(v, datetime):
+        return v.hour
+    if isinstance(v, date):
+        return None
+    s = str(v or "").strip()
+    if not s:
+        return None
+    # 날짜 뒤에 붙은 시각만 본다 — '2026-08-31 22:42:01'
+    tail = s[10:] if _DATE_RE.match(s) else s
+    m = _TIME_RE.search(tail)
+    if not m:
+        return None
+    h = int(m.group(1))
+    return h if 0 <= h <= 23 else None
 
 
 def _to_int(v):
@@ -145,6 +172,12 @@ def _parse_tos_daily(ws):
 
     헤더 행: '결제 합계 기간', '결제금액', (부가세), '결제건수', ... '매입사별'
     다음 행: 매입사 이름들 (배달의민족/쿠팡이츠/... 컬럼 위치가 달마다 다름)
+
+    ⚠️ 2026-08 장부부터는 헤더('기간','결제금액',…)와 매입사 이름이 **한 줄**에
+    같이 있다(그 위 줄이 '결제수단별/매입사별' 묶음 제목). 옛 규칙대로 '다음
+    행'에서 매입사를 찾으면 데이터 행을 읽어 채널 컬럼을 하나도 못 잡고,
+    배달이 0 → 매장 = 총액으로 부풀려졌다(2026-09-03 발견, 8월 배민·쿠팡
+    행이 통째로 비어 있었다). 헤더 줄에 매입사 이름이 있으면 그 줄을 쓴다.
     """
     rows = list(ws.iter_rows(values_only=True))
     head_i = None
@@ -156,16 +189,19 @@ def _parse_tos_daily(ws):
     if head_i is None or head_i + 1 >= len(rows):
         return []
     head = _cells(rows[head_i])
-    sub = _cells(rows[head_i + 1])
     col_amount = head.index("결제금액") if "결제금액" in head else 1
     col_count = head.index("결제건수") if "결제건수" in head else None
+    if any(name in _CHANNEL_MAP for name in head):
+        sub, data_start = head, head_i + 1          # 한 줄 양식(2026-08~)
+    else:
+        sub, data_start = _cells(rows[head_i + 1]), head_i + 2
     chan_cols = {}
     for j, name in enumerate(sub):
         if name in _CHANNEL_MAP:
             chan_cols[j] = _CHANNEL_MAP[name]
 
     out = []
-    for row in rows[head_i + 2:]:
+    for row in rows[data_start:]:
         d = _to_date(row[0] if row else None)
         if not d:
             continue
@@ -262,13 +298,66 @@ def _parse_tos_product_detail(ws):
     return agg
 
 
+def _parse_tos_payment_detail(ws):
+    """'결제 상세내역' 시트 → 시간대별 행들.
+
+    컬럼: 결제기준일자, 결제시각, 주문채널(포스/키오스크/배달), 주문번호,
+          결제건수, 결제금액, 부가세, 결제수단, 매입사, 결제상태, 결제취소시각
+    · 채널: 주문채널이 '배달'이면 매입사(배달의민족/쿠팡이츠/요기요)로,
+      나머지(포스·키오스크)는 매장(store).
+    · 취소는 **음수 행**으로 따로 온다(원래 승인 행은 그대로 남는다). 그래서
+      상태로 거르지 않고 금액을 부호째 합산한다 — 그래야 '결제 합계' 시트의
+      일 총액과 원 단위로 맞는다(2026-08 실측: 승인 36,024,882 − 취소
+      1,409,553 = 합계 34,615,329). 건수도 취소면 −1.
+    """
+    rows = ws.iter_rows(values_only=True)
+    head = None
+    for row in rows:
+        cells = _cells(row)
+        if "결제시각" in cells and "결제금액" in cells:
+            head = cells
+            break
+    if head is None:
+        return []
+    ci_date = head.index("결제기준일자") if "결제기준일자" in head else 0
+    ci_time = head.index("결제시각")
+    ci_chan = head.index("주문채널") if "주문채널" in head else None
+    ci_buyer = head.index("매입사") if "매입사" in head else None
+    ci_amt = head.index("결제금액")
+    agg = defaultdict(lambda: [0, 0])      # (date, hour, channel) -> [amount, count]
+    for row in rows:
+        if ci_time >= len(row):
+            continue
+        d = (_to_date(row[ci_date] if ci_date < len(row) else None)
+             or _to_date(row[ci_time]))
+        h = _to_hour(row[ci_time])
+        if not d or h is None:
+            continue
+        amt = _to_int(row[ci_amt]) if ci_amt < len(row) else 0
+        if not amt:
+            continue
+        chan_kind = (str(row[ci_chan] or "").strip()
+                     if ci_chan is not None and ci_chan < len(row) else "")
+        if "배달" in chan_kind:
+            buyer = (str(row[ci_buyer] or "").strip()
+                     if ci_buyer is not None and ci_buyer < len(row) else "")
+            ch = _CHANNEL_MAP.get(buyer, "etc")
+        else:
+            ch = "store"
+        agg[(str(d), h, ch)][0] += amt
+        agg[(str(d), h, ch)][1] += 1 if amt > 0 else -1
+    return [{"sale_date": d, "hour": h, "channel": ch,
+             "amount": v[0], "orders_count": max(v[1], 0), "source": "tos"}
+            for (d, h, ch), v in agg.items()]
+
+
 def parse_tos(wb):
-    """TOS 워크북 전체 → (sales_rows, product_rows).
+    """TOS 워크북 전체 → (sales_rows, product_rows, hourly_rows).
 
     시트 이름 기준(월 리포트: 데이터 기준/결제 합계/상품 주문 합계/
     결제 상세내역/상품 주문 상세내역), 이름이 다르면 헤더로 판별.
     """
-    sales, prod_summary, prod_detail = [], {}, {}
+    sales, prod_summary, prod_detail, hourly = [], {}, {}, []
     for ws in wb.worksheets:
         title = ws.title or ""
         if "결제 합계" in title:
@@ -281,13 +370,18 @@ def parse_tos(wb):
             if not prod_summary:
                 prod_detail.update(_parse_tos_product_detail(ws))
             continue
-        if "데이터 기준" in title or "결제 상세" in title:
+        if "결제 상세" in title:
+            hourly.extend(_parse_tos_payment_detail(ws))
+            continue
+        if "데이터 기준" in title:
             continue
         heads = []
         for row in ws.iter_rows(min_row=1, max_row=8, values_only=True):
             heads.extend(_cells(row))
         joined = "|".join(heads)
-        if "결제금액" in joined and "결제건수" in joined:
+        if "결제시각" in joined and "결제금액" in joined:
+            hourly.extend(_parse_tos_payment_detail(ws))
+        elif "결제금액" in joined and "결제건수" in joined:
             sales.extend(_parse_tos_daily(ws))
         elif "판매건수" in joined and "상품명" in joined:
             prod_summary.update(_parse_tos_product_summary(ws))
@@ -298,7 +392,7 @@ def parse_tos(wb):
     products = [{"sale_date": d, "product": p, "category": v["category"],
                  "qty": v["qty"], "amount": v["amount"], "source": "tos"}
                 for (d, p), v in agg.items()]
-    return sales, products
+    return sales, products, hourly
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +409,7 @@ def parse_imu(wb):
             head = cells
             break
     if head is None:
-        return [], []
+        return [], [], []
     ci_dt = head.index("매출일시")
     ci_name = head.index("메뉴 이름")
     ci_qty = head.index("수량")
@@ -324,6 +418,7 @@ def parse_imu(wb):
 
     daily = defaultdict(lambda: [0, 0])      # date -> [amount, receipts]
     prods = defaultdict(lambda: [0, 0])      # (date, name) -> [qty, amount]
+    hours = defaultdict(lambda: [0, 0])      # (date, hour) -> [amount, receipts]
     for row in rows:
         if ci_dt >= len(row):
             continue
@@ -336,6 +431,10 @@ def parse_imu(wb):
             if amt:
                 daily[str(d)][0] += amt
                 daily[str(d)][1] += 1 if amt > 0 else -1
+                h = _to_hour(row[ci_dt])
+                if h is not None:
+                    hours[(str(d), h)][0] += amt
+                    hours[(str(d), h)][1] += 1 if amt > 0 else -1
         name = str(row[ci_name] or "").strip() if ci_name < len(row) else ""
         if name:
             k = (str(d), name)
@@ -349,7 +448,10 @@ def parse_imu(wb):
     products = [{"sale_date": d, "product": p, "category": None,
                  "qty": q, "amount": a, "source": "imu"}
                 for (d, p), (q, a) in prods.items() if q or a]
-    return sales, products
+    hourly = [{"sale_date": d, "hour": h, "channel": "store",
+               "amount": v[0], "orders_count": max(v[1], 0), "source": "imu"}
+              for (d, h), v in hours.items() if v[0] > 0]
+    return sales, products, hourly
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +468,7 @@ def parse_baemin_xls(wb):
             head = cells
             break
     if head is None:
-        return [], []
+        return [], [], []
     ci_amt = head.index("합계")
     daily = defaultdict(lambda: [0, 0])
     for row in rows:
@@ -377,7 +479,7 @@ def parse_baemin_xls(wb):
         daily[str(d)][1] += 1
     return [{"sale_date": d, "channel": "baemin", "amount": v[0],
              "orders_count": v[1], "source": "baemin_xls"}
-            for d, v in daily.items() if v[0]], []
+            for d, v in daily.items() if v[0]], [], []
 
 
 def parse_coupang_xls(wb):
@@ -390,7 +492,7 @@ def parse_coupang_xls(wb):
             head = cells
             break
     if head is None:
-        return [], []
+        return [], [], []
     ci_amt = head.index("주문금액")
     ci_type = head.index("거래유형") if "거래유형" in head else None
     daily = defaultdict(lambda: [0, 0])
@@ -406,7 +508,7 @@ def parse_coupang_xls(wb):
         daily[str(d)][1] += 1 if amt >= 0 else -1
     return [{"sale_date": d, "channel": "coupang", "amount": v[0],
              "orders_count": max(v[1], 0), "source": "coupang_xls"}
-            for d, v in daily.items() if v[0]], []
+            for d, v in daily.items() if v[0]], [], []
 
 
 _PARSERS = {"tos": parse_tos, "tos_products": parse_tos,
@@ -431,16 +533,21 @@ def import_file(path) -> dict:
     # 탐지에 쓴 read_only 워크북은 스트림이 소모됐다 — 새로 열어 파싱한다
     wb = _open(path)
     try:
-        sales, products = _PARSERS[kind](wb)
+        sales, products, hourly = _PARSERS[kind](wb)
     finally:
         wb.close()
     dates = [r["sale_date"] for r in sales] or [r["sale_date"] for r in products]
     mkt_store.upsert_sales(sales)
     mkt_store.upsert_product_sales(products)
-    logger.info("장부 반영: %s (%s) 매출 %d행, 상품 %d행",
-                name, kind, len(sales), len(products))
+    try:
+        mkt_store.upsert_sales_hourly(hourly)
+    except Exception as e:  # noqa: BLE001 — schema_v11 미적용이어도 일매출은 살린다
+        logger.warning("시간대별 반영 실패(%s): %s", name, e)
+    logger.info("장부 반영: %s (%s) 매출 %d행, 상품 %d행, 시간대 %d행",
+                name, kind, len(sales), len(products), len(hourly))
     return {"kind": kind if kind != "tos_products" else "tos",
             "sales": len(sales), "products": len(products),
+            "hourly": len(hourly),
             "from": min(dates) if dates else None,
             "to": max(dates) if dates else None}
 
@@ -478,7 +585,8 @@ def scan_ledger(force=False) -> dict:
             mkt_store.log_pos_file(
                 name, mtime, st.st_size, kind=info["kind"],
                 date_from=info.get("from"), date_to=info.get("to"),
-                note=f"매출 {info['sales']}행, 상품 {info['products']}행")
+                note=(f"매출 {info['sales']}행, 상품 {info['products']}행, "
+                      f"시간대 {info.get('hourly', 0)}행"))
             if info["kind"] != "skip":
                 done.append(f"{name}({info['kind']})")
         except Exception as e:  # noqa: BLE001 — 파일 하나가 전체를 막지 않게

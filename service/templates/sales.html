@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>매출 — 베어글스</title>
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
+          --ok:#3b6d11; --ok-bg:#eaf3de; --bad:#a3271f; --bad-bg:#fbe9e7;
+          --store:#185fa5; --deliv:#a34d78; --deliv-bg:#f7e4ee; --chip-bg:#f1efe9;
+          --heat:24,95,165; }
+  html[data-theme="dark"] { --store:#7fb3e8; --deliv:#d98ab5; --deliv-bg:#3c2231;
+          --chip-bg:#2b2b27; --heat:127,179,232; }
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) { --store:#7fb3e8; --deliv:#d98ab5; --deliv-bg:#3c2231;
+          --chip-bg:#2b2b27; --heat:127,179,232; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.5;
+         font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .wrap { max-width:680px; margin:0 auto; padding:16px 14px 64px; }
+
+  .head { display:flex; align-items:center; gap:8px; margin:2px 0 6px; flex-wrap:wrap; }
+  .head b { font-size:17px; }
+  .mnav { display:flex; align-items:center; gap:2px; margin-left:auto; }
+  .mnav a, .mnav span.dis { border:1px solid var(--line); background:var(--card); color:var(--muted);
+          width:30px; height:30px; border-radius:8px; text-decoration:none; font-size:15px;
+          display:flex; align-items:center; justify-content:center; }
+  .mnav span.dis { opacity:.35; }
+  .mnav .cur { font-weight:700; font-size:15px; padding:0 8px; font-variant-numeric:tabular-nums; }
+  .src { font-size:11.5px; color:var(--muted); margin:0 0 12px; }
+  .src b { font-weight:600; }
+
+  .note { font-size:12.5px; padding:10px 12px; border-radius:9px; margin-bottom:12px;
+          background:var(--warn-bg); color:var(--warn); }
+  .note a { color:inherit; font-weight:700; }
+  .note.bad { background:var(--bad-bg); color:var(--bad); }
+
+  .sec { font-size:12px; color:var(--muted); margin:18px 2px 8px; font-weight:600;
+         letter-spacing:.04em; display:flex; align-items:center; gap:8px; }
+  .sec small { font-weight:400; margin-left:auto; letter-spacing:0; }
+
+  /* ── 이번 달 현황 ── */
+  .kpis { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .kpi { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 13px 11px; }
+  .kpi .lb { font-size:12px; font-weight:700; display:flex; align-items:center; gap:6px; }
+  .kpi .lb .sw { width:10px; height:10px; border-radius:3px; display:inline-block; }
+  .kpi .n { font-size:26px; font-weight:800; line-height:1.15; margin-top:4px;
+            font-variant-numeric:tabular-nums; letter-spacing:-.01em; }
+  .kpi .n small { font-size:11.5px; font-weight:400; color:var(--muted); margin-left:4px; }
+  .gbar { height:8px; border-radius:6px; background:var(--chip-bg); margin:9px 0 4px; overflow:hidden; }
+  .gbar i { display:block; height:100%; border-radius:6px; background:var(--store); }
+  .kpi.dl .gbar i { background:var(--deliv); }
+  .gtxt { font-size:11.5px; color:var(--muted); display:flex; justify-content:space-between; gap:6px; }
+  .gtxt b { color:var(--ink); }
+  .gset { font-size:11.5px; color:var(--accent); background:none; border:none; padding:0; cursor:pointer;
+          font-family:inherit; text-decoration:underline; margin-top:6px; }
+  .cmp { display:flex; flex-direction:column; gap:3px; margin-top:9px; font-size:11.5px; color:var(--muted); }
+  .cmp div { display:flex; justify-content:space-between; gap:6px; }
+  .hi { color:var(--ok); font-weight:700; } .lo { color:var(--bad); font-weight:700; }
+  .nd { color:var(--muted); }
+  .total { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:9px 13px;
+           margin-top:8px; font-size:13px; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .total b { font-size:17px; font-variant-numeric:tabular-nums; }
+  .total .cmp { flex-direction:row; gap:12px; margin:0 0 0 auto; }
+
+  /* 목표 입력 */
+  .goalform { background:var(--accent-bg); border-radius:12px; padding:11px 13px; margin-top:8px;
+              display:none; }
+  .goalform.open { display:block; }
+  .goalform .row { display:flex; gap:8px; align-items:center; margin:4px 0; font-size:13px; }
+  .goalform label { width:38px; font-weight:700; }
+  .goalform input { flex:1; min-width:0; font-size:15px; padding:7px 9px; border:1px solid var(--line);
+                    border-radius:8px; background:var(--card); color:var(--ink); font-family:inherit;
+                    text-align:right; font-variant-numeric:tabular-nums; }
+  .goalform .unit { color:var(--muted); font-size:12px; width:34px; }
+  .goalform .acts { display:flex; gap:8px; margin-top:8px; }
+  .btn { background:var(--accent); color:#fff; border:none; padding:8px 15px; border-radius:9px;
+         font-size:13.5px; font-weight:700; cursor:pointer; font-family:inherit; }
+  .btn2 { background:var(--card); border:1px solid var(--line); color:var(--muted); padding:8px 12px;
+          border-radius:9px; font-size:13px; cursor:pointer; font-family:inherit; }
+  .goalform .hint { font-size:11.5px; color:var(--muted); margin-top:6px; }
+
+  /* ── 일별 그래프 ── */
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 12px 10px; }
+  .chart svg { width:100%; height:auto; display:block; }
+  .legend { display:flex; gap:12px; flex-wrap:wrap; font-size:11.5px; color:var(--muted); margin-top:6px; }
+  .legend .sw { width:10px; height:10px; border-radius:3px; display:inline-block; margin-right:4px; vertical-align:-1px; }
+  .legend .ln { width:14px; height:0; border-top:2px dashed var(--muted); display:inline-block; margin-right:4px; vertical-align:3px; }
+  .cap { font-size:12px; color:var(--ink); min-height:18px; margin-top:6px; font-variant-numeric:tabular-nums; }
+  .cap:empty::before { content:"막대를 누르면 그날 숫자가 나와요"; color:var(--muted); }
+  .cap.hc:empty::before { content:"칸을 누르면 그 요일·시간대 평균이 나와요"; }
+
+  /* ── 채널 ── */
+  .ch { display:grid; grid-template-columns:56px 1fr auto; gap:8px 10px; align-items:center;
+        padding:7px 0; border-top:1px solid var(--line); font-size:13px; }
+  .ch:first-child { border-top:none; }
+  .ch .bar { height:9px; border-radius:6px; background:var(--chip-bg); overflow:hidden; }
+  .ch .bar i { display:block; height:100%; background:var(--store); border-radius:6px; }
+  .ch.dl .bar i { background:var(--deliv); }
+  .ch .amt { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .ch .amt b { display:block; }
+  .ch .amt small { color:var(--muted); font-size:11px; }
+
+  /* ── 상품 ── */
+  .pr { display:grid; grid-template-columns:22px 1fr auto auto; gap:6px 8px; align-items:center;
+        padding:7px 0; border-top:1px solid var(--line); font-size:13px; }
+  .pr:first-child { border-top:none; }
+  .pr .rk { color:var(--muted); font-size:12px; text-align:right; font-variant-numeric:tabular-nums; }
+  .pr .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pr .nm small { color:var(--muted); font-size:11px; margin-left:5px; }
+  .pr .amt { font-variant-numeric:tabular-nums; white-space:nowrap; text-align:right; }
+  .pr .dl { font-size:11px; width:34px; text-align:right; white-space:nowrap; }
+  .pr .dl.new { color:var(--accent); }
+  @media (max-width:520px) {
+    /* 폰에서는 긴 상품명([SET] 베이글 샌드위치 + …)을 두 줄까지 보여준다 */
+    .pr .nm { white-space:normal; display:-webkit-box; -webkit-line-clamp:2;
+              -webkit-box-orient:vertical; line-height:1.3; font-size:12.5px; }
+  }
+
+  /* ── 히트맵 ── */
+  .modes { display:flex; gap:4px; margin-left:auto; }
+  .modes button { background:var(--card); border:1px solid var(--line); color:var(--muted);
+                  padding:4px 9px; border-radius:20px; font-size:11.5px; cursor:pointer; font-family:inherit; }
+  .modes button.on { background:var(--accent-bg); color:var(--accent); border-color:transparent; font-weight:700; }
+  .heat { width:100%; border-collapse:collapse; table-layout:fixed; font-size:10.5px; }
+  .heat th { color:var(--muted); font-weight:500; padding:0 0 4px; text-align:center; }
+  .heat th.dw { text-align:left; width:22px; }
+  .heat th.tt { width:40px; text-align:right; }
+  .heat td { height:24px; padding:1px; }
+  .heat td i { display:block; height:100%; border-radius:4px; background:rgba(var(--heat), var(--a, 0)); cursor:pointer; }
+  .heat td.dw { color:var(--muted); font-weight:600; }
+  .heat td.dw.su { color:var(--bad); } .heat td.dw.sa { color:var(--accent); }
+  .heat td.tt { text-align:right; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; padding-left:4px; }
+  .empty { color:var(--muted); font-size:13px; padding:10px 2px; }
+  .foot { font-size:11px; color:var(--muted); margin-top:20px; text-align:center; }
+</style>
+</head>
+<body>
+{% include "_sidebar.html" %}
+{% macro pctv(p, none_text='—') -%}
+  {%- if p is none -%}<span class="nd">{{ none_text }}</span>
+  {%- elif p >= 0 -%}<span class="hi">▲{{ (p * 100)|round|int }}%</span>
+  {%- else -%}<span class="lo">▼{{ (p * -100)|round|int }}%</span>
+  {%- endif -%}
+{%- endmacro %}
+<div class="wrap">
+
+  <div class="head">
+    <b>💰 매출</b>
+    <div class="mnav">
+      <a href="/{{ key }}/sales?ym={{ v.prev.y }}-{{ '%02d' % v.prev.m }}" title="{{ v.prev.label }}">‹</a>
+      <span class="cur">{{ v.label }}</span>
+      {% if v.has_next %}<a href="/{{ key }}/sales?ym={{ v.next.y }}-{{ '%02d' % v.next.m }}">›</a>
+      {% else %}<span class="dis">›</span>{% endif %}
+    </div>
+  </div>
+  <p class="src">
+    {% if v.last_pos %}장부(포스) 반영: <b>~{{ v.last_pos_label }}</b>{% else %}장부가 아직 없어요{% endif %}
+    · 장부는 월 1회 드라이브 장부관리 폴더에서 자동 반영
+  </p>
+
+  {% if not v.db_ready %}
+  <div class="note bad">매출 표를 읽지 못했어요. 잠시 뒤 다시 열어보시고, 계속 그러면 알려주세요.</div>
+  {% endif %}
+  {% if v.fallback %}
+  <div class="note">{{ v.fallback.asked_label }} 장부가 아직 없어서 <b>{{ v.m }}월</b>을 보여드려요.
+    {{ v.fallback.asked_label }} 장부가 올라오면 자동으로 바뀌어요.</div>
+  {% elif v.is_current and v.pending_days %}
+  <div class="note">{{ v.m }}월은 <b>{{ v.upto or 0 }}일까지</b> 장부가 있어요. 나머지 {{ v.pending_days }}일은 아직 미반영이라 비워 뒀어요.</div>
+  {% endif %}
+
+  {# ── 1. 이번 달 현황 ── #}
+  <div class="sec">{{ '이번 달' if v.is_current else v.m ~ '월' }} 현황 <small>{% if v.upto %}1일~{{ v.upto }}일 · {{ v.data_days }}일치{% endif %}</small></div>
+  {% if not v.upto %}
+  <div class="card"><div class="empty">{{ v.m }}월 장부가 아직 없어요.</div></div>
+  {% else %}
+  <div class="kpis">
+    {% for key, label, cls in (('store', '매장', 'st'), ('delivery', '배달', 'dl')) %}
+    {% set s = v.summary[key] %}{% set g = v.goal[key] %}
+    <div class="kpi {{ cls }}">
+      <div class="lb"><span class="sw" style="background:var(--{{ 'store' if key == 'store' else 'deliv' }})"></span>{{ label }}</div>
+      <div class="n">{{ s.short }}<small>원</small></div>
+      {% if g.goal %}
+      <div class="gbar"><i style="width:{{ [((g.pct or 0) * 100)|round|int, 100]|min }}%"></i></div>
+      <div class="gtxt"><span>목표 {{ won(g.goal) }}</span><b>{{ ((g.pct or 0) * 100)|round|int }}%</b></div>
+      {% if g.pace %}<div class="gtxt"><span>이 속도면 월말</span><span><b>{{ won(g.pace) }}</b> ({{ ((g.pace_pct or 0) * 100)|round|int }}%)</span></div>{% endif %}
+      {% else %}
+      {% if g.pace %}<div class="gtxt" style="margin-top:6px"><span>이 속도면 월말</span><b>{{ won(g.pace) }}</b></div>{% endif %}
+      {% if v.is_current %}<button type="button" class="gset" onclick="slGoalOpen()">월 목표 입력</button>{% endif %}
+      {% endif %}
+      <div class="cmp">
+        <div><span>지난달 같은 기간</span>{{ pctv(s.prev.pct if s.prev else none, '지난달 없음') }}</div>
+        <div><span>작년 같은 달</span>{{ pctv(s.last_year.pct if s.last_year else none, '작년 없음') }}</div>
+        <div><span>요일 평균(8주) 대비</span>{{ pctv(s.weekday.pct if s.weekday else none, '기준 없음') }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="total">
+    <span>합계</span><b>{{ v.summary.total.short }}원</b>
+    <div class="cmp">
+      <div>지난달 {{ pctv(v.summary.total.prev.pct if v.summary.total.prev else none) }}</div>
+      <div>작년 {{ pctv(v.summary.total.last_year.pct if v.summary.total.last_year else none) }}</div>
+      <div>요일평균 {{ pctv(v.summary.total.weekday.pct if v.summary.total.weekday else none) }}</div>
+    </div>
+  </div>
+  {% if v.goal_raw %}<button type="button" class="gset" style="margin:6px 2px 0" onclick="slGoalOpen()">목표 고치기</button>{% endif %}
+  {% endif %}
+
+  <div class="goalform" id="goalForm">
+    <div style="font-size:13px;font-weight:700;margin-bottom:4px">{{ v.label }} 목표 (만원)</div>
+    <div class="row"><label>매장</label><input type="number" id="gStore" inputmode="numeric" min="0" step="10"
+         value="{{ (v.goal_raw.store // 10000) if v.goal_raw.store else '' }}" placeholder="예: 1500"><span class="unit">만원</span></div>
+    <div class="row"><label>배달</label><input type="number" id="gDeliv" inputmode="numeric" min="0" step="10"
+         value="{{ (v.goal_raw.delivery // 10000) if v.goal_raw.delivery else '' }}" placeholder="예: 2000"><span class="unit">만원</span></div>
+    <div class="acts">
+      <button type="button" class="btn" onclick="slGoalSave(this)">저장</button>
+      <button type="button" class="btn2" onclick="slGoalOpen(false)">닫기</button>
+      <span class="hint" style="margin-left:auto;align-self:center">비우면 목표 없음</span>
+    </div>
+  </div>
+
+  {# ── 2. 일별 ── #}
+  <div class="sec">일별 매출 <small>{{ v.prev.label }}은 점선</small></div>
+  <div class="card">
+    <div class="chart" id="dailyChart"></div>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--store)"></span>매장</span>
+      <span><span class="sw" style="background:var(--deliv)"></span>배달</span>
+      <span><span class="ln"></span>{{ v.prev.label }} 합계</span>
+    </div>
+    <div class="cap" id="dailyCap"></div>
+  </div>
+
+  {# ── 3. 채널 ── #}
+  <div class="sec">채널별 <small>지난달 같은 날짜까지와 비교</small></div>
+  <div class="card">
+    {% if not v.channels %}<div class="empty">아직 데이터가 없어요.</div>{% endif %}
+    {% for c in v.channels %}
+    <div class="ch {{ 'dl' if c.delivery else 'st' }}">
+      <span>{{ c.label }}</span>
+      <div class="bar"><i style="width:{{ (c.share * 100)|round|int }}%"></i></div>
+      <div class="amt"><b>{{ won(c.amount) }} <small>{{ (c.share * 100)|round|int }}%</small></b>
+        <small>{{ pctv(c.pct, '지난달 없음') }}</small></div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ── 4. 상품 ── #}
+  <div class="sec">잘 팔리는 것 TOP {{ v.products|length }} <small>금액순 · 지난달 순위 대비</small></div>
+  <div class="card">
+    {% if not v.products %}<div class="empty">상품 데이터가 아직 없어요. (포스 장부에서만 와요)</div>{% endif %}
+    {% for p in v.products %}
+    <div class="pr">
+      <span class="rk">{{ p.rank }}</span>
+      <span class="nm" title="{{ p.product }}">{{ p.product }}<small>{{ p.qty }}개</small></span>
+      <span class="amt">{{ won(p.amount) }}</span>
+      <span class="dl {{ 'new' if p.new }}">
+        {%- if p.new %}NEW{% elif p.delta is none %}&nbsp;{% elif p.delta > 0 %}<span class="hi">▲{{ p.delta }}</span>{% elif p.delta < 0 %}<span class="lo">▼{{ -p.delta }}</span>{% else %}<span class="nd">–</span>{% endif -%}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ── 5. 요일 × 시간대 ── #}
+  <div class="sec">요일 × 시간대
+    <div class="modes">
+      <button type="button" class="on" data-mode="total" onclick="slHeat('total', this)">전체</button>
+      <button type="button" data-mode="store" onclick="slHeat('store', this)">매장</button>
+      <button type="button" data-mode="delivery" onclick="slHeat('delivery', this)">배달</button>
+    </div>
+  </div>
+  <div class="card">
+    {% if not v.heat.hours %}
+    <div class="empty">시간대 데이터가 아직 없어요. 집 PC 일꾼이 장부를 다시 읽으면 채워져요.</div>
+    {% else %}
+    <div id="heat"></div>
+    <div class="cap hc" id="heatCap"></div>
+    <div class="legend"><span>진할수록 그 시간대 평균 매출이 높아요 ·
+      {{ v.heat_range[0][5:].replace('-', '/') }}~{{ v.heat_range[1][5:].replace('-', '/') }} 장부 {{ v.heat.days }}일 평균 · 오른쪽은 하루 평균</span></div>
+    {% endif %}
+  </div>
+
+  <div class="foot">사장님 전용 화면 · 장부 원본: 드라이브 장부관리 폴더 (TOS/IMU 포스 엑셀)</div>
+</div>
+
+<script>
+const KEY = {{ key|tojson }};
+const V = {{ v|tojson }};
+
+function man(n) {
+  n = Math.round(n || 0);
+  const s = n < 0 ? '-' : ''; n = Math.abs(n);
+  if (n >= 100000000) { const v = n / 100000000; return s + (v < 10 ? v.toFixed(1) : Math.round(v).toLocaleString()) + '억'; }
+  if (n >= 10000) return s + Math.round(n / 10000).toLocaleString() + '만';
+  return s + n.toLocaleString();
+}
+const DOW = '월화수목금토일';
+
+/* ── 목표 입력 ── */
+function slGoalOpen(open) {
+  const f = document.getElementById('goalForm');
+  if (open === false) { f.classList.remove('open'); return; }
+  f.classList.add('open');
+  f.scrollIntoView({behavior: 'smooth', block: 'center'});
+  document.getElementById('gStore').focus();
+}
+async function slGoalSave(btn) {
+  const st = document.getElementById('gStore').value;
+  const dl = document.getElementById('gDeliv').value;
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/${KEY}/sales/goal`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ym: V.ym,
+        store: st === '' ? null : Math.round(Number(st) * 10000),
+        delivery: dl === '' ? null : Math.round(Number(dl) * 10000)})});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || '저장 실패');
+    location.reload();
+  } catch (e) {
+    alert('저장하지 못했어요: ' + e.message);
+    btn.disabled = false;
+  }
+}
+
+/* ── 일별 그래프 (SVG) ── */
+function drawDaily() {
+  const el = document.getElementById('dailyChart');
+  const days = V.days, prev = V.prev_days;
+  const n = days.length;
+  const W = 640, H = 200, padL = 34, padR = 6, padT = 10, padB = 22;
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const step = iw / n, bw = Math.max(step * 0.62, 3);
+  let max = 0;
+  days.forEach(d => { if (d.total > max) max = d.total; });
+  prev.forEach(d => { if (d.total > max) max = d.total; });
+  if (!max) { el.innerHTML = '<div class="empty">이달 장부가 아직 없어요.</div>'; return; }
+  // 눈금: 만 단위로 보기 좋게
+  const unit = max > 3000000 ? 1000000 : max > 1200000 ? 500000 : max > 500000 ? 200000 : 100000;
+  const top = Math.ceil(max / unit) * unit;
+  const y = v => padT + ih - (v / top) * ih;
+  let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="inherit">`;
+  for (let v = unit; v <= top; v += unit) {
+    s += `<line x1="${padL}" x2="${W - padR}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/>`;
+    s += `<text x="${padL - 4}" y="${y(v) + 3.5}" font-size="10" fill="var(--muted)" text-anchor="end">${man(v)}</text>`;
+  }
+  s += `<line x1="${padL}" x2="${W - padR}" y1="${y(0)}" y2="${y(0)}" stroke="var(--line)"/>`;
+  days.forEach((d, i) => {
+    const cx = padL + step * i + step / 2, x = cx - bw / 2;
+    if (d.state === 'data') {
+      const hs = (d.store / top) * ih, hd = (d.delivery / top) * ih;
+      s += `<rect x="${x}" y="${y(d.store)}" width="${bw}" height="${hs}" fill="var(--store)" rx="1.5"/>`;
+      s += `<rect x="${x}" y="${y(d.store + d.delivery)}" width="${bw}" height="${hd}" fill="var(--deliv)" rx="1.5"/>`;
+    } else if (d.state === 'closed') {
+      s += `<text x="${cx}" y="${y(0) - 3}" font-size="8" fill="var(--muted)" text-anchor="middle">휴</text>`;
+    }
+    s += `<rect x="${padL + step * i}" y="${padT}" width="${step}" height="${ih}" fill="transparent" onclick="slDay(${i})"/>`;
+    if (d.day === 1 || d.day % 5 === 0) {
+      const col = d.dow === 6 ? 'var(--bad)' : d.dow === 5 ? 'var(--accent)' : 'var(--muted)';
+      s += `<text x="${cx}" y="${H - 7}" font-size="10" fill="${col}" text-anchor="middle">${d.day}</text>`;
+    }
+  });
+  // 지난달 합계 점선
+  const pts = prev.filter(d => d.total > 0 && d.day <= n)
+                  .map(d => `${(padL + step * (d.day - 1) + step / 2).toFixed(1)},${y(d.total).toFixed(1)}`);
+  if (pts.length > 1)
+    s += `<polyline points="${pts.join(' ')}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3" opacity=".8"/>`;
+  s += '</svg>';
+  el.innerHTML = s;
+}
+function slDay(i) {
+  const d = V.days[i], p = V.prev_days[i];
+  const cap = document.getElementById('dailyCap');
+  const lab = `${V.m}/${d.day} (${DOW[d.dow]})`;
+  if (d.state === 'data') {
+    let t = `${lab} 매장 ${man(d.store)} · 배달 ${man(d.delivery)} · 합 ${man(d.total)}`;
+    if (p && p.total > 0) t += ` — ${V.prev.label} ${p.day}일 ${man(p.total)}`;
+    if (d.partial) t += ' (매장 장부 없음)';
+    cap.textContent = t;
+  } else if (d.state === 'closed') cap.textContent = `${lab} 매출 0원 (휴무)`;
+  else if (d.state === 'pending') cap.textContent = `${lab} 장부 아직 미반영`;
+  else cap.textContent = `${lab} 아직 안 온 날`;
+}
+
+/* ── 히트맵 ── */
+let heatMode = 'total';
+function slHeat(mode, btn) {
+  heatMode = mode;
+  document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('on', b === btn));
+  drawHeat();
+}
+function drawHeat() {
+  const el = document.getElementById('heat');
+  if (!el) return;
+  const H = V.heat, hours = H.hours, grid = H.modes[heatMode], max = H.max[heatMode] || 1;
+  let s = '<table class="heat"><tr><th class="dw"></th>';
+  hours.forEach(h => { s += `<th>${h}</th>`; });
+  s += '<th class="tt">하루</th></tr>';
+  for (let dow = 0; dow < 7; dow++) {
+    s += `<tr><td class="dw ${dow === 6 ? 'su' : dow === 5 ? 'sa' : ''}">${DOW[dow]}</td>`;
+    hours.forEach((h, j) => {
+      const c = grid[dow][j];
+      const a = c.a > 0 ? (0.12 + 0.88 * c.a / max).toFixed(2) : 0;
+      s += `<td><i style="--a:${a}" onclick="slHeatCell(${dow},${j})"></i></td>`;
+    });
+    s += `<td class="tt">${man(H.dow_total[heatMode][dow])}</td></tr>`;
+  }
+  s += '</table>';
+  el.innerHTML = s;
+}
+function slHeatCell(dow, j) {
+  const H = V.heat, c = H.modes[heatMode][dow][j], h = H.hours[j];
+  const lab = {total: '전체', store: '매장', delivery: '배달'}[heatMode];
+  document.getElementById('heatCap').textContent =
+    `${DOW[dow]}요일 ${h}시 ${lab}: 평균 ${man(c.a)}원 · ${c.c}건`;
+}
+
+drawDaily();
+drawHeat();
+</script>
+</body>
+</html>
