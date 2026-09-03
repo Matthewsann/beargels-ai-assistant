@@ -46,13 +46,13 @@ def test_고칠것_목록이_실패항목과_일치한다():
     d = diagnose(_raw())
     failed = [c["label"] for c in d["checks"] if not c["ok"]]
     assert d["todo"] == failed
-    assert "메뉴 등록" in d["todo"]
+    assert "정보 탭 메뉴" in d["todo"]
 
 
 def test_메뉴는_문턱을_넘어야_통과():
-    assert diagnose(_raw(menus=["m"] * (MENU_MIN - 1)))["todo"].count("메뉴 등록") == 1
+    assert diagnose(_raw(menus=["m"] * (MENU_MIN - 1)))["todo"].count("정보 탭 메뉴") == 1
     ok = diagnose(_raw(menus=["m"] * MENU_MIN))
-    assert "메뉴 등록" not in ok["todo"]
+    assert "정보 탭 메뉴" not in ok["todo"]
 
 
 def test_대표번호는_스마트콜만_있어도_통과():

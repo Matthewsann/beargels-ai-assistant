@@ -1299,13 +1299,22 @@ def maybe_place_audit() -> None:
         slot = now.strftime("%Y-%m-%d")          # 하루 1회 키
         if slot == _last_place_slot:
             return
+        # 재시작하면 위 메모리 표시가 지워져 같은 날 두 번 돌았다(09-03 09:40,
+        # 19:25). DB 에 남은 마지막 진단 시각으로 한 번 더 거른다.
+        from crawler.place_stats import done_today
+        saved = db.get_setting("place_audit") or {}
+        if done_today(saved.get("checkedAt"), now.date()):
+            _last_place_slot = slot
+            return
         _last_place_slot = slot
         run_place_audit()
     except Exception as e:  # noqa: BLE001 — 진단 실패가 일꾼을 멈추면 안 된다
         logger.warning("플레이스 진단 실패: %s", e)
 
 
-PLACE_STATS_WEEKDAY = int(os.getenv("WORKER_PLACE_STATS_WEEKDAY", "0"))  # 0=월
+# 수요일(2)이 기본. 월요일에 받은 지난주 숫자가 하루 뒤 401→472 로 바뀌는 걸
+# 봤다(2026-08-31) — 주가 끝난 직후엔 네이버 집계가 덜 끝나 있다.
+PLACE_STATS_WEEKDAY = int(os.getenv("WORKER_PLACE_STATS_WEEKDAY", "2"))
 _last_stats_week = None
 
 
@@ -1333,26 +1342,65 @@ def _attach_store_sales(result: dict, previous: dict | None) -> None:
 
 
 def run_place_stats() -> dict:
-    """스마트플레이스 유입 키워드를 수집해 저장한다(목표 2단계 '노출 상승').
+    """스마트플레이스 유입을 수집해 저장한다(목표 2단계 '노출 상승').
 
-    지난번 스냅샷을 함께 넘겨 **변화량**까지 계산해 둔다 — 지금 순위보다
-    "최적화 뒤에 늘었나"가 이 단계의 질문이라서다.
+    저장하는 것 세 가지:
+      · place_keywords      — 지난주 스냅샷(키워드·채널·매장매출). 화면 ② 패널.
+      · place_keywords_prev — 그 전주 스냅샷. ② 의 '지난주 대비' 계산용.
+      · place_weekly        — 주간 표. 화면 ③ 패널. **여기에 새 주를 붙인다.**
+
+    같은 주를 다시 받는 경우(재시작 등)엔 prev 를 덮지 않는다 — 덮으면 같은 주끼리
+    비교돼 "변화 없음"이 된다(2026-08-31 실제 발생). 그리고 지지난주도 함께
+    다시 받아 주간 표를 고쳐 쓴다 — 주가 끝난 직후 숫자는 잠정치라서.
     """
-    from crawler.place_stats import collect
+    from crawler.browser import BrowserSession
+    from crawler import place_stats as PS
 
-    prev = db.get_setting("place_keywords")
-    result = collect(previous=prev if isinstance(prev, dict) else None)
-    _attach_store_sales(result, prev if isinstance(prev, dict) else None)
-    if isinstance(prev, dict):
-        db.menu_set_setting("place_keywords_prev", prev)
+    saved = db.get_setting("place_keywords")
+    saved = saved if isinstance(saved, dict) else None
+    saved_prev = db.get_setting("place_keywords_prev")
+    saved_prev = saved_prev if isinstance(saved_prev, dict) else None
+
+    start, end = PS.week_range()
+    period = f"{start} ~ {end}"
+    recollect = PS.is_recollection((saved or {}).get("period"), period)
+    previous = saved_prev if recollect else saved
+
+    with BrowserSession() as sess:
+        result = PS.collect(session=sess, previous=previous)
+        # 지지난주를 한 번 더 받아 잠정치를 보정한다(키워드는 필요 없어 가볍다).
+        try:
+            site, token = PS.prepare(sess)
+            earlier = PS.week_starts(2)[0]
+            older_rows = PS.collect_series(sess, site, token, [earlier])
+        except Exception as e:  # noqa: BLE001 — 보정 실패가 본 수집을 막지 않는다
+            logger.warning("지지난주 유입 재확인 실패: %s", e)
+            older_rows = []
+
+    _attach_store_sales(result, previous)
+    for r in older_rows:
+        _attach_store_sales(r, None)
+
+    if not recollect and saved:
+        db.menu_set_setting("place_keywords_prev", saved)
     db.menu_set_setting("place_keywords", result)
-    logger.info("플레이스 유입 키워드: %d개(합 %d)",
-                len(result.get("keywords") or []), result.get("total") or 0)
+
+    weekly = db.get_setting("place_weekly")
+    weekly = weekly if isinstance(weekly, list) else []
+    weekly = PS.merge_weekly(weekly, [PS.weekly_row(result)] + older_rows)
+    db.menu_set_setting("place_weekly", weekly)
+
+    logger.info("플레이스 유입: %s 지도 %s회(전주 대비 %s) · 키워드 %d개 · 주간표 %d주%s",
+                period, result.get("mapPv"),
+                (f"{result['mapDelta']:+d}" if isinstance(result.get("mapDelta"), int)
+                 else "첫 기록"),
+                len(result.get("keywords") or []), len(weekly),
+                " · 같은 주 재수집" if recollect else "")
     return result
 
 
 def maybe_place_stats() -> None:
-    """주 1회(기본 월요일) 유입 키워드를 수집한다.
+    """주 1회(기본 수요일) 유입 키워드를 수집한다.
 
     로그인이 풀린 것과 '키워드가 0개'인 것은 완전히 다른 사건이라, 로그인
     문제는 알림함(SessionExpired)으로 따로 띄운다 — 조용히 0으로 보이면
@@ -1366,6 +1414,13 @@ def maybe_place_stats() -> None:
             return
         week = now.strftime("%G-W%V")            # 주 1회 키
         if week == _last_stats_week:
+            return
+        # 재시작하면 위 표시가 지워진다. DB 의 마지막 수집 시각으로 한 번 더 거른다
+        # (2026-08-31 에 같은 날 두 번 돌아 prev 가 같은 주로 덮인 원인).
+        from crawler.place_stats import done_this_week
+        saved = db.get_setting("place_keywords") or {}
+        if done_this_week(saved.get("checkedAt"), now.date()):
+            _last_stats_week = week
             return
         _last_stats_week = week
         try:

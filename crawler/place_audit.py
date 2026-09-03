@@ -109,9 +109,12 @@ def diagnose(raw: dict) -> dict:
     road_v, road_ok = _flag("isAccessorMissing", "등록됨", "없음")
 
     checks = [
-        {"key": "menu", "label": "메뉴 등록", "value": f"{len(menus)}건",
+        # '정보 탭' 메뉴다. 네이버주문(예약·주문) 메뉴는 따로 128건 등록돼 있어
+        # (2026-09-03 일꾼 로그) 그냥 '메뉴'라고 쓰면 그걸 또 넣어야 하는 줄 안다.
+        {"key": "menu", "label": "정보 탭 메뉴", "value": f"{len(menus)}건",
          "ok": len(menus) >= MENU_MIN,
-         "why": "손님이 가장 많이 여는 탭. 메뉴명·설명이 검색 매칭의 주재료"},
+         "why": "손님이 가장 많이 여는 '메뉴' 탭(네이버주문 메뉴와 별개). "
+                "메뉴명·설명이 검색 매칭의 주재료"},
         {"key": "hours", "label": "영업시간",
          "value": hours_v, "ok": hours_ok,
          "why": "틀리면 헛걸음 → 나쁜 리뷰로 되돌아옴"},

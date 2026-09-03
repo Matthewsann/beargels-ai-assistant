@@ -351,3 +351,61 @@ def collect(session=None, previous=None, today: date | None = None) -> dict:
 
     return summarize(channels, keywords, daily, previous,
                      period=f"{start} ~ {end}")
+
+
+# ── 주간 기록 관리(순수 로직) ─────────────────────────────────────────
+# 2026-09-03 점검에서 나온 세 구멍을 막는다:
+#  ① 같은 주를 두 번 받으면 '이전 값'이 같은 주로 덮여 "변화 없음"이 됐다.
+#  ② 주가 끝난 직후 받은 숫자는 잠정치다(같은 주가 하루 뒤 401→472 로 바뀜).
+#  ③ 주간 표(place_weekly)는 백필로만 채워지고 일꾼이 안 붙였다.
+
+def is_recollection(saved_period, new_period) -> bool:
+    """이미 저장된 스냅샷과 같은 기간이면 '다시 받은 것'이다 → 이전 값을 덮으면 안 된다."""
+    return bool(saved_period) and saved_period == new_period
+
+
+def weekly_row(result: dict) -> dict:
+    """유입 스냅샷 → 주간 표 한 줄(백필 스크립트와 같은 모양)."""
+    period = result.get("period") or ""
+    start, end = ((p.strip() for p in period.split(" ~ ")) if " ~ " in period
+                  else ("", ""))
+    row = {"period": period, "start": start, "end": end,
+           "mapPv": result.get("mapPv"), "total": result.get("total")}
+    if result.get("storeSales") is not None:
+        row["storeSales"] = result["storeSales"]
+    return row
+
+
+def merge_weekly(series: list, rows: list) -> list:
+    """주간 표에 줄을 넣는다. 같은 기간은 **새 값으로 바꾼다**(잠정치 보정).
+
+    기간 순으로 정렬해 돌려준다. 원본 list 는 건드리지 않는다.
+    """
+    by = {r.get("period"): dict(r) for r in (series or []) if r.get("period")}
+    for r in rows or []:
+        if not r.get("period"):
+            continue
+        old = by.get(r["period"], {})
+        merged = dict(old)
+        merged.update({k: v for k, v in r.items() if v is not None})
+        by[r["period"]] = merged
+    return sorted(by.values(), key=lambda r: r.get("start") or r["period"])
+
+
+def done_today(checked_at, today: date | None = None) -> bool:
+    """오늘 이미 돌았나 — 재시작으로 메모리 표시가 지워져도 DB 로 판단한다."""
+    today = today or date.today()
+    return str(checked_at or "")[:10] == today.isoformat()
+
+
+def done_this_week(checked_at, today: date | None = None) -> bool:
+    """이번 주(월~일)에 이미 돌았나."""
+    s = str(checked_at or "")[:10]
+    if not s:
+        return False
+    try:
+        d = date.fromisoformat(s)
+    except ValueError:
+        return False
+    today = today or date.today()
+    return d.isocalendar()[:2] == today.isocalendar()[:2]

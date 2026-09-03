@@ -6,10 +6,18 @@
 자체는 계속 보인다(현황 패널이 가이드를 인질로 잡지 않는다).
 """
 import os
+import sys
+from pathlib import Path
 
 import pytest
 
 os.environ.setdefault("SERVICE_PATH", "testkey")
+# service/app.py 는 같은 폴더의 모듈을 `import schedule_page` 처럼 부른다.
+# 다른 테스트가 먼저 경로를 깔아주면 우연히 통과하고, 단독으로 돌리면 15건이
+# 터졌다(2026-09-03). 순서에 기대지 말고 여기서 직접 깐다.
+_SERVICE = str(Path(__file__).resolve().parents[1] / "service")
+if _SERVICE not in sys.path:
+    sys.path.insert(0, _SERVICE)
 
 
 @pytest.fixture()
@@ -26,9 +34,9 @@ SNAP = {
     "name": "베어글스 송도 타임스페이스점",
     "score": {"done": 5, "total": 10},
     "stats": {"rating": 4.96, "visitorReviews": 291, "blogReviews": 46},
-    "todo": ["메뉴 등록", "영업시간"],
+    "todo": ["정보 탭 메뉴", "영업시간"],
     "checks": [
-        {"key": "menu", "label": "메뉴 등록", "value": "1건", "ok": False},
+        {"key": "menu", "label": "정보 탭 메뉴", "value": "1건", "ok": False},
         {"key": "hours", "label": "영업시간", "value": "미등록", "ok": False},
         {"key": "desc", "label": "소개글", "value": "등록됨", "ok": True},
     ],
@@ -40,7 +48,7 @@ def test_비어있는_항목이_화면에_뜬다(client):
     A.db.get_setting = lambda k, d=None: SNAP if k == "place_audit" else d
     html = c.get("/testkey/place").get_data(as_text=True)
     assert "지금 우리 플레이스 현황" in html
-    assert "메뉴 등록" in html and "1건" in html
+    assert "정보 탭 메뉴" in html and "1건" in html
     assert "고칠 것 2개" in html
     assert "5/10 통과" in html
 

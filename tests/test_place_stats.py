@@ -123,3 +123,62 @@ def test_지난번이_없어도_동작한다():
     now = summarize(CH, KW, DT, None)
     assert now["totalDelta"] is None and now["mapDelta"] is None
     assert now["keywords"][0]["delta"] is None
+
+
+# ── 주간 기록 관리(2026-09-03 점검에서 나온 구멍 3개) ─────────────────────
+from crawler.place_stats import (done_this_week, done_today, is_recollection,
+                                 merge_weekly, weekly_row)
+
+
+def test_같은_주를_다시_받으면_재수집이다():
+    """같은 주끼리 비교돼 '변화 없음'이 되던 원인. prev 를 덮으면 안 된다."""
+    assert is_recollection("2026-08-24 ~ 2026-08-30", "2026-08-24 ~ 2026-08-30") is True
+    assert is_recollection("2026-08-17 ~ 2026-08-23", "2026-08-24 ~ 2026-08-30") is False
+    assert is_recollection(None, "2026-08-24 ~ 2026-08-30") is False
+
+
+def test_주간표에_새_주가_붙는다():
+    series = [{"period": "2026-08-17 ~ 2026-08-23", "start": "2026-08-17", "mapPv": 692}]
+    out = merge_weekly(series, [{"period": "2026-08-24 ~ 2026-08-30",
+                                 "start": "2026-08-24", "mapPv": 472}])
+    assert [r["period"] for r in out] == ["2026-08-17 ~ 2026-08-23",
+                                          "2026-08-24 ~ 2026-08-30"]
+    assert series == [{"period": "2026-08-17 ~ 2026-08-23", "start": "2026-08-17",
+                       "mapPv": 692}]      # 원본은 안 건드린다
+
+
+def test_같은_주는_새_값으로_바뀐다_잠정치_보정():
+    """월요일에 받은 401 이 하루 뒤 472 로 바뀌었다 — 나중 값이 이긴다."""
+    series = [{"period": "2026-08-24 ~ 2026-08-30", "start": "2026-08-24",
+               "mapPv": 401, "storeSales": {"amount": 0, "days": 0}}]
+    out = merge_weekly(series, [{"period": "2026-08-24 ~ 2026-08-30",
+                                 "start": "2026-08-24", "mapPv": 472}])
+    assert len(out) == 1 and out[0]["mapPv"] == 472
+    assert out[0]["storeSales"] == {"amount": 0, "days": 0}   # 없는 필드는 보존
+
+
+def test_주간표는_기간순이다():
+    out = merge_weekly([], [{"period": "2026-08-24 ~ 2026-08-30", "start": "2026-08-24"},
+                            {"period": "2026-08-17 ~ 2026-08-23", "start": "2026-08-17"}])
+    assert out[0]["start"] == "2026-08-17"
+
+
+def test_스냅샷을_주간표_한_줄로_바꾼다():
+    row = weekly_row({"period": "2026-08-24 ~ 2026-08-30", "mapPv": 472, "total": 690,
+                      "storeSales": {"amount": 0, "days": 0, "missingDays": 0}})
+    assert row["start"] == "2026-08-24" and row["end"] == "2026-08-30"
+    assert row["mapPv"] == 472 and row["storeSales"]["days"] == 0
+
+
+def test_재시작해도_오늘_이미_했으면_안_돈다():
+    """같은 날 09:40, 19:25 두 번 돌았던 원인 — 메모리 표시가 재시작에 지워진다."""
+    assert done_today("2026-09-03T19:25:00", date(2026, 9, 3)) is True
+    assert done_today("2026-09-02T19:25:00", date(2026, 9, 3)) is False
+    assert done_today(None, date(2026, 9, 3)) is False
+
+
+def test_재시작해도_이번_주_이미_했으면_안_돈다():
+    assert done_this_week("2026-08-31T16:58:01", date(2026, 8, 31)) is True   # 같은 주 월
+    assert done_this_week("2026-08-31T16:58:01", date(2026, 9, 6)) is True    # 같은 주 일
+    assert done_this_week("2026-08-31T16:58:01", date(2026, 9, 7)) is False   # 다음 주
+    assert done_this_week("이상한값", date(2026, 9, 7)) is False
