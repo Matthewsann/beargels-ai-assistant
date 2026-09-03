@@ -363,6 +363,10 @@ _AUTH_DEAD: set = set()
 # 지나면 풀리고 크레딧은 충전하면 풀리므로 **영구 차단은 하지 않는다** —
 # 잠깐 쉬었다 다시 올라가 본다(기본 20분).
 _COOLDOWN_SEC = int(os.getenv("LLM_COOLDOWN_SEC", "1200"))
+# 과부하(503)는 한도와 달리 금방 풀리는 혼잡이라 짧게만 피한다. 안 걸면
+# 저녁 혼잡 시간대에 재생성 매 건이 아픈 모델부터 두드려 40초~1분씩 걸렸다
+# (2026-09-04 실측 — 쿨다운이 걸린 직후 건들은 4~5초로 복귀).
+_BUSY_COOLDOWN_SEC = int(os.getenv("LLM_BUSY_COOLDOWN_SEC", "90"))
 _COOLDOWN: dict = {}
 
 
@@ -371,8 +375,8 @@ def _cooling(name: str, model: str | None) -> bool:
     return bool(until and time.time() < until)
 
 
-def _cool_down(name: str, model: str | None) -> None:
-    _COOLDOWN[(name, model)] = time.time() + _COOLDOWN_SEC
+def _cool_down(name: str, model: str | None, sec: int | None = None) -> None:
+    _COOLDOWN[(name, model)] = time.time() + (sec or _COOLDOWN_SEC)
 
 
 # ---------------------------------------------------------------------------
@@ -455,11 +459,17 @@ def complete(system: str = "", user: str = "", max_tokens: int = 1500,
                     logger.warning("%s 키가 무효(401) — 이번 실행 동안 건너뜀. "
                                    "키를 갈아끼우면 일꾼 재시작으로 복구.", name)
                     break
-                if _is_transient_error(e) and attempt == 0:
-                    logger.warning("%s 일시 장애(%s) → 5초 뒤 재시도",
-                                   name, str(e)[:80])
-                    time.sleep(5)
-                    continue
+                if _is_transient_error(e):
+                    if attempt == 0:
+                        logger.warning("%s 일시 장애(%s) → 5초 뒤 재시도",
+                                       name, str(e)[:80])
+                        time.sleep(5)
+                        continue
+                    # 재시도까지 실패 = 지금 이 단계가 혼잡하다. 짧게 피해서
+                    # 다음 호출들은 기다리지 말고 바로 건강한 단계로 가게 한다.
+                    _cool_down(name, step_model, _BUSY_COOLDOWN_SEC)
+                    logger.warning("%s(%s) 혼잡 → %d초간 건너뛰고 다음 단계로",
+                                   name, step_model or "기본", _BUSY_COOLDOWN_SEC)
                 if _is_credit_error(e):
                     _cool_down(name, step_model)
                     logger.warning("%s(%s) 사용 불가(크레딧/한도) → 다음 단계로",

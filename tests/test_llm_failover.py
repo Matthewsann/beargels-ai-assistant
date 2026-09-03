@@ -56,6 +56,32 @@ def test_transient_error_retried_once(monkeypatch):
     assert calls["n"] == 2
 
 
+def test_busy_step_gets_short_cooldown(monkeypatch):
+    """재시도까지 503이면 그 단계를 잠깐 피한다 — 안 그러면 혼잡 시간대에
+    재생성 매 건이 아픈 모델부터 두드려 40초~1분씩 걸린다(2026-09-04 실측)."""
+    calls = {"gemini": 0, "claude": 0}
+
+    def busy(*a):
+        calls["gemini"] += 1
+        raise RuntimeError("Gemini 오류 503: overloaded")
+
+    def good(*a):
+        calls["claude"] += 1
+        return "답글"
+
+    _providers(monkeypatch, ["gemini", "claude"])
+    monkeypatch.setattr(llm, "_CALLERS", {"gemini": busy, "claude": good})
+    assert llm.complete(user="안녕", quality=True) == "답글"
+    assert calls["gemini"] == 2            # 첫 건: 시도 + 재시도까지는 한다
+    # 다음 건: 쿨다운 덕에 제미나이를 아예 안 두드리고 바로 건강한 단계로
+    assert llm.complete(user="안녕", quality=True) == "답글"
+    assert calls["gemini"] == 2
+    assert calls["claude"] == 2
+    # 쿨다운은 짧다(혼잡은 금방 풀린다) — 한도용 20분짜리가 아니어야 한다
+    until = llm._COOLDOWN[("gemini", llm.GEMINI_MODEL)]
+    assert until - llm.time.time() <= llm._BUSY_COOLDOWN_SEC + 1
+
+
 def test_hard_error_raises(monkeypatch):
     def broken(*a):
         raise RuntimeError("Gemini 오류 400: bad request")
