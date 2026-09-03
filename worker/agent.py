@@ -1145,6 +1145,20 @@ POS_IMPORT_TIMES = os.getenv("WORKER_POS_IMPORT_TIMES", "10:20")
 _last_pos_slot = None
 
 
+def _sync_ledger_sheet() -> str:
+    """구글 시트 '베어글스_장부' 요약 → ledger_monthly. 실패해도 포스 반영은
+    막지 않는다(token.json 이 없으면 3_google_login.bat 안내만 남긴다)."""
+    try:
+        from worker import ledger_sheet
+        r = ledger_sheet.sync()
+        return "장부 시트 " + r.get("note", "반영")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("장부 시트 반영 실패(무시): %s", e)
+        db.log_error("worker", f"장부 시트 반영 실패: {str(e)[:200]}",
+                     kind="LedgerSheetError", path="_sync_ledger_sheet")
+        return f"장부 시트 실패: {str(e)[:60]}"
+
+
 def run_pos_import_job(job) -> None:
     """웹 '매출 지금 반영' 버튼 요청 처리 — 배달 주문 + 포스 장부 둘 다."""
     from worker import pos_import
@@ -1173,6 +1187,8 @@ def run_pos_import_job(job) -> None:
         msg = f"{order_msg} / " + (f"새 장부 {n}건 반영" if n else "새 장부 없음")
         if res.get("errors"):
             msg += " / 실패: " + " · ".join(res["errors"])[:150]
+        # ③ 구글 시트 장부(원가·고정비·영업이익) — 경영 대시보드용(2026-09-03)
+        msg += " / " + _sync_ledger_sheet()
         db.finish_job(jid, "error" if res.get("errors") and not n else "done",
                       msg, n)
     except Exception as e:  # noqa: BLE001
@@ -1480,6 +1496,8 @@ def maybe_pos_import() -> None:
             db.log_error("worker",
                          "장부 파일 반영 실패: " + " · ".join(res["errors"])[:300],
                          kind="PosImportError", path="maybe_pos_import")
+        # ③ 구글 시트 장부(원가·고정비·영업이익) — 경영 대시보드용(2026-09-03)
+        _sync_ledger_sheet()
     except Exception as e:  # noqa: BLE001
         logger.warning("매출 자동 반영 실패: %s", e)
 

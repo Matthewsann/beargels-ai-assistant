@@ -25,6 +25,7 @@ on:
       - 'database/supabase_client.py'
       - 'database/blog_store.py'
       - 'database/mkt_store.py'
+      - 'database/ledger_store.py'
       - 'database/meeting_store.py'
       - 'database/work_store.py'
       - '.github/workflows/deploy.yml'
@@ -114,6 +115,7 @@ jobs:
           upload sns_automation/cloud_sync.py
           upload service/mkt_page.py
           upload service/sales_page.py
+          upload service/dashboard_page.py
           upload service/templates/sales.html
           upload service/menu_images.py
           upload service/schedule_page.py
@@ -128,6 +130,7 @@ jobs:
           upload database/supabase_client.py
           upload database/blog_store.py
           upload database/mkt_store.py
+          upload database/ledger_store.py
           upload database/meeting_store.py
           upload database/work_store.py
 

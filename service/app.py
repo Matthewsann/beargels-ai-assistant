@@ -3118,6 +3118,7 @@ def mkt_import(path_key):
 # ---------------------------------------------------------------------------
 
 from service import sales_page  # noqa: E402
+from service import dashboard_page  # noqa: E402
 
 OWNER_COOKIE = "bg_owner"
 _owner_key_cache = [0.0, ""]        # [읽은 시각, 키] — 설정 조회를 페이지마다 안 하게
@@ -3181,7 +3182,7 @@ def sales_home(path_key):
     mm = re.fullmatch(r"(\d{4})-(\d{2})", request.args.get("ym") or "")
     if mm and 1 <= int(mm.group(2)) <= 12 and 2024 <= int(mm.group(1)) <= 2100:
         y, m, explicit = int(mm.group(1)), int(mm.group(2)), True
-    view = sales_page.build_view(y, m, today, explicit=explicit)
+    view = dashboard_page.build_dashboard(y, m, today, explicit=explicit)
     return render_template("sales.html", key=path_key, v=view,
                            won=sales_page.won_short)
 
