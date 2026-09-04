@@ -15,6 +15,7 @@
       </div>
     </form>
     {% endif %}
+    {% if note %}<div class="note">📨 {{ note }}</div>{% endif %}
     {% if job and job.busy %}
       <div class="note">⏳ {{ job.kind }} 진행 중이에요. 잠시 뒤 새로고침 해주세요.</div>
     {% elif job and job.failed %}

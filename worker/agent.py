@@ -2174,6 +2174,17 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001 — 청소 실패가 일꾼을 막으면 안 된다
         logger.warning("오래된 파일 정리 실패(무시): %s", str(e)[:100])
 
+    # 지난번에 일하다 꺼졌다면 그때 잡고 있던 블로그 잡이 running 인 채로
+    # 남아, 사장님이 같은 버튼을 눌러도 "이미 진행 중"으로 묻힌다(2026-09-05
+    # 실측: 초안 만들기가 하루 동안 먹통). 켜질 때 그 고아들을 정리한다.
+    try:
+        from database import blog_store as _bs
+        n = _bs.release_stale_jobs(all_running=True)
+        if n:
+            print(f" 지난번에 중단된 블로그 작업 {n}건을 정리했어요.")
+    except Exception as e:  # noqa: BLE001 — 정리 실패가 일꾼을 막으면 안 된다
+        logger.warning("멈춘 블로그 잡 정리 실패(무시): %s", str(e)[:120])
+
     try:
         db.worker_ping("idle", "시작됨")
     except Exception as e:  # noqa: BLE001

@@ -12,7 +12,7 @@
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .supabase_client import get_client
 
@@ -183,17 +183,67 @@ def list_recommendations():
 # 잡(웹 → 일꾼 요청)
 # ---------------------------------------------------------------------------
 
+# 일꾼이 잡을 집어간 뒤 중간에 꺼지면 그 잡은 running 인 채로 영원히 남는다.
+# 그러면 같은 종류의 새 요청이 "이미 진행 중"으로 묻혀, 사장님이 버튼을 눌러도
+# 아무 일도 안 일어난다(실측 2026-09-05: blog_draft #883 이 하루 넘게 running
+# 이라 '이걸로 초안 만들기'가 조용히 무시됐다). 그래서 오래 붙잡힌 잡은
+# 실패로 정리하고, 중복 판정도 **같은 payload 일 때만** 한다 — 다른 주제로
+# 초안을 부탁한 것까지 앞 요청과 한 건으로 묶이면 안 된다.
+STALE_MINUTES = 30
+
+
+def _parse_ts(text):
+    try:
+        return datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+    except Exception:  # noqa: BLE001 — 시각을 못 읽으면 '오래됐다'로 본다
+        return None
+
+
+def release_stale_jobs(minutes: int = STALE_MINUTES, all_running: bool = False) -> int:
+    """멈춰 버린 running 블로그 잡을 error 로 정리하고 정리한 개수를 돌려준다.
+
+    all_running=True 는 일꾼이 막 켜졌을 때 쓴다 — 블로그 잡을 실제로 돌리는
+    건 집 PC 일꾼 하나뿐이라, 시작 시점에 running 인 잡은 전부 고아다.
+    """
+    c = get_client()
+    rows = (c.table(JOBS).select("id,kind,started_at,requested_at")
+            .eq("status", "running").like("kind", "blog_%").execute()).data or []
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    n = 0
+    for j in rows:
+        if not all_running:
+            ts = _parse_ts(j.get("started_at") or j.get("requested_at"))
+            if ts is not None and ts > cutoff:
+                continue
+        c.table(JOBS).update({
+            "status": "error", "finished_at": _now(),
+            "message": "집 PC가 중간에 멈춰 중단됐어요(자동 정리) — 다시 눌러주세요.",
+        }).eq("id", j["id"]).execute()
+        logger.warning("멈춘 블로그 잡 정리: #%s %s", j.get("id"), j.get("kind"))
+        n += 1
+    return n
+
+
 def request_blog_job(kind, payload=None, by=None):
-    """웹에서 일꾼에게 블로그 작업을 요청한다. 이미 대기 중이면 그 잡을 돌려준다."""
+    """웹에서 일꾼에게 블로그 작업을 요청한다.
+
+    똑같은 요청(같은 종류 + 같은 내용)이 이미 줄 서 있으면 그 잡을 돌려주고
+    ``_duplicate`` 표시를 달아 준다 — 부르는 쪽이 "이미 진행 중"이라고
+    사장님께 말할 수 있게. 내용이 다르면 새 잡을 만든다.
+    """
     if kind not in JOB_KINDS:
         raise ValueError(f"알 수 없는 블로그 작업: {kind}")
     c = get_client()
-    # blog_learn 은 수정 1건 = 잡 1건이어야 한다(각각 다른 내용) → 중복 억제 제외
-    if kind != "blog_learn":
-        same = (c.table(JOBS).select("*").eq("kind", kind)
-                .in_("status", ["pending", "running"]).limit(1).execute())
-        if same.data:
-            return same.data[0]
+    try:
+        release_stale_jobs()
+    except Exception as e:  # noqa: BLE001 — 청소 실패가 요청을 막으면 안 된다
+        logger.warning("멈춘 잡 정리 실패(무시): %s", str(e)[:120])
+    same = (c.table(JOBS).select("*").eq("kind", kind)
+            .in_("status", ["pending", "running"]).limit(10).execute())
+    for j in same.data or []:
+        if (j.get("payload") or {}) == (payload or {}):
+            j["_duplicate"] = True
+            return j
     res = c.table(JOBS).insert({
         "kind": kind, "status": "pending", "requested_by": by, "payload": payload or {},
     }).execute()

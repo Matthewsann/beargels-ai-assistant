@@ -2416,20 +2416,28 @@ def blog_home(path_key):
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
     return render_template("blog.html", key=path_key, posts=posts, recs=recs,
-                           plans=plans,
+                           plans=plans, note=(request.args.get("note") or "")[:200],
                            ranks=ranks, job=job, worker=_worker_view(), error=error)
 
 
 def _ask_worker(path_key, kind, payload=None):
-    """집 PC 일꾼에게 작업을 요청하고 블로그 홈으로 돌아간다."""
+    """집 PC 일꾼에게 작업을 요청하고 블로그 홈으로 돌아간다.
+
+    버튼을 눌렀는데 아무 일도 안 일어나는 상황을 만들지 않는다 — 요청이
+    접수됐는지, 같은 요청이 이미 줄 서 있는지, 실패했는지를 화면에 남긴다.
+    """
     check(path_key)   # 비밀주소 검증 — 이걸 빼먹은 라우트가 3개 있었다(08-30 감사)
+    note = "요청했어요. 집 PC가 곧 시작합니다."
     try:
-        blog.request_blog_job(kind, payload or {}, by="web")
+        job = blog.request_blog_job(kind, payload or {}, by="web") or {}
+        if job.get("_duplicate"):
+            note = "같은 요청이 이미 줄 서 있어요 — 끝나면 결과가 올라옵니다."
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"블로그 작업 요청 실패({kind}): {e}",
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
-    return redirect(url_for("blog_home", path_key=path_key))
+        note = f"요청이 접수되지 않았어요: {str(e)[:120]}"
+    return redirect(url_for("blog_home", path_key=path_key, note=note))
 
 
 @app.route("/<path_key>/blog/recommend", methods=["POST"])
