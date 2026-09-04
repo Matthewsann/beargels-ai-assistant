@@ -448,11 +448,47 @@ def pending_reel_published():
     return out
 
 
+def request_reel_shoot(brief_id="", title="", by=None):
+    """[📸 이거 찍을게요] — 집 PC 가 소재 폴더와 촬영가이드를 미리 만든다.
+
+    사장님은 그 폴더에 찍어 넣기만 하면 된다(폴더 이름을 손으로 맞출 필요 없음).
+    """
+    import json as _json
+    live = (get_client().table("jobs").select("*")
+            .eq("kind", "reel_shoot").in_("status", ["pending", "running"])
+            .order("requested_at", desc=True).limit(20).execute().data)
+    for row in live or []:
+        try:
+            req = _json.loads(row.get("message") or "{}")
+        except ValueError:
+            continue
+        if req.get("brief_id") == brief_id and req.get("title") == title:
+            return row
+    row = {"kind": "reel_shoot", "status": "pending", "requested_by": by or "",
+           "message": _json.dumps({"brief_id": brief_id, "title": title},
+                                  ensure_ascii=False)}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
+def request_content_intake(folder="", by=None):
+    """[소재 확인] — 올린 소재가 쓸 만한지 집 PC 가 지금 검수한다."""
+    import json as _json
+    live = (get_client().table("jobs").select("*")
+            .eq("kind", "content_intake").in_("status", ["pending", "running"])
+            .limit(1).execute().data)
+    if live:
+        return live[0]
+    row = {"kind": "content_intake", "status": "pending", "requested_by": by or "",
+           "message": _json.dumps({"folder": folder}, ensure_ascii=False)}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
 def last_reel_job():
     """가장 최근 릴스 잡 1건 — 직원 웹의 진행 표시용."""
     rows = (get_client().table("jobs").select("*")
             .in_("kind", ["reel", "reel_video", "pipe",
-                          "reel_full", "reel_ideas", "reel_ref", "reel_published"])
+                          "reel_full", "reel_ideas", "reel_ref", "reel_published",
+                          "reel_shoot", "content_intake"])
             .order("requested_at", desc=True).limit(1).execute().data)
     return rows[0] if rows else None
 
@@ -527,7 +563,8 @@ def last_collect_at():
 # 3분 폴링 안에 끝나지 않아 '아직 확인이 안 돼요'로 보인다. 먼저 집는다.
 INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "wake", "reel",
                          "reel_video", "reel_topics", "pipe",
-                         "reel_full", "reel_ideas", "reel_ref", "reel_published")
+                         "reel_full", "reel_ideas", "reel_ref", "reel_published",
+                         "reel_shoot", "content_intake")
 
 
 def claim_next_job(interactive_only=False):

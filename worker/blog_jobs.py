@@ -49,6 +49,29 @@ def handles(kind: str) -> bool:
 # 개별 작업
 # ---------------------------------------------------------------------------
 
+def _brief(brief_id) -> dict | None:
+    """콘텐츠 브리프 하나 — 없거나 모듈이 없으면 None(예전 흐름 그대로)."""
+    if not brief_id:
+        return None
+    try:
+        from sns_automation import briefs
+        return briefs.get(str(brief_id))
+    except Exception as e:  # noqa: BLE001 — 브리프가 없어도 초안은 써야 한다
+        logger.warning("브리프 읽기 실패(%s): %s", brief_id, str(e)[:120])
+        return None
+
+
+def _brief_link(brief_id: str, post_id: int, title: str) -> None:
+    """초안이 나왔다 → 브리프에 글 번호를 붙이고 '제작중'으로."""
+    try:
+        from sns_automation import briefs
+        briefs.patch(brief_id, blog={"post_id": post_id, "title": title})
+        briefs.set_status(brief_id, briefs.MAKING)
+        briefs.push()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("브리프 연결 실패(%s): %s", brief_id, str(e)[:120])
+
+
 def do_recommend() -> tuple[int, str]:
     """금고 기반 글감 추천 → blog_recommendations 테이블 교체."""
     import planner
@@ -78,6 +101,18 @@ def do_draft(payload: dict) -> tuple[int, str]:
     """
     import planner
     topic = (payload.get("topic") or payload.get("title") or "").strip()
+    main_keyword = (payload.get("main_keyword") or "").strip()
+
+    # ── 콘텐츠 브리프에서 왔으면 그 지시를 따른다(설계 2026-09-04) ──
+    #    같은 촬영으로 릴스와 블로그를 만들되, 글의 각도와 대표 키워드는
+    #    네이버 실측 위에서 정해진 것을 쓴다. 브리프가 없으면 예전 그대로.
+    brief = _brief(payload.get("brief_id"))
+    if brief:
+        b_blog = brief.get("blog") or {}
+        topic = topic or brief.get("topic", "")
+        main_keyword = main_keyword or (b_blog.get("keyword") or "")
+        if b_blog.get("angle"):
+            topic = f"{topic} — {b_blog['angle']}"
     if not topic:
         raise ValueError("주제가 비어 있습니다.")
     post_type = payload.get("post_type") or "정보성"
@@ -85,7 +120,7 @@ def do_draft(payload: dict) -> tuple[int, str]:
         topic=topic,
         post_type=post_type,
         title=payload.get("title") or topic,
-        main_keyword=payload.get("main_keyword") or "",
+        main_keyword=main_keyword,
         sub_keywords=payload.get("sub_keywords") or [],
         only_rels=payload.get("photos") or None,   # 승인된 배분안의 블로그 몫
     )
@@ -136,6 +171,8 @@ def do_draft(payload: dict) -> tuple[int, str]:
             blog_quality.record(post_id, data.get("title") or topic, quality)
         except Exception:  # noqa: BLE001
             pass
+    if brief:
+        _brief_link(brief["id"], post_id, data.get("title") or topic)
     return 1, (f"초안 저장 완료 (#{post_id}){q_note}{photo_note}"
                f" — {data.get('title', '')[:40]}")
 
@@ -448,6 +485,15 @@ def do_rank(payload: dict) -> tuple[int, str]:
             k = (p.get("main_keyword") or "").strip()
             if k and k not in keywords:
                 keywords.append(k)
+        # 브리프가 고른 키워드도 확인 대상 — 그래야 '블로그에선 됐나'를 판정한다
+        try:
+            from sns_automation import briefs
+            for b in briefs.load():
+                k = ((b.get("blog") or {}).get("keyword") or "").strip()
+                if k and k not in keywords:
+                    keywords.append(k)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("브리프 키워드 없음: %s", e)
         for k in DEFAULT_KEYWORDS:
             if k not in keywords:
                 keywords.append(k)
@@ -459,6 +505,11 @@ def do_rank(payload: dict) -> tuple[int, str]:
         except Exception as e:  # noqa: BLE001 — 한 키워드 실패로 전체를 멈추지 않는다
             logger.warning("순위 확인 실패(%s): %s", kw, str(e)[:120])
     store.save_ranks(results)
+    try:
+        import blog_perf
+        blog_perf.brief_ranks(results)          # 브리프 판정에 순위를 먹인다
+    except Exception as e:  # noqa: BLE001
+        logger.debug("브리프 순위 반영 실패: %s", e)
     found = sum(1 for r in results if r.get("found"))
     return len(results), f"키워드 {len(results)}개 확인 (노출 {found}개)"
 

@@ -1744,6 +1744,134 @@ def run_reel_published_job(job) -> None:
         db.finish_job(jid, "error", str(e)[:200], 0)
 
 
+def run_reel_shoot_job(job) -> None:
+    """[📸 이거 찍을게요] — 소재 폴더와 촬영가이드를 미리 만들어 둔다.
+
+    촬영이 시작되지 않던 진짜 병목(설계 검토 2026-09-04)을 없애는 자리다.
+    사장님은 만들어진 폴더에 찍어 넣기만 하면 되고, 10분 안에 입고 검수가 돈다.
+    """
+    import json as _json
+    jid = job["id"]
+    try:
+        req = _json.loads(job.get("message") or "{}")
+    except ValueError:
+        req = {}
+    db.worker_ping("working", "촬영 폴더 만드는 중")
+    try:
+        sys.path.insert(0, str(ROOT))
+        from sns_automation import auto_make
+        res = auto_make.start_shoot(brief_id=(req.get("brief_id") or "").strip(),
+                                    title=(req.get("title") or "").strip())
+        msg = (f"'{res['folder']}' 폴더와 촬영가이드를 만들었어요 — "
+               "드라이브에서 그 폴더에 찍은 걸 올려주세요")
+        if not res["created"]:
+            msg = f"'{res['folder']}' 폴더는 이미 있어요 — 촬영가이드를 새로 넣었어요"
+        db.finish_job(jid, "done", msg, 1)
+        logger.info("촬영 시작 잡 #%s — %s", jid, msg)
+    except Exception as e:  # noqa: BLE001
+        logger.error("촬영 시작 잡 #%s 실패: %s", jid, e)
+        logger.debug(traceback.format_exc())
+        db.log_error("worker", f"촬영 폴더 만들기 실패: {e}",
+                     kind=type(e).__name__, path="run_reel_shoot_job",
+                     detail=traceback.format_exc())
+        db.finish_job(jid, "error", str(e)[:200], 0)
+
+
+def run_content_intake_job(job) -> None:
+    """[소재 확인] — 올린 소재를 지금 검수해 못 쓰는 컷을 알려준다."""
+    import json as _json
+    jid = job["id"]
+    try:
+        req = _json.loads(job.get("message") or "{}")
+    except ValueError:
+        req = {}
+    db.worker_ping("working", "올린 소재 확인 중")
+    try:
+        sys.path.insert(0, str(ROOT))
+        from sns_automation import auto_make
+        notes = auto_make.run_intake((req.get("folder") or "").strip())
+        db.finish_job(jid, "done", " / ".join(notes)[:480], len(notes))
+        logger.info("입고 검수 잡 #%s — %s", jid, " / ".join(notes)[:200])
+    except Exception as e:  # noqa: BLE001
+        logger.error("입고 검수 잡 #%s 실패: %s", jid, e)
+        logger.debug(traceback.format_exc())
+        db.finish_job(jid, "error", str(e)[:200], 0)
+
+
+_INTAKE_AT = 0.0
+INTAKE_MINUTES = float(os.getenv("INTAKE_CHECK_MINUTES", "10"))
+
+
+def maybe_intake_qc() -> None:
+    """10분마다 촬영 중인 폴더를 훑어, 새 파일이 들어왔으면 검수한다.
+
+    사장님이 매장에서 찍어 올린 직후에 "이 컷은 흔들려서 못 써요"를 봐야
+    다시 찍는다. 하루 지나 편집 단계에서 알면 그날 촬영은 통째로 버린다.
+    파일이 안 바뀐 폴더는 건너뛰므로 평소에는 폴더 훑기(수 ms)만 한다.
+    """
+    global _INTAKE_AT
+    if time.monotonic() - _INTAKE_AT < INTAKE_MINUTES * 60:
+        return
+    _INTAKE_AT = time.monotonic()
+    try:
+        sys.path.insert(0, str(ROOT))
+        from sns_automation import auto_make, briefs, source_watch
+        root = source_watch.source_root()
+        if not root:
+            return
+        todo = []
+        for b in briefs.load():
+            if b.get("status") not in (briefs.SHOOTING, briefs.ARRIVED):
+                continue
+            name = b.get("folder") or b.get("topic")
+            path = os.path.join(root, name or "")
+            if not (name and os.path.isdir(path)):
+                continue
+            media = source_watch.scan_media(path)
+            if not (media["videos"] or media["images"]):
+                continue
+            last = (b.get("intake") or {}).get("checked_at") or 0
+            if media["newest"] <= last:
+                continue                      # 검수 뒤로 바뀐 게 없다
+            todo.append(name)
+        for name in todo:
+            notes = auto_make.run_intake(name)
+            logger.info("입고 검수: %s", " / ".join(notes))
+    except Exception as e:  # noqa: BLE001 — 검수 실패가 일꾼을 멈추면 안 된다
+        logger.warning("입고 검수 실패(무시): %s", str(e)[:150])
+
+
+_NAVER_STAMP = ROOT / "state" / "naver_search_at.txt"
+NAVER_DAYS = float(os.getenv("NAVER_RESEARCH_DAYS", "7"))
+
+
+def maybe_naver_research() -> None:
+    """주 1회 네이버 검색 실측 — 블로그 주제를 '이길 수 있는 키워드' 위에서 고른다.
+
+    인스타 시장조사(maybe_market_scan)의 네이버 짝. 로그인·API 키가 필요 없고
+    공개 페이지만 읽는다(자동완성 + 블로그탭 상위 30).
+    """
+    try:
+        if _NAVER_STAMP.exists():
+            if time.time() - _NAVER_STAMP.stat().st_mtime < NAVER_DAYS * 86400:
+                return
+    except OSError:
+        pass
+    _NAVER_STAMP.parent.mkdir(exist_ok=True)
+    _NAVER_STAMP.write_text(datetime.now().isoformat(), encoding="utf-8")
+    logger.info("주간 네이버 검색 실측 시작")
+    db.worker_ping("working", "네이버 검색 조사 중")
+    try:
+        sys.path.insert(0, str(ROOT))
+        from sns_automation import naver_search
+        data = naver_search.research()
+        logger.info("네이버 실측: %d개 조사, 쓸 만한 키워드 %s",
+                    len(data.get("rows") or []),
+                    ", ".join(data.get("winnable") or []) or "없음")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("네이버 검색 실측 실패(다음 주에 다시): %s", str(e)[:150])
+
+
 _REEL_SYNC_STAMP = ROOT / "state" / "reel_sync_at.txt"
 REEL_SYNC_HOURS = float(os.getenv("REEL_SYNC_HOURS", "6"))
 _reel_sync_skipped_logged = False
@@ -1943,6 +2071,10 @@ def run_job(job) -> None:
         return run_reel_ideas_job(job)
     if job.get("kind") == "reel_published":
         return run_reel_published_job(job)
+    if job.get("kind") == "reel_shoot":
+        return run_reel_shoot_job(job)
+    if job.get("kind") == "content_intake":
+        return run_content_intake_job(job)
     if job.get("kind") == "reel_topics":
         # 직원 웹 [새로고침] — 소재 폴더 목록만 즉시 다시 올린다(수 초).
         try:
@@ -2087,6 +2219,8 @@ def main() -> int:
                     maybe_rescue_stuck()
                     maybe_push_reel_topics()
                     maybe_market_scan()
+                    maybe_naver_research()
+                    maybe_intake_qc()
                     maybe_reel_sync()
                     db.worker_ping("idle", "대기 중")
             if job:

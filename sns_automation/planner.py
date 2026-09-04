@@ -501,8 +501,22 @@ _SHOOT_IDEAS_SCHEMA = {
                             "additionalProperties": False,
                         },
                     },
+                    # ── 같은 촬영으로 블로그도 쓴다(콘텐츠 브리프, 2026-09-04) ──
+                    "blog_keyword": {
+                        "type": "string",
+                        "description": "이 주제로 쓸 네이버 블로그 대표 키워드 하나. "
+                                       "[네이버 검색 실측]에 ✅·△ 로 표시된 말에서 고른다. "
+                                       "실측 목록이 비어 있으면 지역+메뉴 조합으로 좁게.",
+                    },
+                    "blog_angle": {
+                        "type": "string",
+                        "description": "블로그 글의 각도 한 줄 — 릴스와 달라야 한다. "
+                                       "릴스는 순간(단면·소리), 블로그는 검색해서 들어온 "
+                                       "사람이 알고 싶은 것(조합·보관법·가는 길·가격).",
+                    },
                 },
-                "required": ["title", "why", "hook_angle", "shots"],
+                "required": ["title", "why", "hook_angle", "shots",
+                             "blog_keyword", "blog_angle"],
                 "additionalProperties": False,
             },
         },
@@ -510,6 +524,26 @@ _SHOOT_IDEAS_SCHEMA = {
     "required": ["ideas"],
     "additionalProperties": False,
 }
+
+
+def _naver() -> str:
+    """네이버 검색 실측 — 블로그 키워드를 이 위에서 고르게 한다."""
+    try:
+        from .naver_search import as_prompt_context
+        return as_prompt_context()
+    except Exception as e:  # noqa: BLE001 — 데이터가 없어도 기획은 계속된다
+        logger.debug("네이버 실측 컨텍스트 없음: %s", e)
+        return ""
+
+
+def _brief_feedback() -> str:
+    """지난 주제의 채널별 판정 문장 — 6단계 되먹임(숫자가 아니라 결론)."""
+    try:
+        from .briefs import as_prompt_context
+        return as_prompt_context()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("브리프 되먹임 없음: %s", e)
+        return ""
 
 
 def _ideas_system() -> str:
@@ -523,10 +557,17 @@ def _ideas_system() -> str:
         "· 각 샷은 '무엇을 어떻게'까지 구체적으로 (예: '단면 정면 클로즈업, 칼이 다\n"
         "  내려간 뒤 3초 유지'). 결정적 순간(단면·크림 늘어남·붓는 소리)을 꼭 넣는다.\n"
         "· 소리가 매력인 샷은 조용할 때 찍으라고 표시한다.\n"
-        "· 성과 데이터가 있으면 먹힌 각도(반전형)를 우선한다.\n\n"
+        "· 성과 데이터가 있으면 먹힌 각도(반전형)를 우선한다.\n"
+        "· **한 번 찍어 두 채널을 쓴다**: 같은 촬영으로 릴스(순간)와 네이버\n"
+        "  블로그(검색 유입)를 만든다. blog_keyword 는 [네이버 검색 실측]의\n"
+        "  ✅·△ 에서 고르고(🅾·✕ 는 쓰지 않는다), blog_angle 은 릴스와 다른\n"
+        "  각도여야 한다 — 같은 말을 두 번 하면 두 채널 다 약해진다.\n"
+        "· 촬영은 주 3회 기획 촬영이다(상시 촬영 없음) — 한 번에 다 찍을 수\n"
+        "  있게 샷을 한 자리·한 동선으로 묶는다.\n\n"
         f"[브랜드 핵심 — 사실·금지어·메뉴 표기]\n{_brand_core()}\n\n"
         f"[릴스 편집 문법]\n{_editing_rules()}\n\n"
-        f"[성과가 좋았던 훅]\n{_hook_summary()}\n\n{_market()}"
+        f"[성과가 좋았던 훅]\n{_hook_summary()}\n\n"
+        f"{_brief_feedback()}\n\n{_naver()}\n\n{_market()}"
     )
 
 

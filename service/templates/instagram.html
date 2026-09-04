@@ -59,8 +59,14 @@
         <div style="font-size:12.5px;color:var(--muted)">
           {% for s in i.shots %}📹 {{ s.what }} ({{ s.secs|int }}초)<br>{% endfor %}
         </div>
-        <div style="font-size:12px;color:var(--accent);margin-top:6px">
-          → 찍어서 드라이브에 <b>“{{ i.title }}”</b> 폴더로 올리면 아래에 떠요</div>
+        {% if i.blog_keyword %}
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">
+          📝 같은 촬영으로 블로그도: <b>{{ i.blog_keyword }}</b>{% if i.blog_angle %} — {{ i.blog_angle }}{% endif %}</div>
+        {% endif %}
+        <div class="row" style="margin-top:8px" data-brief="{{ i.brief_id or '' }}" data-title="{{ i.title }}">
+          <button class="btn pri" onclick="startShoot(this)">📸 이거 찍을게요</button>
+          <span class="meta" style="display:inline;margin:0">폴더와 촬영가이드를 만들어 둘게요</span>
+        </div>
       </div>
       {% endfor %}
     {% else %}
@@ -196,6 +202,28 @@ async function makeFull(btn){
     startPoll();
   }catch(e){ stBox().innerHTML = `<div class="note">실패: ${esc(e.message)}</div>`; }
   btn.disabled = false; btn.textContent = "🎬 릴스 만들기";
+}
+
+// 📸 이거 찍을게요 — 집 PC 가 소재 폴더와 촬영가이드를 미리 만든다
+async function startShoot(btn){
+  const row = btn.closest("[data-title]");
+  const fd = new FormData();
+  fd.append("brief_id", row.dataset.brief || "");
+  fd.append("title", row.dataset.title || "");
+  btn.disabled = true; btn.textContent = "만드는 중…";
+  try{
+    const r = await fetch(location.pathname.replace(/\/instagram$/,"") + "/content/shoot",
+                          {method:"POST", body:fd});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || "요청 실패");
+    stBox().innerHTML = '<div class="okmsg">📸 드라이브에 폴더와 촬영가이드를 만드는 중 — 잠시 뒤 그 폴더에 찍은 걸 올려주세요. 10분 안에 제가 확인하고 못 쓰는 컷을 알려드릴게요.</div>';
+    window.scrollTo({top:0, behavior:"smooth"});
+    startPoll();
+    btn.textContent = "폴더 만드는 중 ✓";
+  }catch(e){
+    stBox().innerHTML = `<div class="note">실패: ${esc(e.message)}</div>`;
+    btn.disabled = false; btn.textContent = "📸 이거 찍을게요";
+  }
 }
 
 // 💡 아이디어 / 📎 레퍼런스

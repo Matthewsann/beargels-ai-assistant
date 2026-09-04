@@ -102,6 +102,29 @@
   .learn { font-size:12px; color:var(--muted); background:var(--card);
            border:1px solid var(--line); border-radius:10px; padding:10px 12px;
            margin-top:14px; }
+
+  /* 이번 주 콘텐츠 — 주제 하나가 촬영·릴스·블로그를 관통한다 */
+  .wcbox { background:var(--card); border:1px solid var(--line); border-radius:13px;
+           padding:2px 12px; }
+  .wc { padding:11px 0; border-bottom:1px solid var(--line); }
+  .wc:last-of-type { border-bottom:none; }
+  .wchead { display:flex; align-items:center; gap:7px; }
+  .wcst { flex-shrink:0; font-size:10.5px; font-weight:700; padding:2px 7px;
+          border-radius:20px; background:var(--accent-bg); color:var(--accent); }
+  .wctitle { font-size:13.5px; word-break:break-word; }
+  .wcsub { font-size:11.5px; color:var(--muted); margin-top:3px; line-height:1.5; }
+  .wcwarn { font-size:11.5px; color:var(--warn); margin-top:5px; }
+  .wcbad { display:block; font-size:11px; opacity:.9; margin-top:1px; }
+  .wcverdict { font-size:11.5px; color:var(--muted); margin-top:4px; }
+  .wcact { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; align-items:center; }
+  .wcbtn { border:1px solid var(--line); background:var(--bg); color:var(--ink);
+           font:inherit; font-size:12px; font-weight:600; padding:6px 11px;
+           border-radius:8px; cursor:pointer; }
+  .wcbtn.pri { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .wcbtn[disabled] { opacity:.5; }
+  .wcnote { font-size:11.5px; color:var(--muted); }
+  .wcok { background:var(--ok-bg,#eaf3de); color:var(--ok,#3b6d11); border-radius:9px;
+          padding:9px 12px; font-size:12.5px; margin:6px 0; }
 </style>
 </head>
 <body>
@@ -167,6 +190,53 @@
     {% endfor %}
     <span class="mtmore">📋 업무 보드에서 전부 보기 →</span>
   </a>
+  {% endif %}
+
+  {# 이번 주 콘텐츠 — 찍을 것·도착한 소재·제작·발행을 한 화면에(설계 2026-09-04).
+     예전엔 인스타·블로그·캘린더 네 화면에 흩어져 있어 월요일에 뭘 해야 하는지
+     보이지 않았다. 주제 하나(브리프)가 두 채널을 관통한다. #}
+  {% if week_content %}
+  <div class="sec-lbl">이번 주 콘텐츠</div>
+  <div id="wcMsg"></div>
+  <div class="wcbox">
+    {% for b in week_content %}
+    <div class="wc" data-brief="{{ b.id }}" data-topic="{{ b.topic }}">
+      <div class="wchead">
+        <span class="wcst s{{ loop.index0 }}">{{ b.status }}</span>
+        <b class="wctitle">{{ b.topic }}</b>
+      </div>
+      <div class="wcsub">
+        {% if b.keyword %}🔍 {{ b.keyword }}{% if b.rank %} · {{ b.rank }}위{% endif %} · {% endif %}
+        {% if b.likes is not none %}♥ {{ b.likes }} · {% endif %}
+        {{ b.why or b.hook_angle or '' }}
+      </div>
+      {% if b.bad_n or b.missing_n %}
+      <div class="wcwarn">
+        {% if b.bad_n %}⚠️ 못 쓰는 컷 {{ b.bad_n }}개{% endif %}
+        {% if b.missing_n %}{% if b.bad_n %} · {% endif %}컷 {{ b.missing_n }}개 모자람{% endif %}
+        {% for x in b.intake.bad %}<span class="wcbad">{{ x.file }} — {{ x.why }}</span>{% endfor %}
+      </div>
+      {% endif %}
+      {% if b.verdict %}<div class="wcverdict">📊 {{ b.verdict }}</div>{% endif %}
+      <div class="wcact">
+        {% if b.next_action == 'shoot' %}
+        <button class="wcbtn pri" onclick="wcDo(this,'shoot')">📸 이거 찍을게요</button>
+        {% elif b.next_action == 'reel' %}
+        <button class="wcbtn pri" onclick="wcDo(this,'reel')">🎬 릴스 만들기</button>
+        {% elif b.next_label %}
+        <span class="wcnote">{{ b.next_label }}</span>
+        {% endif %}
+        {% if b.status in ('소재도착', '제작중') and b.keyword and not b.post_id %}
+        <button class="wcbtn" onclick="wcDo(this,'blog')">📝 블로그 초안</button>
+        {% endif %}
+        {% if b.status == '촬영중' %}
+        <button class="wcbtn" onclick="wcDo(this,'intake')">📥 올린 소재 확인</button>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+    <a class="mtmore" href="{{ url_for('instagram_page', path_key=key) }}">🎬 인스타 화면에서 전부 보기 →</a>
+  </div>
   {% endif %}
 
   <div class="sec-lbl">바로가기</div>
@@ -253,6 +323,46 @@
 </div>
 
 <script>
+  // 이번 주 콘텐츠 — 한 화면에서 다음 한 걸음을 누른다.
+  // 무거운 일(폴더 만들기·검수·렌더·초안)은 전부 집 PC 가 한다. 여기는 요청만.
+  function wcEsc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\x22/g, "&quot;");
+  }
+  var WC_ACT = {
+    shoot:  { url: "/content/shoot",  msg: "📸 촬영 폴더와 가이드를 만드는 중 — 잠시 뒤 드라이브에 생겨요." },
+    intake: { url: "/content/intake", msg: "📥 올린 소재를 확인하는 중 — 못 쓰는 컷이 있으면 알려드릴게요." },
+    blog:   { url: "/content/blog",   msg: "📝 블로그 초안을 쓰는 중 — 네이버 블로그 화면에서 확인하세요." },
+    reel:   { url: "/instagram/full", msg: "🎬 릴스를 만드는 중 — 2~4분 뒤 인스타 화면에 떠요." },
+  };
+  function wcDo(btn, action) {
+    var row = btn.closest(".wc");
+    var act = WC_ACT[action];
+    var fd = new FormData();
+    if (action === "reel") {
+      fd.append("topic", row.dataset.topic);
+    } else {
+      fd.append("brief_id", row.dataset.brief);
+      fd.append("title", row.dataset.topic);
+      if (action === "intake") fd.append("folder", row.dataset.topic);
+    }
+    var label = btn.textContent;
+    btn.disabled = true; btn.textContent = "보내는 중…";
+    fetch("/{{ key }}" + act.url, { method: "POST", body: fd })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.d.error || "요청 실패");
+        document.querySelector("#wcMsg").innerHTML = '<div class="wcok">' + act.msg + "</div>";
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        btn.textContent = "요청했어요 ✓";
+      })
+      .catch(function (e) {
+        document.querySelector("#wcMsg").innerHTML =
+          '<div class="note">실패: ' + wcEsc(e.message) + "</div>";
+        btn.disabled = false; btn.textContent = label;
+      });
+  }
+
   // 회의 할 일 체크 — 그 자리에서 저장하고 흐리게 남긴다(새로고침하면 사라진다).
   function doneTask(box) {
     var row = box.closest(".mtask");

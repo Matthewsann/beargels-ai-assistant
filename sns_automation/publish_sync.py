@@ -320,6 +320,18 @@ def mark_reel_published(pid: str, *, url: str | None = None, at: int | None = No
     except Exception as e:  # noqa: BLE001
         logger.warning("완성본 카드 발행 표시 실패(%s): %s", pid, str(e)[:120])
 
+    # 콘텐츠 브리프에도 — 6단계(성과 → 다음 기획)가 채널을 갈라 판정하는 자리.
+    try:
+        from . import briefs
+        b = briefs.by_project(pid) or briefs.by_folder(p.get("source_dir") or "")
+        if b:
+            briefs.record_insta(b["id"], project_id=pid, published_at=p["published_at"],
+                                permalink=url or p.get("ig_permalink"),
+                                likes=likes, comments=comments)
+            briefs.push()
+    except Exception as e:  # noqa: BLE001 — 브리프가 없어도 발행 기록은 남는다
+        logger.warning("브리프 성과 기록 실패(%s): %s", pid, str(e)[:120])
+
     logger.info("릴스 발행 기록: %s (%s%s)", title or pid, source,
                 ", 이미 있음" if already else "")
     return {"pid": pid, "title": title, "at": p["published_at"], "already": already}
@@ -433,6 +445,13 @@ def sync_published_reels(*, client=None, limit: int = 30, now: int | None = None
                 logger.debug("인사이트 조회 실패(%s): %s", mid, e)
         planner.record_project_result(p["id"], **metrics)
         try:
+            from . import briefs
+            b = briefs.by_project(p["id"])
+            if b:
+                briefs.record_insta(b["id"], **metrics)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("브리프 성과 갱신 실패(%s): %s", p["id"], e)
+        try:
             cloud_sync.mark_published(p["id"], int(p.get("published_at") or now),
                                       url=p.get("ig_permalink"),
                                       likes=metrics.get("likes"),
@@ -442,6 +461,12 @@ def sync_published_reels(*, client=None, limit: int = 30, now: int | None = None
             logger.debug("카드 성과 갱신 실패(%s): %s", p["id"], e)
         refreshed += 1
 
+    if refreshed:
+        try:
+            from . import briefs
+            briefs.push()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("브리프 업로드 실패: %s", e)
     if not notes:
         notes.append("새로 감지된 발행 없음")
     notes.append(f"성과 갱신 {refreshed}건"

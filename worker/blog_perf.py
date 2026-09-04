@@ -109,9 +109,52 @@ def sync_published() -> int:
         store.update_post(p["id"], naver_url=f["url"])
         if p.get("status") != "published":
             store.set_status(p["id"], "published")
+        _brief_published(p["id"], f["url"])
         linked += 1
         logger.info("발행 감지: #%s ← %s", p["id"], f["url"])
     return linked
+
+
+def _brief_published(post_id, url: str) -> None:
+    """이 글이 걸린 콘텐츠 브리프에도 발행을 남긴다(6단계 되먹임)."""
+    try:
+        import time as _time
+
+        from sns_automation import briefs
+        b = briefs.by_post(post_id)
+        if not b:
+            return
+        briefs.record_blog(b["id"], published_at=int(_time.time()), url=url)
+        briefs.push()
+    except Exception as e:  # noqa: BLE001 — 기록 실패가 발행 감지를 막지 않는다
+        logger.debug("브리프 블로그 발행 기록 실패(%s): %s", post_id, e)
+
+
+def brief_ranks(rows: list[dict]) -> int:
+    """순위 확인 결과를 브리프에 반영한다. 반환: 반영한 브리프 수.
+
+    rows: [{keyword, rank}] — blog_jobs.do_rank 가 넘긴다.
+    """
+    try:
+        from sns_automation import briefs
+    except Exception:  # noqa: BLE001
+        return 0
+    n = 0
+    items = briefs.load()
+    for r in rows:
+        kw = (r.get("keyword") or "").strip()
+        if not kw:
+            continue
+        for b in items:
+            if (b.get("blog") or {}).get("keyword") == kw:
+                briefs.record_blog(b["id"], rank=r.get("rank"))
+                n += 1
+    if n:
+        try:
+            briefs.push()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("브리프 업로드 실패: %s", e)
+    return n
 
 
 # ---------------------------------------------------------------------------

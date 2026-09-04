@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -44,6 +45,64 @@ def _find_folder(topic: str) -> str:
                     "드라이브 업로드가 아직 동기화 중일 수 있어요(1~2분 뒤 다시).")
 
 
+def _finish_bookkeeping(p: dict, plan: dict | None) -> None:
+    """완성본이 나온 뒤의 장부 정리 — 소재 사용 원장 + 콘텐츠 브리프.
+
+    원장(worker/media_ledger)에 "인스타가 이 소재의 이 구간을 썼다"를 남겨야
+    블로그가 같은 컷을 또 쓰지 않는다. 로컬 웹 finalize 는 예전부터 이걸
+    했는데 원버튼 경로(PA)에는 빠져 있었다(설계 검토 2026-09-04).
+    실패해도 완성 저장을 막지 않는다 — 장부는 부가 기록이다.
+    """
+    from . import webapp as wa
+    shots = (plan or {}).get("shots") or []
+    used = [{"name": s["clip"], "in": s.get("in"), "dur": s.get("dur")}
+            for s in shots if isinstance(s, dict) and s.get("clip")]
+    if used:
+        p["used_media"] = used
+    try:
+        wa._record_usage_to_ledger(p)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("사용 원장 기록 실패: %s", str(e)[:120])
+    try:
+        from . import briefs
+        b = briefs.by_project(p["id"]) or briefs.by_folder(p.get("source_dir") or "")
+        if b:
+            briefs.patch(b["id"], insta={"project_id": p["id"],
+                                         "hook": (plan or {}).get("hook", {}).get("text")})
+            briefs.set_status(b["id"], briefs.MAKING)
+            p["brief_id"] = b["id"]
+    except Exception as e:  # noqa: BLE001
+        logger.warning("브리프 연결 실패: %s", str(e)[:120])
+
+
+def _brief_guide(folder: str) -> str:
+    """이 폴더에 걸린 브리프의 촬영 의도(훅·샷)를 편집기가 읽을 글로.
+
+    아이디어 카드의 샷 목록이 편집으로 전달되지 않던 구멍을 메운다
+    (설계 검토 2026-09-04). 촬영가이드.txt 가 이미 같은 내용을 담고 있으면
+    source_watch.guide_text 로 들어오므로 여기서는 빈 문자열을 돌려준다.
+    """
+    try:
+        from . import briefs, source_watch
+        b = briefs.by_folder(folder)
+        if not b:
+            return ""
+        if source_watch.guide_text(folder).strip():
+            return ""                      # 폴더에 가이드 파일이 이미 있다
+        insta = b.get("insta") or {}
+        lines = [f"[기획 의도] {b.get('topic', '')}"]
+        if b.get("why"):
+            lines.append(b["why"])
+        if insta.get("hook_angle"):
+            lines.append(f"훅 각도: {insta['hook_angle']}")
+        for s in insta.get("shots") or []:
+            lines.append(f"- {s.get('what', '')} ({s.get('secs', 0)}초)")
+        return "\n".join(lines)[:2000]
+    except Exception as e:  # noqa: BLE001
+        logger.debug("브리프 가이드 없음: %s", e)
+        return ""
+
+
 def _project_for(folder: str, memo: str):
     """폴더에 연결된 프로젝트를 찾거나 만든다. 메모가 오면 갱신한다."""
     from . import source_watch
@@ -57,12 +116,16 @@ def _project_for(folder: str, memo: str):
                 p = q
                 break
     if p is None:
-        p = wa._new_project(name, menu=name,
-                            guide=memo or source_watch.guide_text(folder),
-                            source_dir=folder)
+        p = wa._new_project(
+            name, menu=name,
+            # 근거의 우선순위: 사람이 적은 메모 → 폴더의 촬영가이드 → 브리프의 기획 의도
+            guide=memo or source_watch.guide_text(folder) or _brief_guide(folder),
+            source_dir=folder)
         p["status"] = wa.ST_UPLOADED
     if memo:
         p["guide"] = memo.strip()[:2000]
+    elif not (p.get("guide") or "").strip():
+        p["guide"] = source_watch.guide_text(folder) or _brief_guide(folder)
     wa._save_project(p)
     return p
 
@@ -288,6 +351,7 @@ def make_video(pid: str, script: dict | None = None) -> dict:
     _ps.start_new_version(p)
     p["status"] = wa.ST_DONE
     p["final_path"] = final_dir
+    _finish_bookkeeping(p, plan)          # 사용 원장 + 콘텐츠 브리프
     wa._save_project(p)
     planner.record_hook(pid, title, (plan.get("hook") or {}).get("text", ""), reel_name)
 
@@ -417,6 +481,7 @@ def make_reel(topic: str, memo: str = "") -> dict:
     _ps.start_new_version(p)
     p["status"] = wa.ST_DONE
     p["final_path"] = final_dir
+    _finish_bookkeeping(p, plan)          # 사용 원장 + 콘텐츠 브리프
     wa._save_project(p)
     planner.record_hook(pid, title, (plan.get("hook") or {}).get("text", ""), reel_name)
 
@@ -461,6 +526,29 @@ def _pipeline_url() -> str:
     return f"{url}/?code={code}" if code else url
 
 
+def _briefs_from_ideas(ideas: list[dict], source: str) -> list[dict]:
+    """아이디어 카드 → 콘텐츠 브리프(주제 1개 + 채널별 지시). 실패해도 카드는 뜬다."""
+    made = []
+    try:
+        from . import briefs
+        for i in ideas:
+            title = (i.get("title") or "").strip()
+            if not title or briefs.by_folder(title):
+                continue                      # 같은 주제가 이미 진행 중이면 새로 만들지 않는다
+            b = briefs.create(
+                title, why=i.get("why", ""), source=source,
+                insta={"hook_angle": i.get("hook_angle", ""), "shots": i.get("shots") or []},
+                blog={"keyword": (i.get("blog_keyword") or "").strip(),
+                      "angle": (i.get("blog_angle") or "").strip()})
+            i["brief_id"] = b["id"]
+            made.append(b)
+        if made:
+            briefs.push()
+    except Exception as e:  # noqa: BLE001 — 브리프가 없어도 촬영 제안은 볼 수 있어야 한다
+        logger.warning("브리프 생성 실패: %s", str(e)[:150])
+    return made
+
+
 def run_ideas() -> int:
     """MKT 파트너의 '먼저 제안' — 촬영 아이디어를 만들어 올린다."""
     from . import cloud_sync, planner
@@ -468,8 +556,116 @@ def run_ideas() -> int:
     ideas = asyncio.run(planner.suggest_shoots(recent))
     if not ideas:
         raise MakeError("아이디어를 만들지 못했어요.")
+    _briefs_from_ideas(ideas, "weekly")       # 브리프 id 를 카드에 심고 나서 올린다
     cloud_sync.push_ideas(ideas, source="weekly")
     return len(ideas)
+
+
+#: 촬영가이드 파일 이름 — source_watch.guide_text 가 이 이름을 읽는다.
+GUIDE_NAME = "촬영가이드.txt"
+
+
+def start_shoot(brief_id: str = "", title: str = "") -> dict:
+    """[📸 이거 찍을게요] — 폴더와 촬영가이드를 미리 만들어 둔다.
+
+    지금까지는 사장님이 카드를 보고 **드라이브에서 직접 폴더를 만들고 제목을
+    똑같이 타이핑**해야 연결됐다. 사람 결정 세 번이 촬영 시작을 막던 지점이라
+    (설계 검토 2026-09-04) 시스템이 대신 만든다 — 사장님은 찍어 넣기만.
+
+    반환: {folder, path, guide, brief_id, created}
+    """
+    from . import briefs, source_watch
+    b = briefs.get(brief_id) if brief_id else None
+    if b is None and title:
+        b = briefs.by_folder(title)
+    if b is None:
+        # 브리프가 없으면(옛 카드) 제목만으로 만든다 — 흐름이 끊기지 않게.
+        if not title:
+            raise MakeError("어느 아이디어인지 알 수 없어요.")
+        b = briefs.create(title, source="manual")
+    name = (b.get("folder") or b.get("topic") or title).strip()
+    root = source_watch.source_root()
+    if not root:
+        raise MakeError("집 PC에서 소재 폴더(원본소재)를 찾지 못했어요.")
+    safe = re.sub(r'[\\/:*?"<>|]', " ", name).strip()[:60] or "새 촬영"
+    path = os.path.join(root, safe)
+    created = not os.path.isdir(path)
+    os.makedirs(path, exist_ok=True)
+
+    insta, blog = b.get("insta") or {}, b.get("blog") or {}
+    lines = [f"■ {b.get('topic', safe)}", ""]
+    if b.get("why"):
+        lines += [f"왜 지금: {b['why']}", ""]
+    if insta.get("hook_angle"):
+        lines += [f"훅(첫 3초): {insta['hook_angle']}", ""]
+    lines.append("[찍을 샷]")
+    for n, s in enumerate(insta.get("shots") or [], 1):
+        lines.append(f"{n}. {s.get('what', '')} ({s.get('secs', 0)}초)")
+    if blog.get("keyword"):
+        lines += ["", "[같은 촬영으로 블로그도 씁니다]",
+                  f"검색 키워드: {blog['keyword']}",
+                  f"글 각도: {blog.get('angle', '')}",
+                  "→ 위 샷 외에 '완성 접시 정면 사진' 한 장을 더 찍어주세요(블로그 대표사진)."]
+    lines += ["", "[찍고 나서]", "이 폴더에 그대로 올려주세요. 10분 안에 제가 확인하고",
+              "못 쓰는 컷이 있으면 알려드릴게요.", "",
+              f"(브리프 {b['id']} · 이 파일은 자동으로 만들어졌어요)"]
+    guide = "\n".join(lines)
+    try:
+        with open(os.path.join(path, GUIDE_NAME), "w", encoding="utf-8") as f:
+            f.write(guide)
+    except OSError as e:
+        raise MakeError(f"촬영가이드를 저장하지 못했어요: {e}") from e
+
+    briefs.patch(b["id"], folder=safe)
+    briefs.set_status(b["id"], briefs.SHOOTING)
+    try:
+        briefs.push()
+        push_topics()
+    except Exception as e:  # noqa: BLE001 — 화면 갱신 실패가 폴더 생성을 무르지 않는다
+        logger.warning("촬영 시작 알림 실패: %s", str(e)[:120])
+    return {"folder": safe, "path": path, "guide": guide,
+            "brief_id": b["id"], "created": created}
+
+
+def run_intake(folder_name: str = "") -> list[str]:
+    """입고 검수 — 소재가 들어온 폴더를 훑어 '못 쓰는 컷'을 폰으로 보낸다.
+
+    folder_name 이 없으면 촬영중·소재도착 상태의 브리프 폴더를 전부 본다.
+    반환: 사람이 읽을 요약 문장들.
+    """
+    from . import briefs, intake_qc, source_watch
+    root = source_watch.source_root()
+    if not root:
+        return ["소재 폴더를 찾지 못했어요."]
+    if folder_name:
+        targets = [folder_name]
+    else:
+        targets = [b.get("folder") or b.get("topic") for b in briefs.load()
+                   if b.get("status") in (briefs.SHOOTING, briefs.ARRIVED)]
+    notes: list[str] = []
+    for name in [t for t in targets if t]:
+        path = os.path.join(root, name)
+        if not os.path.isdir(path):
+            continue
+        media = source_watch.scan_media(path)
+        if not (media["videos"] or media["images"]):
+            continue                       # 아직 안 찍었다 — 잔소리하지 않는다
+        res = intake_qc.check_folder(path)
+        line = intake_qc.summary_line(res)
+        b = briefs.by_folder(name)
+        if b:
+            briefs.patch(b["id"], intake={
+                "checked_at": res["checked_at"], "files": res["files"],
+                "ok": res["ok"], "bad": res["bad"], "missing": res["missing"]})
+            if res["ok"]:
+                briefs.set_status(b["id"], briefs.ARRIVED)
+        notes.append(f"「{name}」 {line}")
+    if notes:
+        try:
+            briefs.push()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("브리프 업로드 실패: %s", str(e)[:120])
+    return notes or ["새로 들어온 소재가 없어요."]
 
 
 def run_reference(desc: str) -> str:
@@ -478,6 +674,7 @@ def run_reference(desc: str) -> str:
     ideas = asyncio.run(planner.plan_from_reference(desc))
     if not ideas:
         raise MakeError("레퍼런스를 기획으로 옮기지 못했어요.")
+    _briefs_from_ideas(ideas, "ref")
     cloud_sync.push_ideas(ideas, source="ref")
     return ideas[0].get("title", "")
 

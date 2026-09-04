@@ -113,6 +113,7 @@ jobs:
           upload service/templates/pipe.html
           upload sns_automation/__init__.py
           upload sns_automation/cloud_sync.py
+          upload sns_automation/briefs.py
           upload service/mkt_page.py
           upload service/sales_page.py
           upload service/dashboard_page.py

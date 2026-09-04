@@ -282,6 +282,40 @@ def _last_collect_cached():
     return db.last_collect_at()
 
 
+@cached(30)     # 콘텐츠 브리프 — 집 PC 가 올려둔 사본 하나만 읽는다
+def _briefs_cached():
+    """이번 주 콘텐츠 — 진행 중인 브리프(찍을 것·도착·제작·발행)."""
+    try:
+        from sns_automation import briefs
+        return (briefs.load_cloud() or {}).get("briefs") or []
+    except Exception:  # noqa: BLE001 — 홈이 이것 때문에 죽으면 안 된다
+        return []
+
+
+#: 브리프 상태 → 홈에서 보여줄 '다음 할 일' (사장님이 5초 안에 판단하게)
+BRIEF_NEXT = {
+    "제안": ("📸 이거 찍을게요", "shoot"),
+    "촬영중": ("찍어서 폴더에 올려주세요", None),
+    "소재도착": ("🎬 릴스 만들기", "reel"),
+    "제작중": ("완성본·초안 확인", None),
+    "발행": ("성과 기다리는 중", None),
+}
+
+
+def _week_content(briefs_rows):
+    """브리프 목록 → 홈 카드가 쓸 줄. 할 일이 있는 것부터."""
+    order = {"소재도착": 0, "제안": 1, "촬영중": 2, "제작중": 3, "발행": 4}
+    rows = []
+    for b in briefs_rows or []:
+        label, action = BRIEF_NEXT.get(b.get("status") or "", (None, None))
+        intake = b.get("intake") or {}
+        rows.append({**b, "next_label": label, "next_action": action,
+                     "bad_n": len(intake.get("bad") or []),
+                     "missing_n": len(intake.get("missing") or [])})
+    rows.sort(key=lambda r: (order.get(r.get("status"), 9), -(r.get("created") or 0)))
+    return rows[:6]
+
+
 @cached(20)     # 홈이 열릴 때마다 업무 두 표를 다 읽지 않게
 def _work_top_cached():
     """홈에 실을 '오늘 이것부터' 상위 3개. 업무 보드와 같은 규칙으로 고른다."""
@@ -855,6 +889,9 @@ def home(path_key):
             meet_open=mt.open_task_count,
             # 업무 보드가 고른 '오늘 이것부터' — 홈에는 상위 3개만(2026-08-31).
             work_top=_work_top_cached,
+            # 이번 주 콘텐츠 — 찍을 것·도착한 소재·제작·발행을 한 화면에
+            # (설계 2026-09-04: 지금은 네 화면에 흩어져 있다).
+            briefs=_briefs_cached,
         )
         stat = {
             "todo": (g["todo_baemin"] or 0) + (g["todo_coupang"] or 0),
@@ -879,6 +916,7 @@ def home(path_key):
         meet_tasks=g.get("meet_tasks") or [], meet_open=g.get("meet_open") or 0,
         updated=_updated_view(g.get("updated")),
         work_top=g.get("work_top") or [],
+        week_content=_week_content(g.get("briefs")),
     )
 
 
@@ -1599,6 +1637,55 @@ def instagram_published(path_key):
     except Exception as e:
         return jsonify(error=f"요청을 넣지 못했어요: {e}"), 500
     return jsonify(ok=True, job_id=(row or {}).get("id"))
+
+
+@app.route("/<path_key>/content/shoot", methods=["POST"])
+def content_shoot(path_key):
+    """[📸 이거 찍을게요] — 집 PC 가 소재 폴더와 촬영가이드를 미리 만든다.
+
+    촬영이 시작되지 않던 병목(아이디어를 보고 → 폴더를 손으로 만들고 →
+    이름을 맞추는 사람 결정 세 번)을 없앤다(설계 2026-09-04).
+    """
+    check(path_key)
+    brief_id = (request.form.get("brief_id") or "").strip()[:120]
+    title = (request.form.get("title") or "").strip()[:80]
+    if not brief_id and not title:
+        return jsonify(error="어느 아이디어인지 알 수 없어요."), 400
+    if brief_id and not re.fullmatch(r"[\w가-힣][\w가-힣.\-]{0,119}", brief_id):
+        return jsonify(error="아이디어 정보가 올바르지 않아요."), 400
+    try:
+        row = db.request_reel_shoot(brief_id, title, by="직원웹")
+    except Exception as e:
+        return jsonify(error=f"요청을 넣지 못했어요: {e}"), 500
+    return jsonify(ok=True, job_id=(row or {}).get("id"))
+
+
+@app.route("/<path_key>/content/intake", methods=["POST"])
+def content_intake(path_key):
+    """[소재 확인] — 올린 소재가 쓸 만한지 집 PC 가 지금 검수한다."""
+    check(path_key)
+    folder = (request.form.get("folder") or "").strip()[:80]
+    try:
+        row = db.request_content_intake(folder, by="직원웹")
+    except Exception as e:
+        return jsonify(error=f"요청을 넣지 못했어요: {e}"), 500
+    return jsonify(ok=True, job_id=(row or {}).get("id"))
+
+
+@app.route("/<path_key>/content/blog", methods=["POST"])
+def content_blog(path_key):
+    """브리프의 키워드·각도로 블로그 초안을 요청한다(같은 촬영, 다른 채널)."""
+    check(path_key)
+    brief_id = (request.form.get("brief_id") or "").strip()[:120]
+    if not brief_id:
+        return jsonify(error="어느 주제인지 알 수 없어요."), 400
+    try:
+        blog.request_blog_job("blog_draft", {"brief_id": brief_id}, by="직원웹")
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"브리프 초안 요청 실패({brief_id}): {e}",
+                     kind=type(e).__name__, path=request.path)
+        return jsonify(error=f"요청을 넣지 못했어요: {e}"), 500
+    return jsonify(ok=True)
 
 
 @app.route("/<path_key>/instagram/fix", methods=["POST"])
