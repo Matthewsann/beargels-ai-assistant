@@ -44,6 +44,33 @@ def _deploy_uploads():
     return set(re.findall(r"^\s*upload\s+(\S+)", text, re.MULTILINE))
 
 
+def _deploy_trigger_paths():
+    """on.push.paths 목록 — 이게 안 맞으면 배포가 조용히 안 돈다."""
+    text = DEPLOY.read_text(encoding="utf-8")
+    block = text.split("paths:", 1)[1].split("workflow_dispatch", 1)[0]
+    return set(re.findall(r"^\s*-\s*'([^']+)'", block, re.MULTILINE))
+
+
+def test_uploaded_non_service_files_also_trigger_deploy():
+    """service/ 밖의 파일을 올린다면 그 파일이 바뀔 때 배포도 돌아야 한다.
+
+    실제로 있었던 일(2026-09-04): sns_automation/briefs.py 를 업로드 목록에는
+    넣었는데 트리거 경로에는 안 넣어, 그 파일만 고친 커밋은 배포가 안 돌았다.
+    운영에는 옛 파일이 남고 아무 에러도 안 난다.
+    """
+    triggers = _deploy_trigger_paths()
+    missing = []
+    for up in _deploy_uploads():
+        if up.startswith("service/"):
+            continue                      # 'service/**' 가 통째로 받는다
+        if up in triggers:
+            continue
+        if any(t.endswith("/**") and up.startswith(t[:-2]) for t in triggers):
+            continue
+        missing.append(up)
+    assert not missing, f"업로드하지만 배포 트리거에 없는 파일: {sorted(missing)}"
+
+
 def test_app_renders_at_least_one_template():
     # 정규식이 헛돌아 빈 목록으로 무조건 통과하는 걸 막는 안전장치
     assert _rendered_templates(), "app.py 에서 render_template 을 못 찾았다"

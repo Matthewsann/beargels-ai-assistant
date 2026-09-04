@@ -19,6 +19,16 @@ on:
     branches: [main]
     paths:
       - 'service/**'
+      # PA 가 실제로 쓰는 sns_automation 모듈 — 아래 업로드 목록과 짝이 맞아야
+      # 한다. 이게 빠져 있어서 briefs.py·cloud_sync.py 만 고친 커밋은 배포가
+      # 조용히 안 돌았다(2026-09-04 발견). 업로드 목록에 파일을 추가하면
+      # 여기에도 추가할 것.
+      - 'sns_automation/briefs.py'
+      - 'sns_automation/cloud_sync.py'
+      - 'sns_automation/__init__.py'
+      - 'assistant/beargels.py'
+      - 'assistant/customer_requests.py'
+      - 'data/ingredients_seed.json'
       - 'webapp/schedule.py'
       - 'webapp/static/schedule.css'
       - 'webapp/static/schedule.js'
