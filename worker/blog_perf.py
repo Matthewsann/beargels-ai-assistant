@@ -146,9 +146,17 @@ def brief_ranks(rows: list[dict]) -> int:
         if not kw:
             continue
         for b in items:
-            if (b.get("blog") or {}).get("keyword") == kw:
-                briefs.record_blog(b["id"], rank=r.get("rank"))
-                n += 1
+            blog = b.get("blog") or {}
+            if blog.get("keyword") != kw:
+                continue
+            # ⚠️ 이 브리프로 **실제로 글을 낸** 경우에만 순위를 성과로 적는다.
+            #    안 그러면 옛날 다른 글이 만든 순위가 글도 안 쓴 제안 브리프에
+            #    '블로그는 됐다'로 붙어 다음 기획을 거짓 근거로 오염시킨다
+            #    (2026-09-04 검토). 순위권 밖(None)도 값이라 명시적으로 쓴다.
+            if not (blog.get("post_id") or blog.get("published_at")):
+                continue
+            briefs.set_rank(b["id"], r.get("rank") if r.get("found") else None)
+            n += 1
     if n:
         try:
             briefs.push()

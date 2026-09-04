@@ -70,6 +70,7 @@ def frame_stats(jpeg: bytes) -> dict:
     """프레임 한 장의 선명도·밝기. PIL 만 쓴다(numpy 불필요)."""
     from PIL import Image, ImageFilter, ImageStat
     with Image.open(io.BytesIO(jpeg)) as im:
+        landscape = im.width > im.height       # 리사이즈 전 원본 비율로 판단
         g = im.convert("L")
         if max(g.size) != FRAME_PX:
             ratio = FRAME_PX / max(g.size)
@@ -79,7 +80,8 @@ def frame_stats(jpeg: bytes) -> dict:
         # 가장자리 1px 은 필터 특성상 항상 밝게 나와 잘라낸다
         edges = edges.crop((1, 1, max(2, edges.width - 1), max(2, edges.height - 1)))
         sharp = ImageStat.Stat(edges).stddev[0]
-    return {"sharp": round(sharp, 2), "bright": round(bright, 1)}
+    return {"sharp": round(sharp, 2), "bright": round(bright, 1),
+            "landscape": landscape}
 
 
 def judge(stats: dict) -> tuple[str, str]:
@@ -96,12 +98,15 @@ def judge(stats: dict) -> tuple[str, str]:
         return Verdict.BAD, "화면이 날아갔어요(너무 밝음) — 역광을 피해주세요"
     if sharp <= SHARP_BAD:
         return Verdict.BAD, "흔들렸거나 초점이 안 맞았어요 — 다시 찍는 게 좋아요"
-    if sharp <= SHARP_WEAK:
-        return Verdict.WARN, "조금 흐릿해요 — 쓸 수는 있지만 한 컷 더 있으면 좋아요"
+    # 경고는 하나만 골라 말한다(사장님이 조치할 순서대로): 방향 → 소리 → 흐릿함.
+    # 흐릿함을 먼저 보면 '조금 흐릿해요'가 가로 촬영 경고를 가려서, 좌우가 잘릴
+    # 영상을 그대로 쓰게 된다(2026-09-04 검토).
     if stats.get("landscape"):
-        return Verdict.WARN, "가로로 찍혔어요 — 릴스에서 좌우가 잘려요(세로 권장)"
+        return Verdict.WARN, "가로로 찍혔어요 — 릴스에서 좌우가 잘려요(세로로 다시)"
     if stats.get("silent"):
         return Verdict.WARN, "소리가 없어요 — 굽는·자르는 소리가 핵심이면 다시"
+    if sharp <= SHARP_WEAK:
+        return Verdict.WARN, "조금 흐릿해요 — 쓸 수는 있지만 한 컷 더 있으면 좋아요"
     return Verdict.OK, ""
 
 
@@ -139,12 +144,17 @@ def check_video(path: str) -> dict:
         pass
     grade, why = judge(best)
     out.update(sharp=best["sharp"], bright=best["bright"],
-               silent=best.get("silent"), grade=grade, why=why)
+               landscape=best.get("landscape"), silent=best.get("silent"),
+               grade=grade, why=why)
     return out
 
 
 def check_image(path: str) -> dict:
-    """사진 하나 검수. 아이폰 HEIC 도 연다."""
+    """사진 하나 검수. 아이폰 HEIC 도 연다.
+
+    사진은 가로여도 괜찮다 — 블로그 대표사진은 가로가 오히려 낫다. 방향 경고는
+    릴스로 쓰는 영상에만 붙인다.
+    """
     from PIL import Image
     _register_heif()
     name = os.path.basename(path)
@@ -158,6 +168,7 @@ def check_image(path: str) -> dict:
         logger.debug("사진 확인 실패(%s): %s", name, e)
         return {"file": name, "kind": "image", "grade": Verdict.WARN,
                 "why": "사진을 열지 못했어요"}
+    stats.pop("landscape", None)          # 사진은 가로여도 정상
     grade, why = judge(stats)
     return {"file": name, "kind": "image", "grade": grade, "why": why, **stats}
 
@@ -184,15 +195,24 @@ def wanted_shots(folder: str) -> list[str]:
     return shots
 
 
-def check_folder(folder: str, *, limit: int = 12) -> dict:
+#: 한 번에 볼 파일 수 — 영상과 사진에 **따로** 준다. 하나로 묶어 자르면
+#: 클립이 많은 폴더에서 사진이 한 장도 안 보이는데(영상이 먼저 온다), 블로그
+#: 대표사진이 바로 그 사진이다(2026-09-04 검토에서 발견).
+VIDEO_LIMIT = 12
+IMAGE_LIMIT = 6
+
+
+def check_folder(folder: str, *, limit: int | None = None) -> dict:
     """주제 폴더 하나를 검수한다 → 사장님 폰에 보낼 결과.
 
-    반환: {ok, bad[], warn[], missing[], files, checked_at}
+    반환: {ok, usable, bad[], warn[], missing[], files, checked_at}
     """
     from . import source_watch
     media = source_watch.scan_media(folder)
+    v_lim = limit if limit is not None else VIDEO_LIMIT
+    i_lim = limit if limit is not None else IMAGE_LIMIT
     rows: list[dict] = []
-    for name in (media["videos"] + media["images"])[:limit]:
+    for name in (media["videos"][:v_lim] + media["images"][:i_lim]):
         p = os.path.join(folder, name)
         ext = os.path.splitext(name)[1].lower()
         rows.append(check_video(p) if ext in VIDEO_EXT else check_image(p))
@@ -211,7 +231,7 @@ def check_folder(folder: str, *, limit: int = 12) -> dict:
     return {
         "folder": os.path.basename(folder.rstrip("/\\")),
         "checked_at": int(time.time()),
-        "files": len(rows), "ok": len(ok),
+        "files": len(rows), "ok": len(ok), "usable": usable,
         "bad": [{"file": r["file"], "why": r.get("why", "")} for r in bad],
         "warn": [{"file": r["file"], "why": r.get("why", "")} for r in warn],
         "missing": missing,
@@ -222,17 +242,22 @@ def check_folder(folder: str, *, limit: int = 12) -> dict:
 def summary_line(result: dict) -> str:
     """폰에서 한 줄로 읽을 결과."""
     n, ok = result.get("files", 0), result.get("ok", 0)
+    warn = result.get("warn") or []
     bad, missing = result.get("bad") or [], result.get("missing") or []
     if not n:
         return "아직 파일이 없어요."
     parts = [f"{n}개 중 {ok}개 바로 쓸 수 있어요"]
+    if warn:
+        # ok=0 인데 '다시 찍을 건 없어요'라고 하면 앞뒤가 안 맞는다 — 아슬아슬한
+        # 것도 세어 말한다(2026-09-04 검토).
+        parts[-1] += f", {len(warn)}개는 아슬아슬하지만 쓸 수 있어요"
     if bad:
         parts.append(f"못 쓰는 {len(bad)}개: " +
                      ", ".join(f"{b['file']}({b['why'].split('—')[0].strip()})"
                                for b in bad[:3]))
     if missing:
         parts.append(f"컷이 {len(missing)}개 모자라요 — 예: {missing[0][:40]}")
-    if not bad and not missing:
+    if not bad and not missing and not warn:
         parts.append("다시 찍을 건 없어요 👍")
     return " · ".join(parts)
 

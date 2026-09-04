@@ -200,6 +200,22 @@ def record_blog(bid: str, **metrics) -> dict | None:
     return refresh_verdict(bid) if b else None
 
 
+def set_rank(bid: str, rank: int | None) -> dict | None:
+    """순위를 적는다 — **'순위권 밖'(None)도 값이다.**
+
+    record_blog 는 None 을 걸러 내므로(빈 값으로 옛 기록을 지우지 않으려고)
+    순위에서 밀려난 글이 옛 순위를 영원히 달고 '블로그는 됐다' 로 남았다
+    (2026-09-04 검토에서 발견). 순위만은 명시적으로 덮어쓴다.
+    """
+    b = get(bid)
+    if not b:
+        return None
+    b.setdefault("blog", {})["rank"] = rank
+    b["blog"]["rank_at"] = int(time.time())
+    upsert(b)
+    return refresh_verdict(bid)
+
+
 def _account_avg_likes() -> float:
     """내 계정 평균 좋아요 — 잘됐나 못됐나의 기준선."""
     try:
@@ -235,7 +251,10 @@ def verdict_line(brief: dict, avg_likes: float | None = None) -> dict:
             parts[-1] += f", 저장 {saves}"
 
     rank = blog.get("rank")
-    if blog.get("published_at") or rank is not None:
+    # ⚠️ 순위만으로는 판정하지 않는다. 순위는 '그 키워드에 우리 블로그 글이
+    #    하나라도 있나'라 옛날 다른 글이 만든 것일 수 있다. 이 브리프로 실제로
+    #    글을 낸 뒤에야 그 순위를 이 주제의 성과로 읽는다(2026-09-04 검토).
+    if blog.get("published_at"):
         kw = blog.get("keyword") or ""
         if rank and rank <= 10:
             parts.append(f"블로그는 됐다(「{kw}」 {rank}위)")

@@ -471,13 +471,22 @@ def request_reel_shoot(brief_id="", title="", by=None):
 
 
 def request_content_intake(folder="", by=None):
-    """[소재 확인] — 올린 소재가 쓸 만한지 집 PC 가 지금 검수한다."""
+    """[소재 확인] — 올린 소재가 쓸 만한지 집 PC 가 지금 검수한다.
+
+    **폴더가 다르면 다른 요청이다.** 예전엔 kind 만 보고 억제해, 촬영중인 주제가
+    둘 이상일 때 두 번째 요청이 첫 요청 행으로 삼켜졌다(2026-09-04 검토).
+    """
     import json as _json
     live = (get_client().table("jobs").select("*")
             .eq("kind", "content_intake").in_("status", ["pending", "running"])
-            .limit(1).execute().data)
-    if live:
-        return live[0]
+            .order("requested_at", desc=True).limit(20).execute().data)
+    for row in live or []:
+        try:
+            req = _json.loads(row.get("message") or "{}")
+        except ValueError:
+            continue
+        if (req.get("folder") or "") == (folder or ""):
+            return row
     row = {"kind": "content_intake", "status": "pending", "requested_by": by or "",
            "message": _json.dumps({"folder": folder}, ensure_ascii=False)}
     return (get_client().table("jobs").insert(row).execute().data or [None])[0]

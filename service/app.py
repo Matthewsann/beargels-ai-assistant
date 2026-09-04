@@ -302,18 +302,30 @@ BRIEF_NEXT = {
 }
 
 
+#: 진행 중인 일의 순서. **제안은 여기 없다** — 아무도 안 고른 AI 제안이 쌓여
+#: 진행 중인 촬영·제작을 홈에서 밀어내던 문제(2026-09-04 검토).
+LIVE_ORDER = {"소재도착": 0, "촬영중": 1, "제작중": 2, "발행": 3}
+WEEK_ROWS = 6
+WEEK_PROPOSALS = 2          # 남는 자리에 넣을 새 제안 수
+
+
 def _week_content(briefs_rows):
-    """브리프 목록 → 홈 카드가 쓸 줄. 할 일이 있는 것부터."""
-    order = {"소재도착": 0, "제안": 1, "촬영중": 2, "제작중": 3, "발행": 4}
-    rows = []
-    for b in briefs_rows or []:
+    """브리프 목록 → 홈 카드가 쓸 줄. 진행 중인 일이 먼저, 제안은 남는 자리에."""
+    def decorate(b):
         label, action = BRIEF_NEXT.get(b.get("status") or "", (None, None))
         intake = b.get("intake") or {}
-        rows.append({**b, "next_label": label, "next_action": action,
-                     "bad_n": len(intake.get("bad") or []),
-                     "missing_n": len(intake.get("missing") or [])})
-    rows.sort(key=lambda r: (order.get(r.get("status"), 9), -(r.get("created") or 0)))
-    return rows[:6]
+        return {**b, "next_label": label, "next_action": action,
+                "bad_n": len(intake.get("bad") or []),
+                "missing_n": len(intake.get("missing") or [])}
+
+    rows = [b for b in (briefs_rows or []) if b.get("status") != "종료"]
+    live = sorted([b for b in rows if b.get("status") in LIVE_ORDER],
+                  key=lambda r: (LIVE_ORDER[r["status"]], -(r.get("created") or 0)))
+    proposed = sorted([b for b in rows if b.get("status") == "제안"],
+                      key=lambda r: -(r.get("created") or 0))
+    room = max(0, WEEK_ROWS - len(live))
+    out = live[:WEEK_ROWS] + proposed[:min(room, WEEK_PROPOSALS)]
+    return [decorate(b) for b in out]
 
 
 @cached(20)     # 홈이 열릴 때마다 업무 두 표를 다 읽지 않게
@@ -1680,11 +1692,21 @@ def content_blog(path_key):
     if not brief_id:
         return jsonify(error="어느 주제인지 알 수 없어요."), 400
     try:
-        blog.request_blog_job("blog_draft", {"brief_id": brief_id}, by="직원웹")
+        row = blog.request_blog_job("blog_draft", {"brief_id": brief_id}, by="직원웹")
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"브리프 초안 요청 실패({brief_id}): {e}",
                      kind=type(e).__name__, path=request.path)
         return jsonify(error=f"요청을 넣지 못했어요: {e}"), 500
+    # request_blog_job 은 kind 만 보고 중복을 막는다 — 다른 브리프의 초안을
+    # 요청했는데 앞선 잡이 돌아오면 '요청했다'고 거짓말하지 않는다(2026-09-04 검토).
+    got = ((row or {}).get("payload") or {})
+    if isinstance(got, str):
+        try:
+            got = json.loads(got)
+        except ValueError:
+            got = {}
+    if got.get("brief_id") and got["brief_id"] != brief_id:
+        return jsonify(error="앞선 초안이 아직 쓰이는 중이에요. 끝나면 다시 눌러주세요."), 409
     return jsonify(ok=True)
 
 

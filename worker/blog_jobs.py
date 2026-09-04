@@ -485,11 +485,16 @@ def do_rank(payload: dict) -> tuple[int, str]:
             k = (p.get("main_keyword") or "").strip()
             if k and k not in keywords:
                 keywords.append(k)
-        # 브리프가 고른 키워드도 확인 대상 — 그래야 '블로그에선 됐나'를 판정한다
+        # 브리프가 고른 키워드도 확인 대상 — 단 **글을 낸 브리프만**.
+        # 아직 안 쓴 제안의 키워드까지 확인하면 옛 글이 만든 순위가 그 브리프의
+        # 성과로 잘못 붙는다(2026-09-04 검토).
         try:
             from sns_automation import briefs
             for b in briefs.load():
-                k = ((b.get("blog") or {}).get("keyword") or "").strip()
+                blog = b.get("blog") or {}
+                if not (blog.get("post_id") or blog.get("published_at")):
+                    continue
+                k = (blog.get("keyword") or "").strip()
                 if k and k not in keywords:
                     keywords.append(k)
         except Exception as e:  # noqa: BLE001

@@ -71,6 +71,7 @@ def _finish_bookkeeping(p: dict, plan: dict | None) -> None:
                                          "hook": (plan or {}).get("hook", {}).get("text")})
             briefs.set_status(b["id"], briefs.MAKING)
             p["brief_id"] = b["id"]
+            briefs.push()          # 홈 카드가 '릴스 만들기'를 계속 권하지 않게
     except Exception as e:  # noqa: BLE001
         logger.warning("브리프 연결 실패: %s", str(e)[:120])
 
@@ -533,8 +534,15 @@ def _briefs_from_ideas(ideas: list[dict], source: str) -> list[dict]:
         from . import briefs
         for i in ideas:
             title = (i.get("title") or "").strip()
-            if not title or briefs.by_folder(title):
-                continue                      # 같은 주제가 이미 진행 중이면 새로 만들지 않는다
+            if not title:
+                continue
+            old = briefs.by_folder(title)
+            if old and old.get("status") not in (briefs.PUBLISHED, briefs.CLOSED):
+                # 같은 주제가 **아직 진행 중**이면 새로 만들지 않고 카드만 잇는다.
+                # 끝난 주제(발행·종료)는 새 판을 판다 — 이어쓰면 상태가 앞으로만
+                # 가는 규칙에 걸려 촬영중으로 못 돌아간다(2026-09-04 검토).
+                i["brief_id"] = old["id"]
+                continue
             b = briefs.create(
                 title, why=i.get("why", ""), source=source,
                 insta={"hook_angle": i.get("hook_angle", ""), "shots": i.get("shots") or []},
@@ -578,6 +586,15 @@ def start_shoot(brief_id: str = "", title: str = "") -> dict:
     b = briefs.get(brief_id) if brief_id else None
     if b is None and title:
         b = briefs.by_folder(title)
+    if b is not None and b.get("status") in (briefs.PUBLISHED, briefs.CLOSED):
+        # 이미 끝난 주제를 다시 찍는다 — 새 판을 판다. 옛 브리프를 이어쓰면
+        # set_status 가 앞으로만 가는 규칙에 걸려 '발행'에 갇히고, 입고 검수도
+        # 안 돌며 새 성과가 옛 성과를 덮는다(2026-09-04 검토).
+        b = briefs.create(b.get("topic") or title, why=b.get("why", ""),
+                          insta=dict(b.get("insta") or {}, project_id=None),
+                          blog={"keyword": (b.get("blog") or {}).get("keyword", ""),
+                                "angle": (b.get("blog") or {}).get("angle", "")},
+                          source="reshoot")
     if b is None:
         # 브리프가 없으면(옛 카드) 제목만으로 만든다 — 흐름이 끊기지 않게.
         if not title:
@@ -656,8 +673,12 @@ def run_intake(folder_name: str = "") -> list[str]:
         if b:
             briefs.patch(b["id"], intake={
                 "checked_at": res["checked_at"], "files": res["files"],
-                "ok": res["ok"], "bad": res["bad"], "missing": res["missing"]})
-            if res["ok"]:
+                "ok": res["ok"], "usable": res.get("usable"),
+                "bad": res["bad"], "warn": res.get("warn"),
+                "missing": res["missing"]})
+            # '아슬아슬(warn)'도 쓸 수 있는 소재다 — ok 만 보면 전부 warn 인
+            # 폴더가 촬영중에 영원히 멈춘다(2026-09-04 검토).
+            if res.get("usable"):
                 briefs.set_status(b["id"], briefs.ARRIVED)
         notes.append(f"「{name}」 {line}")
     if notes:

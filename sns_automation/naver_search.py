@@ -141,9 +141,19 @@ def parse_blog_results(html: str, limit: int = TOP_N) -> list[dict]:
 
 
 def exact_hits(keyword: str, posts: list[dict]) -> int:
-    """제목이 이 키워드를 **정면으로** 맞춘 상위 글 수 — 정면 경쟁 강도."""
-    k = norm(keyword)
-    return sum(1 for p in posts if k and k in norm(p.get("title", "")))
+    """제목이 이 키워드를 **정면으로** 맞춘 상위 글 수 — 정면 경쟁 강도.
+
+    낱말이 **다 들어 있으면** 정면으로 본다(붙어 있지 않아도). 실제 제목은
+    「인천 송도 맛집 베이글로그 송도 베이글 산도 후기」처럼 낱말이 흩어져 있어서,
+    통째로 붙은 것만 세면 어절이 늘수록 0 이 나온다 — 세 낱말짜리 키워드가 전부
+    '경쟁 0'으로 보여 green 판정이 무더기로 났다(2026-09-04 실측에서 발견:
+    「송도 베이글 산도」 붙여쓰기 0개 vs 낱말 4개).
+    """
+    toks = [norm(t) for t in keyword.split() if norm(t)]
+    if not toks:
+        return 0
+    return sum(1 for p in posts
+               if all(t in norm(p.get("title", "")) for t in toks))
 
 
 def our_rank(posts: list[dict], blog_id: str = "") -> int | None:
@@ -180,26 +190,43 @@ def rank_of(keyword: str, blog_id: str = "") -> dict:
     }
 
 
+#: 상위 글 중 몇 %가 이 키워드를 정면으로 맞췄나 — 경쟁 강도의 기준선.
+#: 2026-09-04 실측(상위 30, 낱말 매칭): 송도 베이글 산도 4 / 송도 베이글 샌드위치 9
+#: / 송도 샌드위치 카페 11 / 인천 베이글 산도 12 / 인천 베이글 맛집 21 /
+#: 송도 카페 30 / 송도 브런치 30. 그 사이에 두 선을 긋는다.
+GREEN_RATIO = 0.20          # 6/30 이하 — 빈자리가 있다
+YELLOW_RATIO = 0.50         # 15/30 이하 — 좁히면 들어갈 수 있다
+MIN_SCANNED = 10            # 이보다 적게 읽혔으면 판정하지 않는다(조사 실패)
+
+
 def verdict(row: dict) -> dict:
     """이 키워드로 써야 하는가 — 규칙 판정(AI 비용 0).
 
-    green  : 검색되는 말인데 그 자리를 정면으로 맞춘 글이 적다 → 지금 쓰면 이긴다
-    yellow : 수요는 있고 경쟁도 있다 → 각도를 좁혀서(메뉴·상황) 쓴다
-    red    : 아무도 안 치거나(수요 0) 상위가 굳었다 → 이번엔 피한다
-    mine   : 이미 우리 글이 상위에 있다 → 새로 쓰지 말고 그 글을 고친다
+    green   : 검색되는 말인데 그 자리를 정면으로 맞춘 글이 적다 → 지금 쓰면 이긴다
+    yellow  : 수요는 있고 경쟁도 있다 → 각도를 좁혀서(메뉴·상황) 쓴다
+    red     : 아무도 안 치거나(수요 0) 상위가 굳었다 → 이번엔 피한다
+    mine    : 이미 우리 글이 상위에 있다 → 새로 쓰지 말고 그 글을 고친다
+    unknown : 검색 결과를 못 읽었다 → **판정하지 않는다**(0개를 '경쟁 없음'으로
+              읽으면 네트워크 한 번 튄 것이 green 추천이 된다)
     """
     demand = bool(row.get("in_autocomplete"))
     hits = int(row.get("exact_hits") or 0)
+    scanned = int(row.get("top_count") or 0)
     rank = row.get("our_rank")
+    if scanned < MIN_SCANNED:
+        return {"tier": "unknown", "why": f"검색 결과를 못 읽었어요(상위 {scanned}개) — 다음에 다시"}
     if rank and rank <= 10:
         return {"tier": "mine", "why": f"이미 우리 글이 {rank}위 — 새로 쓰지 말고 그 글을 보강"}
     if not demand:
         return {"tier": "red", "why": "자동완성에 없는 말 — 검색하는 사람이 거의 없다"}
-    if hits <= 3:
-        return {"tier": "green", "why": f"검색되는 말인데 정면 경쟁글 {hits}개뿐 — 지금 쓰면 이긴다"}
-    if hits <= 7:
-        return {"tier": "yellow", "why": f"정면 경쟁글 {hits}개 — 메뉴·상황으로 각도를 좁혀서"}
-    return {"tier": "red", "why": f"정면 경쟁글 {hits}개 — 상위가 굳었다"}
+    ratio = hits / scanned
+    if ratio <= GREEN_RATIO:
+        return {"tier": "green",
+                "why": f"검색되는 말인데 상위 {scanned}개 중 정면 경쟁글 {hits}개뿐 — 지금 쓰면 이긴다"}
+    if ratio <= YELLOW_RATIO:
+        return {"tier": "yellow",
+                "why": f"상위 {scanned}개 중 정면 경쟁글 {hits}개 — 메뉴·상황으로 각도를 좁혀서"}
+    return {"tier": "red", "why": f"상위 {scanned}개 중 정면 경쟁글 {hits}개 — 상위가 굳었다"}
 
 
 def pick_winnable(rows: list[dict], limit: int = 5) -> list[dict]:
@@ -341,6 +368,8 @@ def as_prompt_context(data: dict | None = None) -> str:
     lines = ["[네이버 검색 실측 — 블로그 주제는 이 위에서 고른다]"]
     for r in rows:
         v = r.get("verdict") or {}
+        if v.get("tier") == "unknown":
+            continue                      # 못 읽은 것은 아예 보여주지 않는다
         mark = {"green": "✅", "yellow": "△", "mine": "🅾", "red": "✕"}.get(v.get("tier"), "·")
         lines.append(f"{mark} 「{r['keyword']}」 — {v.get('why', '')}")
     win = data.get("winnable") or []

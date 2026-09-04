@@ -200,7 +200,8 @@
   <div id="wcMsg"></div>
   <div class="wcbox">
     {% for b in week_content %}
-    <div class="wc" data-brief="{{ b.id }}" data-topic="{{ b.topic }}">
+    <div class="wc" data-brief="{{ b.id }}" data-topic="{{ b.topic }}"
+         data-folder="{{ b.folder or b.topic }}">
       <div class="wchead">
         <span class="wcst s{{ loop.index0 }}">{{ b.status }}</span>
         <b class="wctitle">{{ b.topic }}</b>
@@ -339,12 +340,15 @@
     var row = btn.closest(".wc");
     var act = WC_ACT[action];
     var fd = new FormData();
+    // 실제 소재 폴더 이름은 주제명과 다를 수 있다(파일명에 못 쓰는 글자를
+    // 씻어서 만든다). 브리프의 folder 를 먼저 쓴다.
+    var folder = row.dataset.folder || row.dataset.topic;
     if (action === "reel") {
-      fd.append("topic", row.dataset.topic);
+      fd.append("topic", folder);
     } else {
       fd.append("brief_id", row.dataset.brief);
       fd.append("title", row.dataset.topic);
-      if (action === "intake") fd.append("folder", row.dataset.topic);
+      if (action === "intake") fd.append("folder", folder);
     }
     var label = btn.textContent;
     btn.disabled = true; btn.textContent = "보내는 중…";

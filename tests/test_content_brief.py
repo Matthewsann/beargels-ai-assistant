@@ -13,6 +13,7 @@
   · 입고 검수: 짧은 클립·어두움·흔들림을 등급으로 가른다(밝기를 먼저 본다)
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -121,6 +122,40 @@ def test_prompt_context_uses_verdicts(store, monkeypatch):
     assert briefs.as_prompt_context([]) == ""
 
 
+def test_rank_alone_does_not_claim_blog_success(store, monkeypatch):
+    """글을 안 썼는데 옛 글의 순위가 이 주제의 성과로 붙으면 안 된다.
+
+    순위는 '그 키워드에 우리 블로그 글이 하나라도 있나'라 옛날 다른 글이 만든
+    것일 수 있다(2026-09-04 검토: 제안 상태 브리프에 '블로그는 됐다'가 붙어
+    다음 기획 프롬프트를 거짓 근거로 오염시켰다).
+    """
+    monkeypatch.setattr(briefs, "_account_avg_likes", lambda: 10.0)
+    b = briefs.create("주제", blog={"keyword": "송도 베이글"})
+    briefs.set_rank(b["id"], 5)
+    assert briefs.get(b["id"])["verdict"] == {}          # 판정하지 않는다
+    assert briefs.as_prompt_context() == ""
+    # 글을 내고 발행되면 그때부터 순위를 성과로 읽는다
+    briefs.patch(b["id"], blog={"post_id": 7})
+    briefs.record_blog(b["id"], published_at=1788500000)
+    assert "블로그는 됐다" in briefs.get(b["id"])["verdict"]["line"]
+
+
+def test_set_rank_can_clear_a_lost_rank(store, monkeypatch):
+    """순위에서 밀려나면 옛 순위를 지워야 한다 — '없음'도 값이다."""
+    monkeypatch.setattr(briefs, "_account_avg_likes", lambda: 10.0)
+    b = briefs.create("주제", blog={"keyword": "송도 베이글", "post_id": 3})
+    briefs.record_blog(b["id"], published_at=1788500000)
+    briefs.set_rank(b["id"], 5)
+    assert "5위" in briefs.get(b["id"])["verdict"]["line"]
+    briefs.set_rank(b["id"], None)                       # 다음 주 30위 밖
+    got = briefs.get(b["id"])
+    assert got["blog"]["rank"] is None
+    assert "순위권 밖" in got["verdict"]["line"]
+    # record_blog 는 여전히 None 을 무시한다(빈 값이 기존 기록을 지우지 않게)
+    briefs.record_blog(b["id"], rank=None, likes=None)
+    assert briefs.get(b["id"])["blog"]["rank"] is None
+
+
 def test_card_drops_heavy_fields(store):
     b = briefs.create("주제", insta={"hook_angle": "훅", "shots": [{"what": "a", "secs": 2}]},
                       blog={"keyword": "kw"})
@@ -151,10 +186,20 @@ def test_parse_autocomplete_and_blog_results():
     assert posts[0]["title"] == "송도 베이글 맛집 후기"      # '새 창 열림' 제거
 
 
-def test_exact_hits_and_our_rank():
+def test_exact_hits_counts_by_word_not_by_run():
+    """낱말이 다 들어 있으면 정면 경쟁이다 — 붙어 있지 않아도.
+
+    실제 제목은 낱말이 흩어져 있어서, 통째로 붙은 것만 세면 어절이 늘수록 0 이
+    나온다. 그래서 세 낱말짜리 키워드가 전부 '경쟁 0' → green 이 됐다
+    (2026-09-04 실측: 「송도 베이글 산도」 붙여쓰기 0 vs 낱말 4).
+    """
     posts = ns.parse_blog_results(BLOG_HTML)
-    assert ns.exact_hits("송도 베이글", posts) == 2        # 띄어쓰기 무시 매칭
+    assert ns.exact_hits("송도 베이글", posts) == 3
     assert ns.exact_hits("무화과", posts) == 0
+    # 세 낱말 회귀 — 붙여쓰기 매칭이면 0 이 나오던 자리
+    three = [{"title": "인천 송도 맛집 베이글로그 송도 베이글 산도 후기"},
+             {"title": "송도 카페 산도 없는 글"}]
+    assert ns.exact_hits("송도 베이글 산도", three) == 1
     assert ns.our_rank(posts, "beargelssongdo") == 3
     assert ns.our_rank(posts, "없는블로그") is None
 
@@ -187,14 +232,36 @@ def test_rank_checker_prefers_http_path(monkeypatch):
     assert got["rank"] == 3 and got["scanned"] == 3
 
 
+def _row(hits, *, scanned=30, demand=True, rank=None):
+    return {"in_autocomplete": demand, "exact_hits": hits,
+            "top_count": scanned, "our_rank": rank}
+
+
 def test_verdict_rules():
-    assert ns.verdict({"in_autocomplete": True, "exact_hits": 1})["tier"] == "green"
-    assert ns.verdict({"in_autocomplete": True, "exact_hits": 5})["tier"] == "yellow"
-    assert ns.verdict({"in_autocomplete": True, "exact_hits": 12})["tier"] == "red"
-    assert ns.verdict({"in_autocomplete": False, "exact_hits": 0})["tier"] == "red"
+    # 2026-09-04 실측(상위 30, 낱말 매칭)의 실제 값으로 경계를 확인한다
+    assert ns.verdict(_row(4))["tier"] == "green"      # 송도 베이글 산도
+    assert ns.verdict(_row(9))["tier"] == "yellow"     # 송도 베이글 샌드위치
+    assert ns.verdict(_row(12))["tier"] == "yellow"    # 인천 베이글 산도
+    assert ns.verdict(_row(21))["tier"] == "red"       # 인천 베이글 맛집
+    assert ns.verdict(_row(30))["tier"] == "red"       # 송도 카페
+    assert ns.verdict(_row(0, demand=False))["tier"] == "red"
     # 이미 우리 글이 상위면 새로 쓰지 말고 보강하라고 한다
-    v = ns.verdict({"in_autocomplete": True, "exact_hits": 12, "our_rank": 4})
+    v = ns.verdict(_row(12, rank=4))
     assert v["tier"] == "mine" and "보강" in v["why"]
+
+
+def test_verdict_refuses_to_judge_a_failed_fetch():
+    """검색 결과를 못 읽었을 때 0개를 '경쟁 없음'으로 읽으면 안 된다.
+
+    네트워크가 한 번 튀면 top_count=0 이 되는데, 예전 규칙은 그걸 green
+    ('정면 경쟁글 0개뿐 — 지금 쓰면 이긴다')으로 추천했다.
+    """
+    v = ns.verdict(_row(0, scanned=0))
+    assert v["tier"] == "unknown" and "못 읽었어요" in v["why"]
+    assert ns.verdict(_row(0, scanned=3))["tier"] == "unknown"
+    # 못 읽은 것은 기획 프롬프트에도 넣지 않는다
+    text = ns.as_prompt_context({"rows": [{"keyword": "x", "verdict": v}], "winnable": []})
+    assert "x" not in text
 
 
 def test_pick_winnable_orders_by_tier_then_competition():
@@ -290,6 +357,52 @@ def test_wanted_shots_reads_our_own_guide(tmp_path):
     assert intake_qc.wanted_shots(str(folder)) == ["단면 클로즈업", "크림 늘어남", "접시 정면"]
 
 
+def test_landscape_warning_actually_fires():
+    """가로 촬영 경고가 죽은 코드가 아니어야 한다 — frame_stats 가 값을 채운다."""
+    import io as _io
+
+    from PIL import Image
+    buf = _io.BytesIO()
+    Image.new("RGB", (640, 360), (128, 128, 128)).save(buf, "JPEG")
+    assert intake_qc.frame_stats(buf.getvalue())["landscape"] is True
+    buf = _io.BytesIO()
+    Image.new("RGB", (360, 640), (128, 128, 128)).save(buf, "JPEG")
+    assert intake_qc.frame_stats(buf.getvalue())["landscape"] is False
+    # 흐릿함 경고가 방향 경고를 가리지 않는다(둘 다일 때 방향을 먼저 말한다)
+    both = {"sharp": 14.0, "bright": 120.0, "seconds": 5.0, "landscape": True}
+    grade, why = intake_qc.judge(both)
+    assert grade == intake_qc.Verdict.WARN and "가로" in why
+
+
+def test_check_folder_sees_photos_even_with_many_clips(tmp_path, monkeypatch):
+    """클립이 많아도 사진은 검수된다 — 블로그 대표사진이 사각지대였다."""
+    folder = tmp_path / "주제"
+    folder.mkdir()
+    for i in range(20):
+        (folder / f"v{i:02d}.mp4").write_bytes(b"x")
+    (folder / "a.jpg").write_bytes(b"x")
+    monkeypatch.setattr(intake_qc, "check_video",
+                        lambda p: {"file": Path(p).name, "grade": intake_qc.Verdict.OK})
+    monkeypatch.setattr(intake_qc, "check_image",
+                        lambda p: {"file": Path(p).name, "grade": intake_qc.Verdict.OK})
+    res = intake_qc.check_folder(str(folder))
+    assert "a.jpg" in [r["file"] for r in res["rows"]]
+
+
+def test_all_warn_folder_is_usable_and_says_so(tmp_path, monkeypatch):
+    """전부 '아슬아슬'이면 쓸 수는 있다 — '0개 쓸 수 있어요 · 다시 찍을 건 없어요'는 모순."""
+    folder = tmp_path / "주제"
+    folder.mkdir()
+    (folder / "a.mp4").write_bytes(b"x")
+    monkeypatch.setattr(intake_qc, "check_video",
+                        lambda p: {"file": Path(p).name, "grade": intake_qc.Verdict.WARN,
+                                   "why": "조금 흐릿해요"})
+    res = intake_qc.check_folder(str(folder))
+    assert res["ok"] == 0 and res["usable"] == 1
+    line = intake_qc.summary_line(res)
+    assert "아슬아슬" in line and "다시 찍을 건 없어요" not in line
+
+
 def test_check_folder_counts_missing(tmp_path, monkeypatch):
     folder = tmp_path / "주제"
     folder.mkdir()
@@ -304,6 +417,79 @@ def test_check_folder_counts_missing(tmp_path, monkeypatch):
 
 
 # ── 잡 큐 ────────────────────────────────────────────────────
+
+def test_week_content_puts_live_work_before_proposals():
+    """안 고른 AI 제안이 쌓여도 진행 중인 일이 홈에서 밀려나면 안 된다."""
+    import sys as _sys
+    _sys.path.insert(0, str(ROOT / "service"))
+    from service.app import _week_content
+    rows = ([{"id": f"p{i}", "topic": f"제안{i}", "status": "제안", "created": 900 + i}
+             for i in range(8)]
+            + [{"id": "a", "topic": "촬영", "status": "촬영중", "created": 1},
+               {"id": "b", "topic": "도착", "status": "소재도착", "created": 2},
+               {"id": "c", "topic": "제작", "status": "제작중", "created": 3},
+               {"id": "d", "topic": "끝", "status": "종료", "created": 4}])
+    got = _week_content(rows)
+    ids = [r["id"] for r in got]
+    assert ids[:3] == ["b", "a", "c"]           # 소재도착 → 촬영중 → 제작중
+    assert "d" not in ids                       # 종료는 안 보인다
+    assert sum(1 for r in got if r["status"] == "제안") == 2   # 제안은 남는 자리만
+    assert got[0]["next_action"] == "reel"      # 소재도착의 다음 걸음
+
+
+class _Query:
+    """supabase 쿼리 빌더 흉내 — 필요한 만큼만."""
+
+    def __init__(self, rows, log):
+        self._rows, self._log = rows, log
+
+    def select(self, *a, **k):
+        return self
+
+    def eq(self, col, val):
+        self._rows = [r for r in self._rows if r.get(col) == val]
+        return self
+
+    def in_(self, col, vals):
+        self._rows = [r for r in self._rows if r.get(col) in vals]
+        return self
+
+    def order(self, col, desc=False):
+        self._rows = sorted(self._rows, key=lambda r: r.get(col) or "", reverse=desc)
+        return self
+
+    def limit(self, n):
+        self._rows = self._rows[:n]
+        return self
+
+    def insert(self, row):
+        self._log.append(("insert", row))
+        self._rows = [{"id": 99, **row}]
+        return self
+
+    def execute(self):
+        return type("R", (), {"data": list(self._rows)})()
+
+
+class _Client:
+    def __init__(self, rows, log):
+        self._rows, self._log = rows, log
+
+    def table(self, name):
+        return _Query(list(self._rows), self._log)
+
+
+def test_intake_requests_are_per_folder(monkeypatch):
+    """촬영 중인 주제가 둘이면 두 번째 [소재 확인]이 삼켜지면 안 된다."""
+    from database import supabase_client as db
+    log = []
+    rows = [{"id": 3, "kind": "content_intake", "status": "pending",
+             "requested_at": "1", "message": json.dumps({"folder": "A"})}]
+    monkeypatch.setattr(db, "get_client", lambda: _Client(rows, log))
+    assert db.request_content_intake("A")["id"] == 3 and not log   # 같은 폴더 → 재사용
+    assert db.request_content_intake("B")["id"] == 99              # 다른 폴더 → 새 잡
+    assert json.loads(log[0][1]["message"])["folder"] == "B"
+
 
 def test_new_jobs_are_registered_and_routed():
     from database import supabase_client as db
