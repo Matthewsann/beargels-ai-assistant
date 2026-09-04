@@ -198,6 +198,14 @@ GREEN_RATIO = 0.20          # 6/30 이하 — 빈자리가 있다
 YELLOW_RATIO = 0.50         # 15/30 이하 — 좁히면 들어갈 수 있다
 MIN_SCANNED = 10            # 이보다 적게 읽혔으면 판정하지 않는다(조사 실패)
 
+#: 월간 검색수가 이보다 적으면 **경쟁이 아무리 없어도 쓰지 않는다.**
+#: 1위를 해도 사람이 안 온다. 실측(2026-09-05, 검색광고 키워드도구):
+#:   베이글산도 2,520 / 송도베이글 1,030 / 송도타임스페이스카페 690
+#:   vs 송도베이글산도 45 / 송도베이글샌드위치 35
+#: 앞의 셋은 경쟁이 세다고 '피하라'가 나왔고, 뒤의 둘은 경쟁이 없다고
+#: '지금 쓰면 이긴다'가 나왔다 — 검색량을 모르면 정확히 거꾸로 고른다.
+MIN_VOLUME = 100
+
 
 def canonical(keyword: str, suggestions: list[str]) -> str:
     """자동완성이 쓰는 표준 표기로 맞춘다 — 띄어쓰기만 다른 같은 말.
@@ -219,9 +227,14 @@ def verdict(row: dict) -> dict:
     green   : 검색되는 말인데 그 자리를 정면으로 맞춘 글이 적다 → 지금 쓰면 이긴다
     yellow  : 수요는 있고 경쟁도 있다 → 각도를 좁혀서(메뉴·상황) 쓴다
     red     : 아무도 안 치거나(수요 0) 상위가 굳었다 → 이번엔 피한다
+    tiny    : 검색량이 너무 적다 → **경쟁이 없어도 쓰지 않는다.** 1위를 해도
+              사람이 안 온다(월 100회 미만).
     mine    : 이미 우리 글이 상위에 있다 → 새로 쓰지 말고 그 글을 고친다
     unknown : 검색 결과를 못 읽었다 → **판정하지 않는다**(0개를 '경쟁 없음'으로
               읽으면 네트워크 한 번 튄 것이 green 추천이 된다)
+
+    volume(월간 검색수)은 검색광고 키워드도구가 있을 때만 채워진다. 없으면
+    예전처럼 경쟁만으로 판정한다 — 키가 없어도 기능이 죽지 않는다.
 
     수요는 자동완성으로 보되, **실제 유입이 증명된 말은 자동완성이 몰라도
     수요가 있다**(known_demand). 자동완성은 전국 인기 질의 위주라 '동춘동베이글'
@@ -232,30 +245,71 @@ def verdict(row: dict) -> dict:
     hits = int(row.get("exact_hits") or 0)
     scanned = int(row.get("top_count") or 0)
     rank = row.get("our_rank")
+    vol = row.get("volume")
+    vtxt = f"월 {vol:,}회" if isinstance(vol, int) else ""
     if scanned < MIN_SCANNED:
         return {"tier": "unknown", "why": f"검색 결과를 못 읽었어요(상위 {scanned}개) — 다음에 다시"}
     if rank and rank <= 10:
         return {"tier": "mine", "why": f"이미 우리 글이 {rank}위 — 새로 쓰지 말고 그 글을 보강"}
+    # 검색량을 아는 경우, 너무 작은 말은 경쟁을 보기 전에 걸러낸다.
+    # ⚠️ 단 **실제로 우리 가게로 손님을 데려온 말은 예외**다(known_demand).
+    #    키워드도구는 전국 통합검색 기준이라 우리 유입과 어긋난다 — 실측
+    #    2026-09-05: 「송도타임스페이스베이글」 도구 월 15회 vs 플레이스 유입
+    #    주 8회(월 ~35회). 근거의 우선순위상 우리 측정이 도구 추정보다 위다.
+    if isinstance(vol, int) and vol < MIN_VOLUME and not row.get("known_demand"):
+        return {"tier": "tiny",
+                "why": f"{vtxt}뿐 — 1위를 해도 사람이 거의 안 온다"}
     if not demand:
         return {"tier": "red", "why": "자동완성에 없는 말 — 검색하는 사람이 거의 없다"}
     proven = (not row.get("in_autocomplete")) and row.get("known_demand")
     ratio = hits / scanned
-    src = "이 말로 실제 손님이 들어오는데" if proven else "검색되는 말인데"
+    small = isinstance(vol, int) and vol < MIN_VOLUME
+    if row.get("known_demand"):
+        src = ("도구엔 작게 잡히지만 이 말로 실제 손님이 들어오는데" if small
+               else "이 말로 실제 손님이 들어오는데")
+    else:
+        src = "검색되는 말인데"
+    tail = f" ({vtxt})" if vtxt else ""
     if ratio <= GREEN_RATIO:
         return {"tier": "green",
-                "why": f"{src} 상위 {scanned}개 중 정면 경쟁글 {hits}개뿐 — 지금 쓰면 이긴다"}
+                "why": f"{src} 상위 {scanned}개 중 정면 경쟁글 {hits}개뿐 — 지금 쓰면 이긴다{tail}"}
     if ratio <= YELLOW_RATIO:
         return {"tier": "yellow",
-                "why": f"상위 {scanned}개 중 정면 경쟁글 {hits}개 — 메뉴·상황으로 각도를 좁혀서"}
-    return {"tier": "red", "why": f"상위 {scanned}개 중 정면 경쟁글 {hits}개 — 상위가 굳었다"}
+                "why": f"상위 {scanned}개 중 정면 경쟁글 {hits}개 — 메뉴·상황으로 각도를 좁혀서{tail}"}
+    return {"tier": "red",
+            "why": f"상위 {scanned}개 중 정면 경쟁글 {hits}개 — 상위가 굳었다{tail}"}
+
+
+def opportunity(row: dict) -> float:
+    """기회 점수 — 검색량 × 비어 있는 정도. 클수록 먼저 쓴다.
+
+    검색량을 모르면 경쟁만 본다(예전 순서 유지). 알면 '월 2,000회에 경쟁 절반'이
+    '월 40회에 경쟁 0'보다 앞선다 — 후자는 1위를 해도 40명이다.
+    """
+    scanned = int(row.get("top_count") or 0)
+    hits = int(row.get("exact_hits") or 0)
+    free = 1.0 - (hits / scanned) if scanned else 0.0
+    vol = row.get("volume")
+    if not isinstance(vol, int):
+        return free                      # 검색량 모름 — 경쟁만으로
+    if row.get("known_demand"):
+        # 우리 가게로 실제 손님을 데려온 말은 도구 숫자가 작아도 바닥을 깔아준다
+        vol = max(vol, MIN_VOLUME)
+    return vol * max(free, 0.05)         # 경쟁이 꽉 차도 검색량이 크면 조금은 남는다
 
 
 def pick_winnable(rows: list[dict], limit: int = 5) -> list[dict]:
-    """이길 수 있는 키워드 순으로. green → yellow, 같은 등급이면 경쟁 적은 순."""
-    order = {"green": 0, "yellow": 1, "mine": 2, "red": 3}
-    ranked = sorted(rows, key=lambda r: (order.get((r.get("verdict") or {}).get("tier"), 9),
-                                         r.get("exact_hits", 99)))
-    return [r for r in ranked if (r.get("verdict") or {}).get("tier") in ("green", "yellow")][:limit]
+    """쓸 만한 키워드를 **기회 점수 순**으로. 등급은 넣고 빼는 데만 쓴다.
+
+    등급(green/yellow)은 '이길 수 있나'이고 기회 점수는 '이겨서 얻을 게 있나'다.
+    등급을 먼저 정렬하면 두 번 다 헛다리를 짚는다 —
+      · 처음(2026-09-04): 경쟁 적은 순 → 월 45회짜리가 1순위
+      · 고친 뒤(2026-09-05): green 먼저 → 월 10회짜리가 월 2,520회짜리를 제침
+    그래서 순서는 기회 점수 하나로만 정한다. 검색량을 모르면 경쟁만 반영된다.
+    """
+    ok = [r for r in rows
+          if (r.get("verdict") or {}).get("tier") in ("green", "yellow")]
+    return sorted(ok, key=lambda r: -opportunity(r))[:limit]
 
 
 # ── 수집 ──────────────────────────────────────────────────────
@@ -338,36 +392,66 @@ def research(seeds: tuple[str, ...] | list[str] | None = None, *,
     """
     if seeds is None:
         seeds = merged_seeds()
-    rows: list[dict] = []
-    tried: set[str] = set()
     try:
         from .first_party import inflow_keywords
         proven = {norm(r["name"]) for r in inflow_keywords()}
     except Exception:  # noqa: BLE001
         proven = set()
+
+    # ① 조사할 목록을 먼저 정한다 — **씨앗을 전부 넣고 나서** 가지를 붙인다.
+    #    예전엔 씨앗 하나씩 가지까지 조사하다 상한에 걸려, 뒤쪽 씨앗은 아예
+    #    조사되지 않았다(실측: 씨앗 8개 중 3개까지만 돌고 12칸이 찼다).
+    plan: list[str] = []
+    seen_plan: set[str] = set()
+    branches: list[str] = []
+    suggest_of: dict[str, list[str]] = {}
     for seed in seeds:
+        if norm(seed) in seen_plan:
+            continue
+        seen_plan.add(norm(seed))
+        plan.append(seed)
         try:
             sug = autocomplete(seed)
         except SearchError as e:
             logger.warning("자동완성 실패(%s): %s", seed, e)
             sug = []
+        suggest_of[norm(seed)] = sug
         time.sleep(PAUSE)
-        # 씨앗 자신 + 자동완성 가지(우리 지역과 무관한 것은 뺀다)
-        branch = [seed] + [s for s in sug
-                           if norm(s) != norm(seed) and is_useful(s)][:per_seed]
-        for kw in branch:
-            if norm(kw) in tried or len(rows) >= max_keywords:
-                continue
-            tried.add(norm(kw))
-            try:
-                rows.append(study(kw, suggestions=sug if kw == seed else None,
-                                  known_demand=norm(kw) in proven))
-            except SearchError as e:
-                logger.warning("경쟁 조사 실패(%s): %s", kw, e)
-            time.sleep(PAUSE)
+        for s in [x for x in sug if norm(x) != norm(seed) and is_useful(x)][:per_seed]:
+            if norm(s) not in seen_plan:
+                seen_plan.add(norm(s))
+                branches.append(s)
+    plan = (plan + branches)[:max_keywords]
+
+    # ② 경쟁 실측
+    rows: list[dict] = []
+    for kw in plan:
+        try:
+            rows.append(study(kw, suggestions=suggest_of.get(norm(kw)),
+                              known_demand=norm(kw) in proven))
+        except SearchError as e:
+            logger.warning("경쟁 조사 실패(%s): %s", kw, e)
+        time.sleep(PAUSE)
+
+    # ③ 검색량(수요의 크기) — 키가 있을 때만. 없으면 경쟁만으로 판정한다.
+    volumes: dict[str, int] = {}
+    try:
+        from . import keyword_volume as kvol
+        if kvol.configured() and rows:
+            volumes = kvol.volume_map([r["keyword"] for r in rows])
+    except Exception as e:  # noqa: BLE001 — 검색량이 없어도 조사는 살아 있어야 한다
+        logger.warning("검색량 조회 실패(경쟁만으로 판정): %s", str(e)[:150])
+    if volumes:
+        for r in rows:
+            v = volumes.get(re.sub(r"\s+", "", r["keyword"]))
+            if v is not None:
+                r["volume"] = v
+                r["verdict"] = verdict(r)
+
     data = {
         "scanned_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "seeds": list(seeds),
+        "has_volume": bool(volumes),
         "rows": rows,
         "winnable": [r["keyword"] for r in pick_winnable(rows)],
     }
@@ -434,13 +518,17 @@ def as_prompt_context(data: dict | None = None) -> str:
         v = r.get("verdict") or {}
         if v.get("tier") == "unknown":
             continue                      # 못 읽은 것은 아예 보여주지 않는다
-        mark = {"green": "✅", "yellow": "△", "mine": "🅾", "red": "✕"}.get(v.get("tier"), "·")
+        mark = {"green": "✅", "yellow": "△", "mine": "🅾",
+                "tiny": "·", "red": "✕"}.get(v.get("tier"), "·")
         lines.append(f"{mark} 「{r['keyword']}」 — {v.get('why', '')}")
     win = data.get("winnable") or []
     if win:
-        lines.append("→ 이번에 쓸 만한 키워드: " + ", ".join(win))
+        lines.append("→ 이번에 쓸 만한 키워드(기회 순): " + ", ".join(win))
     lines.append("(✅ 지금 쓰면 이긴다 / △ 각도를 좁혀서 / 🅾 우리 글이 이미 상위 "
-                 "— 새로 쓰지 말고 보강 / ✕ 피한다)")
+                 "— 새로 쓰지 말고 보강 / · 검색량이 너무 적다 / ✕ 피한다)")
+    if data.get("has_volume"):
+        lines.append("월 N회는 네이버 검색광고 키워드도구의 최근 30일 검색수다. "
+                     "경쟁이 적어도 검색량이 작으면 쓰지 않는다.")
     return "\n".join(lines)
 
 

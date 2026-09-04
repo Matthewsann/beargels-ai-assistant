@@ -265,13 +265,69 @@ def test_verdict_refuses_to_judge_a_failed_fetch():
 
 
 def test_pick_winnable_orders_by_tier_then_competition():
+    """검색량을 모르면 예전처럼 경쟁이 적은 순."""
     rows = [
-        {"keyword": "a", "exact_hits": 5, "verdict": {"tier": "yellow"}},
-        {"keyword": "b", "exact_hits": 2, "verdict": {"tier": "green"}},
-        {"keyword": "c", "exact_hits": 0, "verdict": {"tier": "red"}},
-        {"keyword": "d", "exact_hits": 1, "verdict": {"tier": "green"}},
+        {"keyword": "a", "exact_hits": 5, "top_count": 30, "verdict": {"tier": "yellow"}},
+        {"keyword": "b", "exact_hits": 2, "top_count": 30, "verdict": {"tier": "green"}},
+        {"keyword": "c", "exact_hits": 0, "top_count": 30, "verdict": {"tier": "red"}},
+        {"keyword": "d", "exact_hits": 1, "top_count": 30, "verdict": {"tier": "green"}},
     ]
     assert [r["keyword"] for r in ns.pick_winnable(rows)] == ["d", "b", "a"]
+
+
+def test_pick_winnable_orders_by_opportunity_not_by_tier():
+    """등급은 넣고 빼는 데만 쓰고, 순서는 기회 점수(검색량 × 빈자리)로 정한다.
+
+    실측 2026-09-05에 두 번 헛다리를 짚었다 — 경쟁만 보면 월 45회짜리가 1순위,
+    green 을 먼저 놓으면 월 10회짜리가 월 2,520회짜리를 제친다.
+    """
+    rows = [
+        {"keyword": "동춘동베이글", "exact_hits": 0, "top_count": 30, "volume": 10,
+         "known_demand": True, "verdict": {"tier": "green"}},
+        {"keyword": "베이글산도", "exact_hits": 11, "top_count": 30, "volume": 2520,
+         "verdict": {"tier": "yellow"}},
+        {"keyword": "송도 샌드위치 맛집", "exact_hits": 14, "top_count": 30, "volume": 370,
+         "verdict": {"tier": "yellow"}},
+        {"keyword": "버릴것", "exact_hits": 0, "top_count": 30, "volume": 20,
+         "verdict": {"tier": "tiny"}},
+    ]
+    got = [r["keyword"] for r in ns.pick_winnable(rows)]
+    assert got == ["베이글산도", "송도 샌드위치 맛집", "동춘동베이글"]
+    assert "버릴것" not in got                    # tiny·red 는 아예 안 들어간다
+
+
+def test_tiny_volume_is_never_recommended():
+    """경쟁이 0이어도 검색량이 적으면 쓰지 않는다 — 1위를 해도 사람이 안 온다."""
+    tiny = ns.verdict({"in_autocomplete": True, "exact_hits": 0,
+                       "top_count": 30, "volume": 45})
+    assert tiny["tier"] == "tiny" and "45" in tiny["why"]
+    assert ns.pick_winnable([{"keyword": "x", "exact_hits": 0, "top_count": 30,
+                              "volume": 45, "verdict": tiny}]) == []
+    # 검색량이 충분하면 그대로 green, 그리고 근거에 숫자가 붙는다
+    ok = ns.verdict({"in_autocomplete": True, "exact_hits": 4,
+                     "top_count": 30, "volume": 2520})
+    assert ok["tier"] == "green" and "월 2,520회" in ok["why"]
+    # 검색량을 모르면 예전 판정 그대로 (키가 없어도 기능이 죽지 않는다)
+    assert ns.verdict({"in_autocomplete": True, "exact_hits": 4,
+                       "top_count": 30})["tier"] == "green"
+
+
+def test_proven_inflow_beats_a_small_tool_number():
+    """도구가 작게 잡아도 실제로 손님을 데려온 말은 버리지 않는다.
+
+    실측 2026-09-05: 「송도타임스페이스베이글」 키워드도구 월 15회 vs 플레이스
+    유입 주 8회. 도구는 전국 통합검색 기준이라 우리 유입과 어긋난다 —
+    근거의 우선순위상 우리 측정이 위다.
+    """
+    row = {"in_autocomplete": False, "known_demand": True, "exact_hits": 1,
+           "top_count": 30, "volume": 15}
+    v = ns.verdict(row)
+    assert v["tier"] == "green" and "실제 손님이 들어오는데" in v["why"]
+    # 증명되지 않은 같은 크기의 말은 그대로 걸러진다
+    assert ns.verdict({**row, "known_demand": False,
+                       "in_autocomplete": True})["tier"] == "tiny"
+    # 기회 점수도 바닥을 깔아준다(0 으로 죽지 않게)
+    assert ns.opportunity(row) >= ns.MIN_VOLUME * 0.9
 
 
 def test_branch_filter_drops_other_towns_and_rivals(monkeypatch):
