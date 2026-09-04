@@ -34,7 +34,26 @@ def get_blog_id() -> str:
 
 
 def check_keyword(keyword: str, blog_id: str) -> dict:
-    """키워드 검색 결과에서 blog_id 의 첫 등장 순위를 찾는다."""
+    """키워드 검색 결과에서 blog_id 의 첫 등장 순위를 찾는다.
+
+    먼저 **브라우저 없이** 공개 검색 페이지를 그대로 읽는다(sns_automation/
+    naver_search). 집 PC 에 Playwright 크로미움이 깔려 있지 않아 순위 확인이
+    통째로 실패하고 있었기 때문이다(2026-09-04: '키워드 0개 확인'). HTTP 가
+    막히면 예전 경로(크로미움)로 넘어간다.
+    """
+    try:
+        import pathlib as _pl
+        import sys as _sys
+        _root = str(_pl.Path(__file__).resolve().parent.parent)
+        if _root not in _sys.path:
+            _sys.path.insert(0, _root)
+        from sns_automation import naver_search
+        got = naver_search.rank_of(keyword, blog_id)
+        if got.get("scanned"):
+            return got
+    except Exception as e:  # noqa: BLE001 — 막히면 브라우저 경로로
+        print(f"  (HTTP 순위 확인 실패, 브라우저로 재시도: {str(e)[:80]})")
+
     url = f"https://search.naver.com/search.naver?ssc=tab.blog.all&query={quote(keyword)}"
     ordered: list[str] = []
     with sync_playwright() as pw:

@@ -17,8 +17,9 @@
     py -m sns_automation.naver_search 송도 베이글    한 키워드만
 
 결과는 data/naver_search.json 에 쌓이고, 기획 프롬프트에 `as_prompt_context()`
-로 주입된다. 순위 확인(webapp/rank_checker.py)과 역할이 다르다 — 저쪽은
-'우리 글이 몇 위인가', 여기는 '어느 키워드로 써야 하는가'.
+로 주입된다. 주 목적은 '어느 키워드로 써야 하는가'지만, 같은 페이지에 우리 글
+순위도 들어 있어 `rank_of()` 로 **브라우저 없이** 순위 확인까지 해준다
+(webapp/rank_checker.py 가 이걸 먼저 쓴다 — 그쪽 크로미움이 집 PC 에 없다).
 
 ⚠️ 예의: 호출 사이에 쉬고(PAUSE), 한 번에 조사하는 키워드 수를 제한한다.
 """
@@ -34,6 +35,7 @@ import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +49,25 @@ PAUSE = 1.2                 # 호출 사이 쉼(초)
 TOP_N = 30                  # 블로그탭에서 보는 상위 글 수
 MAX_KEYWORDS = 12           # 한 번에 조사할 키워드 수 상한
 
-#: 우리 블로그 아이디 — 상위에 이미 우리 글이 있는지 본다.
-OUR_BLOG = os.getenv("NAVER_BLOG_ID", "beargelssongdo").strip()
+@lru_cache(maxsize=1)
+def our_blog_id() -> str:
+    """우리 블로그 아이디 — 순위 확인(rank_checker)과 **같은 출처**를 쓴다.
+
+    ⚠️ 손으로 적어 두면 틀린다: 실제 아이디는 `beargels_songdo`(밑줄)인데
+    브랜드 문서에는 `beargelssongdo` 로 적혀 있어, 상위에 우리 글이 있어도
+    영영 못 알아볼 뻔했다(2026-09-04 실측에서 발견).
+    """
+    env = os.getenv("NAVER_BLOG_ID", "").strip()
+    if env:
+        return env
+    try:
+        import yaml
+        path = os.path.join(_ROOT, "automation", "config.yaml")
+        with open(path, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        return ((cfg.get("naver") or {}).get("blog_id") or "").strip()
+    except Exception:  # noqa: BLE001 — 설정이 없으면 '우리 글 여부'만 못 본다
+        return ""
 
 #: 씨앗 키워드. 여기서 자동완성으로 가지를 뻗는다.
 #: 씨앗은 '지역+카테고리'로 넓게 잡지 말고 **우리가 실제로 파는 것**으로 좁게.
@@ -129,11 +148,36 @@ def exact_hits(keyword: str, posts: list[dict]) -> int:
 
 def our_rank(posts: list[dict], blog_id: str = "") -> int | None:
     """상위 목록에서 우리 블로그가 몇 번째인가. 없으면 None."""
-    want = (blog_id or OUR_BLOG).lower()
+    want = (blog_id or our_blog_id()).lower()
+    if not want:
+        return None
     for i, p in enumerate(posts, start=1):
         if p.get("blog_id", "").lower() == want:
             return i
     return None
+
+
+#: 순위 표기 — 10위를 1페이지로 환산(rank_checker 와 같은 규칙).
+PER_PAGE = 10
+
+
+def rank_of(keyword: str, blog_id: str = "") -> dict:
+    """키워드 하나의 우리 블로그 순위 — **브라우저 없이** 공개 검색 페이지로.
+
+    예전 경로(webapp/rank_checker.py)는 Playwright 크로미움이 있어야 했는데
+    집 PC 에 설치돼 있지 않아 순위 확인이 통째로 실패하고 있었다
+    (2026-09-04 발견: '키워드 0개 확인'). 같은 데이터를 HTTP 로 읽으면 된다.
+
+    반환 모양은 rank_checker.check_keyword 와 같다(저장·화면이 그대로 쓴다).
+    """
+    posts = blog_top(keyword)
+    rank = our_rank(posts, blog_id)
+    return {
+        "keyword": keyword, "found": rank is not None, "rank": rank,
+        "page": ((rank - 1) // PER_PAGE + 1) if rank else None,
+        "pos_in_page": ((rank - 1) % PER_PAGE + 1) if rank else None,
+        "scanned": len(posts),
+    }
 
 
 def verdict(row: dict) -> dict:

@@ -159,6 +159,34 @@ def test_exact_hits_and_our_rank():
     assert ns.our_rank(posts, "없는블로그") is None
 
 
+def test_our_blog_id_comes_from_config_not_a_guess(monkeypatch):
+    """손으로 적어 둔 아이디는 틀린다 — 순위 확인과 같은 출처를 쓴다."""
+    ns.our_blog_id.cache_clear()
+    monkeypatch.setenv("NAVER_BLOG_ID", "beargels_songdo")
+    assert ns.our_blog_id() == "beargels_songdo"
+    ns.our_blog_id.cache_clear()
+
+
+def test_rank_of_matches_rank_checker_shape(monkeypatch):
+    """브라우저 없이 순위를 낸다 — 저장·화면이 쓰는 모양 그대로."""
+    monkeypatch.setattr(ns, "blog_top", lambda kw, limit=30: ns.parse_blog_results(BLOG_HTML))
+    got = ns.rank_of("송도 베이글", "beargelssongdo")
+    assert got == {"keyword": "송도 베이글", "found": True, "rank": 3,
+                   "page": 1, "pos_in_page": 3, "scanned": 3}
+    miss = ns.rank_of("송도 베이글", "없는블로그")
+    assert miss["found"] is False and miss["rank"] is None and miss["scanned"] == 3
+
+
+def test_rank_checker_prefers_http_path(monkeypatch):
+    """rank_checker 가 크로미움 없이도 답을 낸다(집 PC 에 브라우저가 없다)."""
+    import sys as _sys
+    _sys.path.insert(0, str(ROOT / "webapp"))
+    import rank_checker as rc
+    monkeypatch.setattr(ns, "blog_top", lambda kw, limit=30: ns.parse_blog_results(BLOG_HTML))
+    got = rc.check_keyword("송도 베이글", "beargelssongdo")
+    assert got["rank"] == 3 and got["scanned"] == 3
+
+
 def test_verdict_rules():
     assert ns.verdict({"in_autocomplete": True, "exact_hits": 1})["tier"] == "green"
     assert ns.verdict({"in_autocomplete": True, "exact_hits": 5})["tier"] == "yellow"
