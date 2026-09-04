@@ -56,8 +56,12 @@ def summarize(posts: list[dict]) -> dict:
         key=lambda p: (p.get("like_count") or 0) + (p.get("comments_count") or 0) * 3,
         reverse=True,
     )
+    # 좋아요를 하나도 모르면 '인기순'이 아니라 수집 순서일 뿐이다 — 그렇다고
+    # 표시해 둬야 뒤에서 '잘 되는 글'로 잘못 읽지 않는다.
+    known_likes = any(isinstance(p.get("like_count"), int) for p in posts)
     return {
         "count": len(posts),
+        "ranked_by_engagement": known_likes,
         "reels_ratio": round(
             sum(1 for p in posts if p.get("media_type") in ("VIDEO", "REELS")) / len(posts), 2),
         "caption_length_median": int(statistics.median(lens)) if lens else 0,
@@ -269,20 +273,39 @@ def load(path: str = OUT_PATH) -> dict | None:
 
 
 def as_prompt_context(data: dict | None = None, *, max_hooks: int = 12) -> str:
-    """기획 프롬프트에 넣을 텍스트. 데이터가 없으면 빈 문자열."""
+    """기획 프롬프트에 넣을 텍스트. 데이터가 없으면 빈 문자열.
+
+    ⚠️ **모르는 숫자는 쓰지 않는다.** 웹 격자 수집(scan_web)은 좋아요를 못
+    가져오고 릴스 여부도 링크로만 짐작해 전부 사진으로 잡힌다. 예전에는 그걸
+    그대로 '♥0'·'릴스 비중 0%'로 찍어, 릴스 기획 프롬프트에 "이 시장은 릴스를
+    안 쓴다"는 거짓 사실이 다섯 줄씩 들어갔다(시장조사 검토 2026-09-04).
+    이제 웹 수집분에서는 그 두 값을 아예 빼고, 사실인 것(훅 문장·캡션 길이·
+    해시태그 개수)만 넣는다.
+    """
     data = data or load()
     if not data or not data.get("hashtags"):
         return ""
-    lines = ["[지금 이 시장에서 잘 되는 게시물 — 실제 수집 데이터]"]
+    web = data.get("source") == "web"
+    lines = ["[이 시장에서 지금 쓰는 훅 — 최근 게시물]" if web
+             else "[지금 이 시장에서 잘 되는 게시물 — 실제 수집 데이터]"]
+    if web:
+        lines.append("(웹에서 모은 것이라 좋아요·영상 비중은 알 수 없다. "
+                     "'잘 된 순'이 아니라 '최근 순'이므로 문장만 참고할 것.)")
     for tag, s in data["hashtags"].items():
         if not s.get("count"):
             continue
-        lines.append(
-            f"· #{tag}: 인기글 {s['count']}개, 릴스 비중 {int(s['reels_ratio']*100)}%, "
-            f"캡션 중앙값 {s['caption_length_median']}자, 해시태그 중앙값 {s['hashtag_count_median']}개")
+        head = f"· #{tag}: 게시물 {s['count']}개"
+        if not web and s.get("reels_ratio") is not None:
+            head += f", 릴스 비중 {int(s['reels_ratio'] * 100)}%"
+        head += (f", 캡션 중앙값 {s['caption_length_median']}자, "
+                 f"해시태그 중앙값 {s['hashtag_count_median']}개")
+        lines.append(head)
         for p in s.get("top_posts", [])[:3]:
-            if p.get("hook"):
-                lines.append(f"    - \"{p['hook']}\" (♥{p.get('likes') or 0})")
+            if not p.get("hook"):
+                continue
+            likes = p.get("likes")
+            lines.append(f"    - \"{p['hook']}\""
+                         + (f" (♥{likes})" if isinstance(likes, int) else ""))
     # 태그별로 번갈아 뽑는다 — 첫 태그가 자리를 독식하지 않게
     pools = [list(s.get("hooks", [])) for s in data["hashtags"].values()]
     hooks: list[str] = []

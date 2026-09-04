@@ -546,6 +546,31 @@ def _brief_feedback() -> str:
         return ""
 
 
+def _place() -> str:
+    """실제로 우리 가게를 찾아 들어온 검색어 — 가장 강한 수요 신호.
+
+    전국 검색량보다 강하다: 검색량은 '몇 명이 쳤나'지만 이건 '몇 명이 쳐서
+    우리한테 왔나'다. 주 1회 자동 수집되는데 기획이 안 보고 있었다
+    (시장조사 검토 2026-09-04).
+    """
+    try:
+        from .first_party import inflow_as_prompt_context
+        return inflow_as_prompt_context()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("유입 검색어 없음: %s", e)
+        return ""
+
+
+def _sales() -> str:
+    """지금 실제로 팔리는 메뉴 — 소재를 고르는 1차 근거."""
+    try:
+        from .first_party import sales_as_prompt_context
+        return sales_as_prompt_context()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("상품 매출 없음: %s", e)
+        return ""
+
+
 def _ideas_system() -> str:
     from datetime import date
     return (
@@ -563,11 +588,14 @@ def _ideas_system() -> str:
         "  ✅·△ 에서 고르고(🅾·✕ 는 쓰지 않는다), blog_angle 은 릴스와 다른\n"
         "  각도여야 한다 — 같은 말을 두 번 하면 두 채널 다 약해진다.\n"
         "· 촬영은 주 3회 기획 촬영이다(상시 촬영 없음) — 한 번에 다 찍을 수\n"
-        "  있게 샷을 한 자리·한 동선으로 묶는다.\n\n"
+        "  있게 샷을 한 자리·한 동선으로 묶는다.\n"
+        "· **근거의 우선순위**: ①실제 유입 검색어(사람들이 쳐서 우리한테 온 말)\n"
+        "  ②실제 매출 상위 메뉴 ③네이버 경쟁 실측 ④인스타 시장. 아래 블록이\n"
+        "  서로 어긋나면 위쪽을 따른다. 상상한 소재보다 팔리는 소재가 먼저다.\n\n"
         f"[브랜드 핵심 — 사실·금지어·메뉴 표기]\n{_brand_core()}\n\n"
         f"[릴스 편집 문법]\n{_editing_rules()}\n\n"
         f"[성과가 좋았던 훅]\n{_hook_summary()}\n\n"
-        f"{_brief_feedback()}\n\n{_naver()}\n\n{_market()}"
+        f"{_brief_feedback()}\n\n{_place()}\n\n{_sales()}\n\n{_naver()}\n\n{_market()}"
     )
 
 

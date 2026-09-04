@@ -199,6 +199,20 @@ YELLOW_RATIO = 0.50         # 15/30 이하 — 좁히면 들어갈 수 있다
 MIN_SCANNED = 10            # 이보다 적게 읽혔으면 판정하지 않는다(조사 실패)
 
 
+def canonical(keyword: str, suggestions: list[str]) -> str:
+    """자동완성이 쓰는 표준 표기로 맞춘다 — 띄어쓰기만 다른 같은 말.
+
+    유입 검색어는 붙여쓴 형태로 들어온다('송도베이글'). 그대로 재면 제목에
+    그 글자가 **붙어서** 나오는 글만 세어 경쟁이 실제보다 적게 나온다
+    (실측: 「송도베이글」 11개 vs 「송도 베이글」 30개 — 같은 말인데 판정이
+    △ 와 ✕ 로 갈렸다). 자동완성이 표준 표기를 알려주므로 그걸 쓴다.
+    """
+    for s in suggestions or []:
+        if norm(s) == norm(keyword) and s != keyword:
+            return s
+    return keyword
+
+
 def verdict(row: dict) -> dict:
     """이 키워드로 써야 하는가 — 규칙 판정(AI 비용 0).
 
@@ -208,8 +222,13 @@ def verdict(row: dict) -> dict:
     mine    : 이미 우리 글이 상위에 있다 → 새로 쓰지 말고 그 글을 고친다
     unknown : 검색 결과를 못 읽었다 → **판정하지 않는다**(0개를 '경쟁 없음'으로
               읽으면 네트워크 한 번 튄 것이 green 추천이 된다)
+
+    수요는 자동완성으로 보되, **실제 유입이 증명된 말은 자동완성이 몰라도
+    수요가 있다**(known_demand). 자동완성은 전국 인기 질의 위주라 '동춘동베이글'
+    처럼 주 5회 우리 가게로 사람을 데려오는 말이 안 뜬다 — 그걸 '아무도 안
+    친다'고 판정하면 측정한 사실을 추정으로 덮는 것이다.
     """
-    demand = bool(row.get("in_autocomplete"))
+    demand = bool(row.get("in_autocomplete") or row.get("known_demand"))
     hits = int(row.get("exact_hits") or 0)
     scanned = int(row.get("top_count") or 0)
     rank = row.get("our_rank")
@@ -219,10 +238,12 @@ def verdict(row: dict) -> dict:
         return {"tier": "mine", "why": f"이미 우리 글이 {rank}위 — 새로 쓰지 말고 그 글을 보강"}
     if not demand:
         return {"tier": "red", "why": "자동완성에 없는 말 — 검색하는 사람이 거의 없다"}
+    proven = (not row.get("in_autocomplete")) and row.get("known_demand")
     ratio = hits / scanned
+    src = "이 말로 실제 손님이 들어오는데" if proven else "검색되는 말인데"
     if ratio <= GREEN_RATIO:
         return {"tier": "green",
-                "why": f"검색되는 말인데 상위 {scanned}개 중 정면 경쟁글 {hits}개뿐 — 지금 쓰면 이긴다"}
+                "why": f"{src} 상위 {scanned}개 중 정면 경쟁글 {hits}개뿐 — 지금 쓰면 이긴다"}
     if ratio <= YELLOW_RATIO:
         return {"tier": "yellow",
                 "why": f"상위 {scanned}개 중 정면 경쟁글 {hits}개 — 메뉴·상황으로 각도를 좁혀서"}
@@ -255,13 +276,19 @@ def blog_top(keyword: str, limit: int = TOP_N) -> list[dict]:
     return parse_blog_results(_get(url), limit)
 
 
-def study(keyword: str, *, suggestions: list[str] | None = None) -> dict:
-    """키워드 하나 실측 — 수요·경쟁·판정."""
+def study(keyword: str, *, suggestions: list[str] | None = None,
+          known_demand: bool = False) -> dict:
+    """키워드 하나 실측 — 수요·경쟁·판정.
+
+    known_demand: 이 말로 실제 손님이 들어온 적이 있나(유입 검색어에서 온 씨앗).
+    """
     sug = suggestions if suggestions is not None else autocomplete(keyword)
+    keyword = canonical(keyword, sug)          # 띄어쓰기를 표준 표기로 맞춘다
     time.sleep(PAUSE)
     posts = blog_top(keyword)
     row = {
         "keyword": keyword,
+        "known_demand": known_demand,
         "in_autocomplete": any(norm(s) == norm(keyword) for s in sug),
         "suggestions": sug[:10],
         "top_count": len(posts),
@@ -274,15 +301,50 @@ def study(keyword: str, *, suggestions: list[str] | None = None) -> dict:
     return row
 
 
-def research(seeds: tuple[str, ...] | list[str] = SEEDS, *,
+def merged_seeds(limit: int = 8) -> list[str]:
+    """조사할 씨앗 — **실제 유입 검색어를 먼저**, 모자란 만큼 기본 씨앗으로 채운다.
+
+    코드에 박아둔 SEEDS 만 쓰면 조사 대상이 영원히 고정된다. 실측(2026-09-04):
+    유입 검색어 50개 중 SEEDS 가 닿는 건 12개뿐이고, 유입 2위 덩어리인
+    '타임스페이스' 계열은 조사 대상에조차 없었다. 유입에서 씨앗을 뽑으면
+    조사 범위가 매주 저절로 갱신된다.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    try:
+        from .first_party import inflow_seeds
+        for s in inflow_seeds(limit=limit):
+            if norm(s) not in seen:
+                seen.add(norm(s))
+                out.append(s)
+    except Exception as e:  # noqa: BLE001 — 유입 데이터가 없어도 조사는 돌아야 한다
+        logger.warning("유입 씨앗 없음(기본 씨앗만 씀): %s", str(e)[:120])
+    for s in SEEDS:
+        if len(out) >= limit:
+            break
+        if norm(s) not in seen:
+            seen.add(norm(s))
+            out.append(s)
+    return out[:limit]
+
+
+def research(seeds: tuple[str, ...] | list[str] | None = None, *,
              per_seed: int = 3, max_keywords: int = MAX_KEYWORDS) -> dict:
     """씨앗 → 자동완성으로 가지를 뻗고 → 각각 경쟁을 실측한다.
 
+    seeds 를 안 주면 merged_seeds() 가 **실제 유입 검색어**에서 뽑는다.
     한 씨앗당 자동완성 상위 `per_seed` 개까지만 본다(예의·시간). 실패한
     키워드는 건너뛰고 나머지는 저장한다 — 절반이라도 갱신되는 게 낫다.
     """
+    if seeds is None:
+        seeds = merged_seeds()
     rows: list[dict] = []
     tried: set[str] = set()
+    try:
+        from .first_party import inflow_keywords
+        proven = {norm(r["name"]) for r in inflow_keywords()}
+    except Exception:  # noqa: BLE001
+        proven = set()
     for seed in seeds:
         try:
             sug = autocomplete(seed)
@@ -298,12 +360,14 @@ def research(seeds: tuple[str, ...] | list[str] = SEEDS, *,
                 continue
             tried.add(norm(kw))
             try:
-                rows.append(study(kw, suggestions=sug if kw == seed else None))
+                rows.append(study(kw, suggestions=sug if kw == seed else None,
+                                  known_demand=norm(kw) in proven))
             except SearchError as e:
                 logger.warning("경쟁 조사 실패(%s): %s", kw, e)
             time.sleep(PAUSE)
     data = {
         "scanned_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "seeds": list(seeds),
         "rows": rows,
         "winnable": [r["keyword"] for r in pick_winnable(rows)],
     }
