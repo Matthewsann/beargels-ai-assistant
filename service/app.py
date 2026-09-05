@@ -2525,6 +2525,31 @@ def blog_draft(path_key):
     return _ask_worker(path_key, "blog_draft", payload)
 
 
+# 다시 뽑기 전 본문을 두는 곳(worker/blog_jobs.py VERSIONS_KEY 와 같은 이름).
+BLOG_VERSIONS_KEY = "blog_draft_versions"
+
+
+def _blog_prev_version(post_id):
+    """이 글에 보관된 '이전 초안' — 없으면 None."""
+    try:
+        vers = db.get_setting(BLOG_VERSIONS_KEY) or {}
+        v = vers.get(str(post_id)) or None
+        return v if v and (v.get("body") or "").strip() else None
+    except Exception:  # noqa: BLE001 — 되돌리기는 덤, 글 보기가 먼저다
+        return None
+
+
+# 사장님이 한 번 눌러 고르는 '물린 이유'. 이 말이 그대로 다시 쓰기 지시가 된다.
+BLOG_REGEN_REASONS = [
+    "밋밋하고 특징이 없어요",
+    "사실이 틀렸어요",
+    "너무 짧아요",
+    "사진과 글이 안 맞아요",
+    "말투가 어색해요",
+    "제목이 약해요",
+]
+
+
 @app.route("/<path_key>/blog/post/<int:post_id>")
 def blog_post(path_key, post_id):
     check(path_key)
@@ -2538,7 +2563,65 @@ def blog_post(path_key, post_id):
         abort(404)
     return render_template("blog_post.html", key=path_key, post=post or {},
                            photos=_blog_photos((post or {}).get("body", "")),
-                           error=error)
+                           note=(request.args.get("note") or "")[:200],
+                           prev=_blog_prev_version(post_id),
+                           reasons=BLOG_REGEN_REASONS,
+                           worker=_worker_view(), error=error)
+
+
+@app.route("/<path_key>/blog/post/<int:post_id>/regen", methods=["POST"])
+def blog_post_regen(path_key, post_id):
+    """이 초안이 별로다 — 이유를 담아 **같은 글을 다시 쓰게** 한다.
+
+    이유 없이 그냥 다시 굴리면 같은 모델이 비슷한 글을 또 내놓는다. 그래서
+    무엇이 물렸는지를 함께 보내 다시 쓰기 지시로 쓴다. 직전 본문은 집 PC가
+    보관하므로, 새 글이 더 나쁘면 아래 '이전 초안으로'로 되돌아올 수 있다.
+    """
+    check(path_key)
+    picked = [r.strip() for r in request.form.getlist("reason") if r.strip()]
+    extra = (request.form.get("reason_text") or "").strip()
+    reason = " · ".join(picked + ([extra] if extra else []))[:300]
+    note = "다시 뽑는 중이에요. 1~3분 뒤 새로고침 해주세요."
+    try:
+        job = blog.request_blog_job(
+            "blog_draft", {"post_id": post_id, "reason": reason}, by="web") or {}
+        if job.get("_duplicate"):
+            note = "같은 요청이 이미 줄 서 있어요 — 끝나면 이 글이 바뀝니다."
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"초안 다시 뽑기 요청 실패(post {post_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        note = f"요청이 접수되지 않았어요: {str(e)[:120]}"
+    return redirect(url_for("blog_post", path_key=path_key, post_id=post_id,
+                            note=note))
+
+
+@app.route("/<path_key>/blog/post/<int:post_id>/restore", methods=["POST"])
+def blog_post_restore(path_key, post_id):
+    """이전 초안으로 되돌린다 — 지금 것과 **맞바꾸므로** 다시 눌러 돌아올 수 있다."""
+    check(path_key)
+    note = ""
+    try:
+        vers = db.get_setting(BLOG_VERSIONS_KEY) or {}
+        prev = vers.get(str(post_id)) or {}
+        cur = blog.get_post(post_id) or {}
+        if not (prev.get("body") or "").strip():
+            note = "보관된 이전 초안이 없어요."
+        else:
+            blog.update_post(post_id, title=prev.get("title") or cur.get("title"),
+                             body=prev["body"], prepared_at=None)
+            vers[str(post_id)] = {"title": cur.get("title") or "",
+                                  "body": cur.get("body") or "",
+                                  "at": blog._now()}
+            db.menu_set_setting(BLOG_VERSIONS_KEY, vers)
+            note = "이전 초안으로 되돌렸어요. 한 번 더 누르면 방금 것으로 다시 갑니다."
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"이전 초안 되돌리기 실패(post {post_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        note = f"되돌리지 못했어요: {str(e)[:120]}"
+    return redirect(url_for("blog_post", path_key=path_key, post_id=post_id,
+                            note=note))
 
 
 @app.route("/<path_key>/blog/post/<int:post_id>/save", methods=["POST"])

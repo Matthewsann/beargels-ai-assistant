@@ -47,6 +47,49 @@
   </div>
   {% endif %}
 
+  {% if note %}<div class="note">📨 {{ note }}</div>{% endif %}
+
+  {# 초안이 마음에 안 들 때 — 이유를 한 번 눌러 알려주면 그게 다시 쓰기 지시가 된다.
+     A/B로 두 편을 미리 뽑지 않는 이유: 무료 AI 하루 한도를 답글과 나눠 쓰고,
+     사장님이 매번 1,700자짜리 두 편을 읽어야 한다. 대신 '다시 뽑기 + 되돌리기'로
+     필요할 때만, 두 편을 오가며 고를 수 있게 했다(사장님 확정 2026-09-06). #}
+  <details class="panel" style="margin-bottom:12px;">
+    <summary style="cursor:pointer; font-size:14px; font-weight:600;">
+      🔄 이 초안이 마음에 안 드세요?
+    </summary>
+    <form method="post" action="{{ url_for('blog_post_regen', path_key=key, post_id=post.id) }}">
+      <div style="font-size:12px; color:var(--muted); margin:9px 0 7px;">
+        무엇이 아쉬운지 골라주세요(여러 개 가능). 이 말이 그대로 다시 쓰기 지시가 됩니다.
+      </div>
+      <div style="display:flex; flex-wrap:wrap; gap:7px;">
+        {% for r in reasons %}
+        <label class="tag" style="cursor:pointer; padding:6px 10px; font-size:12px;">
+          <input type="checkbox" name="reason" value="{{ r }}" style="width:auto; margin-right:5px;">{{ r }}
+        </label>
+        {% endfor %}
+      </div>
+      <input name="reason_text" placeholder="직접 쓰기 (예: 잠봉뵈르 이야기를 더 자세히)"
+             style="margin-top:9px; font-size:13px;">
+      <button class="btn wide" type="submit" style="margin-top:9px;"
+              {{ 'disabled' if not worker.alive else '' }}>🔄 초안 다시 뽑기</button>
+      <div style="font-size:12px; color:var(--muted); margin-top:6px;">
+        지금 본문은 보관돼서 <b>되돌릴 수 있어요.</b> 사진은 다시 고릅니다.
+        {% if post.prepared_at %}<br>⚠️ 네이버 임시저장본은 옛 글 그대로예요 —
+        다시 뽑은 뒤 <b>네이버에 초안 넣기</b>를 한 번 더 눌러주세요.{% endif %}
+      </div>
+    </form>
+    {% if prev %}
+    <form method="post" action="{{ url_for('blog_post_restore', path_key=key, post_id=post.id) }}"
+          style="margin-top:10px; border-top:1px solid var(--line); padding-top:10px;">
+      <button class="btn wide" type="submit">↩ 이전 초안으로 되돌리기</button>
+      <div style="font-size:12px; color:var(--muted); margin-top:6px;">
+        {{ prev.at[:16].replace('T',' ') }} 에 보관된 것. 눌러서 비교해 보고,
+        방금 것이 나으면 한 번 더 누르면 돌아옵니다.
+      </div>
+    </form>
+    {% endif %}
+  </details>
+
   <form method="post" action="{{ url_for('blog_post_publish', path_key=key, post_id=post.id) }}">
     <button class="btn primary wide" type="submit">🚀 네이버에 초안 넣기</button>
   </form>

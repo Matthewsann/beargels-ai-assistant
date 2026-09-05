@@ -21,6 +21,8 @@ for _p in (SRC, ROOT, ROOT / "worker"):
 
 import llm  # noqa: E402 — 위에서 ROOT 를 sys.path 에 넣은 뒤여야 한다
 
+NL_ = chr(10)
+
 # 금고에서 제외할 파일 — 이 모듈은 **블로그 전용**이라(웹 /blog·worker/blog_jobs)
 # 글 한 편을 쓰는 데 실제로 근거가 되는 문서만 넣는다.
 #
@@ -164,7 +166,7 @@ DRAFT_PROMPT = """너는 베어글스 송도점의 네이버 블로그 마케팅
 =====================
 
 [확정 기획]
-- 주제: {topic}
+{retry}- 주제: {topic}
 - 글 유형: {post_type}
 - 제목: {title}
 - 대표 키워드: {main_keyword}
@@ -262,7 +264,8 @@ def make_recommendations() -> list[dict]:
 
 def make_draft_data(topic: str, post_type: str = "정보성", title: str = "",
                     main_keyword: str = "", sub_keywords: list[str] | None = None,
-                    only_rels: list[str] | None = None) -> dict:
+                    only_rels: list[str] | None = None,
+                    retry_reason: str = "") -> dict:
     """확정 기획 + 금고 전체를 근거로 초안 '데이터'만 만들어 돌려준다(저장은 호출자 몫).
 
     로컬 라이브러리에 넣을지, Supabase 에 넣을지는 부르는 쪽이 정한다.
@@ -271,7 +274,15 @@ def make_draft_data(topic: str, post_type: str = "정보성", title: str = "",
     knowledge, seo = load_knowledge()
     photos, _cat = load_photos(only_rels=only_rels)
     subs = sub_keywords or []
+    # '다시 뽑기' — 사장님이 앞 초안을 물린 이유를 최우선 지시로 올린다.
+    # 이유 없이 그냥 다시 굴리면 같은 모델이 비슷한 글을 또 내놓는다.
+    retry = ""
+    if retry_reason.strip():
+        retry = ("- ★다시 쓰는 이유(사장님): " + retry_reason.strip() + NL_ +
+                 "  → 앞 초안은 이 점 때문에 물렸다. 이번 글에서 반드시 고칠 것."
+                 + NL_)
     prompt = DRAFT_PROMPT.format(
+        retry=retry,
         knowledge=knowledge, seo=seo, photos=photos or "(사진함이 비어 있음)",
         performance=load_performance() or "(아직 성과 데이터 없음)",
         topic=topic, post_type=post_type,

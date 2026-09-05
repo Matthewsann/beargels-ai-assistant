@@ -92,6 +92,32 @@ def do_media() -> tuple[int, str]:
     return len(idx), f"{grew}사진함 사진 {photos}장 · 영상 {videos}개"
 
 
+# 다시 뽑기 전의 본문을 어디에 두나 — 새 표(마이그레이션)는 사장님 블로커라
+# 만들지 않는다. 이미 범용 key-value 창고로 쓰고 있는 menu_settings 를 쓴다
+# (place_keywords·sales_goals 와 같은 방식). 글 하나당 **직전 1개**만, 최근
+# 글 10개까지만 남긴다 — 되돌리기는 "방금 것과 그 전 것" 사이를 오가는 기능이지
+# 판본 보관함이 아니다.
+VERSIONS_KEY = "blog_draft_versions"
+
+
+def keep_version(post_id, post: dict) -> None:
+    """다시 쓰기 직전의 본문을 보관한다(웹의 '이전 초안으로' 버튼이 읽는다)."""
+    try:
+        from database import supabase_client as sdb
+        store_all = sdb.get_setting(VERSIONS_KEY) or {}
+        store_all[str(post_id)] = {
+            "title": post.get("title") or "",
+            "body": post.get("body") or "",
+            "at": store._now(),
+        }
+        if len(store_all) > 10:            # 오래된 글부터 버린다
+            for k in sorted(store_all, key=lambda k: store_all[k].get("at") or "")[:-10]:
+                store_all.pop(k, None)
+        sdb.menu_set_setting(VERSIONS_KEY, store_all)
+    except Exception as e:  # noqa: BLE001 — 보관 실패가 다시 뽑기를 막으면 안 된다
+        logger.warning("이전 초안 보관 실패(%s): %s", post_id, str(e)[:120])
+
+
 def do_draft(payload: dict) -> tuple[int, str]:
     """기획 주제로 초안 작성 → blog_posts 에 저장.
 
@@ -100,8 +126,17 @@ def do_draft(payload: dict) -> tuple[int, str]:
     사진함이 나중에 바뀌어도 이 글이 쓰던 사진은 그대로 남는다.
     """
     import planner
+    # post_id 가 있으면 '다시 뽑기' — 새 글을 만들지 않고 그 글을 새로 쓴다.
+    # 직전 본문은 보관해서 웹에서 되돌릴 수 있게 한다(사장님 요청 2026-09-06:
+    # 초안이 별로일 때 다시 뽑되, 앞의 것과 비교해 고를 수 있어야 한다).
+    post_id = payload.get("post_id")
+    reason = (payload.get("reason") or "").strip()
+    old = store.get_post(post_id) if post_id else None
     topic = (payload.get("topic") or payload.get("title") or "").strip()
     main_keyword = (payload.get("main_keyword") or "").strip()
+    if old:                       # 빠진 값은 원래 글에서 가져온다
+        topic = topic or old.get("title") or ""
+        main_keyword = main_keyword or (old.get("main_keyword") or "")
 
     # ── 콘텐츠 브리프에서 왔으면 그 지시를 따른다(설계 2026-09-04) ──
     #    같은 촬영으로 릴스와 블로그를 만들되, 글의 각도와 대표 키워드는
@@ -116,13 +151,15 @@ def do_draft(payload: dict) -> tuple[int, str]:
     if not topic:
         raise ValueError("주제가 비어 있습니다.")
     post_type = payload.get("post_type") or "정보성"
+    subs = payload.get("sub_keywords") or (old or {}).get("sub_keywords") or []
     data = planner.make_draft_data(
         topic=topic,
         post_type=post_type,
         title=payload.get("title") or topic,
         main_keyword=main_keyword,
-        sub_keywords=payload.get("sub_keywords") or [],
+        sub_keywords=subs,
         only_rels=payload.get("photos") or None,   # 승인된 배분안의 블로그 몫
+        retry_reason=reason,
     )
     body = data.get("body") or ""
     photo_note = ""
@@ -160,20 +197,31 @@ def do_draft(payload: dict) -> tuple[int, str]:
     if tags and "#" + tags[0] not in body:
         body = body.rstrip() + "\n\n" + " ".join("#" + t for t in tags)
 
-    post_id = store.save_post(
-        title=data.get("title"), body=body, post_type=post_type,
-        main_keyword=data.get("main_keyword"), sub_keywords=data.get("sub_keywords"),
-        tags=tags,
-    )
+    if old:
+        keep_version(post_id, old)          # 되돌리기용으로 직전 본문 보관
+        store.update_post(
+            post_id, title=data.get("title") or old.get("title"), body=body,
+            main_keyword=data.get("main_keyword") or old.get("main_keyword"),
+            sub_keywords=data.get("sub_keywords"), tags=tags,
+            # 네이버에 넣어둔 임시저장본은 이제 이 글과 다르다 — 다시 넣어야 한다
+            prepared_at=None,
+        )
+    else:
+        post_id = store.save_post(
+            title=data.get("title"), body=body, post_type=post_type,
+            main_keyword=data.get("main_keyword"),
+            sub_keywords=data.get("sub_keywords"), tags=tags,
+        )
     if quality is not None:
         try:
             import blog_quality
             blog_quality.record(post_id, data.get("title") or topic, quality)
         except Exception:  # noqa: BLE001
             pass
-    if brief:
+    if brief and not old:
         _brief_link(brief["id"], post_id, data.get("title") or topic)
-    return 1, (f"초안 저장 완료 (#{post_id}){q_note}{photo_note}"
+    head = "초안 다시 뽑기 완료" if old else "초안 저장 완료"
+    return 1, (f"{head} (#{post_id}){q_note}{photo_note}"
                f" — {data.get('title', '')[:40]}")
 
 
