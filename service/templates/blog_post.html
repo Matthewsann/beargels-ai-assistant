@@ -29,6 +29,40 @@
     {% endif %}
   </div>
 
+  {% if prev %}
+  {# 다시 뽑은 글은 초안이 둘이다 — 화살표로 넘겨 견주고 하나를 고른다.
+     넘겨보는 것 자체는 아무것도 바꾸지 않는다(사장님 요청 2026-09-06). #}
+  <div class="panel" style="padding:9px 12px; margin-bottom:10px;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      {% if preview %}
+      <span class="btn sm" style="opacity:.3; pointer-events:none;">‹</span>
+      {% else %}
+      <a class="btn sm" href="{{ url_for('blog_post', path_key=key, post_id=post.id, v='prev') }}">‹</a>
+      {% endif %}
+      <div style="flex:1; text-align:center; min-width:0;">
+        <div style="font-size:13px; font-weight:600;">
+          {% if preview %}📦 보관된 초안{% else %}📄 지금 글{% endif %}
+          <span style="font-weight:400; color:var(--muted); font-size:12px;">
+            · {{ '1' if preview else '2' }}/2</span>
+        </div>
+        <div style="font-size:12px; color:var(--muted); margin-top:2px;">
+          {% set st = stats_prev if preview else stats_now %}
+          {{ '{:,}'.format(st.chars) }}자 · 사진 {{ st.photos }} · 소제목 {{ st.heads }}
+        </div>
+      </div>
+      {% if preview %}
+      <a class="btn sm" href="{{ url_for('blog_post', path_key=key, post_id=post.id) }}">›</a>
+      {% else %}
+      <span class="btn sm" style="opacity:.3; pointer-events:none;">›</span>
+      {% endif %}
+    </div>
+    <div style="font-size:12px; color:var(--muted); text-align:center; margin-top:7px;">
+      {% if preview %}지금 쓰는 글이 아니에요. 이게 더 나으면 아래에서 정해주세요.
+      {% else %}‹ 를 눌러 다시 뽑기 전 초안과 비교해 보세요.{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   {% if photos %}
   <div class="sec">📸 같이 들어갈 사진 <span style="font-weight:400; color:var(--muted); font-size:12px;">{{ photos|length }}개 · 사진함에서 자동으로 골랐어요</span></div>
   <div class="panel" style="padding:8px 14px;">
@@ -49,6 +83,21 @@
 
   {% if note %}<div class="note">📨 {{ note }}</div>{% endif %}
 
+  {% if preview %}
+  <span class="lbl">📦 보관된 초안{% if prev_at %} · {{ prev_at.at }} 보관 ({{ prev_at.ago }}){% endif %} (읽기 전용)</span>
+  <div class="panel" style="white-space:pre-wrap; font-size:13px; line-height:1.75;
+       max-height:60vh; overflow:auto;">{{ shown_body }}</div>
+  <form method="post" action="{{ url_for('blog_post_restore', path_key=key, post_id=post.id) }}"
+        style="margin-top:10px;">
+    <button class="btn primary wide" type="submit">✅ 이 초안으로 정하기</button>
+  </form>
+  <a class="btn wide" style="margin-top:8px;"
+     href="{{ url_for('blog_post', path_key=key, post_id=post.id) }}">← 지금 글로 돌아가기</a>
+  <div style="font-size:12px; color:var(--muted); margin:8px 0 16px; text-align:center;">
+    '정하기'를 누르면 둘의 자리가 바뀝니다 — 지금 글은 보관되니 언제든 되돌아올 수 있어요.
+  </div>
+
+  {% else %}
   {# 초안이 마음에 안 들 때 — 이유를 한 번 눌러 알려주면 그게 다시 쓰기 지시가 된다.
      A/B로 두 편을 미리 뽑지 않는 이유: 무료 AI 하루 한도를 답글과 나눠 쓰고,
      사장님이 매번 1,700자짜리 두 편을 읽어야 한다. 대신 '다시 뽑기 + 되돌리기'로
@@ -79,14 +128,11 @@
       </div>
     </form>
     {% if prev %}
-    <form method="post" action="{{ url_for('blog_post_restore', path_key=key, post_id=post.id) }}"
-          style="margin-top:10px; border-top:1px solid var(--line); padding-top:10px;">
-      <button class="btn wide" type="submit">↩ 이전 초안으로 되돌리기</button>
-      <div style="font-size:12px; color:var(--muted); margin-top:6px;">
-        {{ prev.at[:16].replace('T',' ') }} 에 보관된 것. 눌러서 비교해 보고,
-        방금 것이 나으면 한 번 더 누르면 돌아옵니다.
-      </div>
-    </form>
+    <div style="margin-top:10px; border-top:1px solid var(--line); padding-top:10px;
+                font-size:12px; color:var(--muted);">
+      ↖ 위 <b>‹ 화살표</b>로 다시 뽑기 전 초안({% if prev_at %}{{ prev_at.at }} 보관{% endif %})을
+      넘겨볼 수 있어요. 거기서 [이 초안으로 정하기]를 누르면 그게 지금 글이 됩니다.
+    </div>
     {% endif %}
   </details>
 
@@ -137,5 +183,6 @@
       </form>
     </div>
   </div>
+  {% endif %}
 
 {% endblock %}

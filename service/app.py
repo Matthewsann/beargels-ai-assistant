@@ -2550,6 +2550,16 @@ BLOG_REGEN_REASONS = [
 ]
 
 
+def _blog_stats(body: str) -> dict:
+    """초안 한 줄 요약 — 두 초안을 나란히 견줄 때 눈으로 바로 비교되는 값."""
+    body = body or ""
+    return {
+        "chars": len(re.sub(r"\s", "", re.sub(r"\[[^\]]*\]", "", body))),
+        "photos": len(re.findall(r"\[[\U0001F4F7\U0001F3AC][^\]]*\]", body)),
+        "heads": len(re.findall(r"^#{1,4}\s", body, re.M)),
+    }
+
+
 @app.route("/<path_key>/blog/post/<int:post_id>")
 def blog_post(path_key, post_id):
     check(path_key)
@@ -2561,10 +2571,21 @@ def blog_post(path_key, post_id):
         error = f"글을 불러오지 못했어요: {str(e)[:150]}"
     if post is None and error is None:
         abort(404)
-    return render_template("blog_post.html", key=path_key, post=post or {},
-                           photos=_blog_photos((post or {}).get("body", "")),
+    post = post or {}
+    # ?v=prev — 보관된 초안을 **읽기만** 한다. 넘겨보는 것만으로 글이 바뀌면
+    # 안 되므로 여기서는 DB 를 건드리지 않는다(바꾸는 건 '이 초안으로 정하기').
+    prev = _blog_prev_version(post_id)
+    preview = bool(prev) and request.args.get("v") == "prev"
+    shown = prev if preview else post
+    return render_template("blog_post.html", key=path_key, post=post,
+                           photos=_blog_photos((shown or {}).get("body", "")),
                            note=(request.args.get("note") or "")[:200],
-                           prev=_blog_prev_version(post_id),
+                           prev=prev, preview=preview,
+                           prev_at=_updated_view((prev or {}).get('at')),
+                           shown_title=(shown or {}).get("title") or "",
+                           shown_body=(shown or {}).get("body") or "",
+                           stats_now=_blog_stats(post.get("body", "")),
+                           stats_prev=_blog_stats((prev or {}).get("body", "")),
                            reasons=BLOG_REGEN_REASONS,
                            worker=_worker_view(), error=error)
 
