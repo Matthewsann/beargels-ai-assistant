@@ -102,8 +102,24 @@ REVISE_PROMPT = """너는 베어글스 송도점의 네이버 블로그 전문�
 - 따뜻하고 담백한 해요체. 과장 금지(역대급/미쳤다/인생맛집/대박/혜자 금지).
 - 이모지는 문단마다 1~2개 유지(없으면 채워라). 제목에는 쓰지 않는다.
 - 전체 분량은 늘리면 늘렸지 줄이지 않는다.
+- 소제목은 `## 소제목` 줄로 쓴다(◆ ■ ▶ 같은 기호 금지). 이야기가 크게 넘어가는
+  곳에는 `---` 만 있는 줄을 둔다 — 이 두 표시가 네이버에서 소제목·구분선이 된다.
 
-[출력] 고친 본문 전체만 순수 출력(설명·코드블록·JSON 금지)."""
+[출력] 고친 본문 전체만 순수 출력(설명·코드블록·JSON 금지).
+위 `[제목]` `[대표 키워드]` `[초안]` 같은 **머리말은 절대 다시 쓰지 마라** — 본문 첫
+줄부터 시작한다(실측 2026-09-06: 머리말을 그대로 베껴 네이버 본문 맨 위에 찍혔다)."""
+
+
+# 퇴고 프롬프트의 머리말(`[제목] …`)을 모델이 그대로 베껴 본문 맨 위에 남기는
+# 일이 있다 — 그대로 네이버에 찍힌다(2026-09-06 글#2 실측). 프롬프트로도 막고
+# 여기서 한 번 더 잘라낸다. 사진 표시 `[📷 …]` 는 건드리지 않는다.
+_META_HEAD = re.compile(
+    r"^\s*(?:\[\s*(?:제목|대표\s*키워드|세부\s*키워드|초안|본문|출력)\s*\][^\n]*\n+)+")
+
+
+def strip_meta_head(text: str) -> str:
+    """본문 맨 앞에 붙은 프롬프트 머리말 줄들을 걷어낸다."""
+    return _META_HEAD.sub("", text or "").lstrip("\n")
 
 
 def improve(body: str, title: str, main_keyword: str,
@@ -115,8 +131,9 @@ def improve(body: str, title: str, main_keyword: str,
     # 무료(Gemini) 기본. 확장 퇴고 루프가 무료 모델의 분량 약점을 메운다.
     raw = llm.complete(user=REVISE_PROMPT.format(
         title=title, main_keyword=main_keyword, body=body, improvements=imp),
-        max_tokens=4000, prefer="gemini").strip()
+        max_tokens=4000, prefer="gemini", quality=True).strip()
     raw = re.sub(r"^```.*?\n|\n```$", "", raw, flags=re.DOTALL)
+    raw = strip_meta_head(raw)
     # 퇴고가 사진 표시를 잃어버렸으면 원본이 낫다
     marks = re.findall(r"\[[📷🎬][^\]]*\]", body)
     kept = sum(1 for m in marks if m in raw)
