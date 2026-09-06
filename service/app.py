@@ -2349,6 +2349,13 @@ from database import blog_store as blog  # noqa: E402
 _PHOTO_MARK = re.compile(r"\[\s*([📷🎬])\s*([^\[\]\n]{1,200}?)\s*\]")
 
 
+# 사진 미리보기(썸네일) 공개 주소. 집 PC 가 sns-media 공개 버킷의
+# blogthumbs/ 에 올려두면 웹은 계산만으로 주소를 안다.
+_THUMB_BASE = (os.getenv("SUPABASE_URL", "").rstrip("/")
+               + "/storage/v1/object/public/sns-media/blogthumbs"
+               if os.getenv("SUPABASE_URL") else "")
+
+
 def _blog_photos(body: str) -> list[dict]:
     """본문에 박힌 사진 표시를 목록으로 뽑는다.
 
@@ -2356,14 +2363,19 @@ def _blog_photos(body: str) -> list[dict]:
     본문에 박아 둔다. 웹(PythonAnywhere)은 드라이브 파일을 직접 못 읽으므로
     사진 자체가 아니라 **어떤 사진이 들어가는지**를 보여준다.
     """
+    import hashlib
     out, seen = [], set()
     for icon, rel in _PHOTO_MARK.findall(body or ""):
         if rel in seen:
             continue
         seen.add(rel)
         slot, _, name = rel.rpartition("/")
+        # 미리보기 주소는 집 PC 와 **같은 규칙**으로 계산한다
+        # (worker/blog_media.py thumb_key). 주고받을 목록이 필요 없다.
+        key = hashlib.sha1(rel.encode("utf-8")).hexdigest()[:16] + ".jpg"
         out.append({"icon": icon, "rel": rel, "slot": slot,
-                    "name": name, "video": icon == "🎬"})
+                    "name": name, "video": icon == "🎬",
+                    "thumb": f"{_THUMB_BASE}/{key}" if _THUMB_BASE else ""})
     return out
 
 

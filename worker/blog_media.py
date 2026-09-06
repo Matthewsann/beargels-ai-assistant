@@ -525,6 +525,117 @@ def prepare(rel: str) -> pathlib.Path:
 
 
 # ---------------------------------------------------------------------------
+# 웹에서 볼 작은 미리보기(썸네일)
+# ---------------------------------------------------------------------------
+# 사진은 집 PC(드라이브 동기화 폴더)에만 있고 직원 웹은 PythonAnywhere 에 있다.
+# 그래서 웹은 지금까지 '어떤 파일이 들어가는지' 이름만 보여줬다 — 사장님은
+# 파일명만 보고 어떤 사진인지 알 수 없다(2026-09-07 요청).
+#
+# 새 표를 만들지 않는다: 이미 있는 **공개 버킷 sns-media** 를 우편함으로 쓴다
+# (인스타 완성본이 쓰는 그 버킷). 키는 rel 경로의 해시라 ASCII 이고, 웹이
+# 같은 해시를 계산하면 URL 이 나온다 — 주고받을 목록이 따로 필요 없다.
+THUMB_PREFIX = "blogthumbs"
+THUMB_PX = 320                      # 폰에서 작게 보는 용도. 20~40KB 남짓.
+THUMB_STATE = ROOT / "data" / "blog_thumbs.json"
+
+
+def thumb_key(rel: str) -> str:
+    """rel 경로 → 스토리지 키(웹도 똑같이 계산한다)."""
+    import hashlib
+    return hashlib.sha1(rel.encode("utf-8")).hexdigest()[:16] + ".jpg"
+
+
+def _video_frame(src: pathlib.Path) -> bytes | None:
+    """영상은 1초 지점 한 장을 뽑아 미리보기로 쓴다."""
+    import subprocess
+    import tempfile
+    try:
+        import blog_video
+        exe = blog_video.ffmpeg_exe()
+    except Exception as e:  # noqa: BLE001 — ffmpeg 이 없어도 사진은 되게
+        logger.warning("ffmpeg 없음(영상 미리보기 건너뜀): %s", str(e)[:80])
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        out = pathlib.Path(tmp) / "f.jpg"
+        subprocess.run([exe, "-hide_banner", "-loglevel", "error", "-y",
+                        "-ss", "1", "-i", str(src), "-frames:v", "1",
+                        "-vf", f"scale={THUMB_PX}:-2", str(out)],
+                       capture_output=True, timeout=60)
+        return out.read_bytes() if out.exists() else None
+
+
+def _thumb_bytes(rel: str) -> bytes | None:
+    """사진·영상 한 개의 작은 JPEG. 못 만들면 None."""
+    import io
+    src = full_path(rel)
+    if src.suffix.lower() in VIDEO_EXT:
+        return _video_frame(src)
+    _register_heif()
+    from PIL import Image, ImageOps
+    img = Image.open(src)
+    img = ImageOps.exif_transpose(img)
+    img.thumbnail((THUMB_PX, THUMB_PX), Image.LANCZOS)
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=72, optimize=True)
+    return buf.getvalue()
+
+
+def ensure_thumbs(rels) -> int:
+    """이 글이 쓰는 사진들의 미리보기를 공개 버킷에 올린다(이미 있으면 건너뜀).
+
+    돌려주는 값: 이번에 새로 올린 개수. 실패해도 예외를 밖으로 내보내지
+    않는다 — 미리보기는 덤이고, 글 저장이 먼저다.
+    """
+    import json
+    names = []
+    for r in rels or []:
+        rel = r.get("rel") if isinstance(r, dict) else r
+        if rel and rel not in names:
+            names.append(rel)
+    if not names:
+        return 0
+    try:
+        done = json.loads(THUMB_STATE.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — 기록이 없으면 처음부터
+        done = {}
+    made = 0
+    try:
+        from sns_automation import cloud_sync
+        bucket = cloud_sync._bucket()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("미리보기 업로드 준비 실패: %s", str(e)[:120])
+        return 0
+    for rel in names:
+        key = thumb_key(rel)
+        try:
+            stamp = int(full_path(rel).stat().st_mtime)
+        except Exception:  # noqa: BLE001 — 파일이 없으면(보관 이동 등) 건너뛴다
+            continue
+        if done.get(key) == stamp:
+            continue
+        try:
+            data = _thumb_bytes(rel)
+            if not data:
+                continue
+            bucket.upload(f"{THUMB_PREFIX}/{key}", data,
+                          {"content-type": "image/jpeg", "upsert": "true"})
+            done[key] = stamp
+            made += 1
+        except Exception as e:  # noqa: BLE001 — 한 장 실패가 나머지를 막지 않는다
+            logger.warning("미리보기 실패(%s): %s", rel, str(e)[:100])
+    if made:
+        try:
+            THUMB_STATE.parent.mkdir(parents=True, exist_ok=True)
+            THUMB_STATE.write_text(json.dumps(done, indent=1), encoding="utf-8")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("미리보기 기록 저장 실패: %s", str(e)[:100])
+        logger.info("사진 미리보기 %d장 올림", made)
+    return made
+
+
+# ---------------------------------------------------------------------------
 # 손으로 돌려보기
 # ---------------------------------------------------------------------------
 

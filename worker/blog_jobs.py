@@ -169,6 +169,8 @@ def do_draft(payload: dict) -> tuple[int, str]:
         media = blog_media.used_media(body)
         if media:
             photo_note = f" · 사진 {len(media)}장"
+            # 웹에서 어떤 사진인지 눈으로 확인할 수 있게 작은 미리보기를 올린다
+            blog_media.ensure_thumbs(media)
         else:
             photo_note = " · ⚠ 사진 0장 — 사진함을 확인해 주세요"
     except Exception as e:  # noqa: BLE001 — 사진을 못 붙여도 글은 저장한다
