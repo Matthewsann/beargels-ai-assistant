@@ -161,10 +161,15 @@ jobs:
       - name: 직원 화면이 실제로 뜨는지 확인
         run: |
           set -euo pipefail
-          sleep 10
-          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-                   "https://$PA_DOMAIN/${{ secrets.PA_SERVICE_PATH }}/")
-          echo "직원 화면 응답: $CODE"
+          # 재시작 직후 첫 요청은 앱이 깨어나는 중이라 502 가 난다 —
+          # 배포는 됐는데 실패로 찍혀 헛다리를 짚었다(2026-09-06). 세 번 본다.
+          for try in 1 2 3; do
+            sleep 10
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+                     "https://$PA_DOMAIN/${{ secrets.PA_SERVICE_PATH }}/")
+            echo "직원 화면 응답($try/3): $CODE"
+            [ "$CODE" = "200" ] && break
+          done
           if [ "$CODE" != "200" ]; then
             echo "::error::배포 후 화면이 정상(200)이 아닙니다: $CODE"
             exit 1
