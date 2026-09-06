@@ -67,26 +67,26 @@
   <div class="sec">📸 같이 들어갈 사진 <span style="font-weight:400; color:var(--muted); font-size:12px;">{{ photos|length }}개 · 사진함에서 자동으로 골랐어요</span></div>
   <div class="panel" style="padding:8px 14px;">
     {% for ph in photos %}
-    <div style="display:flex; gap:10px; align-items:center; padding:7px 0;
+    <div style="display:flex; gap:12px; align-items:center; padding:9px 0;
                 border-bottom:1px solid var(--line);">
       {% if ph.thumb %}
       {# 미리보기를 눌러 크게 보기. 아직 안 올라온 사진은 아이콘으로 남는다. #}
       <a href="{{ ph.thumb }}" target="_blank" rel="noopener"
-         style="flex:none; width:46px; height:46px; border-radius:7px;
+         style="flex:none; width:84px; height:84px; border-radius:9px;
                 background:var(--line); display:block; position:relative;">
         <img src="{{ ph.thumb }}" alt="{{ ph.name }}" loading="lazy"
              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
-             style="width:46px; height:46px; object-fit:cover; border-radius:7px;">
-        <span style="display:none; width:46px; height:46px; align-items:center;
-                     justify-content:center; font-size:18px;">{{ ph.icon }}</span>
+             style="width:84px; height:84px; object-fit:cover; border-radius:9px;">
+        <span style="display:none; width:84px; height:84px; align-items:center;
+                     justify-content:center; font-size:26px;">{{ ph.icon }}</span>
         {% if ph.video %}
-        <span style="position:absolute; right:2px; bottom:2px; font-size:11px;
-                     background:rgba(0,0,0,.55); color:#fff; border-radius:4px;
-                     padding:0 3px;">▶</span>
+        <span style="position:absolute; right:4px; bottom:4px; font-size:13px;
+                     background:rgba(0,0,0,.55); color:#fff; border-radius:5px;
+                     padding:1px 5px;">▶</span>
         {% endif %}
       </a>
       {% else %}
-      <span style="font-size:18px; width:46px; text-align:center;">{{ ph.icon }}</span>
+      <span style="font-size:26px; width:84px; text-align:center;">{{ ph.icon }}</span>
       {% endif %}
       <span style="font-size:13px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;">{{ ph.name }}</span>
       {% if ph.slot %}<span class="tag b" style="white-space:nowrap;">{{ ph.slot }}</span>{% endif %}
