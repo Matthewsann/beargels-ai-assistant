@@ -40,6 +40,10 @@
     /* 모바일 탭은 손가락으로 누르는 곳 — 36px 였다(권장 44px, 2026-08-13 점검) */
     .sbar a.sm { display:inline-flex; padding:12px 12px; font-size:12.5px; margin:0; flex-shrink:0; }
     .sbar .ssub { display:none; }
+    /* MKT 묶음(캘린더·블로그·인스타)은 모바일에서도 갈 수 있어야 한다 —
+       각 화면에 서로 오가는 탭이 없어서 숨기면 길이 끊긴다. */
+    .sbar .ssub.mktsub { display:inline-flex; margin:0; gap:2px; }
+    .sbar .ssub.mktsub a { display:inline-flex; padding:12px 10px; font-size:12px; flex-shrink:0; }
   }
 </style>
 <nav class="sbar">
@@ -48,8 +52,9 @@
     <div><b>베어글스 AI 비서</b><small>송도타임스페이스점</small></div>
   </a>
 
-  {# 메뉴 순서는 사장님이 정한다 (2026-08-28 지시): 회의 기록 · MKT 캘린더 ·
-     리뷰 답글 · 네이버 블로그 · 인스타 · 스마트플레이스 · 메뉴/원가.
+  {# 메뉴 순서는 사장님이 정한다 (2026-08-28 지시): 회의 기록 · MKT 캘린더
+     (▸ 캘린더 · 네이버 블로그 · 인스타 — 2026-09-07 하위로) · 리뷰 답글 ·
+     스마트플레이스 · 메뉴/원가.
      홈 화면(home.html)의 바로가기 카드도 같은 순서로 맞춰 둘 것. #}
   {# 매출 대시보드 — 사장님 전용(2026-09-03). 잠금 쿠키(bg_owner)가 있는
      브라우저에만 메뉴가 보인다. 잠금이 안 걸려 있으면(OWNER_KEY 미설정)
@@ -66,7 +71,17 @@
 
   <a class="sm {{ 'on' if _sec == 'meet' else '' }}" href="/{{ key }}/meeting">🗓️ 회의 기록</a>
 
-  <a class="sm {{ 'on' if _sec == 'mkt' else '' }}" href="/{{ key }}/mkt">📣 MKT 캘린더</a>
+  {# MKT 묶음 — 블로그·인스타는 마케팅 활동이라 캘린더 아래에 둔다
+     (사장님 지시 2026-09-07). 세 화면 중 어디를 열어도 묶음이 펼쳐진다. #}
+  {% set _mkt = _sec in ('mkt', 'blog', 'insta') %}
+  <a class="sm {{ 'on' if _mkt else '' }}" href="/{{ key }}/mkt">📣 MKT 캘린더</a>
+  {% if _mkt %}
+  <div class="ssub mktsub">
+    <a class="{{ 'on' if _sec == 'mkt' else '' }}" href="/{{ key }}/mkt">📅 캘린더</a>
+    <a class="{{ 'on' if _sec == 'blog' else '' }}" href="/{{ key }}/blog/">📝 네이버 블로그</a>
+    <a class="{{ 'on' if _sec == 'insta' else '' }}" href="/{{ key }}/instagram">🎬 인스타 파이프라인</a>
+  </div>
+  {% endif %}
 
   <a class="sm {{ 'on' if _sec == 'review' else '' }}" href="/{{ key }}/review">💬 리뷰 답글</a>
   {% if _sec == 'review' %}
@@ -79,10 +94,6 @@
        href="/{{ key }}/todo">✍️ 답글 처리</a>
   </div>
   {% endif %}
-
-  <a class="sm {{ 'on' if _sec == 'blog' else '' }}" href="/{{ key }}/blog/">📝 네이버 블로그</a>
-
-  <a class="sm {{ 'on' if _sec == 'insta' else '' }}" href="/{{ key }}/instagram">🎬 인스타 파이프라인</a>
 
   <a class="sm {{ 'on' if _sec == 'place' else '' }}" href="/{{ key }}/place">📍 스마트플레이스</a>
 
