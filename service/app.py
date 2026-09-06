@@ -1522,19 +1522,48 @@ def instagram_make(path_key):
 
 
 def _load_cloud_topics():
-    """state/topics.json → (updated, 표시시각, ready 주제들, 파이프라인 주소)."""
+    """state/topics.json → (updated, 표시시각, 주제 3묶음, 파이프라인 주소).
+
+    주제를 **화면이 그대로 그릴 수 있는 모양**으로 나눠서 돌려준다
+    (2026-09-07 UX 개선). 예전엔 ready(영상 있는 폴더)만 남겨서,
+    [📸 이거 찍을게요]로 만들어 둔 빈 폴더 3개가 화면에서 통째로 사라져
+    "찍어야 할 일"이 증발했다.
+
+      shooting — 아직 영상이 없는 폴더 = 찍으러 갈 것
+      fresh    — 영상이 있고 아직 릴스를 안 만든 것 = 만들 것(최신순)
+      made     — 이미 완성본이 나온 것 = 접어 둘 것
+    """
     try:
         import json as _json
         from sns_automation import cloud_sync
         raw = cloud_sync._bucket().download("state/topics.json")
         st = _json.loads(raw.decode("utf-8"))
-        topics = [t for t in st.get("topics", []) if t.get("ready")]
+        rows = st.get("topics") or []
+        for t in rows:                       # 언제 올린 소재인지 카드에 보이게
+            t["when"] = (datetime.fromtimestamp(t["newest"], KST).strftime("%m/%d")
+                         if t.get("newest") else "")
+        newest = lambda t: t.get("newest") or 0          # noqa: E731
+        import time as _time
+        # 이번 주에 찍은 것만 펼쳐 둔다 — 작년 폴더가 "새 소재"에 섞여 있으면
+        # 목록이 영원히 안 줄어든다(실측: 2025.09 폴더가 계속 1순위였다).
+        cut = _time.time() - 7 * 86400
+        todo = sorted([t for t in rows if t.get("ready") and not t.get("made")],
+                      key=newest, reverse=True)
+        groups = {
+            "shooting": [t for t in rows if not t.get("ready")],
+            # 시각을 모르는 옛 형식(일꾼이 아직 새 코드가 아님)은 새 소재로 둔다
+            # — 통째로 접혀 버리면 만들 것이 하나도 없는 화면이 된다
+            "fresh": [t for t in todo if not t.get("newest") or newest(t) >= cut],
+            "older": [t for t in todo if newest(t) < cut],
+            "made": sorted([t for t in rows if t.get("ready") and t.get("made")],
+                           key=newest, reverse=True),
+        }
         when = None
         if st.get("updated"):
             when = datetime.fromtimestamp(st["updated"], KST).strftime("%m/%d %H:%M")
-        return st.get("updated", 0), when, topics, st.get("pipeline_url") or ""
+        return st.get("updated", 0), when, groups, st.get("pipeline_url") or ""
     except Exception:
-        return 0, None, [], ""
+        return 0, None, {"shooting": [], "fresh": [], "older": [], "made": []}, ""
 
 
 @app.route("/<path_key>/instagram/topics")

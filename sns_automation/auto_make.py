@@ -837,16 +837,46 @@ def run_pipe_action(pid: str, action: str, payload: dict | None = None) -> str:
 
 
 def push_topics() -> None:
-    """소재 폴더 목록을 클라우드에 올린다 — 직원 웹의 주제 선택칸이 읽는다."""
+    """소재 폴더 목록을 클라우드에 올린다 — 직원 웹의 소재 카드가 읽는다.
+
+    폴더 이름과 개수만으로는 화면이 **지금 무엇을 해야 하는지** 말해주지 못한다.
+    그래서 세 가지를 같이 올린다(2026-09-07 UX 개선):
+      · guide  — 촬영가이드가 있는 빈 폴더 = [📸 이거 찍을게요]로 만든 '찍는 중'.
+                 영상이 0개라 예전 화면에서는 통째로 사라져 있었다(실측 3건).
+      · made   — 이미 완성본이 나온 폴더. '만들기' 목록에서 아래로 내린다.
+      · newest — 최근 소재를 위로 올리기 위한 정렬 기준.
+    """
+    import os as _os
     from . import cloud_sync, source_watch
+    from . import webapp as wa
     root = source_watch.source_root()
     if not root:
         return
     import json as _json
     import time as _time
-    topics = [{"topic": t["topic"], "videos": t["videos"],
-               "images": t["images"], "ready": t["ready"]}
-              for t in source_watch.list_topics(root)]
+
+    # 완성본이 나온 폴더 — 프로젝트의 source_dir 로 찾는다(제목은 바뀔 수 있다)
+    done: set[str] = set()
+    try:
+        for pid in _os.listdir(wa.PROJECTS_DIR):
+            p = wa._load_project(pid)
+            if p and p.get("status") == wa.ST_DONE and p.get("source_dir"):
+                done.add(_os.path.normcase(p["source_dir"]))
+    except OSError:
+        pass
+
+    topics = []
+    for t in source_watch.list_topics(root):
+        try:
+            has_guide = bool(source_watch.guide_text(t["path"]).strip())
+        except Exception:                      # 가이드 못 읽어도 목록은 나가야 한다
+            has_guide = False
+        topics.append({
+            "topic": t["topic"], "videos": t["videos"], "images": t["images"],
+            "ready": t["ready"], "newest": int(t.get("newest") or 0),
+            "made": _os.path.normcase(t["path"]) in done,
+            "guide": has_guide,
+        })
     data = _json.dumps({"updated": int(_time.time()), "topics": topics,
                         "pipeline_url": _pipeline_url()},
                        ensure_ascii=False).encode("utf-8")

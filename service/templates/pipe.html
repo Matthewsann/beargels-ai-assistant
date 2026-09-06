@@ -21,6 +21,8 @@
          font:inherit; font-size:12.5px; font-weight:600; padding:8px 12px; border-radius:9px;
          cursor:pointer; text-decoration:none; }
   .btn.pri { background:var(--accent); border-color:var(--accent); color:#fff; }
+  /* 다크에서 --accent 는 밝은 파랑이라 흰 글씨가 안 읽힌다(2026-09-07) */
+  html.dk .btn.pri { color:#122437; }
   .btn.mini { padding:3px 8px; font-size:12px; }
   .row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
   .note { background:var(--warn-bg); color:var(--warn); border-radius:9px;

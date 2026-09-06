@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
@@ -10,63 +10,235 @@
           --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
           --ok:#3b6d11; --ok-bg:#eaf3de; }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.7;
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.65;
          font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
   .wrap { max-width:640px; margin:0 auto; padding:16px 14px 64px; }
-  h2 { font-size:16px; margin:0 0 4px; }
-  .sub { color:var(--muted); font-size:13px; margin:0 0 14px; }
+  h2 { font-size:16px; margin:0 0 10px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
-          padding:16px; margin-bottom:12px; font-size:14px; }
-  .card h3 { font-size:14px; margin:0 0 10px; display:flex; align-items:center; gap:7px; }
+          padding:14px; margin-bottom:12px; font-size:14px; scroll-margin-top:12px; }
+  .card h3 { font-size:14px; margin:0 0 10px; }
   .btn { display:inline-block; border:1px solid var(--line); background:#fff; color:var(--ink);
          font:inherit; font-size:13px; font-weight:600; padding:9px 14px; border-radius:9px;
          cursor:pointer; text-decoration:none; }
   .btn.pri { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn.mini { padding:4px 9px; font-size:12px; font-weight:500; }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  .steps { margin:0; padding-left:20px; font-size:13.5px; }
-  .steps li { margin-bottom:4px; }
-  .steps b { color:var(--accent); }
+
+  /* 지금 할 일 — 화면 맨 위에서 다음 행동 하나만 가리킨다 */
+  .todo { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  .chip { display:inline-block; background:var(--accent); color:#fff; text-decoration:none;
+          font-size:12.5px; font-weight:700; padding:8px 12px; border-radius:20px; }
+  .chip.ghost { background:var(--accent-bg); color:var(--accent); }
+  /* 다크에서 --accent 는 밝은 파랑이라 흰 글씨가 안 읽힌다(2026-09-07 실측).
+     같은 문제가 다른 화면의 .btn.pri 에도 있지만 여기서만 덮는다. */
+  html.dk .btn.pri, html.dk .chip:not(.ghost) { color:#122437; }
+
   .reel { border-top:1px solid var(--line); padding:12px 0 0; margin-top:12px; }
   .reel:first-of-type { border-top:0; margin-top:0; }
   .reel b { font-size:14px; }
-  .reel .meta { color:var(--muted); font-size:12px; margin:2px 0 8px; }
+  .reel .meta { color:var(--muted); font-size:12px; margin:2px 0 6px; }
+  .reel video { width:100%; max-width:200px; border-radius:10px;
+                border:1px solid var(--line); display:block; margin:4px 0 8px; }
+  input[type=text], textarea { font:inherit; font-size:13px; padding:7px 10px; width:100%;
+    border:1px solid var(--line); border-radius:8px; margin:5px 0; background:#fff; }
+  .lbl { color:var(--muted); font-size:11.5px; margin-top:4px; }
+
+  /* 접는 구역 — 자주 안 보는 것은 접어 첫 화면을 짧게 유지한다 */
+  .fold { margin-top:10px; border-top:1px solid var(--line); padding-top:8px; }
+  .fold.sm { border-top:0; padding-top:2px; }
+  .fold > summary { cursor:pointer; font-size:12.5px; color:var(--accent); font-weight:600;
+                    list-style:none; padding:3px 0; }
+  .fold > summary::-webkit-details-marker { display:none; }
+  .fold > summary::before { content:"▸ "; }
+  .fold[open] > summary::before { content:"▾ "; }
+  .sub-row { font-size:12.5px; padding:4px 0; border-bottom:1px solid var(--line); }
+  .sub-row:last-child { border-bottom:0; }
+  .tag { color:var(--accent); font-size:11.5px; }
   .cap { background:var(--bg); border:1px solid var(--line); border-radius:9px;
          padding:9px 11px; font-size:13px; white-space:pre-wrap; margin:8px 0;
          max-height:110px; overflow:auto; }
-  .empty { color:var(--muted); font-size:13px; padding:10px 0; }
+  .empty { color:var(--muted); font-size:13px; padding:8px 0; }
+  .foot { color:var(--muted); font-size:11.5px; margin-top:10px; }
+  .foot a { color:var(--muted); }
   .note { background:var(--warn-bg); color:var(--warn); border-radius:9px;
-          padding:10px 12px; font-size:12.5px; margin-top:10px; }
+          padding:9px 11px; font-size:12.5px; margin-top:10px; }
   .okmsg { background:var(--ok-bg); color:var(--ok); border-radius:9px;
-           padding:10px 12px; font-size:13px; margin-top:10px; }
+           padding:9px 11px; font-size:13px; margin-top:10px; }
 </style>
 </head>
 <body>
 {{ sidebar|safe }}
+{# 완성본 카드 하나 — 미발행/발행 목록에서 같은 모양을 쓴다 #}
+{% macro reel_card(r, i) %}
+      <div class="reel" data-pid="{{ r.id }}">
+        <b>{{ r.title }}</b>
+        <div class="meta">{{ r.size_mb }}MB{% if r.when %} · {{ r.when }}{% endif %}</div>
+        {% if r.published_at %}
+        <div class="okmsg" style="margin:0 0 8px;padding:6px 10px;font-size:12.5px">
+          ✅ 올렸어요{% if r.pub_when %} · {{ r.pub_when }}{% endif %}{% if r.likes is defined and r.likes is not none %} · ♥ {{ r.likes }}{% endif %}{% if r.comments %} · 💬 {{ r.comments }}{% endif %}{% if r.reach %} · 도달 {{ r.reach }}{% endif %}{% if r.permalink %} · <a href="{{ r.permalink }}" target="_blank" rel="noopener" style="color:inherit">게시물 보기</a>{% endif %}
+          {% if r.pub_pending == 'undo' %}<span style="opacity:.75"> · ⏳ 기록 취소 중…</span>{% else %} · <a href="javascript:void(0)" data-auto="{{ 1 if r.published_source == 'auto' else 0 }}" onclick="unmarkPublished(this)" style="color:inherit;opacity:.7">{{ '이 게시물이 아니에요' if r.published_source == 'auto' else '잘못 눌렀어요' }}</a>{% endif %}
+        </div>
+        {% endif %}
+        <video controls playsinline preload="metadata" src="{{ r.video }}"></video>
+        <div class="row">
+          <a class="btn pri" href="{{ r.video }}" download>⬇️ 영상 받기</a>
+          {% if r.caption %}<button class="btn" onclick="copyCap({{ i }})">📋 캡션 복사</button>{% endif %}
+          {% if not r.published_at %}
+            {% if r.pub_pending %}
+            <span class="meta" style="display:inline;margin:0">⏳ 발행 기록 중…</span>
+            {% else %}
+            <button class="btn" onclick="markPublished(this)">📤 인스타에 올렸어요</button>
+            {% endif %}
+          {% endif %}
+        </div>
+        {% if r.caption %}<div class="cap" id="cap{{ i }}">{{ r.caption }}</div>{% endif %}
+        {% if r.script and r.script.hook %}
+        <details class="fold sm">
+          <summary>✏️ 틀린 말 고치기 (메뉴명·재료가 틀렸을 때만)</summary>
+          <div class="lbl">훅</div>
+          <input type="text" class="fx-hook" value="{{ r.script.hook }}">
+          {% for c in r.script.captions %}
+          <input type="text" class="fx-cap" value="{{ c }}" placeholder="(자막 없음)">
+          {% endfor %}
+          <div class="lbl">마지막 한 줄</div>
+          <input type="text" class="fx-cta" value="{{ r.script.cta }}">
+          <div class="lbl">인스타 캡션</div>
+          <textarea class="fx-caption" rows="3">{{ r.caption }}</textarea>
+          <button class="btn pri" style="margin-top:6px" onclick="fixReel(this)">🔁 고친 걸로 다시 만들기 (2~3분)</button>
+        </details>
+        {% endif %}
+      </div>
+{% endmacro %}
 <div class="wrap">
   <h2>🎬 인스타 릴스</h2>
-  <p class="sub">찍어서 올리면 제가 만들어요. 뭘 찍을지는 아래에서 같이 정해요.</p>
   <div id="mkStatus"></div>
 
-  <!-- 💡 뭘 찍을까요 — MKT 파트너의 제안 -->
-  <div class="card">
+  {# 지금 할 일 — 상태를 읽어 다음 행동만 보여준다(2026-09-07 UX 개선) #}
+  {% set fresh = topics.fresh %}
+  {% set shooting = topics.shooting %}
+  {% set pend = [] %}
+  {% for r in reels %}{% if not r.published_at %}{% set _ = pend.append(r) %}{% endif %}{% endfor %}
+  <div class="todo">
+    {% if pend %}<a class="chip" href="#done">✅ 완성본 {{ pend|length }}개 — 받아서 올리기</a>{% endif %}
+    {% if fresh %}<a class="chip" href="#make">📥 새 소재 {{ fresh|length }}개 — 릴스 만들기</a>{% endif %}
+    {% if shooting %}<a class="chip ghost" href="#shoot">📸 찍을 것 {{ shooting|length }}개</a>{% endif %}
+    {% if not pend and not fresh and not shooting %}
+    <a class="chip" href="#ideas">💡 오늘은 여유 있어요 — 아이디어 받아보기</a>{% endif %}
+  </div>
+
+  <!-- 📥 소재 → 릴스 (가장 자주 하는 일이라 맨 위) -->
+  <div class="card" id="make">
+    <h3>📥 올린 소재로 릴스 만들기</h3>
+    {% if fresh %}
+      {% for t in fresh %}
+      <div class="reel" data-topic="{{ t.topic }}">
+        <b>{{ t.topic }}</b>
+        <span class="meta" style="display:inline">영상 {{ t.videos }}{% if t.images %}·사진 {{ t.images }}{% endif %}{% if t.when %} · {{ t.when }}{% endif %}</span>
+        <input type="text" class="mk-memo" placeholder="이 영상 뭐예요? (선택)">
+        <button class="btn pri" onclick="makeFull(this)">🎬 릴스 만들기</button>
+      </div>
+      {% endfor %}
+      <div class="note">버튼 하나면 끝 — 장면 고르기·자막·검수까지 자동으로 하고
+        2~4분 뒤 <b>완성된 릴스</b>에 떠요. 페이지 닫아도 계속 만들어요.</div>
+    {% else %}
+      <div class="empty">이번 주에 올라온 새 소재가 없어요. 아래 <b>찍을 것</b>을 찍어
+        드라이브 폴더에 넣으면 여기 떠요.</div>
+    {% endif %}
+
+    {% if shooting %}
+    <details id="shoot" class="fold" {% if not fresh %}open{% endif %}>
+      <summary>📸 찍을 것 {{ shooting|length }}개 — 폴더는 만들어 뒀어요</summary>
+      {% for t in shooting %}
+      <div class="sub-row">
+        <b>{{ t.topic }}</b>
+        {% if t.guide %}<span class="meta" style="display:inline">촬영가이드 있음</span>
+        {% else %}<span class="meta" style="display:inline">빈 폴더</span>{% endif %}
+      </div>
+      {% endfor %}
+      <div class="meta" style="margin-top:6px">드라이브에서 이 이름의 폴더를 열고
+        찍은 걸 다 넣으세요. 폴더 안 <b>촬영가이드.txt</b>에 무엇을 찍을지 적어 뒀어요.</div>
+    </details>
+    {% endif %}
+
+    {% set rest = topics.older + topics.made %}
+    {% if rest %}
+    <details class="fold">
+      <summary>🗂 지난 소재 {{ rest|length }}개 — 오래됐거나 이미 만든 것</summary>
+      {% for t in rest %}
+      <div class="sub-row" data-topic="{{ t.topic }}">
+        <b>{{ t.topic }}</b>
+        <span class="meta" style="display:inline">{{ t.when }}{% if t.made %} · ✅ 만듦{% endif %}</span>
+        <button class="btn mini" onclick="makeFull(this)">{{ '🔁 다시 만들기' if t.made else '🎬 릴스 만들기' }}</button>
+        <input type="hidden" class="mk-memo" value="">
+      </div>
+      {% endfor %}
+    </details>
+    {% endif %}
+
+    <div class="foot">
+      방금 올렸는데 안 보이면 <a href="javascript:void(0)" onclick="refreshTopics()" id="tpBtn">🔄 다시 확인</a>
+      (드라이브 동기화 1~2분) ·
+      <a href="https://drive.google.com/drive/folders/1cJf1C4C3LGAUqDdF9M8ckglPR0ViHBSw"
+         target="_blank" rel="noopener">📂 드라이브 폴더 열기</a>{% if topics_when %} · {{ topics_when }} 기준{% endif %}
+    </div>
+  </div>
+
+  <!-- ✅ 완성본 -->
+  <div class="card" id="done">
+    <h3>✅ 완성된 릴스 — 받아서 올리기</h3>
+    {% if reels %}
+      {% for r in reels if not r.published_at %}
+      {{ reel_card(r, loop.index0) }}
+      {% endfor %}
+      {% if pend %}
+      <div class="note">영상은 <b>무음</b>이에요 — 인스타 <b>Edits</b> 앱에서 인기 음원을 얹어 올리세요.
+        올린 뒤 <b>📤 올렸어요</b>를 누르면 바로 기록돼요(안 눌러도 6시간 안에 알아채요).</div>
+      {% endif %}
+      {% set gone = reels|length - pend|length %}
+      {% if gone %}
+      <details class="fold">
+        <summary>📤 이미 올린 릴스 {{ gone }}개 — 성과 보기</summary>
+        {% for r in reels if r.published_at %}
+        {{ reel_card(r, loop.index0 + 100) }}
+        {% endfor %}
+      </details>
+      {% endif %}
+    {% else %}
+      <div class="empty">{{ reels_msg or "아직 완성된 릴스가 없어요. 위에서 만들면 여기 떠요." }}</div>
+    {% endif %}
+    <div id="msg"></div>
+  </div>
+
+  {% set shoot_names = shooting|map(attribute="topic")|list %}
+  {% set ready_names = (fresh + topics.older + topics.made)|map(attribute="topic")|list %}
+  <!-- 💡 아이디어 (주 1회 보는 곳이라 아래) -->
+  <div class="card" id="ideas">
     <h3>💡 뭘 찍을까요 — 제가 제안해요</h3>
     {% if ideas %}
       {% for i in ideas %}
       <div class="reel">
-        <b>{{ i.title }}</b>{% if i.source == 'ref' %} <span style="color:var(--accent);font-size:11.5px">📎 사장님 레퍼런스 기반</span>{% endif %}
+        <b>{{ i.title }}</b>{% if i.source == 'ref' %} <span class="tag">📎 사장님 레퍼런스</span>{% endif %}
+        <div style="font-size:13px;margin:3px 0 4px">훅: “{{ i.hook_angle }}”</div>
         <div class="meta">{{ i.why }}</div>
-        <div style="font-size:13px;margin:4px 0 6px">예상 훅: “{{ i.hook_angle }}”</div>
-        <div style="font-size:12.5px;color:var(--muted)">
-          {% for s in i.shots %}📹 {{ s.what }} ({{ s.secs|int }}초)<br>{% endfor %}
+        <div class="row" style="margin-top:6px" data-brief="{{ i.brief_id or '' }}" data-title="{{ i.title }}">
+          {# 같은 이름의 폴더가 이미 있으면 버튼 대신 지금 상태를 보여준다 —
+             두 번 눌러 폴더가 겹치는 일을 막는다(2026-09-07). #}
+          {% if i.title in ready_names %}
+            <span class="tag">✅ 소재가 올라와 있어요 — 위 <b>릴스 만들기</b>에서 만드세요</span>
+          {% elif i.title in shoot_names %}
+            <span class="tag">📁 폴더 준비됨 — 찍어서 그 폴더에 넣어주세요</span>
+          {% else %}
+            <button class="btn pri" onclick="startShoot(this)">📸 이거 찍을게요</button>
+          {% endif %}
         </div>
-        {% if i.blog_keyword %}
-        <div style="font-size:12px;color:var(--muted);margin-top:4px">
-          📝 같은 촬영으로 블로그도: <b>{{ i.blog_keyword }}</b>{% if i.blog_angle %} — {{ i.blog_angle }}{% endif %}</div>
-        {% endif %}
-        <div class="row" style="margin-top:8px" data-brief="{{ i.brief_id or '' }}" data-title="{{ i.title }}">
-          <button class="btn pri" onclick="startShoot(this)">📸 이거 찍을게요</button>
-          <span class="meta" style="display:inline;margin:0">폴더와 촬영가이드를 만들어 둘게요</span>
-        </div>
+        <details class="fold sm">
+          <summary>촬영 방법 {{ i.shots|length }}컷 보기</summary>
+          {% for s in i.shots %}<div class="sub-row">📹 {{ s.what }} <span class="meta" style="display:inline">{{ s.secs|int }}초</span></div>{% endfor %}
+          {% if i.blog_keyword %}
+          <div class="meta" style="margin-top:6px">📝 같은 촬영으로 블로그도:
+            <b>{{ i.blog_keyword }}</b>{% if i.blog_angle %} — {{ i.blog_angle }}{% endif %}</div>
+          {% endif %}
+        </details>
       </div>
       {% endfor %}
     {% else %}
@@ -74,105 +246,18 @@
     {% endif %}
     <div class="row" style="margin-top:10px">
       <button class="btn" onclick="askIdeas('')">💡 새 아이디어 주세요</button>
-      <a class="btn" target="_blank" rel="noopener"
-         href="https://drive.google.com/drive/folders/1cJf1C4C3LGAUqDdF9M8ckglPR0ViHBSw">📂 드라이브 열기</a>
     </div>
-    <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
-      <label style="display:block;color:var(--muted);font-size:12.5px;margin-bottom:4px">
-        📎 마음에 드는 릴스를 봤어요? — 링크와 <b>뭐가 좋았는지</b> 한 줄</label>
+    <details class="fold sm" style="margin-top:8px">
+      <summary>📎 마음에 드는 릴스를 봤어요 — 우리 버전으로 바꾸기</summary>
       <textarea id="refDesc" rows="2"
-        placeholder="예) instagram.com/reel/... 치즈가 쭉 늘어나는 걸 계속 보게 됨. 우리 크림치즈로 하고 싶어"
-        style="font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;width:100%"></textarea>
-      <button class="btn" style="margin-top:6px" onclick="askIdeas(document.querySelector('#refDesc').value)">우리 버전 기획 받기</button>
-    </div>
+        placeholder="예) instagram.com/reel/... 치즈가 쭉 늘어나는 걸 계속 보게 됨. 우리 크림치즈로 하고 싶어"></textarea>
+      <button class="btn" style="margin-top:6px"
+        onclick="askIdeas(document.querySelector('#refDesc').value)">우리 버전 기획 받기</button>
+    </details>
   </div>
 
-  <!-- 📥 소재 도착 → 릴스 만들기 (원버튼) -->
-  <div class="card">
-    <h3>📥 올린 소재로 릴스 만들기</h3>
-    {% if topics %}
-      {% for t in topics %}
-      <div class="reel" data-topic="{{ t.topic }}">
-        <b>{{ t.topic }}</b> <span class="meta" style="display:inline">영상 {{ t.videos }}개</span>
-        <input type="text" class="mk-memo" placeholder="이 영상 뭐예요? 한 줄 (선택 — 적으면 더 정확해요)"
-          style="font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;width:100%;margin:6px 0">
-        <button class="btn pri" onclick="makeFull(this)">🎬 릴스 만들기</button>
-      </div>
-      {% endfor %}
-    {% else %}
-      <div class="empty">아직 올라온 소재가 없어요.</div>
-    {% endif %}
-    <div style="color:var(--muted);font-size:11.5px;margin-top:8px">
-      방금 올렸는데 안 보이면 <a href="javascript:void(0)" onclick="refreshTopics()" id="tpBtn">🔄 다시 확인</a>
-      (드라이브 동기화까지 1~2분) · 폴더 이름이 곧 제목이에요{% if topics_when %} · {{ topics_when }} 기준{% endif %}</div>
-    <div class="note" style="margin-top:8px">버튼 하나면 끝 — 장면 고르기·자막·검수까지 자동으로 하고
-      2~4분 뒤 아래 완성본에 떠요. 페이지 닫아도 계속 만들어요.</div>
-  </div>
-
-  <!-- ✅ 완성본 -->
-  <div class="card">
-    <h3>✅ 완성된 릴스 — 받아서 올리기</h3>
-    {% if reels %}
-      {% for r in reels %}
-      <div class="reel" data-pid="{{ r.id }}">
-        <b>{{ r.title }}</b>
-        <div class="meta">{{ r.size_mb }}MB{% if r.when %} · {{ r.when }}{% endif %}</div>
-        {% if r.published_at %}
-        <div class="okmsg" style="margin:0 0 8px;padding:6px 10px;font-size:12.5px">
-          ✅ 인스타에 올렸어요{% if r.pub_when %} · {{ r.pub_when }}{% endif %}{% if r.likes is defined and r.likes is not none %} · ♥ {{ r.likes }}{% endif %}{% if r.comments %} · 💬 {{ r.comments }}{% endif %}{% if r.reach %} · 도달 {{ r.reach }}{% endif %}{% if r.permalink %} · <a href="{{ r.permalink }}" target="_blank" rel="noopener" style="color:inherit">게시물 보기</a>{% endif %}
-          {% if r.pub_pending == 'undo' %}<span style="opacity:.75"> · ⏳ 기록 취소 중…</span>{% else %} · <a href="javascript:void(0)" data-auto="{{ 1 if r.published_source == 'auto' else 0 }}" onclick="unmarkPublished(this)" style="color:inherit;opacity:.7">{{ '이 게시물이 아니에요' if r.published_source == 'auto' else '잘못 눌렀어요' }}</a>{% endif %}
-        </div>
-        {% endif %}
-        <video controls playsinline preload="metadata" src="{{ r.video }}"
-          style="width:100%;max-width:220px;border-radius:10px;border:1px solid var(--line);display:block;margin:4px 0 8px"></video>
-        <div class="row">
-          <a class="btn pri" href="{{ r.video }}" download>⬇️ 영상 받기</a>
-          {% if r.caption %}
-          <button class="btn" onclick="copyCap({{ loop.index0 }})">📋 캡션 복사</button>
-          {% endif %}
-          {% if not r.published_at %}
-            {% if r.pub_pending %}
-            <span class="meta" style="display:inline;margin:0">⏳ 발행 기록 중… (집 PC 가 받으면 ✅)</span>
-            {% else %}
-            <button class="btn" onclick="markPublished(this)">📤 인스타에 올렸어요</button>
-            {% endif %}
-          {% endif %}
-        </div>
-        {% if r.caption %}<div class="cap" id="cap{{ loop.index0 }}">{{ r.caption }}</div>{% endif %}
-        {% if r.script and r.script.hook %}
-        <details style="margin-top:6px">
-          <summary style="cursor:pointer;font-size:12.5px;color:var(--accent)">✏️ 틀린 말 고치기 (메뉴명·재료가 틀렸을 때만)</summary>
-          <div style="margin-top:8px">
-            <div style="color:var(--muted);font-size:11.5px">훅</div>
-            <input type="text" class="fx-hook" value="{{ r.script.hook }}"
-              style="font:inherit;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;width:100%">
-            {% for c in r.script.captions %}
-            <input type="text" class="fx-cap" value="{{ c }}" placeholder="(자막 없음)"
-              style="font:inherit;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;width:100%;margin-top:4px">
-            {% endfor %}
-            <div style="color:var(--muted);font-size:11.5px;margin-top:4px">마지막 한 줄</div>
-            <input type="text" class="fx-cta" value="{{ r.script.cta }}"
-              style="font:inherit;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;width:100%">
-            <div style="color:var(--muted);font-size:11.5px;margin-top:4px">인스타 캡션</div>
-            <textarea class="fx-caption" rows="3"
-              style="font:inherit;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;width:100%">{{ r.caption }}</textarea>
-            <button class="btn pri" style="margin-top:6px" onclick="fixReel(this)">🔁 고친 걸로 다시 만들기 (2~3분)</button>
-          </div>
-        </details>
-        {% endif %}
-      </div>
-      {% endfor %}
-      <div class="note">영상은 <b>무음</b>이에요 — 인스타 <b>Edits</b> 앱에서 인기 음원을 얹어 올리세요.
-        올린 뒤 <b>📤 올렸어요</b>를 누르면 바로 기록돼요. 안 눌러도 집 PC 가 6시간 안에 알아채고,
-        좋아요·댓글은 두 경우 모두 자동으로 따라와 다음 기획에 반영돼요.</div>
-    {% else %}
-      <div class="empty">{{ reels_msg or "아직 완성된 릴스가 없어요. 위에서 만들면 여기 떠요." }}</div>
-    {% endif %}
-    <div id="msg"></div>
-  </div>
-
-  <div style="text-align:center;color:var(--muted);font-size:11.5px;margin-top:4px">
-    샷 단위 세부 편집이 필요하면 → <a href="{{ url_for('instagram_pipe', path_key=key) }}" style="color:var(--muted)">파이프라인 화면</a>
+  <div class="foot" style="text-align:center">
+    샷 단위 세부 편집 → <a href="{{ url_for('instagram_pipe', path_key=key) }}">파이프라인 화면</a>
   </div>
 </div>
 
@@ -188,10 +273,12 @@ function esc(s){
 
 // 🎬 원버튼 — 소재 카드에서 바로 완성본까지
 async function makeFull(btn){
-  const card = btn.closest(".reel");
+  // ⚠️ .reel 로 찾지 말 것 — '지난 소재' 줄은 .sub-row 라서 못 찾는다.
+  const card = btn.closest("[data-topic]");
   const fd = new FormData();
   fd.append("topic", card.dataset.topic);
   fd.append("memo", card.querySelector(".mk-memo").value.trim());
+  const label = btn.textContent;
   btn.disabled = true; btn.textContent = "보내는 중…";
   try{
     const r = await fetch(location.pathname.replace(/\/$/,"") + "/full", {method:"POST", body:fd});
@@ -201,7 +288,7 @@ async function makeFull(btn){
     window.scrollTo({top:0, behavior:"smooth"});
     startPoll();
   }catch(e){ stBox().innerHTML = `<div class="note">실패: ${esc(e.message)}</div>`; }
-  btn.disabled = false; btn.textContent = "🎬 릴스 만들기";
+  btn.disabled = false; btn.textContent = label;
 }
 
 // 📸 이거 찍을게요 — 집 PC 가 소재 폴더와 촬영가이드를 미리 만든다
