@@ -128,6 +128,7 @@ jobs:
           upload service/sales_page.py
           upload service/dashboard_page.py
           upload service/templates/sales.html
+          upload service/templates/sales_lock.html
           upload service/menu_images.py
           upload service/schedule_page.py
           upload service/templates/schedule.html

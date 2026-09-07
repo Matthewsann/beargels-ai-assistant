@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>경영 대시보드 — 베어글스</title>
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
+          --ok:#3b6d11; --ok-bg:#eaf3de; --bad:#a3271f; --bad-bg:#fbe9e7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.5;
+         font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .wrap { max-width:420px; margin:0 auto; padding:40px 16px 64px; }
+  .lock { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:22px 20px 20px; }
+  .lock .ic { font-size:34px; line-height:1; margin-bottom:10px; }
+  .lock h1 { margin:0 0 4px; font-size:18px; }
+  .lock p { margin:0 0 16px; font-size:13px; color:var(--muted); }
+  .lock label { display:block; font-size:12px; font-weight:700; color:var(--muted); margin-bottom:6px; }
+  .lock input { width:100%; font-size:22px; letter-spacing:.35em; text-align:center; padding:12px 10px;
+                border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--ink);
+                font-family:inherit; font-variant-numeric:tabular-nums; }
+  .lock input:focus { outline:none; border-color:var(--accent); }
+  .lock button { width:100%; margin-top:12px; background:var(--accent); color:#fff; border:none;
+                 padding:13px; border-radius:10px; font-size:15px; font-weight:700; cursor:pointer; font-family:inherit; }
+  .err { background:var(--bad-bg); color:var(--bad); border-radius:9px; padding:9px 12px; font-size:12.5px; margin-bottom:12px; }
+  .hint { font-size:11.5px; color:var(--muted); margin-top:14px; text-align:center; }
+</style>
+</head>
+<body>
+{% include "_sidebar.html" %}
+<div class="wrap">
+  <form class="lock" method="post" action="/{{ key }}/sales/unlock" autocomplete="off">
+    <div class="ic">🔒</div>
+    <h1>경영 대시보드</h1>
+    <p>사장님 전용 화면이에요. 비밀번호를 넣어주세요.</p>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <label for="pw">비밀번호</label>
+    <input id="pw" name="pw" type="password" inputmode="numeric" pattern="[0-9]*" autofocus
+           autocomplete="current-password" placeholder="••••••">
+    <button type="submit">열기</button>
+    <div class="hint">한 번 맞게 넣으면 이 기기에서는 1년 동안 바로 열려요.</div>
+  </form>
+</div>
+</body>
+</html>

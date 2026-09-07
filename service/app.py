@@ -207,8 +207,7 @@ def _filter_helpers():
     def is_on(name, value=None):
         cur = request.args.get(name) or ""
         return cur == (str(value) if value is not None else "")
-    return {"url_with": url_with, "is_on": is_on,
-            "sales_menu": _sales_menu_visible()}
+    return {"url_with": url_with, "is_on": is_on}
 
 
 def _ajax() -> bool:
@@ -3434,9 +3433,10 @@ def mkt_import(path_key):
 #
 # 잠금: 이 앱은 로그인이 없고 주소가 비밀번호다. 매출은 직원에게 안 보여야
 # 하므로(사장님 확정) 두 번째 비밀을 하나 더 둔다 — OWNER_KEY(환경변수,
-# 없으면 menu_settings.owner_key). `/sales?k=<키>` 로 한 번 열면 브라우저에
-# 1년짜리 쿠키가 남고 그 뒤로는 사이드바에 '💰 매출'이 보인다. 키가 없거나
-# 틀리면 다른 비밀 주소처럼 404 — 화면이 있다는 사실도 알려주지 않는다.
+# 없으면 menu_settings.owner_key). 메뉴는 모두에게 보이고(사장님 지시
+# 2026-09-07), 누르면 **비밀번호 화면**이 먼저 뜬다. 맞게 넣으면 브라우저에
+# 1년짜리 쿠키가 남아 다음부터는 바로 열린다. 틀리면 같은 화면에 안내만.
+# (`/sales?k=<키>` 로 바로 여는 옛 방식도 그대로 된다.)
 # 키를 아예 안 정해 두면 잠금 없이 열린다(로컬 테스트용).
 # ---------------------------------------------------------------------------
 
@@ -3476,14 +3476,27 @@ def _owner_ok() -> bool:
     return request.cookies.get(OWNER_COOKIE) == _owner_token(key)
 
 
-def _sales_menu_visible() -> bool:
-    """사이드바에 '매출' 메뉴를 보일지 — 쿠키 없는 브라우저(직원)에는 안 보인다."""
-    try:
-        if not request.cookies.get(OWNER_COOKIE):
-            return not _owner_key()
-        return _owner_ok()
-    except Exception:  # noqa: BLE001
-        return False
+def _owner_unlock_response(path_key, key):
+    """비밀번호가 맞았다 — 1년 쿠키를 심고 대시보드로 보낸다."""
+    resp = redirect(f"/{path_key}/sales")
+    resp.set_cookie(OWNER_COOKIE, _owner_token(key), max_age=365 * 86400,
+                    httponly=True, samesite="Lax", secure=request.is_secure)
+    return resp
+
+
+@app.route("/<path_key>/sales/unlock", methods=["POST"])
+def sales_unlock(path_key):
+    """비밀번호 화면의 [열기] — 맞으면 쿠키, 틀리면 같은 화면에 안내."""
+    check(path_key)
+    key = _owner_key()
+    if not key:
+        return redirect(f"/{path_key}/sales")
+    pw = (request.form.get("pw") or "").strip()
+    if pw and pw == key:
+        return _owner_unlock_response(path_key, key)
+    time.sleep(0.6)                       # 무작정 찍어 넣는 걸 느리게
+    return render_template("sales_lock.html", key=path_key,
+                           error="비밀번호가 맞지 않아요. 다시 넣어주세요."), 200
 
 
 @app.route("/<path_key>/sales")
@@ -3494,12 +3507,9 @@ def sales_home(path_key):
     if key and k:
         if k != key:
             abort(404)
-        resp = redirect(f"/{path_key}/sales")
-        resp.set_cookie(OWNER_COOKIE, _owner_token(key), max_age=365 * 86400,
-                        httponly=True, samesite="Lax", secure=request.is_secure)
-        return resp
+        return _owner_unlock_response(path_key, key)
     if not _owner_ok():
-        abort(404)
+        return render_template("sales_lock.html", key=path_key, error=None)
     today = datetime.now(KST).date()
     y, m, explicit = today.year, today.month, False
     mm = re.fullmatch(r"(\d{4})-(\d{2})", request.args.get("ym") or "")
@@ -3905,10 +3915,6 @@ def work_task_update(path_key, task_id):
     fields = {k: d[k] for k in ("content", "owner", "due_date", "memo") if k in d}
     if not fields:
         abort(400)
-    # 담당자·기한·메모는 비우면 '지움'이지만, 업무 내용은 비울 수 없다
-    # (표에서 NOT NULL 이라 그대로 보내면 500 이 난다).
-    if "content" in fields and not (fields["content"] or "").strip():
-        return jsonify({"ok": False, "error": "업무 내용은 비울 수 없어요"}), 200
     try:
         if source == "work":
             wk.update_task(tid, **fields)
