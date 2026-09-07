@@ -346,6 +346,7 @@
       + '<span class="tag warning badge-draft">작성 중</span>'
       + '<span class="tag accent badge-locked">🔒 확정</span>'
       + (MODE === 'admin' ? '<div class="wkactions no-print">'
+          + '<button class="btn small" onclick="SCHED.openStaff()" title="직원이 보는 화면을 새 탭으로 엽니다">👀 직원 화면</button>'
           // 이미 근무가 있으면 덮어쓰기라는 걸 버튼에서부터 알린다
           + '<button class="btn small draftonly' + (isEmpty ? '' : ' danger') + '" onclick="SCHED.copyPrev()">'
           + (isEmpty ? '📋 지난주 복사' : '📋 지난주로 덮어쓰기') + '</button>'
@@ -1249,12 +1250,19 @@
       if (!confirm('직원용 링크를 새로 만들까요?\n지금 링크는 더 이상 열리지 않아요.')) return;
       post(API + '/api/token', {}).then(function (r) {
         if ($('pubLink')) $('pubLink').textContent = r.url;
+        if ($('pubOpen')) $('pubOpen').href = r.url;   // 바로보기 버튼도 새 주소로
         flash('새 링크를 만들었어요. 단톡방에 다시 공유해주세요.');
       }).catch(function () { flash('링크를 새로 만들지 못했어요.', true); });
     },
     copyLink: function () {
       var t = $('pubLink') ? $('pubLink').textContent : '';
       if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () { flash('링크를 복사했어요'); });
+    },
+    // 직원이 보는 화면을 그대로 열어본다 (새 탭 — 지금 짜던 근무표는 그대로 둔다)
+    openStaff: function () {
+      var t = $('pubLink') ? $('pubLink').textContent.trim() : '';
+      if (!t) { flash('직원용 링크를 찾지 못했어요. 설정 탭을 한 번 열어주세요.', true); return; }
+      window.open(t, '_blank', 'noopener');
     },
   };
 
