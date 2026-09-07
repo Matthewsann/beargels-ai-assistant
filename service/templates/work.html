@@ -99,14 +99,21 @@
   .dlg { padding:17px; }
   .dlg h3 { margin:0 0 12px; font-size:15.5px; }
   .dlg label { display:block; font-size:11.5px; color:var(--muted); margin:9px 0 3px; }
-  .dlg input { width:100%; font-family:inherit; font-size:14px; border:1px solid var(--line);
-               border-radius:9px; padding:9px 11px; background:var(--bg); color:var(--ink); }
+  .dlg input, .dlg textarea { width:100%; font-family:inherit; font-size:14px;
+               border:1px solid var(--line); border-radius:9px; padding:9px 11px;
+               background:var(--bg); color:var(--ink); }
+  .dlg textarea { resize:vertical; line-height:1.6; }
   .dlg .row { display:flex; gap:8px; } .dlg .row > div { flex:1; }
+  .dlg .dsrc { font-size:11.5px; color:var(--muted); margin:11px 0 0; }
+  .dlg .dsrc a { color:var(--accent); }
   .dlg .btns { display:flex; gap:8px; margin-top:15px; }
   .dlg button { flex:1; font-family:inherit; font-size:14px; border-radius:9px; padding:11px;
                 border:1px solid var(--line); background:var(--card); color:var(--ink);
                 cursor:pointer; }
   .dlg button.go { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; }
+  /* 지우기는 저장 버튼과 떨어뜨려 둔다 — 실수로 눌리면 되돌릴 길이 없다 */
+  .dlg button.del { width:100%; margin-top:13px; border:none; background:transparent;
+                    color:var(--bad); font-size:12.5px; padding:6px; }
 </style>
 </head>
 <body>
@@ -164,20 +171,25 @@
 
   <div class="list">
     {% for t in tasks %}
+    {# 줄이 값을 통째로 들고 있다 — 어디를 눌러도 같은 수정 창이 그대로 열린다 #}
     <div class="t" id="{{ t.id | replace(':', '-') }}" data-id="{{ t.id }}"
-         data-owner="{{ t.owner }}" data-due="{{ t.due_date or '' }}">
+         data-source="{{ t.source }}"
+         data-content="{{ t.content }}" data-owner="{{ t.owner }}"
+         data-due="{{ t.due_date or '' }}" data-memo="{{ t.memo or '' }}">
       <input type="checkbox" onchange="doneTask(this)" aria-label="완료">
       <div class="body">
-        <div class="txt" onclick="editField(this,'content')">{{ t.content }}
+        <div class="txt" onclick="openEdit(this)" title="눌러서 수정">{{ t.content }}
           {% if t.memo %}<span class="memo">📝 {{ t.memo }}</span>{% endif %}
         </div>
         <div class="meta">
           <span class="pri {{ t.pri.level }}">{{ t.pri.label }}</span>
-          {# 담당자·기한은 사람이 채운다 — 비어 있으면 점선 ＋ 버튼 #}
+          {# 담당자·기한도 같은 창을 열되, 누른 칸으로 커서가 간다 #}
           <button class="chip {{ 'who2' if t.owner else 'empty' }}" type="button"
-                  onclick="editField(this,'owner')">👤 {{ t.owner or '＋담당자' }}</button>
+                  onclick="openEdit(this,'owner')">👤 {{ t.owner or '＋담당자' }}</button>
           <button class="chip {{ 'due2' if t.due_date else 'empty' }}" type="button"
-                  onclick="editField(this,'due_date')">📅 {{ t.dday or '＋기한' }}</button>
+                  onclick="openEdit(this,'due')">📅 {{ t.dday or '＋기한' }}</button>
+          <button class="chip {{ 'empty' if not t.memo }}" type="button"
+                  onclick="openEdit(this,'memo')">📝 {{ '메모' if t.memo else '＋메모' }}</button>
           {% if t.source == 'meeting' and t.meeting_id %}
           <a class="src" href="{{ url_for('meeting_detail', path_key=key, mid=t.meeting_id) }}"
              >🗓️ {{ t.meeting_title or '회의' }}</a>
@@ -193,7 +205,7 @@
     </div>
     {% endfor %}
   </div>
-  <button class="addbtn" type="button" onclick="newDlg.showModal()">＋ 업무 추가</button>
+  <button class="addbtn" type="button" onclick="openNew()">＋ 업무 추가</button>
 
   {% if derived %}
   <div class="sec-lbl">비서가 모아둔 것</div>
@@ -207,21 +219,29 @@
 
 </div>
 
-<dialog id="newDlg">
+{# 추가와 수정이 같은 창을 쓴다 — 두 벌로 나뉘면 한쪽만 고쳐지기 마련이다 #}
+<dialog id="taskDlg">
   <form class="dlg" method="dialog">
-    <h3>＋ 업무 추가</h3>
-    <label for="nContent">무엇을 해야 하나요?</label>
-    <input id="nContent" placeholder="예: 9월 메뉴판 인쇄 발주" maxlength="300">
+    <h3 id="dTitle">＋ 업무 추가</h3>
+    <label for="dContent">무엇을 해야 하나요?</label>
+    <input id="dContent" placeholder="예: 9월 메뉴판 인쇄 발주" maxlength="300">
     <div class="row">
-      <div><label for="nOwner">담당자 (나중에 정해도 돼요)</label>
-        <input id="nOwner" maxlength="30" placeholder="예: 사장님"></div>
-      <div><label for="nDue">기한</label>
-        <input id="nDue" type="date"></div>
+      <div><label for="dOwner">담당자 (나중에 정해도 돼요)</label>
+        <input id="dOwner" maxlength="30" placeholder="예: 사장님"></div>
+      <div><label for="dDue">기한 (비우면 없음)</label>
+        <input id="dDue" type="date"></div>
     </div>
+    <label for="dMemo">메모 (선택)</label>
+    <textarea id="dMemo" rows="2" maxlength="500"
+              placeholder="참고할 내용·진행 상황을 적어두세요"></textarea>
+    <p id="dSrc" class="dsrc" hidden></p>
     <div class="btns">
-      <button type="button" onclick="newDlg.close()">취소</button>
-      <button class="go" type="button" onclick="addTask()">추가</button>
+      <button type="button" onclick="taskDlg.close()">취소</button>
+      <button class="go" type="button" onclick="saveTask()">저장</button>
     </div>
+    {# 지우기는 실수로 눌리지 않게 아래에 따로, 직접 등록한 업무만 #}
+    <button id="dDel" class="del" type="button" hidden onclick="removeTask()">
+      🗑️ 이 업무 지우기</button>
   </form>
 </dialog>
 
@@ -249,43 +269,72 @@
       });
   }
 
-  // 담당자·기한·내용을 그 자리에서 고친다. 비우면 지워진다.
-  function editField(el, field) {
-    var row = el.closest(".t");
-    var ask = { owner: "담당자 (비우면 지워져요)",
-                due_date: "기한 — 2026-09-05 처럼 (비우면 지워져요)",
-                content: "업무 내용" }[field];
-    var cur = field === "owner" ? row.dataset.owner
-            : field === "due_date" ? row.dataset.due
-            : row.querySelector(".txt").childNodes[0].textContent.trim();
-    var v = prompt(ask, cur || "");
-    if (v === null) return;
-    v = v.trim();
-    if (field === "due_date" && v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) {
-      alert("날짜는 2026-09-05 처럼 적어주세요.");
-      return;
-    }
-    if (field === "content" && !v) { alert("내용은 비울 수 없어요."); return; }
-    var body = {}; body[field] = v;
-    post("/" + KEY + "/work/task/" + row.dataset.id + "/update", body)
-      .then(function (d) {
-        if (!d.ok) throw new Error(d.error);
-        location.reload();   // 순위가 바뀔 수 있어 다시 그린다
-      })
-      .catch(function () { alert("저장하지 못했어요. 잠시 뒤 다시 시도해주세요."); });
+  // 추가·수정 한 창 — 지금 무엇을 고치는 중인지 기억해 둔다.
+  var editing = null;   // null 이면 '추가', 아니면 그 업무의 id
+
+  function openNew() {
+    editing = null;
+    document.getElementById("dTitle").textContent = "＋ 업무 추가";
+    setField("dContent", ""); setField("dOwner", "");
+    setField("dDue", ""); setField("dMemo", "");
+    document.getElementById("dSrc").hidden = true;
+    document.getElementById("dDel").hidden = true;
+    taskDlg.showModal();
+    document.getElementById("dContent").focus();
   }
 
-  function addTask() {
-    var content = document.getElementById("nContent").value.trim();
+  // 줄 아무 데나 누르면 열린다. focus 를 주면 그 칸으로 커서가 간다
+  // (칩을 눌렀을 때 바로 그 값을 고칠 수 있게).
+  function openEdit(el, focus) {
+    var row = el.closest(".t");
+    editing = row.dataset.id;
+    document.getElementById("dTitle").textContent = "업무 수정";
+    setField("dContent", row.dataset.content);
+    setField("dOwner", row.dataset.owner);
+    setField("dDue", row.dataset.due);
+    setField("dMemo", row.dataset.memo);
+
+    // 회의에서 나온 할 일은 여기서 고칠 수 있지만, 지우는 건 회의 화면에서.
+    var meeting = row.dataset.source === "meeting";
+    var src = document.getElementById("dSrc");
+    src.hidden = !meeting;
+    if (meeting) {
+      var link = row.querySelector(".src");
+      src.innerHTML = "🗓️ 회의에서 나온 할 일이에요. 지우려면 " +
+        (link && link.href ? '<a href="' + link.href + '">그 회의 화면</a>' : "회의 화면") +
+        "에서 지워주세요.";
+    }
+    document.getElementById("dDel").hidden = meeting;
+
+    taskDlg.showModal();
+    var id = { owner: "dOwner", due: "dDue", memo: "dMemo" }[focus] || "dContent";
+    document.getElementById(id).focus();
+  }
+
+  function setField(id, v) { document.getElementById(id).value = v || ""; }
+  function val(id) { return document.getElementById(id).value.trim(); }
+
+  function saveTask() {
+    var content = val("dContent");
     if (!content) { alert("무엇을 해야 하는지 적어주세요."); return; }
-    post("/" + KEY + "/work/task", {
-      content: content,
-      owner: document.getElementById("nOwner").value.trim(),
-      due_date: document.getElementById("nDue").value || null,
-    }).then(function (d) {
+    // 빈 값도 그대로 보낸다 — 서버가 '지움'으로 받는다(담당자·기한 비우기).
+    var body = { content: content, owner: val("dOwner"),
+                 due_date: val("dDue") || null, memo: val("dMemo") };
+    var url = editing ? "/" + KEY + "/work/task/" + editing + "/update"
+                      : "/" + KEY + "/work/task";
+    post(url, body).then(function (d) {
       if (!d.ok) { alert(d.error || "저장하지 못했어요."); return; }
-      location.reload();
+      location.reload();      // 순위가 바뀔 수 있어 다시 그린다
     }).catch(function () { alert("저장하지 못했어요. 잠시 뒤 다시 시도해주세요."); });
+  }
+
+  function removeTask() {
+    if (!editing) return;
+    if (!confirm("이 업무를 지울까요? 되돌릴 수 없어요.")) return;
+    post("/" + KEY + "/work/task/" + editing + "/delete").then(function (d) {
+      if (!d.ok) { alert(d.error || "지우지 못했어요."); return; }
+      location.reload();
+    }).catch(function () { alert("지우지 못했어요. 잠시 뒤 다시 시도해주세요."); });
   }
 </script>
 </body>
