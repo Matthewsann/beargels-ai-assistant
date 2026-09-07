@@ -2969,6 +2969,23 @@ def menu_component_upsert(path_key):
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
+@app.route("/<path_key>/menu/components", methods=["POST"])
+def menu_components_bulk(path_key):
+    """세트 구성 여러 줄을 한 요청에 — 고른 메뉴 5개를 5번 부르면 원가 연쇄
+    재계산이 5번 돌아 화면이 20초 넘게 멎었다(2026-09-07)."""
+    check(path_key)
+    body = request.get_json(force=True) or {}
+    try:
+        out = db.components_upsert_many(body.get("sku"), body.get("rows"))
+        return jsonify({"ok": True, **out})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"세트 구성 일괄 저장 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
 @app.route("/<path_key>/menu/component/<int:row_id>/delete", methods=["POST"])
 def menu_component_delete(path_key, row_id):
     check(path_key)

@@ -1023,33 +1023,64 @@ function setCostCalc(){
   }
   return {total, miss};
 }
-async function scAdd(componentSku, group, qty){
-  const j=await api("/component",{sku:SKU, component_sku:componentSku,
-    qty:qty||1, choice_group:group||null});
-  return !!j;
+// 저장은 몇 초 걸린다(서버가 세트 원가 연쇄까지 다시 잰다). 그동안 버튼을
+// 그대로 두면 '눌러도 아무 일이 없다'로 읽힌다 — 잠그고 무슨 일인지 적는다.
+let SCBUSY=false;
+function scLock(on, msg){
+  SCBUSY=on;
+  const box=document.getElementById("main");
+  if(box) box.style.opacity = on ? "0.55" : "";
+  for(const id of ["mpgrp","mpadd"]){
+    const b=document.getElementById(id); if(!b) continue;
+    b.disabled=on; b.style.cursor = on ? "progress" : "";
+  }
+  const g=document.getElementById("mpgrp");
+  if(on && g && msg) g.textContent=msg;
 }
-async function scReload(msg){
-  const d=await fetch(BASE+"/data").then(r=>r.json());
-  DATA=d; DATA.ingredients=d.ingredients||[]; DATA.recipes=d.recipes||[]; _mcMap=null;
-  if(msg) toast(msg);
-  render();
+// 돌아온 줄과 원가를 화면 데이터에 바로 반영한다 — 예전엔 저장할 때마다
+// /data 를 통째로 다시 받아(실측 5.4초) 저장이 끝나고도 한참 멎어 있었다.
+function scApply(j){
+  DATA.components = DATA.components || [];
+  for(const r of (j.rows||[])){
+    const i=DATA.components.findIndex(c=>c.id===r.id);
+    if(i>=0) DATA.components[i]=r; else DATA.components.push(r);
+  }
+  const rc=j.recomputed||{};
+  for(const k in rc){ const m=DATA.items.find(x=>x.sku===k);
+    if(m) m.ingredient_cost=rc[k]; }
+  _mcMap=null;
+}
+async function scSave(rows, okMsg, busyMsg){
+  if(SCBUSY) return null;
+  scLock(true, busyMsg);
+  const j=await api("/components",{sku:SKU, rows});
+  scLock(false);
+  if(!j){ render(); return null; }   // 실패는 api() 가 토스트로 알렸다
+  scApply(j); render(); toast(okMsg);
+  return j;
 }
 async function scQty(rowId, delta){
   const c=(DATA.components||[]).find(x=>x.id===rowId); if(!c) return;
   const q=Math.max(1,(+c.qty||1)+delta);
   if(q===(+c.qty||1)) return;
-  if(await scAdd(c.component_sku, c.choice_group, q)) scReload(`수량 ${q}개 ✓`);
+  scSave([{component_sku:c.component_sku, choice_group:c.choice_group, qty:q}],
+         `수량 ${q}개 ✓`, "바꾸는 중…");
 }
 async function scDel(rowId){
-  const j=await api(`/component/${rowId}/delete`); if(!j) return;
-  scReload("뺐습니다 ✓");
+  if(SCBUSY) return;
+  scLock(true, "빼는 중…");
+  const j=await api(`/component/${rowId}/delete`);
+  scLock(false);
+  if(!j){ render(); return; }
+  DATA.components=(DATA.components||[]).filter(c=>c.id!==rowId);
+  scApply(j); render(); toast("뺐습니다 ✓");
 }
 // 묶음 복제 — '베이글 2종' 같은 택2 자리는 같은 묶음을 하나 더 만든다
 async function scDupGroup(g){
   const rows=scomps().filter(c=>c.choice_group===g);
   const nn=scNextName(g.replace(/[②③④⑤]$/,""));
-  for(const c of rows) await scAdd(c.component_sku, nn, c.qty||1);
-  scReload(`'${nn}' 묶음 복제 ✓ — 손님이 하나 더 고르는 자리`);
+  scSave(rows.map(c=>({component_sku:c.component_sku, choice_group:nn, qty:c.qty||1})),
+         `'${nn}' 묶음 복제 ✓ — 손님이 하나 더 고르는 자리`, "복제 중…");
 }
 function scNextName(base){
   const used=new Set(scomps().map(c=>c.choice_group).filter(Boolean));
@@ -1092,6 +1123,7 @@ function scPickList(){
     : `🔀 택1 묶음으로 담기${MPSEL.size?` (${MPSEL.size}개)`:""}`;
 }
 async function scPickAdd(asGroup){
+  if(SCBUSY) return;
   if(!MPSEL.size){toast("메뉴를 하나 이상 골라주세요");return;}
   let group=null;
   if(MPTARGET) group=MPTARGET;
@@ -1103,9 +1135,16 @@ async function scPickAdd(asGroup){
     const base=Object.entries(cats).sort((a,b)=>b[1]-a[1])[0]?.[0]||"택1";
     group=scNextName(base);
   }
-  for(const sku of MPSEL) await scAdd(sku, group, 1);
-  const n=MPSEL.size; MPICKON=false; MPSEL=new Set();
-  scReload(group?`'${group}' 택1 묶음에 ${n}개 ✓`:`${n}개 담음 ✓`);
+  const n=MPSEL.size;
+  scLock(true, `담는 중… ${n}개`);
+  const j=await api("/components",{sku:SKU,
+    rows:[...MPSEL].map(s=>({component_sku:s, choice_group:group, qty:1}))});
+  scLock(false);
+  // 실패하면 피커를 닫지 않는다 — 예전엔 실패해도 닫고 '✓ 담았습니다' 를 띄워
+  // 담긴 줄 알고 넘어갔다.
+  if(!j){ render(); return; }
+  scApply(j); MPICKON=false; MPSEL=new Set(); render();
+  toast(group?`'${group}' 택1 묶음에 ${n}개 ✓`:`${n}개 담음 ✓`);
 }
 function scPickerHTML(){
   return `<div class="wrap" style="padding:10px;margin-top:8px">
@@ -1117,7 +1156,7 @@ function scPickerHTML(){
     <div id="mpbox" style="max-height:44vh;overflow:auto;border:1px solid var(--line);border-radius:8px"></div>
     <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
       <span class="sub" id="mpcnt" style="margin-right:auto"></span>
-      ${MPTARGET?"":`<button class="okbtn" style="padding:8px 14px;font-size:13px" onclick="scPickAdd(false)">➕ 각각 담기</button>`}
+      ${MPTARGET?"":`<button class="okbtn" id="mpadd" style="padding:8px 14px;font-size:13px" onclick="scPickAdd(false)">➕ 각각 담기</button>`}
       <button class="bulkbtn" id="mpgrp" style="padding:8px 14px;font-size:13px" onclick="scPickAdd(true)"></button>
     </div>
     <p class="note" style="margin:8px 0 0">· <b>각각 담기</b> = 전부 들어가는 고정 구성 · <b>택1 묶음</b> = 손님이 그중 하나 고르는 자리(원가는 제일 비싼 것 기준).<br>

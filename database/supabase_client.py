@@ -2193,6 +2193,49 @@ def component_upsert(sku, component_sku, qty=1, choice_group=None):
     return recompute_costs([sku], force=True)
 
 
+def components_upsert_many(sku, rows):
+    """세트 구성 여러 줄을 한 번에 — 원가 재계산은 마지막에 딱 한 번.
+
+    한 줄씩 부르면 요청마다 원가 연쇄 재계산이 돌아 5줄 담는 데 20초가 넘었고,
+    그동안 화면이 아무 말 없이 멎어 사장님 눈에는 '버튼이 안 먹는다'로 보였다
+    (2026-09-07 신고). 저장된 줄을 그대로 돌려줘 화면이 /data 를 통째로 다시
+    받지 않아도 되게 한다.
+    """
+    if not sku:
+        raise ValueError("세트를 골라주세요")
+    rows = [r for r in (rows or []) if r.get("component_sku")]
+    if not rows:
+        raise ValueError("담을 메뉴를 하나 이상 골라주세요")
+    sb = get_client()
+    cur = sb.table("menu_components").select("*").eq("sku", sku).execute().data
+    out = []
+    for r in rows:
+        csku = r["component_sku"]
+        if csku == sku:
+            raise ValueError("자기 자신은 구성으로 넣을 수 없습니다")
+        grp = r.get("choice_group") or None
+        payload = {"sku": sku, "component_sku": csku,
+                   "qty": float(r.get("qty") or 1), "choice_group": grp,
+                   "updated_at": datetime.utcnow().isoformat() + "Z"}
+        # choice_group 이 NULL 이면 unique 제약이 안 걸린다(Postgres 는 NULL 을
+        # 서로 다른 값으로 본다) — component_upsert 와 같은 이유로 직접 가른다.
+        hit = [c for c in cur
+               if c["component_sku"] == csku
+               and (c.get("choice_group") or None) == grp]
+        if hit:
+            sb.table("menu_components").update(payload).eq("id", hit[0]["id"]).execute()
+            for extra in hit[1:]:
+                sb.table("menu_components").delete().eq("id", extra["id"]).execute()
+                cur.remove(extra)
+            row = {**hit[0], **payload}
+        else:
+            ins = sb.table("menu_components").insert(payload).execute().data
+            row = ins[0] if ins else payload
+            cur.append(row)
+        out.append(row)
+    return {"rows": out, "recomputed": recompute_costs([sku], force=True)}
+
+
 def component_delete(row_id):
     sb = get_client()
     row = sb.table("menu_components").select("sku").eq("id", int(row_id)).execute().data
