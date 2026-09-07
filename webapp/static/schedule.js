@@ -211,7 +211,8 @@
 
       // 영업 중인데 아무도 없는 구멍 — 주간 화면에서도 바로 보이게 빨간 빗금.
       // 근무가 하나도 없는 날은 통째로 빨개져 소음이라 제외(헤더의 '—'가 말해준다).
-      if (!closed && day.length) {
+      // 관리자 전용 — 직원 화면(공개 링크)은 스케줄 확인용이라 구멍 경고가 소음이다.
+      if (!closed && day.length && MODE === 'admin') {
         var gs = null;
         for (var t = bz.open; t < bz.close; t += 0.5) {
           var n = 0;
@@ -716,12 +717,16 @@
     for (var i = 0; i < WEEKS.length; i++) if (WEEKS[i].iso.indexOf(TODAY) >= 0) return i;
     return 0;
   }
-  function staffWeekHTML(wk, isCur) {
+  function staffWeekHead(wk, isCur) {
     var badge = '<span class="tag ' + (wk.locked ? 'accent' : 'warning') + '">' + (wk.locked ? '🔒 확정' : '작성 중') + '</span>';
     var hint = isCur ? '이번 주' : (wk.locked ? '확정 — 안 바뀌어요' : '');
-    var head = '<div class="sec"' + (isCur ? ' style="margin-top:0;"' : '') + '>'
+    return '<div class="sec"' + (isCur ? ' style="margin-top:0;"' : '') + '>'
       + '<b class="num">' + esc(wk.label) + '</b> ' + badge
       + (hint ? '<small>' + hint + '</small>' : '') + '</div>';
+  }
+
+  function staffWeekHTML(wk, isCur) {
+    var head = staffWeekHead(wk, isCur);
 
     var cards = wk.dates.map(function (d, i) {
       var iso = wk.iso[i], hol = holidayOf(iso), closed = isClosed(iso, i), w = weatherOf(iso);
@@ -743,6 +748,19 @@
     return head + cards;
   }
 
+  // 직원 화면 보기 방식 — 기본은 주간 캘린더(사장님 요청 2026-09-07), 목록은 토글
+  var staffView = 'cal';
+  try { staffView = localStorage.getItem('beargels-sched-view') || 'cal'; } catch (_) {}
+
+  function applyStaffView() {
+    if (!$('sWeekCal') || !$('sWeekList')) return;
+    $('sWeekCal').hidden = staffView !== 'cal';
+    $('sWeekList').hidden = staffView !== 'list';
+    if ($('svCal')) $('svCal').classList.toggle('on', staffView === 'cal');
+    if ($('svList')) $('svList').classList.toggle('on', staffView === 'list');
+    if (staffView === 'cal') fitEvents($('sWeekCal'));   // 숨긴 채 재면 폭이 0이라 다시 잰다
+  }
+
   function renderStaffWeek() {
     if (!$('sWeekList')) return;
     var cur = currentWeekIdx();
@@ -753,15 +771,26 @@
     // 이번 주는 항상 보이고, 그 뒤로는 🔒 확정된 주를 전부 이어서 보여준다
     // (사장님 요청 2026-09-07 — 미리 확정해 둔 스케줄을 직원이 당겨 볼 수 있게).
     // 작성 중인 미래 주는 아직 바뀔 수 있으므로 내보내지 않는다.
-    var parts = [];
+    var idxs = [];
     for (var wi = cur; wi < WEEKS.length; wi++) {
       var wk = WEEKS[wi];
       var has = wk.days.some(function (d) { return d.length; });
       if (wi !== cur && !(wk.locked && has)) continue;
-      parts.push(staffWeekHTML(wk, wi === cur));
+      idxs.push(wi);
     }
-    $('sWeekList').innerHTML = parts.join('');
-    if ($('sWeekCal')) $('sWeekCal').innerHTML = weekCalHTML(wkNow, cur, { mine: meName, readonly: true });
+
+    $('sWeekList').innerHTML = idxs.map(function (i) {
+      return staffWeekHTML(WEEKS[i], i === cur);
+    }).join('');
+
+    if ($('sWeekCal')) {
+      // 같은 주들을 시간축 캘린더로 — 내 근무만 진하게, 남의 근무는 흐리게
+      $('sWeekCal').innerHTML = idxs.map(function (i) {
+        return staffWeekHead(WEEKS[i], i === cur)
+          + weekCalHTML(WEEKS[i], i, { mine: meName, readonly: true });
+      }).join('');
+    }
+    applyStaffView();
   }
 
   function renderMe() {
@@ -967,6 +996,11 @@
       meName = n;
       try { localStorage.setItem('beargels-sched-me', n); } catch (_) {}
       renderMe(); renderStaffWeek();
+    },
+    staffView: function (v) {
+      staffView = v === 'list' ? 'list' : 'cal';
+      try { localStorage.setItem('beargels-sched-view', staffView); } catch (_) {}
+      applyStaffView();
     },
     // 설정
     editBizDow: function (i, which, v) { ensureBizDraft()[i][which] = toH(v); renderSettings(); },

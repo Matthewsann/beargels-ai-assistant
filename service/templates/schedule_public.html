@@ -56,8 +56,14 @@
     </div>
 
     <section id="stab-week">
-      <div id="sWeekList"></div>
-      <div class="note">이 링크는 <b>스케줄만</b> 보여요. 홈 화면에 추가해두면 앱처럼 쓸 수 있어요.</div>
+      <div style="display:flex;gap:6px;margin-bottom:12px;">
+        <button class="btn chip on" id="svCal" onclick="SCHED.staffView('cal')">📅 캘린더</button>
+        <button class="btn chip" id="svList" onclick="SCHED.staffView('list')">☰ 목록</button>
+      </div>
+      <div id="sWeekCal"></div>
+      <div id="sWeekList" hidden></div>
+      <div class="note">캘린더는 <b>옆으로 밀어</b> 볼 수 있어요. 내 근무는 진하게, 다른 사람은 흐리게 보여요.
+        이 링크는 <b>스케줄만</b> 보여요 — 홈 화면에 추가해두면 앱처럼 쓸 수 있어요.</div>
     </section>
 
     <section id="stab-me" hidden>
