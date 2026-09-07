@@ -277,7 +277,9 @@ def staff_view(token: str):
     cfg = load_config()
     if not secrets.compare_digest(token, cfg.get("publicToken") or ""):
         abort(404)
-    return render_template("schedule_public.html", boot=build_boot(date.today(), back=1, fwd=2))
+    # fwd=8: 확정해 둔 미래 주는 이번 주가 아니어도 전부 보여준다(사장님 2026-09-07).
+    # 화면(schedule.js)이 확정된 주만 골라 그리므로, 넉넉히 내려보내도 안 어지럽다.
+    return render_template("schedule_public.html", boot=build_boot(date.today(), back=1, fwd=8))
 
 
 # ---------------------------------------------------------------------------

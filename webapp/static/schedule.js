@@ -716,14 +716,14 @@
     for (var i = 0; i < WEEKS.length; i++) if (WEEKS[i].iso.indexOf(TODAY) >= 0) return i;
     return 0;
   }
-  function renderStaffWeek() {
-    if (!$('sWeekList')) return;
-    var wk = WEEKS[currentWeekIdx()];
+  function staffWeekHTML(wk, isCur) {
     var badge = '<span class="tag ' + (wk.locked ? 'accent' : 'warning') + '">' + (wk.locked ? '🔒 확정' : '작성 중') + '</span>';
-    if ($('sHeadState')) $('sHeadState').innerHTML = '이번 주 ' + badge;
-    if ($('sWeekLabel')) $('sWeekLabel').innerHTML = '<span class="num">' + esc(wk.label) + '</span> ' + badge;
+    var hint = isCur ? '이번 주' : (wk.locked ? '확정 — 안 바뀌어요' : '');
+    var head = '<div class="sec"' + (isCur ? ' style="margin-top:0;"' : '') + '>'
+      + '<b class="num">' + esc(wk.label) + '</b> ' + badge
+      + (hint ? '<small>' + hint + '</small>' : '') + '</div>';
 
-    $('sWeekList').innerHTML = wk.dates.map(function (d, i) {
+    var cards = wk.dates.map(function (d, i) {
       var iso = wk.iso[i], hol = holidayOf(iso), closed = isClosed(iso, i), w = weatherOf(iso);
       var chips = wk.days[i].slice().sort(function (a, b) { return a.s - b.s; }).map(function (sh) {
         return sh.w === meName
@@ -740,7 +740,28 @@
         + (closed ? '<span class="tag warning">휴무</span>' : (chips || '<span class="cap">근무 없음</span>'))
         + '</div>';
     }).join('');
-    if ($('sWeekCal')) $('sWeekCal').innerHTML = weekCalHTML(wk, currentWeekIdx(), { mine: meName, readonly: true });
+    return head + cards;
+  }
+
+  function renderStaffWeek() {
+    if (!$('sWeekList')) return;
+    var cur = currentWeekIdx();
+    var wkNow = WEEKS[cur];
+    var badge = '<span class="tag ' + (wkNow.locked ? 'accent' : 'warning') + '">' + (wkNow.locked ? '🔒 확정' : '작성 중') + '</span>';
+    if ($('sHeadState')) $('sHeadState').innerHTML = '이번 주 ' + badge;
+
+    // 이번 주는 항상 보이고, 그 뒤로는 🔒 확정된 주를 전부 이어서 보여준다
+    // (사장님 요청 2026-09-07 — 미리 확정해 둔 스케줄을 직원이 당겨 볼 수 있게).
+    // 작성 중인 미래 주는 아직 바뀔 수 있으므로 내보내지 않는다.
+    var parts = [];
+    for (var wi = cur; wi < WEEKS.length; wi++) {
+      var wk = WEEKS[wi];
+      var has = wk.days.some(function (d) { return d.length; });
+      if (wi !== cur && !(wk.locked && has)) continue;
+      parts.push(staffWeekHTML(wk, wi === cur));
+    }
+    $('sWeekList').innerHTML = parts.join('');
+    if ($('sWeekCal')) $('sWeekCal').innerHTML = weekCalHTML(wkNow, cur, { mine: meName, readonly: true });
   }
 
   function renderMe() {
