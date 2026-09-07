@@ -3915,6 +3915,10 @@ def work_task_update(path_key, task_id):
     fields = {k: d[k] for k in ("content", "owner", "due_date", "memo") if k in d}
     if not fields:
         abort(400)
+    # 담당자·기한·메모는 비우면 '지움'이지만, 업무 내용은 비울 수 없다
+    # (표에서 NOT NULL 이라 그대로 보내면 500 이 난다).
+    if "content" in fields and not (fields["content"] or "").strip():
+        return jsonify({"ok": False, "error": "업무 내용은 비울 수 없어요"}), 200
     try:
         if source == "work":
             wk.update_task(tid, **fields)
