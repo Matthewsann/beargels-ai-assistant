@@ -66,6 +66,8 @@
 }
 #sched .dh .cnt { font-size: 10px; color: var(--muted); }
 #sched .dh .biz { font-size: 9px; color: var(--accent); }
+/* 그날만 영업시간이 다른 날 — 눈에 띄게 */
+#sched .dh .biz.sp { color: var(--warn); font-weight: 700; }
 #sched .dh .wx { font-size: 10px; color: var(--muted); }
 #sched .dh .holname { font-size: 9px; color: var(--sun); font-weight: 700; }
 #sched .dh .closedtag { font-size: 9px; color: var(--warn); font-weight: 700; }

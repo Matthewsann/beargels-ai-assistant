@@ -169,6 +169,20 @@
         <div id="closedDateHost" style="margin-top:10px;"></div>
       </div>
 
+      <div class="sec"><b>단축·연장 영업일</b><small>그날 하루만 영업시간이 다른 날</small></div>
+      <div class="post">
+        <div class="rowbar">
+          <input class="fld num" type="date" id="spDateIn" style="width:auto;">
+          <button class="btn small" onclick="SCHED.addSpecial()">＋ 날짜 추가</button>
+        </div>
+        <div id="spDayHost" style="margin-top:10px;"></div>
+        <div class="note" style="margin-bottom:0;">
+          날짜를 넣으면 평소 영업시간이 먼저 채워져요. 끝나는 시간만 당기면 <b>단축영업</b>,
+          늘리면 <b>연장영업</b>이 됩니다. 이 날은 근무표에 <b>주황색</b>으로 표시돼요.
+          문 아예 안 여는 날은 위의 <b>임시 휴무</b>에 넣어주세요.
+        </div>
+      </div>
+
       <div class="sec"><b>공휴일 · 날씨</b><small>캘린더에 함께 표시돼요</small></div>
       <div class="post">
         <div class="erow">

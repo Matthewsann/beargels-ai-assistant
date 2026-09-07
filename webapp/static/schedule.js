@@ -53,8 +53,17 @@
     return (CFG.closedDates || []).indexOf(iso) >= 0 || (CFG.closedDows || []).indexOf(di) >= 0;
   }
 
-  // 그 날짜에 적용되던 영업시간 — 바꿔도 과거는 그대로다
-  function bizOf(iso) {
+  // 그날 하루만 다른 영업시간(단축·연장). 없으면 null
+  function specialOf(iso) {
+    var list = CFG.specialDays || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].d === iso && +list[i].close > +list[i].open) return list[i];
+    }
+    return null;
+  }
+
+  // 요일 기준 영업시간 — 특정일 예외는 빼고 본다(단축인지 비교할 기준)
+  function normalBizOf(iso) {
     var list = (CFG.bizHours || []).slice().sort(function (a, b) {
       return String(a.from).localeCompare(String(b.from));
     });
@@ -62,6 +71,21 @@
     for (var i = 0; i < list.length; i++) if (list[i].from <= iso) entry = list[i];
     var pair = (entry && entry.dows && entry.dows[dowOf(iso)]) || [7, 21];
     return { open: +pair[0], close: +pair[1] };
+  }
+
+  // 그 날짜에 적용되던 영업시간 — 바꿔도 과거는 그대로다
+  function bizOf(iso) {
+    var sp = specialOf(iso);
+    if (sp) return { open: +sp.open, close: +sp.close };
+    return normalBizOf(iso);
+  }
+
+  // 평소보다 짧은지 긴지 — 화면에 붙일 딱지
+  function specialTag(iso) {
+    var sp = specialOf(iso); if (!sp) return null;
+    var n = normalBizOf(iso);
+    var len = +sp.close - +sp.open, nlen = n.close - n.open;
+    return len < nlen ? '단축' : (len > nlen ? '연장' : '변경');
   }
   function bizToday() { return bizOf(TODAY); }
 
@@ -120,6 +144,7 @@
     if (MODE !== 'admin') return;
     post(API + '/api/config', {
       bizHours: CFG.bizHours, closedDows: CFG.closedDows, closedDates: CFG.closedDates,
+      specialDays: CFG.specialDays,
       presets: CFG.presets, staff: CFG.staff, salesPerHead: CFG.salesPerHead,
       showHoliday: CFG.showHoliday, showWeather: CFG.showWeather,
     }).then(function () { flash('저장했어요'); })
@@ -181,7 +206,7 @@
     wk.dates.forEach(function (d, i) {
       var iso = wk.iso[i], n = wk.days[i].length;
       var hol = holidayOf(iso), closed = isClosed(iso, i), w = weatherOf(iso), bz = bizOf(iso);
-      var today = iso === TODAY;
+      var today = iso === TODAY, spTag = specialTag(iso);
       var cls = [today ? 'today' : '', i === 5 ? 'sat' : (i === 6 ? 'sun' : ''),
                  hol ? 'hol' : '', closed ? 'closed' : ''].filter(Boolean).join(' ');
       head += '<div class="dh ' + cls + '">'
@@ -190,7 +215,8 @@
         + (hol ? '<span class="holname">' + esc(hol) + '</span>' : '')
         + (w ? '<span class="wx">' + esc(w.icon || '') + ' <span class="num">' + esc(w.hi) + '°</span></span>' : '')
         + (closed ? '<span class="closedtag">휴무</span>'
-                  : '<span class="biz num">' + hm(bz.open) + '–' + hm(bz.close) + '</span>'
+                  : '<span class="biz num' + (spTag ? ' sp' : '') + '">'
+                    + (spTag ? spTag + ' ' : '') + hm(bz.open) + '–' + hm(bz.close) + '</span>'
                     + '<span class="cnt">' + (n ? n + '명' : '—') + '</span>')
         + '</div>';
     });
@@ -900,6 +926,35 @@
         }).join('')
       : '<div class="cap">임시 휴무일이 없어요.</div>';
 
+    // 그날만 영업시간이 다른 날 (단축·연장)
+    $('spDayHost').innerHTML = (CFG.specialDays || []).length
+      ? CFG.specialDays.slice().sort(function (a, b) { return String(a.d).localeCompare(String(b.d)); })
+          .map(function (s) {
+            var i = CFG.specialDays.indexOf(s);
+            var n = normalBizOf(s.d), tag = specialTag(s.d);
+            // 새 영업시간 밖으로 삐져나온 근무가 있으면 알려준다 (단축했을 때 자주 생긴다)
+            var out = 0;
+            WEEKS.forEach(function (w) {
+              w.iso.forEach(function (iso, di) {
+                if (iso !== s.d) return;
+                w.days[di].forEach(function (sh) { if (sh.s < +s.open || sh.e > +s.close) out++; });
+              });
+            });
+            return '<div class="erow">'
+              + '<b class="num">' + mdOf(s.d) + '</b>'
+              + '<span class="cap">' + DOW[dowOf(s.d)] + '</span>'
+              + tpick(+s.open, { label: mdOf(s.d) + ' 영업 시작', cb: function (v) { window.SCHED.editSpecial(i, 'open', v); } })
+              + '<span class="cap">~</span>'
+              + tpick(+s.close, { label: mdOf(s.d) + ' 영업 종료', cb: function (v) { window.SCHED.editSpecial(i, 'close', v); } })
+              + (tag ? '<span class="tag warning">' + tag + '</span>' : '')
+              + '<span class="cap num">평소 ' + hm(n.open) + '–' + hm(n.close) + '</span>'
+              + '<input class="fld memoIn" type="text" value="' + esc(s.memo || '') + '" placeholder="사유 (예: 재고조사)"'
+              + ' aria-label="사유" onchange="SCHED.editSpecial(' + i + ',\'memo\',this.value)">'
+              + (out ? '<span class="tag warning">근무 ' + out + '건이 영업시간 밖</span>' : '')
+              + '<button class="del" title="삭제" onclick="SCHED.delSpecial(' + i + ')">✕</button></div>';
+          }).join('')
+      : '<div class="cap">단축·연장 영업일이 없어요.</div>';
+
     $('presetHost').innerHTML = (CFG.presets || []).map(function (p, i) {
       return '<div class="erow">'
         + '<input class="fld nameIn" type="text" value="' + esc(p.name) + '" aria-label="이름" onchange="SCHED.editPreset(' + i + ',\'name\',this.value)">'
@@ -1096,10 +1151,42 @@
         w.iso.forEach(function (iso, di) { if (iso === v && w.days[di].length) { w.days[di] = []; saveWeek(wi); } });
       });
       CFG.closedDates.push(v); CFG.closedDates.sort();
+      // 문 안 여는 날에 영업시간이 남아 있으면 앞뒤가 안 맞는다
+      CFG.specialDays = (CFG.specialDays || []).filter(function (s) { return s.d !== v; });
       saveConfig(); renderAll();
     },
     delClosedDate: function (iso) {
       CFG.closedDates = (CFG.closedDates || []).filter(function (d) { return d !== iso; });
+      saveConfig(); renderAll();
+    },
+    addSpecial: function () {
+      var v = $('spDateIn').value;
+      if (!v) { alert('날짜를 골라주세요.'); return; }
+      CFG.specialDays = CFG.specialDays || [];
+      if (CFG.specialDays.some(function (s) { return s.d === v; })) {
+        alert(mdOf(v) + ' 은 이미 들어 있어요. 아래에서 시간을 고치면 돼요.'); return;
+      }
+      if (isClosed(v, dowOf(v))) {
+        alert(mdOf(v) + ' 은 휴무일이에요. 휴무를 먼저 빼야 영업시간을 정할 수 있어요.'); return;
+      }
+      // 평소 영업시간에서 시작 — 사장님은 끝나는 시간만 당기면 된다
+      var n = normalBizOf(v);
+      CFG.specialDays.push({ d: v, open: n.open, close: n.close, memo: '' });
+      saveConfig(); renderAll();
+    },
+    editSpecial: function (i, field, v) {
+      var s = (CFG.specialDays || [])[i]; if (!s) return;
+      if (field === 'memo') s.memo = v;
+      else {
+        var h = toH(v);
+        if (field === 'open' && !(+s.close > h)) { alert('영업 종료가 시작보다 빨라요.'); renderSettings(); return; }
+        if (field === 'close' && !(h > +s.open)) { alert('영업 종료가 시작보다 빨라요.'); renderSettings(); return; }
+        s[field] = h;
+      }
+      saveConfig(); renderAll();
+    },
+    delSpecial: function (i) {
+      (CFG.specialDays || []).splice(i, 1);
       saveConfig(); renderAll();
     },
     addPreset: function () {

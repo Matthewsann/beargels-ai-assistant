@@ -77,8 +77,8 @@ def save_week_api():
 def save_config_api():
     body = request.get_json(silent=True) or {}
     cfg = load_config()
-    for k in ("bizHours", "closedDows", "closedDates", "presets", "staff",
-              "salesPerHead", "showHoliday", "showWeather"):
+    for k in ("bizHours", "closedDows", "closedDates", "specialDays", "presets",
+              "staff", "salesPerHead", "showHoliday", "showWeather"):
         if k in body:
             cfg[k] = body[k]
     save_config(cfg)

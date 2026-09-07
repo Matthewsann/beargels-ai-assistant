@@ -67,6 +67,9 @@ def default_config() -> dict:
         ],
         "closedDows": [],
         "closedDates": [],
+        # 그날 하루만 영업시간이 다른 날 (단축·연장). 요일 영업시간을 덮어쓴다.
+        # [{"d": "2026-09-15", "open": 7, "close": 15, "memo": "재고조사"}]
+        "specialDays": [],
         "presets": [
             {"name": "오픈", "s": 6.5, "e": 12},
             {"name": "미들", "s": 10, "e": 15},
@@ -110,8 +113,18 @@ def save_config(cfg: dict) -> None:
 
 def biz_of(cfg: dict, d: date) -> list[float]:
     """그 날짜에 적용되던 영업시간 [시작, 종료]."""
-    entry = None
     iso = d.isoformat()
+    # 그날 하루만 다른 영업시간(단축·연장)이 있으면 그게 먼저다
+    for s in cfg.get("specialDays") or []:
+        if s.get("d") == iso:
+            try:
+                o, c = float(s["open"]), float(s["close"])
+            except (KeyError, TypeError, ValueError):
+                break
+            if c > o:
+                return [o, c]
+            break
+    entry = None
     for e in sorted(cfg.get("bizHours") or [], key=lambda x: x.get("from", "")):
         if (e.get("from") or "") <= iso:
             entry = e
@@ -328,8 +341,8 @@ def api_save_week():
 def api_save_config():
     body = request.get_json(silent=True) or {}
     cfg = load_config()
-    for key in ("bizHours", "closedDows", "closedDates", "presets", "staff",
-                "salesPerHead", "showHoliday", "showWeather"):
+    for key in ("bizHours", "closedDows", "closedDates", "specialDays", "presets",
+                "staff", "salesPerHead", "showHoliday", "showWeather"):
         if key in body:
             cfg[key] = body[key]
     save_config(cfg)
