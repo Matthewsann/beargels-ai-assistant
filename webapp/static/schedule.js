@@ -320,7 +320,9 @@
       + '<span class="tag warning badge-draft">작성 중</span>'
       + '<span class="tag accent badge-locked">🔒 확정</span>'
       + (MODE === 'admin' ? '<div class="wkactions no-print">'
-          + '<button class="btn small draftonly" onclick="SCHED.copyPrev()">📋 지난주 복사</button>'
+          // 이미 근무가 있으면 덮어쓰기라는 걸 버튼에서부터 알린다
+          + '<button class="btn small draftonly' + (isEmpty ? '' : ' danger') + '" onclick="SCHED.copyPrev()">'
+          + (isEmpty ? '📋 지난주 복사' : '📋 지난주로 덮어쓰기') + '</button>'
           + '<button class="btn small primary draftonly" onclick="SCHED.lock(true)">🔒 이번 주 확정</button>'
           + '<button class="unlock lockonly" onclick="SCHED.lock(false)">잠금 해제</button>'
           + '</div>' : '')
@@ -920,6 +922,28 @@
     }).join('') || '<div class="cap">아래에서 직원을 추가해주세요.</div>';
   }
 
+  // ── 되돌릴 수 없는 일 확인받기 ────────────────────────────
+  var confirmFn = null;
+  function openConfirm(title, bodyHTML, goLabel, fn) {
+    if (!$('cmodal')) { if (confirm(title)) fn(); return; }   // 모달이 없는 화면 대비
+    confirmFn = fn;
+    $('cmTitle').textContent = title;
+    $('cmBody').innerHTML = bodyHTML;
+    $('cmGo').textContent = goLabel;
+    $('cmodal').hidden = false;
+    $('cmGo').focus();
+  }
+
+  function doCopyPrev(src) {
+    var wk = WEEKS[wkIdx];
+    wk.days = src.days.map(function (day, di) {
+      return isClosed(wk.iso[di], di) ? [] : day.map(function (sh) {
+        return { w: sh.w, s: sh.s, e: sh.e };   // 실제 기록은 옮기지 않는다 — 예정만 복사
+      });
+    });
+    saveWeek(wkIdx); renderAll();
+  }
+
   // ── 전체 다시 그리기 ──────────────────────────────────────
   function renderAll() {
     recalcAxis();
@@ -940,11 +964,35 @@
         if (WEEKS[i].days.some(function (d) { return d.length; })) { src = WEEKS[i]; break; }
       }
       if (!src) { alert('가져올 지난주 근무가 없어요.'); return; }
+
       var wk = WEEKS[wkIdx];
-      wk.days = src.days.map(function (day, di) {
-        return isClosed(wk.iso[di], di) ? [] : day.map(function (sh) { return { w: sh.w, s: sh.s, e: sh.e }; });
-      });
-      saveWeek(wkIdx); renderAll();
+      var cur = [].concat.apply([], wk.days);
+      var srcCount = [].concat.apply([], src.days).length;
+      // 실제 기록(예정대로·지각·연장·결근)이 붙은 근무 — 지워지면 되돌릴 수 없다
+      var recorded = cur.filter(function (sh) { return sh.st === 'ok' || sh.st === 'diff'; }).length;
+
+      // 비어 있으면 잃을 게 없다 — 묻지 않고 바로 가져온다
+      if (!cur.length) { doCopyPrev(src); return; }
+
+      var body = '<div class="note warn"><b>⚠️ 이미 짜둔 근무가 모두 지워집니다.</b><br>'
+        + '<b class="num">' + esc(wk.label) + '</b> 에 들어 있는 <b class="num">' + cur.length + '건</b>이 사라지고, '
+        + '<b class="num">' + esc(src.label) + '</b> 의 <b class="num">' + srcCount + '건</b>으로 통째로 바뀌어요.</div>';
+      if (recorded) {
+        body += '<div class="note warn" style="border:1px solid var(--warn);">'
+          + '🚨 그중 <b class="num">' + recorded + '건</b>은 <b>실제 근무 기록</b>(예정대로·지각·연장·결근)이 붙어 있어요.<br>'
+          + '지우면 되돌릴 수 없고, 급여 정산에 쓸 기록이 없어집니다.</div>';
+      }
+      body += '<div class="cap">되돌리기 버튼은 없어요. 정말 바꿀 때만 눌러주세요.</div>';
+
+      openConfirm('지난주 근무로 덮어쓸까요?', body,
+        (recorded ? '그래도 덮어쓰기' : '덮어쓰기') + ' (' + cur.length + '건 지움)',
+        function () { doCopyPrev(src); });
+    },
+    closeConfirm: function () { confirmFn = null; if ($('cmodal')) $('cmodal').hidden = true; },
+    runConfirm: function () {
+      var fn = confirmFn;
+      window.SCHED.closeConfirm();
+      if (fn) fn();
     },
     pickWho: function (n) { md.who = n; renderModal(); },
     pickPreset: function (i) { var p = CFG.presets[i]; md.s = p.s; md.e = p.e; renderModal(); },
@@ -1127,7 +1175,11 @@
   document.addEventListener('pointermove', moveDrag);
   document.addEventListener('pointerup', endDrag);
   document.addEventListener('pointercancel', endDrag);
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') window.SCHED.closeModal(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    window.SCHED.closeModal();
+    window.SCHED.closeConfirm();
+  });
   window.addEventListener('resize', function () { fitEvents(document); });
 
   try { meName = localStorage.getItem('beargels-sched-me'); } catch (_) {}

@@ -181,6 +181,19 @@
     </form>
   </section>
 
+  <!-- ── 되돌릴 수 없는 일 확인 ── -->
+  <div class="modal" id="cmodal" hidden onclick="if(event.target===this) SCHED.closeConfirm()">
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <h3 id="cmTitle"></h3>
+      <div id="cmBody"></div>
+      <div class="modal-acts">
+        <button class="btn danger" id="cmGo" onclick="SCHED.runConfirm()"></button>
+        <span class="sp"></span>
+        <button class="btn primary" onclick="SCHED.closeConfirm()">취소</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── 근무 추가/수정 ── -->
   <div class="modal" id="modal" hidden onclick="if(event.target===this) SCHED.closeModal()">
     <div class="modal-card" role="dialog" aria-modal="true">
