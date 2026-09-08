@@ -45,39 +45,50 @@
   .sec-lbl { font-size:11.5px; color:var(--muted); font-weight:700; letter-spacing:.04em;
              margin:16px 2px 7px; }
 
-  /* ── 담당자 칩 ── */
-  .who { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:9px; }
-  .who a { font-size:12px; padding:5px 11px; border-radius:20px; background:var(--card);
-           border:1px solid var(--line); color:var(--muted); text-decoration:none; }
-  .who a.on { background:var(--ink); color:var(--bg); border-color:transparent; font-weight:700; }
-  .who a.none { border-style:dashed; }
-
-  /* ── 업무 줄 ── */
-  .list { background:var(--card); border:1px solid var(--line); border-radius:13px; padding:0 12px; }
-  .t { display:flex; gap:9px; align-items:flex-start; padding:11px 0;
+  /* ── 업무 줄 — 한 줄에 하나. 23건이 한 화면에 들어와야 한다 ── */
+  .sec-row { display:flex; align-items:center; justify-content:space-between;
+             margin:16px 2px 7px; gap:8px; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; }
+  .seg button { font-family:inherit; font-size:11.5px; padding:5px 10px; border:none;
+                background:var(--card); color:var(--muted); cursor:pointer; }
+  .seg button.on { background:var(--ink); color:var(--bg); font-weight:700; }
+  .list { background:var(--card); border:1px solid var(--line); border-radius:13px;
+          padding:0 10px; overflow:hidden; }
+  .grp { display:flex; align-items:center; gap:6px; padding:8px 2px 5px; font-size:11.5px;
+         font-weight:800; color:var(--muted); cursor:pointer; user-select:none;
+         border-bottom:1px solid var(--line); }
+  .grp .n { font-weight:600; opacity:.8; }
+  .grp .tw { margin-left:auto; font-size:10px; transition:transform .15s; }
+  .grp.closed .tw { transform:rotate(-90deg); }
+  .grp.hi { color:var(--bad); } .grp.mid { color:var(--warn); }
+  .t { display:flex; gap:8px; align-items:center; padding:7px 0; min-height:38px;
        border-bottom:1px solid var(--line); }
   .t:last-child { border-bottom:none; }
-  .t input[type=checkbox] { width:17px; height:17px; margin:3px 0 0; flex-shrink:0;
+  .t input[type=checkbox] { width:17px; height:17px; margin:0; flex-shrink:0;
        accent-color:var(--ok); cursor:pointer; }
-  .t .body { flex:1; min-width:0; }
-  .t .txt { font-size:13.5px; word-break:break-word; cursor:text; }
-  .t .memo { display:block; font-size:11.5px; color:var(--muted); margin-top:1px;
-             white-space:pre-wrap; }
-  .t .meta { display:flex; gap:5px; flex-wrap:wrap; margin-top:5px; align-items:center; }
+  .t .bar { width:4px; height:22px; border-radius:2px; flex-shrink:0; background:var(--line); }
+  .t .bar.hi { background:var(--bad); } .t .bar.mid { background:var(--warn); }
+  .t .body { flex:1; min-width:0; display:flex; align-items:center; gap:8px; cursor:pointer; }
+  .t .txt { flex:1; min-width:0; font-size:13.5px; white-space:nowrap; overflow:hidden;
+            text-overflow:ellipsis; }
+  .t .side { flex-shrink:0; display:flex; align-items:center; gap:5px; font-size:11.5px;
+             color:var(--muted); white-space:nowrap; }
+  .t .side .dim { border:1px dashed var(--line); border-radius:20px; padding:0 7px; }
+  .t .side .dd { font-variant-numeric:tabular-nums; }
+  .t .side .dd.late { color:var(--bad); font-weight:700; }
+  .t .side .mi { font-size:11px; }
   .t.gone { opacity:.45; } .t.gone .txt { text-decoration:line-through; }
-  .pri { font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:20px; white-space:nowrap; }
-  .pri.hi { background:var(--bad-bg); color:var(--bad); }
-  .pri.mid { background:var(--warn-bg); color:var(--warn); }
-  .pri.low { background:var(--bg); color:var(--muted); border:1px solid var(--line); }
-  .chip { font-size:10.5px; padding:2px 8px; border-radius:20px; background:var(--bg);
-          border:1px solid var(--line); color:var(--muted); white-space:nowrap;
-          font-family:inherit; cursor:pointer; }
-  .chip.who2 { background:var(--accent-bg); color:var(--accent); border-color:transparent;
-               font-weight:700; }
-  .chip.due2 { background:var(--warn-bg); color:var(--warn); border-color:transparent;
-               font-weight:700; }
-  .chip.empty { border-style:dashed; }
-  .src { font-size:10.5px; color:var(--muted); text-decoration:none; white-space:nowrap; }
+  .t.hide { display:none; }
+
+  /* ── 담당자 필터(즉시) ── */
+  .who { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:9px; }
+  .who button { font-family:inherit; font-size:12px; padding:5px 11px; border-radius:20px;
+                background:var(--card); border:1px solid var(--line); color:var(--muted);
+                cursor:pointer; }
+  .who button b { font-weight:600; opacity:.75; }
+  .who button.on { background:var(--ink); color:var(--bg); border-color:transparent; font-weight:700; }
+  .who button.none { border-style:dashed; }
+  .who button.zero { display:none; }
 
   .addbtn { width:100%; margin-top:9px; border:1px dashed var(--line); background:transparent;
             color:var(--muted); border-radius:11px; padding:11px; font-size:13px;
@@ -153,57 +164,52 @@
   </div>
   {% endif %}
 
-  <div class="sec-lbl">전체 업무</div>
-  {% if owners %}
-  <div class="who">
-    <a class="{{ 'on' if not who }}" href="{{ url_for('work_board', path_key=key) }}">전체 {{ total if not who else '' }}</a>
+  <div class="sec-row">
+    <div class="sec-lbl" style="margin:0">전체 업무 <span id="shown"></span></div>
+    {# 묶는 기준 — 페이지를 다시 안 받고 그 자리에서 바뀐다 #}
+    <div class="seg" role="tablist">
+      <button type="button" data-mode="pri" onclick="setMode('pri')">우선순위</button>
+      <button type="button" data-mode="owner" onclick="setMode('owner')">담당자</button>
+    </div>
+  </div>
+
+  {# 담당자 필터 — 누르면 즉시. 주소를 바꾸며 다시 받던 방식은 폰에서 2초씩
+     멈춰 보였다(사장님 2026-09-08). 건수는 JS 가 화면의 줄을 세서 채운다. #}
+  <div class="who" id="who">
+    <button type="button" data-who="" onclick="setWho('')">전체 <b></b></button>
     {% for o in owners %}
       {% if o.owner %}
-      <a class="{{ 'on' if who == o.owner }}"
-         href="{{ url_for('work_board', path_key=key, who=o.owner) }}">{{ o.owner }} {{ o.n }}</a>
+      <button type="button" data-who="{{ o.owner }}" onclick="setWho(this.dataset.who)">{{ o.owner }} <b></b></button>
       {% else %}
-      <a class="none {{ 'on' if who == 'none' }}"
-         href="{{ url_for('work_board', path_key=key, who='none') }}">담당자 없음 {{ o.n }}</a>
+      <button type="button" class="none" data-who="__none" onclick="setWho('__none')">담당 없음 <b></b></button>
       {% endif %}
     {% endfor %}
   </div>
-  {% endif %}
 
-  <div class="list">
+  {# 줄은 한 번만 그려 두고, JS 가 묶음(우선순위/담당자)마다 머리를 끼워 넣고
+     접었다 편다. 여유 묶음은 처음엔 접혀 있다 — 급한 것부터 보여야 하니까. #}
+  <div class="list" id="list">
     {% for t in tasks %}
-    {# 줄이 값을 통째로 들고 있다 — 어디를 눌러도 같은 수정 창이 그대로 열린다 #}
     <div class="t" id="{{ t.id | replace(':', '-') }}" data-id="{{ t.id }}"
-         data-source="{{ t.source }}"
+         data-source="{{ t.source }}" data-level="{{ t.pri.level }}"
          data-content="{{ t.content }}" data-owner="{{ t.owner }}"
-         data-due="{{ t.due_date or '' }}" data-memo="{{ t.memo or '' }}">
+         data-due="{{ t.due_date or '' }}" data-memo="{{ t.memo or '' }}"
+         {% if t.source == 'meeting' and t.meeting_id %}data-mlink="{{ url_for('meeting_detail', path_key=key, mid=t.meeting_id) }}"{% endif %}
+         title="{{ t.pri.why }}">
       <input type="checkbox" onchange="doneTask(this)" aria-label="완료">
-      <div class="body">
-        <div class="txt" onclick="openEdit(this)" title="눌러서 수정">{{ t.content }}
-          {% if t.memo %}<span class="memo">📝 {{ t.memo }}</span>{% endif %}
-        </div>
-        <div class="meta">
-          <span class="pri {{ t.pri.level }}">{{ t.pri.label }}</span>
-          {# 담당자·기한도 같은 창을 열되, 누른 칸으로 커서가 간다 #}
-          <button class="chip {{ 'who2' if t.owner else 'empty' }}" type="button"
-                  onclick="openEdit(this,'owner')">👤 {{ t.owner or '＋담당자' }}</button>
-          <button class="chip {{ 'due2' if t.due_date else 'empty' }}" type="button"
-                  onclick="openEdit(this,'due')">📅 {{ t.dday or '＋기한' }}</button>
-          <button class="chip {{ 'empty' if not t.memo }}" type="button"
-                  onclick="openEdit(this,'memo')">📝 {{ '메모' if t.memo else '＋메모' }}</button>
-          {% if t.source == 'meeting' and t.meeting_id %}
-          <a class="src" href="{{ url_for('meeting_detail', path_key=key, mid=t.meeting_id) }}"
-             >🗓️ {{ t.meeting_title or '회의' }}</a>
-          {% else %}
-          <span class="src">✍️ 직접 등록</span>
-          {% endif %}
+      <span class="bar {{ t.pri.level }}"></span>
+      <div class="body" onclick="openEdit(this)">
+        <div class="txt">{{ t.content }}</div>
+        <div class="side">
+          {%- if t.memo %}<span class="mi" title="메모 있음">📝</span>{% endif -%}
+          {%- if t.source == 'meeting' %}<span class="mi" title="{{ t.meeting_title or '회의' }}">🗓️</span>{% endif -%}
+          <span class="{{ 'dim' if not t.owner }}">{{ t.owner or '담당 없음' }}</span>
+          {%- if t.dday %}<span class="dd {{ 'late' if t.pri.level == 'hi' }}">{{ t.dday }}</span>{% endif -%}
         </div>
       </div>
     </div>
-    {% else %}
-    <div class="empty-msg">
-      {% if who %}이 담당자의 열린 업무가 없어요.{% else %}열린 업무가 없어요. 👍{% endif %}
-    </div>
     {% endfor %}
+    <div class="empty-msg" id="empty" hidden>열린 업무가 없어요. 👍</div>
   </div>
   <button class="addbtn" type="button" onclick="openNew()">＋ 업무 추가</button>
 
@@ -269,6 +275,95 @@
       });
   }
 
+  // ── 묶음(우선순위/담당자)과 담당자 필터 — 전부 이 자리에서, 다시 안 받는다 ──
+  // 주소를 바꾸며 다시 받던 방식은 폰에서 매번 2초씩 멈춰 보였다(2026-09-08).
+  var MODE = "pri", WHO = "{{ who }}";
+  try { MODE = localStorage.getItem("work.mode") || "pri"; } catch (e) {}
+  if (WHO === "none") WHO = "__none";
+  // 접힌 묶음 — 여유는 처음부터 접혀 있다(급한 것부터 보여야 한다).
+  var CLOSED = { low: true };
+  try { CLOSED = JSON.parse(localStorage.getItem("work.closed") || "") || CLOSED; } catch (e) {}
+
+  var PRI = [["hi", "🔴 급함"], ["mid", "🟡 곧 · 오래됨 · 담당 없음"], ["low", "⚪ 여유"]];
+
+  function setMode(m) {
+    MODE = m;
+    try { localStorage.setItem("work.mode", m); } catch (e) {}
+    render();
+  }
+  function setWho(w) {
+    WHO = w;
+    // 새로고침해도 남게 주소에만 적는다 — 페이지는 다시 안 받는다.
+    var q = w ? "?who=" + encodeURIComponent(w === "__none" ? "none" : w) : "";
+    try { history.replaceState(null, "", location.pathname + q); } catch (e) {}
+    render();
+  }
+  function toggleGrp(key) {
+    CLOSED[key] = !CLOSED[key];
+    try { localStorage.setItem("work.closed", JSON.stringify(CLOSED)); } catch (e) {}
+    render();
+  }
+  function matches(row) {
+    if (!WHO) return true;
+    return WHO === "__none" ? !row.dataset.owner : row.dataset.owner === WHO;
+  }
+
+  function render() {
+    var list = document.getElementById("list");
+    var rows = Array.prototype.slice.call(list.querySelectorAll(".t"));
+    // 묶음 머리는 매번 새로 그린다
+    list.querySelectorAll(".grp").forEach(function (g) { g.remove(); });
+
+    // 담당자 칩 건수 — 필터와 무관하게 전체 기준
+    var owners = {};
+    rows.forEach(function (r) { var o = r.dataset.owner || "__none"; owners[o] = (owners[o] || 0) + 1; });
+    document.querySelectorAll("#who button").forEach(function (b) {
+      var w = b.dataset.who, n = w ? (owners[w] || 0) : rows.length;
+      b.querySelector("b").textContent = n;
+      b.classList.toggle("on", w === WHO);
+      b.classList.toggle("zero", !!w && n === 0);
+    });
+    document.querySelectorAll(".seg button").forEach(function (b) {
+      b.classList.toggle("on", b.dataset.mode === MODE);
+    });
+
+    // 묶음 순서: 우선순위는 고정, 담당자는 많은 순(담당 없음 맨 뒤)
+    var groups;
+    if (MODE === "pri") {
+      groups = PRI.map(function (g) { return { key: g[0], label: g[1], cls: g[0] }; });
+    } else {
+      var names = Object.keys(owners).filter(function (k) { return k !== "__none"; })
+        .sort(function (a, b) { return owners[b] - owners[a]; });
+      groups = names.map(function (n) { return { key: "o:" + n, label: "👤 " + n, cls: "" }; });
+      if (owners["__none"]) groups.push({ key: "o:", label: "👤 담당 없음", cls: "" });
+    }
+
+    var shown = 0;
+    groups.forEach(function (g) {
+      var mine = rows.filter(function (r) {
+        var inG = MODE === "pri" ? r.dataset.level === g.key : ("o:" + r.dataset.owner) === g.key;
+        return inG && matches(r);
+      });
+      if (!mine.length) return;
+      shown += mine.length;
+      var closed = !!CLOSED[g.key];
+      var h = document.createElement("div");
+      h.className = "grp " + g.cls + (closed ? " closed" : "");
+      h.innerHTML = g.label + ' <span class="n">' + mine.length + "</span>" +
+                    '<span class="tw">▼</span>';
+      h.onclick = function () { toggleGrp(g.key); };
+      list.appendChild(h);
+      mine.forEach(function (r) { r.classList.toggle("hide", closed); list.appendChild(r); });
+    });
+    // 어느 묶음에도 안 들어간 줄(필터에 안 맞는 것)은 숨긴다
+    rows.forEach(function (r) { if (!matches(r)) r.classList.add("hide"); });
+    document.getElementById("empty").hidden = shown > 0;
+    list.appendChild(document.getElementById("empty"));
+    document.getElementById("shown").textContent =
+      WHO ? shown + " / " + rows.length : rows.length;
+  }
+  render();
+
   // 추가·수정 한 창 — 지금 무엇을 고치는 중인지 기억해 둔다.
   var editing = null;   // null 이면 '추가', 아니면 그 업무의 id
 
@@ -299,9 +394,9 @@
     var src = document.getElementById("dSrc");
     src.hidden = !meeting;
     if (meeting) {
-      var link = row.querySelector(".src");
+      var link = row.dataset.mlink;
       src.innerHTML = "🗓️ 회의에서 나온 할 일이에요. 지우려면 " +
-        (link && link.href ? '<a href="' + link.href + '">그 회의 화면</a>' : "회의 화면") +
+        (link ? '<a href="' + link + '">그 회의 화면</a>' : "회의 화면") +
         "에서 지워주세요.";
     }
     document.getElementById("dDel").hidden = meeting;

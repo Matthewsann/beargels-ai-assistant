@@ -3901,16 +3901,15 @@ def work_board(path_key):
     """업무 보드 — 관리자 업무를 한자리에서 보고 배정한다."""
     check(path_key)
     error, tasks, owners, top, derived = None, [], [], [], []
-    who = (request.args.get("who") or "").strip()      # 담당자 필터
+    # 담당자 필터는 화면(JS)이 그 자리에서 건다 — 줄은 전부 내려보낸다.
+    # 주소를 바꾸며 다시 받던 방식은 폰에서 매번 2초씩 멈춰 보였다(2026-09-08).
+    # ?who= 는 옛 링크·새로고침용 초깃값으로만 쓴다.
+    who = (request.args.get("who") or "").strip()
     try:
         tasks = wk.open_tasks()
         owners = wk.owner_counts(tasks)
-        top = wk.top_priorities(tasks)                  # 필터와 무관하게 전체 기준
+        top = wk.top_priorities(tasks)
         derived = _derived_work()
-        if who == "none":       # 아무도 안 맡은 업무만
-            tasks = [t for t in tasks if not t["owner"]]
-        elif who:
-            tasks = [t for t in tasks if t["owner"] == who]
     except Exception as e:  # noqa: BLE001
         error = f"업무를 불러오지 못했어요: {str(e)[:150]}"
     return render_template(
