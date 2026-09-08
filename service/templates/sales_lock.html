@@ -38,9 +38,10 @@
     {% if error %}<div class="err">{{ error }}</div>{% endif %}
     <label for="pw">비밀번호</label>
     <input id="pw" name="pw" type="password" inputmode="numeric" pattern="[0-9]*" autofocus
-           autocomplete="current-password" placeholder="••••••">
+           autocomplete="off" placeholder="••••••">
+    {% if ym %}<input type="hidden" name="ym" value="{{ ym }}">{% endif %}
     <button type="submit">열기</button>
-    <div class="hint">한 번 맞게 넣으면 이 기기에서는 1년 동안 바로 열려요.</div>
+    <div class="hint">열 때마다 물어봐요. 기기에 저장하지 않아요.</div>
   </form>
 </div>
 </body>

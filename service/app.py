@@ -40,8 +40,8 @@ from urllib.parse import parse_qsl  # noqa: E402
 
 from dotenv import load_dotenv  # noqa: E402
 from flask import (  # noqa: E402
-    Flask, Request, abort, jsonify, redirect, render_template, request,
-    url_for,
+    Flask, Request, abort, jsonify, make_response, redirect, render_template,
+    request, url_for,
 )
 from markupsafe import escape  # noqa: E402
 from werkzeug.utils import cached_property  # noqa: E402
@@ -3434,16 +3434,23 @@ def mkt_import(path_key):
 # 잠금: 이 앱은 로그인이 없고 주소가 비밀번호다. 매출은 직원에게 안 보여야
 # 하므로(사장님 확정) 두 번째 비밀을 하나 더 둔다 — OWNER_KEY(환경변수,
 # 없으면 menu_settings.owner_key). 메뉴는 모두에게 보이고(사장님 지시
-# 2026-09-07), 누르면 **비밀번호 화면**이 먼저 뜬다. 맞게 넣으면 브라우저에
-# 1년짜리 쿠키가 남아 다음부터는 바로 열린다. 틀리면 같은 화면에 안내만.
-# (`/sales?k=<키>` 로 바로 여는 옛 방식도 그대로 된다.)
+# 2026-09-07), 누르면 **비밀번호 화면**이 먼저 뜬다.
+#
+# ⚠️ **매번 입력한다**(사장님 지시 2026-09-08). 기억하는 쿠키를 두지 않는다 —
+# 폰을 잠깐 빌려주거나 직원이 열어도 대시보드가 그냥 열리면 안 된다. 그래서:
+#   · /sales 를 그냥 열면 **언제나** 비밀번호 화면
+#   · 맞게 넣으면 그 응답으로 대시보드를 바로 그린다(리다이렉트·쿠키 없음)
+#   · 화면 안의 월 이동만 30분짜리 임시 토큰(서명, 저장 안 함)으로 이어간다.
+#     30분이 지나거나 새로 열면 다시 묻는다.
+# 옛 `/sales?k=<키>` 바로열기는 없앴다(북마크가 곧 무잠금이 된다).
 # 키를 아예 안 정해 두면 잠금 없이 열린다(로컬 테스트용).
 # ---------------------------------------------------------------------------
 
 from service import sales_page  # noqa: E402
 from service import dashboard_page  # noqa: E402
 
-OWNER_COOKIE = "bg_owner"
+OWNER_COOKIE = "bg_owner"           # 옛 기억 쿠키 — 이제 안 쓴다(있으면 지운다)
+NAV_TOKEN_SECONDS = 30 * 60         # 화면 안 월 이동에만 쓰는 임시 토큰 수명
 _owner_key_cache = [0.0, ""]        # [읽은 시각, 키] — 설정 조회를 페이지마다 안 하게
 
 
@@ -3463,70 +3470,96 @@ def _owner_key() -> str:
     return k
 
 
-def _owner_token(key: str) -> str:
-    """쿠키에는 키 자체가 아니라 해시를 둔다."""
+def _nav_token(key: str, born: int | None = None) -> str:
+    """화면 안 이동용 임시 토큰 — '발급시각.서명'. 어디에도 저장하지 않는다."""
     import hashlib
-    return hashlib.sha256(f"bg-owner:{key}".encode()).hexdigest()[:32]
+    import hmac
+    born = int(born if born is not None else time.time())
+    sig = hmac.new(key.encode(), str(born).encode(), hashlib.sha256).hexdigest()[:24]
+    return f"{born}.{sig}"
 
 
-def _owner_ok() -> bool:
-    key = _owner_key()
-    if not key:
-        return True                       # 잠금 미설정 — 열려 있음
-    return request.cookies.get(OWNER_COOKIE) == _owner_token(key)
+def _nav_token_ok(tok: str, key: str) -> bool:
+    """30분 안에 이 열쇠로 발급된 토큰인가."""
+    import hmac
+    born, _, sig = (tok or "").partition(".")
+    if not born.isdigit() or not sig:
+        return False
+    if time.time() - int(born) > NAV_TOKEN_SECONDS:
+        return False
+    return hmac.compare_digest(_nav_token(key, int(born)), f"{born}.{sig}")
 
 
-def _owner_unlock_response(path_key, key):
-    """비밀번호가 맞았다 — 1년 쿠키를 심고 대시보드로 보낸다."""
-    resp = redirect(f"/{path_key}/sales")
-    resp.set_cookie(OWNER_COOKIE, _owner_token(key), max_age=365 * 86400,
-                    httponly=True, samesite="Lax", secure=request.is_secure)
+def _sales_ok(pw: str, tok: str, key: str) -> bool:
+    """비밀번호(사람이 방금 넣음) 또는 아직 살아 있는 이동 토큰."""
+    import hmac
+    if pw and hmac.compare_digest(pw, key):
+        return True
+    return bool(tok) and _nav_token_ok(tok, key)
+
+
+def _sales_lock_page(path_key, error=None, ym=None):
+    """비밀번호 화면 — 옛 기억 쿠키가 남아 있으면 같이 지운다."""
+    resp = make_response(render_template(
+        "sales_lock.html", key=path_key, error=error, ym=ym))
+    if request.cookies.get(OWNER_COOKIE):
+        resp.delete_cookie(OWNER_COOKIE)
+    return resp
+
+
+def _sales_dashboard(path_key, key, ym):
+    """비밀번호가 맞았다 — 그 응답으로 대시보드를 바로 그린다(쿠키 없음)."""
+    today = datetime.now(KST).date()
+    y, m, explicit = today.year, today.month, False
+    mm = re.fullmatch(r"(\d{4})-(\d{2})", ym or "")
+    if mm and 1 <= int(mm.group(2)) <= 12 and 2024 <= int(mm.group(1)) <= 2100:
+        y, m, explicit = int(mm.group(1)), int(mm.group(2)), True
+    view = dashboard_page.build_dashboard(y, m, today, explicit=explicit)
+    resp = make_response(render_template(
+        "sales.html", key=path_key, v=view, won=sales_page.won_short,
+        nav=(_nav_token(key) if key else "")))
+    # 뒤로가기로 화면이 되살아나지 않게 (캐시 금지)
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+    resp.headers["Pragma"] = "no-cache"
+    if request.cookies.get(OWNER_COOKIE):
+        resp.delete_cookie(OWNER_COOKIE)
     return resp
 
 
 @app.route("/<path_key>/sales/unlock", methods=["POST"])
 def sales_unlock(path_key):
-    """비밀번호 화면의 [열기] — 맞으면 쿠키, 틀리면 같은 화면에 안내."""
+    """비밀번호 화면의 [열기], 그리고 화면 안 월 이동(임시 토큰)."""
     check(path_key)
     key = _owner_key()
-    if not key:
-        return redirect(f"/{path_key}/sales")
+    ym = (request.form.get("ym") or "").strip()
+    if not key:                            # 잠금 미설정(로컬 테스트)
+        return _sales_dashboard(path_key, key, ym)
     pw = (request.form.get("pw") or "").strip()
-    if pw and pw == key:
-        return _owner_unlock_response(path_key, key)
+    if _sales_ok(pw, (request.form.get("t") or "").strip(), key):
+        return _sales_dashboard(path_key, key, ym)
     time.sleep(0.6)                       # 무작정 찍어 넣는 걸 느리게
-    return render_template("sales_lock.html", key=path_key,
-                           error="비밀번호가 맞지 않아요. 다시 넣어주세요."), 200
+    return _sales_lock_page(
+        path_key, error="비밀번호가 맞지 않아요. 다시 넣어주세요.", ym=ym), 200
 
 
 @app.route("/<path_key>/sales")
 def sales_home(path_key):
+    """그냥 열면 언제나 비밀번호 화면 — 기억하지 않는다(사장님 지시 2026-09-08)."""
     check(path_key)
     key = _owner_key()
-    k = (request.args.get("k") or "").strip()
-    if key and k:
-        if k != key:
-            abort(404)
-        return _owner_unlock_response(path_key, key)
-    if not _owner_ok():
-        return render_template("sales_lock.html", key=path_key, error=None)
-    today = datetime.now(KST).date()
-    y, m, explicit = today.year, today.month, False
-    mm = re.fullmatch(r"(\d{4})-(\d{2})", request.args.get("ym") or "")
-    if mm and 1 <= int(mm.group(2)) <= 12 and 2024 <= int(mm.group(1)) <= 2100:
-        y, m, explicit = int(mm.group(1)), int(mm.group(2)), True
-    view = dashboard_page.build_dashboard(y, m, today, explicit=explicit)
-    return render_template("sales.html", key=path_key, v=view,
-                           won=sales_page.won_short)
+    if not key:
+        return _sales_dashboard(path_key, key, request.args.get("ym"))
+    return _sales_lock_page(path_key, ym=(request.args.get("ym") or "").strip())
 
 
 @app.route("/<path_key>/sales/goal", methods=["POST"])
 def sales_goal(path_key):
     """월 목표 저장 — 매장/배달 따로(원 단위). 비우면 목표 없음."""
     check(path_key)
-    if not _owner_ok():
-        abort(404)
     f = request.get_json(force=True, silent=True) or {}
+    key = _owner_key()
+    if key and not _sales_ok("", str(f.get("t") or ""), key):
+        return jsonify({"ok": False, "error": "다시 로그인해 주세요"}), 401
     ym = str(f.get("ym") or "")
     try:
         goals = mkt_store.set_sales_goal(ym, f.get("store"), f.get("delivery"))

@@ -28,9 +28,10 @@
   .head { display:flex; align-items:center; gap:8px; margin:2px 0 4px; flex-wrap:wrap; }
   .head b { font-size:17px; }
   .mnav { display:flex; align-items:center; gap:2px; margin-left:auto; }
-  .mnav a, .mnav span.dis { border:1px solid var(--line); background:var(--card); color:var(--muted);
+  .mnav button, .mnav span.dis { border:1px solid var(--line); background:var(--card); color:var(--muted);
           width:30px; height:30px; border-radius:8px; text-decoration:none; font-size:15px;
-          display:flex; align-items:center; justify-content:center; }
+          display:flex; align-items:center; justify-content:center; padding:0;
+          font-family:inherit; cursor:pointer; }
   .mnav span.dis { opacity:.35; }
   .mnav .cur { font-weight:700; font-size:15px; padding:0 8px; font-variant-numeric:tabular-nums; }
   .src { font-size:11.5px; color:var(--muted); margin:0 0 10px; }
@@ -249,12 +250,18 @@
 
   <div class="head">
     <b>📊 경영 대시보드</b>
-    <div class="mnav">
-      <a href="/{{ key }}/sales?ym={{ v.prev.y }}-{{ '%02d' % v.prev.m }}" title="{{ v.prev.label }}">‹</a>
+    {# 월 이동 — 주소로 다시 열면 비밀번호를 또 물어야 하므로(기억하지 않는다)
+       화면 안에서만 통하는 임시 토큰을 실어 POST 로 넘긴다. #}
+    <form class="mnav" method="post" action="/{{ key }}/sales/unlock" id="mnav">
+      <input type="hidden" name="t" value="{{ nav }}">
+      <input type="hidden" name="ym" id="navYm" value="">
+      <button type="submit" title="{{ v.prev.label }}"
+              onclick="document.getElementById('navYm').value='{{ v.prev.y }}-{{ '%02d' % v.prev.m }}'">‹</button>
       <span class="cur">{{ v.label }}</span>
-      {% if v.has_next %}<a href="/{{ key }}/sales?ym={{ v.next.y }}-{{ '%02d' % v.next.m }}">›</a>
+      {% if v.has_next %}<button type="submit"
+              onclick="document.getElementById('navYm').value='{{ v.next.y }}-{{ '%02d' % v.next.m }}'">›</button>
       {% else %}<span class="dis">›</span>{% endif %}
-    </div>
+    </form>
   </div>
   <p class="src">
     포스 장부 <b>~{{ v.last_pos_label or '없음' }}</b>
@@ -543,6 +550,7 @@
 <script>
 const KEY = {{ key|tojson }};
 const V = {{ v|tojson }};
+const NAV = {{ nav|tojson }};      // 30분짜리 화면 안 이동 토큰 (저장하지 않는다)
 const $ = id => document.getElementById(id);
 function man(n) {
   n = Math.round(n || 0);
@@ -581,10 +589,13 @@ async function slGoalSave(btn) {
   btn.disabled = true;
   try {
     const r = await fetch(`/${KEY}/sales/goal`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ym: V.ym, store: st === '' ? null : Math.round(Number(st) * 10000), delivery: dl === '' ? null : Math.round(Number(dl) * 10000) }) });
+      body: JSON.stringify({ t: NAV, ym: V.ym, store: st === '' ? null : Math.round(Number(st) * 10000), delivery: dl === '' ? null : Math.round(Number(dl) * 10000) }) });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || '저장 실패');
-    location.reload();
+    // 새로고침하면 비밀번호를 다시 물으므로, 같은 달을 폼으로 다시 그린다
+    const f = document.getElementById('mnav');
+    document.getElementById('navYm').value = V.ym;
+    f.submit();
   } catch (e) { alert('저장하지 못했어요: ' + e.message); btn.disabled = false; }
 }
 
