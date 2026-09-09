@@ -302,8 +302,25 @@ def last_synced_at():
     return rows[0]["imported_at"] if rows else None
 
 
+# 장부를 넣는 가장 쉬운 길 — 로그인이 막혀 있어도 되는 방법을 안내한다.
+PUT_CSV = ("장부 시트에서 [파일 → 다운로드 → 쉼표로 구분된 값(.csv)] 한 뒤 "
+           "그 파일을 장부관리 폴더에 넣어주세요.")
+
+
+def explain_sync_error(msg: str):
+    """반영 실패 메시지 → (원인, 할 일). 사장님 말로. 순수 함수."""
+    msg = msg or ""
+    if "token.json" in msg or "인증" in msg or "로그인" in msg or "org_internal" in msg:
+        # 구글 로그인은 이 가게 OAuth 앱이 조직 전용이라 개인 계정으로 못 푼다
+        # (2026-09-09 실측 403 org_internal). 그래서 CSV 길을 안내한다.
+        return "구글 로그인이 막혀 있어요", PUT_CSV
+    if "인코딩" in msg or "글자" in msg:
+        return "장부 CSV 글자가 깨졌어요", "시트에서 다시 내려받아 넣어주세요."
+    return "장부를 읽지 못했어요", PUT_CSV
+
+
 def recent_sync_error(days=3):
-    """최근 며칠 안의 장부 시트 반영 실패 1건 — 화면이 원인을 말해주게.
+    """최근 며칠 안의 장부 반영 실패 1건 — 화면이 원인을 말해주게.
 
     일꾼(worker/ledger_sheet.py)이 매일 실패해도 error_log 에만 쌓여서
     아무도 못 봤다(2026-09-04~09 실측: token.json 없음으로 6일 연속 실패,
@@ -315,12 +332,7 @@ def recent_sync_error(days=3):
             .order("at", desc=True).limit(1).execute().data) or []
     if not rows:
         return None
-    msg = rows[0].get("message") or ""
-    # 원인을 사장님 말로 바꾼다 (경로·파이썬 명령을 그대로 보여주지 않는다)
-    if "token.json" in msg or "인증" in msg or "로그인" in msg:
-        cause, fix = "구글 로그인이 풀렸어요", "집 PC에서 3_google_login.bat 을 한 번 실행해 주세요."
-    else:
-        cause, fix = "장부 시트를 읽지 못했어요", "계속 그러면 알려주세요."
+    cause, fix = explain_sync_error(rows[0].get("message"))
     return {"at": rows[0]["at"], "cause": cause, "fix": fix}
 
 

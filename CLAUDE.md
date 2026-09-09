@@ -126,9 +126,18 @@ AI 호출은 무료(Gemini)가 기본이고, 품질·분량은 품질 게이트�
   대시보드·플레이스 페이지·마케팅 캘린더가 전부 이 한 곳을 본다.
 - **두 원천.** 포스 장부(드라이브 TOS/IMU 엑셀 → `sales_daily`·`sales_hourly`)는
   일 단위, 원가·고정비·정산총액·영업이익은 사장님이 매달 정리하는 **구글 시트
-  '베어글스_장부' 요약시트**(→ `ledger_monthly`, schema_v12). 집 PC 일꾼
-  `worker/ledger_sheet.py` 가 Drive API 로 CSV 를 받아 매일 반영한다(token.json
-  필요 — 없으면 `3_google_login.bat`). 월이 끝나기 전에 적힌 값은 `estimate`
+  '베어글스_장부' 요약시트**(→ `ledger_monthly`, schema_v12).
+  집 PC 일꾼 `worker/ledger_sheet.py` 가 매일 반영하는데, 읽는 길이 **둘**이고
+  되는 쪽을 알아서 쓴다(`load_summary`):
+  ① **장부관리 폴더의 CSV**(기본·로그인 불필요) — 시트에서 [파일 → 다운로드 →
+     쉼표로 구분된 값(.csv)] 해서 TOS 엑셀 올리는 그 폴더에 넣으면 된다.
+     이름에 '장부'만 들어가면 되고 여러 개면 최근 것. 확정/예상은 파일 수정 시각.
+  ② **Drive API 로 시트 직접**(자동, `token.json` 필요).
+  ⚠️ ②는 **지금 막혀 있다** — 이 가게 OAuth 앱 `beargels-sns` 가 조직 전용이라
+     개인 지메일로 로그인이 안 된다(2026-09-09 실측 403 `org_internal`,
+     myeonggu96·beargelssongdo 둘 다). 구글 클라우드 콘솔에서 사용자 유형을
+     '외부'로 바꿔야 열린다. 안 풀려도 ①로 계속 돌아간다.
+  월이 끝나기 전에 적힌 값은 `estimate`
   (화면에 '예상'), 끝난 뒤 갱신되면 `confirmed`. 진단은 확정 달만 쓴다.
   ⚠️ **밀리면 화면이 말한다**(`dashboard_page.ledger_alert`, 2026-09-09 추가).
   지난달이 확정으로 안 들어왔거나, 들어왔어도 자동 반영이 막혀 있으면 진단 탭
