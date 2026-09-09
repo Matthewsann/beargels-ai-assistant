@@ -104,6 +104,7 @@ jobs:
           upload service/templates/_tabs.html
           upload service/templates/_sidebar.html
           upload service/templates/_theme.html
+          upload service/templates/_livesync.html
           upload service/templates/dashboard.html
           upload service/templates/photo_recheck.html
           upload service/templates/home.html

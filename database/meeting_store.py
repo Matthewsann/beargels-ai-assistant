@@ -16,7 +16,12 @@ import logging
 import re
 from datetime import date, datetime, timedelta, timezone
 
-from .supabase_client import get_client
+from .supabase_client import get_client, touch_version
+
+
+def _touch():
+    """할 일이 바뀌면 업무 보드·홈이 다시 그리게 표식을 갱신한다(회의 할 일도 그 화면에 섞인다)."""
+    touch_version("work")
 
 logger = logging.getLogger(__name__)
 
@@ -246,13 +251,16 @@ def save_tasks(meeting_id, items):
     gone = [i for i in old if i not in keep]
     if gone:
         client.table(TASKS).delete().in_("id", gone).execute()
+    _touch()
 
 
 def set_task_done(task_id, done=True):
-    return (get_client().table(TASKS).update({
+    out = (get_client().table(TASKS).update({
         "done": bool(done),
         "done_at": _now() if done else None,
     }).eq("id", task_id).execute().data)
+    _touch()
+    return out
 
 
 def update_task(task_id, **fields):
@@ -270,8 +278,10 @@ def update_task(task_id, **fields):
         payload["due_date"] = fields["due_date"] or None
     if not payload:
         return None
-    return (get_client().table(TASKS).update(payload)
-            .eq("id", task_id).execute().data)
+    out = (get_client().table(TASKS).update(payload)
+           .eq("id", task_id).execute().data)
+    _touch()
+    return out
 
 
 def open_tasks(limit=20):

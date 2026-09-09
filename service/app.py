@@ -327,7 +327,8 @@ def _week_content(briefs_rows):
     return [decorate(b) for b in out]
 
 
-@cached(20)     # 홈이 열릴 때마다 업무 두 표를 다 읽지 않게
+@cached(5)      # 홈이 열릴 때마다 업무 두 표를 다 읽지 않게 — 단, 동기화로 다시
+                # 그렸을 때 묵은 답이 나오면 안 되니 짧게(2026-09-09)
 def _work_top_cached():
     """홈에 실을 '오늘 이것부터' 상위 3개. 업무 보드와 같은 규칙으로 고른다."""
     try:
@@ -928,6 +929,7 @@ def home(path_key):
         updated=_updated_view(g.get("updated")),
         work_top=g.get("work_top") or [],
         week_content=_week_content(g.get("briefs")),
+        ver=_ver("work"),
     )
 
 
@@ -3913,7 +3915,7 @@ def work_board(path_key):
     except Exception as e:  # noqa: BLE001
         error = f"업무를 불러오지 못했어요: {str(e)[:150]}"
     return render_template(
-        "work.html", key=path_key, tasks=tasks, owners=owners, top=top,
+        "work.html", key=path_key, tasks=tasks, owners=owners, top=top, ver=_ver("work"),
         derived=derived, who=who, total=len(tasks), error=error,
         alerts=_owner_alerts(),
     )
@@ -3932,7 +3934,34 @@ def work_week(path_key):
         weeks = wk.weekly_report(weeks=8)
     except Exception as e:  # noqa: BLE001
         error = f"주간 기록을 불러오지 못했어요: {str(e)[:150]}"
-    return render_template("work_week.html", key=path_key, weeks=weeks, error=error)
+    return render_template("work_week.html", key=path_key, weeks=weeks,
+                           error=error, ver=_ver("work"))
+
+
+# 화면 동기화 — 어느 화면이 몇 초마다 "바뀌었나?"를 묻는 창구.
+# 직원 여럿이 같은 화면을 띄워 두면 한 사람의 체크가 남에겐 안 보였다
+# (사장님 2026-09-09). PythonAnywhere 는 WebSocket 을 못 쓰므로 푸시 대신
+# 가벼운 폴링 — kv 한 줄만 읽어 몇 ms 면 끝난다. 화면은 자기가 그려질 때의
+# 표식을 들고 있다가 값이 달라지면 다시 그린다(templates/_livesync.html).
+SYNC_TOPICS = ("work",)
+
+
+def _ver(topic: str) -> str:
+    """화면에 실어 보낼 '지금 표식'. 실패해도 화면은 떠야 한다."""
+    try:
+        return db.get_version(topic)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+@app.route("/<path_key>/version/<topic>")
+def version_of(path_key, topic):
+    check(path_key)
+    if topic not in SYNC_TOPICS:
+        abort(404)
+    resp = jsonify({"v": _ver(topic)})
+    resp.headers["Cache-Control"] = "no-store"     # 폴링 답을 브라우저가 물고 있으면 안 된다
+    return resp
 
 
 @app.route("/<path_key>/work/task", methods=["POST"])

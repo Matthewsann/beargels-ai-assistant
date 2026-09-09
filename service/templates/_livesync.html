@@ -1,0 +1,62 @@
+{# 화면 동기화 — 몇 초마다 "바뀌었나?"를 묻고, 바뀌었으면 다시 그린다.
+
+   직원 여럿이 같은 화면을 폰에 띄워 두면 한 사람이 체크한 게 남에겐 안 보였다
+   (사장님 2026-09-09). PythonAnywhere 는 WebSocket 을 못 쓰므로 푸시 대신 폴링.
+   서버 `/version/<topic>` 은 kv 한 줄만 읽어 몇 ms 에 끝나고, 화면은 자기가
+   그려질 때의 표식(`ver`)을 들고 있다가 값이 달라지면 location.reload().
+
+   쓰는 법: 화면 </body> 앞에  {% raw %}{% include "_livesync.html" %}{% endraw %}
+   (템플릿에 `ver` 와 `key` 가 있어야 한다). 편집 창이 열려 있는 동안 다시 그리면
+   쓰던 글이 날아가므로, 화면이 `window.bgBusy = function(){...}` 를 정의해 두면
+   그동안은 미뤘다가 닫히면 그린다.
+
+   ⚠️ 폰을 잠갔다 켜거나 다른 앱에서 돌아온 순간이 제일 흔한 '낡은 화면'이라,
+   보일 때(visibilitychange/focus)는 기다리지 않고 바로 묻는다. 안 보일 때는
+   묻지 않는다 — 백그라운드 탭 수십 개가 10초마다 두드리면 서버 CPU 만 먹는다. #}
+<script>
+(function () {
+  var url  = "{{ url_for('version_of', path_key=key, topic='work') }}";
+  var mine = "{{ ver or '' }}";
+  var EVERY = 10000;                 // 보이는 동안 10초마다
+  var timer = null, pending = false, checking = false;
+
+  function busy() {
+    try { return typeof window.bgBusy === "function" && !!window.bgBusy(); }
+    catch (e) { return false; }
+  }
+
+  function redraw() {
+    if (busy()) { pending = true; return; }   // 편집 중 — 닫히면 그린다
+    pending = false;
+    location.reload();
+  }
+
+  // force: 숨은 탭에서도 묻는다 — 화면이 "지금 확인" 버튼을 달거나 검증할 때 쓴다.
+  function check(force) {
+    if (checking || (document.hidden && !force)) return;
+    checking = true;
+    fetch(url, { cache: "no-store", headers: { "X-Requested-With": "fetch" } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        checking = false;
+        if (!d || typeof d.v !== "string") return;
+        if (d.v !== mine) redraw();
+      })
+      .catch(function () { checking = false; });   // 잠깐 끊겨도 다음 번에
+  }
+
+  function start() { if (!timer) timer = setInterval(check, EVERY); }
+  function stop()  { if (timer) { clearInterval(timer); timer = null; } }
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { stop(); return; }
+    start(); check();                   // 돌아온 순간 바로
+  });
+  window.addEventListener("focus", function () { check(); });   // 이벤트 객체가 force 로 새지 않게
+  // 편집 창이 닫힌 뒤 미뤄 둔 다시 그리기 — 1초마다 가볍게 본다
+  setInterval(function () { if (pending && !busy()) redraw(); }, 1000);
+
+  if (!document.hidden) start();
+  window.bgLiveCheck = function () { check(true); };   // 밖에서 강제로 한 번
+})();
+</script>

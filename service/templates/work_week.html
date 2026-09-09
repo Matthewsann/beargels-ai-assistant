@@ -162,5 +162,6 @@
   var q = parseInt(new URLSearchParams(location.search).get("w") || "0", 10);
   show(isNaN(q) ? 0 : q);
 </script>
+{% include "_livesync.html" %}
 </body>
 </html>

@@ -256,6 +256,8 @@
 
 <script>
   var KEY = "{{ key }}";
+  // 동기화(_livesync.html)가 편집 창이 열린 동안엔 다시 그리지 않게
+  window.bgBusy = function () { var d = document.getElementById("taskDlg"); return !!(d && d.open); };
 
   function post(url, body) {
     return fetch(url, {
@@ -435,5 +437,6 @@
     }).catch(function () { alert("지우지 못했어요. 잠시 뒤 다시 시도해주세요."); });
   }
 </script>
+{% include "_livesync.html" %}
 </body>
 </html>

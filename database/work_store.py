@@ -19,7 +19,12 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
-from .supabase_client import get_client
+from .supabase_client import get_client, touch_version
+
+
+def _touch():
+    """쓰기 뒤 '업무가 바뀌었다' 표식 — 열려 있는 화면들이 이걸 보고 다시 그린다."""
+    touch_version("work")
 
 TABLE = "work_tasks"
 
@@ -57,6 +62,7 @@ def add_task(content, owner=None, due_date=None, memo=None):
         "memo": (memo or "").strip()[:500] or None,
     }
     res = get_client().table(TABLE).insert(row).execute()
+    _touch()
     return res.data[0] if res.data else None
 
 
@@ -72,21 +78,27 @@ def update_task(task_id, **fields):
     if not payload:
         return None
     payload["updated_at"] = _now()
-    return (get_client().table(TABLE).update(payload)
-            .eq("id", task_id).execute().data)
+    out = (get_client().table(TABLE).update(payload)
+           .eq("id", task_id).execute().data)
+    _touch()
+    return out
 
 
 def set_done(task_id, done=True):
     """완료 체크. 되돌리면 완료 시각도 지운다."""
-    return (get_client().table(TABLE).update({
+    out = (get_client().table(TABLE).update({
         "done": bool(done),
         "done_at": _now() if done else None,
         "updated_at": _now(),
     }).eq("id", task_id).execute().data)
+    _touch()
+    return out
 
 
 def delete_task(task_id):
-    return get_client().table(TABLE).delete().eq("id", task_id).execute().data
+    out = get_client().table(TABLE).delete().eq("id", task_id).execute().data
+    _touch()
+    return out
 
 
 # ---------------------------------------------------------------------------

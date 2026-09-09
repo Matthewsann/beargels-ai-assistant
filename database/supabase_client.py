@@ -2454,3 +2454,29 @@ if __name__ == "__main__":
     except Exception as e:  # noqa: BLE001
         print("❌ 테이블 확인 실패:", str(e)[:160])
         print("→ database/schema.sql 을 Supabase SQL Editor 에서 실행하세요.")
+
+
+# ---------------------------------------------------------------------------
+# 화면 동기화용 '바뀜 표식' (2026-09-09)
+# ---------------------------------------------------------------------------
+# 직원 여럿이 같은 화면을 폰에 띄워 두면 한 사람이 체크한 게 남에겐 안 보였다.
+# PythonAnywhere 는 WebSocket 을 못 쓰므로 진짜 푸시 대신, 화면이 몇 초마다
+# "바뀌었나?"만 가볍게 묻고 바뀌었으면 다시 그린다. 그 '바뀌었나'의 근거가
+# 이 표식이다 — 쓰기 함수가 쓸 때마다 갱신하고, 화면은 이 값 하나만 읽는다.
+# 프로세스 안 변수가 아니라 DB(kv) 에 두는 이유: 웹앱이 여러 프로세스로 돌 수
+# 있고 집 PC 일꾼도 같은 표를 쓴다 — 어디서 써도 모두가 같은 값을 본다.
+
+def touch_version(topic: str) -> None:
+    """topic 이 바뀌었다고 표시한다. 실패해도 원래 쓰기를 막지 않는다."""
+    try:
+        menu_set_setting(f"ver:{topic}", datetime.utcnow().isoformat() + "Z")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def get_version(topic: str) -> str:
+    """화면이 들고 있을 표식. 아직 한 번도 안 바뀌었으면 빈 문자열."""
+    try:
+        return str(get_setting(f"ver:{topic}") or "")
+    except Exception:  # noqa: BLE001
+        return ""
