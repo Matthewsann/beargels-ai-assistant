@@ -295,6 +295,35 @@ def ledger_months(limit=14):
     return sorted(rows, key=lambda r: r["ym"])
 
 
+def last_synced_at():
+    """ledger_monthly 를 마지막으로 채운 시각(ISO) — 없으면 None."""
+    rows = (get_client().table(TABLE).select("imported_at")
+            .order("imported_at", desc=True).limit(1).execute().data) or []
+    return rows[0]["imported_at"] if rows else None
+
+
+def recent_sync_error(days=3):
+    """최근 며칠 안의 장부 시트 반영 실패 1건 — 화면이 원인을 말해주게.
+
+    일꾼(worker/ledger_sheet.py)이 매일 실패해도 error_log 에만 쌓여서
+    아무도 못 봤다(2026-09-04~09 실측: token.json 없음으로 6일 연속 실패,
+    그동안 8월 장부가 '예상'인 채로 방치). 대시보드가 직접 읽어 알린다.
+    """
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    rows = (get_client().table("error_log").select("at,message")
+            .eq("kind", "LedgerSheetError").gte("at", since)
+            .order("at", desc=True).limit(1).execute().data) or []
+    if not rows:
+        return None
+    msg = rows[0].get("message") or ""
+    # 원인을 사장님 말로 바꾼다 (경로·파이썬 명령을 그대로 보여주지 않는다)
+    if "token.json" in msg or "인증" in msg or "로그인" in msg:
+        cause, fix = "구글 로그인이 풀렸어요", "집 PC에서 3_google_login.bat 을 한 번 실행해 주세요."
+    else:
+        cause, fix = "장부 시트를 읽지 못했어요", "계속 그러면 알려주세요."
+    return {"at": rows[0]["at"], "cause": cause, "fix": fix}
+
+
 def ledger_targets() -> dict:
     return get_setting(TARGETS_KEY, {}) or {}
 

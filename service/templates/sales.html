@@ -281,6 +281,12 @@
 
   {# ═══════════ 1. 진단 ═══════════ #}
   <div class="page on" id="p1">
+    {% if v.ledger_alert %}
+    <div class="note{{ ' bad' if v.ledger_alert.blocked }}">
+      {{ v.ledger_alert.why|safe }}. {{ v.ledger_alert.how }}
+      {% if v.ledger_alert.synced %}<br><small>장부 시트 마지막 반영: {{ v.ledger_alert.synced }}</small>{% endif %}
+    </div>
+    {% endif %}
   {% if v.diag %}
     {% set d = v.diag %}
     <div class="verdict {{ d.verdict.tone }}">

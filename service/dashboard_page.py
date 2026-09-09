@@ -465,6 +465,38 @@ def _platform_monthly(sales_rows):
     return amt, cnt
 
 
+def ledger_alert(months: list, today: date, synced_at=None, sync_err=None):
+    """장부 시트가 밀렸으면 무엇이 없고 무엇을 하면 되는지 한 줄로.
+
+    끝난 달은 장부에 **확정**으로 들어와 있어야 한다. 지난달이 없거나 아직
+    '예상'이면 화면이 조용히 옛 달을 진단해 버린다 — 그걸 막는다.
+    """
+    py, pm = sp.prev_month(today.year, today.month)
+    want = f"{py}-{pm:02d}"                     # 마지막으로 끝난 달
+    have = {r["ym"]: r.get("status") for r in months}
+    st = have.get(want)
+    if st == "confirmed":
+        # 숫자는 최신이다. 그래도 자동 반영이 막혀 있으면 지금 알려준다 —
+        # 다음 달까지 기다렸다가 알리면 또 조용히 한 달을 놓친다.
+        if sync_err:
+            return {"why": "숫자는 최신인데 <b>자동 반영이 막혀 있어요</b>",
+                    "how": f"{sync_err['cause']} — {sync_err['fix']}",
+                    "ym": want, "blocked": True,
+                    "synced": str(synced_at)[:10] if synced_at else None}
+        return None                             # 최신이고 잘 돈다 — 조용히
+    if st == "estimate":
+        why = f"{_label(want)} 장부가 아직 <b>예상치</b>예요"
+        how = "장부 시트에서 그 달을 마감하면 확정으로 바뀌어요."
+    else:
+        why = f"{_label(want)} 장부가 아직 안 들어왔어요"
+        how = "구글 시트 '베어글스_장부'에 그 달을 채우면 다음 날 자동으로 들어와요."
+    if sync_err:                                # 원인을 아는 경우가 우선
+        how = f"{sync_err['cause']} — {sync_err['fix']}"
+    return {"why": why, "how": how, "ym": want,
+            "synced": str(synced_at)[:10] if synced_at else None,
+            "blocked": bool(sync_err)}
+
+
 def build_dashboard(y: int, m: int, today: date | None = None, explicit: bool = False) -> dict:
     today = today or mkt_store._today_kst()
     v = sp.build_view(y, m, today, explicit=explicit)      # 포스 기준(매출·상품·운영 탭)
@@ -472,6 +504,8 @@ def build_dashboard(y: int, m: int, today: date | None = None, explicit: bool = 
 
     # ── 장부(구글 시트) 월별 ──────────────────────────────────────────
     ledger_rows, ledger_ok = sp._safe(lambda: ledger_store.ledger_months(limit=14), [])
+    synced_at, _ = sp._safe(ledger_store.last_synced_at, None)
+    sync_err, _ = sp._safe(ledger_store.recent_sync_error, None)
     targets, _ = sp._safe(ledger_store.ledger_targets, {})
     targets = dict(targets or {})
     if targets.get("op_profit") and targets.get("sales_total"):
@@ -639,6 +673,7 @@ def build_dashboard(y: int, m: int, today: date | None = None, explicit: bool = 
     v.update({
         "ledger_ok": ledger_ok, "has_ledger": bool(months),
         "ledger_latest": L["full"] if L else None, "ledger_status": L.get("status") if L else None,
+        "ledger_alert": ledger_alert(months, today, synced_at, sync_err),
         "targets": {k: (man(val) if isinstance(val, int) and val > 1000 else val) for k, val in (targets or {}).items()},
         "diag": diag, "cost": cost,
         "sales_series": sales_series, "cost_series": cost_series, "plat_series": plat_series,
