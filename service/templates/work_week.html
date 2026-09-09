@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>주간 업무 — 베어글스</title>
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#232320; --muted:#8a897f; --line:#e7e5de;
+          --accent:#185fa5; --accent-bg:#e6f1fb; --warn:#854f0b; --warn-bg:#faeeda;
+          --ok:#3b6d11; --ok-bg:#eaf3de; --bad:#a3271f; --bad-bg:#fbe9e7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:-apple-system,"Malgun Gothic","맑은 고딕",sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px 14px 64px; }
+  .head { display:flex; align-items:baseline; gap:8px; margin:2px 2px 12px; }
+  .head b { font-size:17px; }
+  .head a.back { margin-left:auto; font-size:11.5px; color:var(--accent);
+                 background:var(--accent-bg); border-radius:20px; padding:3px 10px;
+                 text-decoration:none; }
+  .note { font-size:12px; padding:11px 12px; border-radius:9px; margin-bottom:14px;
+          background:var(--bad-bg); color:var(--bad); }
+
+  /* ── 주 넘기기 — 8주치를 이미 들고 있어 그 자리에서 바뀐다 ── */
+  .nav { display:flex; align-items:center; gap:6px; margin-bottom:10px; }
+  .nav button { font-family:inherit; width:34px; height:34px; border-radius:9px;
+                border:1px solid var(--line); background:var(--card); color:var(--ink);
+                font-size:15px; cursor:pointer; }
+  .nav button:disabled { opacity:.3; cursor:default; }
+  .nav .lbl { flex:1; text-align:center; font-weight:800; font-size:15px;
+              font-variant-numeric:tabular-nums; }
+  .nav .lbl small { display:block; font-weight:400; font-size:11px; color:var(--muted); }
+  .nav .lbl .cur { color:var(--accent); }
+
+  .sum { display:flex; gap:8px; margin-bottom:12px; }
+  .sum div { flex:1; border-radius:12px; padding:10px 12px; text-align:center; }
+  .sum .d { background:var(--ok-bg); color:var(--ok); }
+  .sum .m { background:var(--bad-bg); color:var(--bad); }
+  .sum b { display:block; font-size:22px; line-height:1.1; font-variant-numeric:tabular-nums; }
+  .sum span { font-size:11.5px; }
+
+  .week { display:none; } .week.on { display:block; }
+  .own { background:var(--card); border:1px solid var(--line); border-radius:13px;
+         padding:0 12px; margin-bottom:10px; }
+  .oh { display:flex; align-items:center; gap:8px; padding:9px 0 6px; font-size:13px;
+        font-weight:800; border-bottom:1px solid var(--line); }
+  .oh .cnt { margin-left:auto; font-size:11.5px; font-weight:600; color:var(--muted); }
+  .oh .cnt .d { color:var(--ok); } .oh .cnt .m { color:var(--bad); }
+  .r { display:flex; align-items:center; gap:8px; padding:8px 0; font-size:13px;
+       border-bottom:1px solid var(--line); }
+  .r:last-child { border-bottom:none; }
+  .r .ic { flex-shrink:0; font-size:13px; }
+  .r .tx { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .r.d .tx { color:var(--muted); text-decoration:line-through; text-decoration-color:var(--line); }
+  .r .when { flex-shrink:0; font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .r.m .when { color:var(--bad); font-weight:700; }
+  .r .mi { font-size:10.5px; flex-shrink:0; }
+  .r .undo { flex-shrink:0; border:none; background:transparent; color:var(--muted);
+             font-size:12px; cursor:pointer; padding:2px 4px; }
+  .r .undo:hover { color:var(--accent); }
+  .empty { text-align:center; color:var(--muted); padding:30px 16px; font-size:13px; }
+  .rule { font-size:11px; color:var(--muted); margin:14px 4px 0; line-height:1.55; }
+</style>
+</head>
+<body>
+{% include "_sidebar.html" %}
+<div class="wrap">
+
+  <div class="head">
+    <b>📅 주간 업무</b>
+    <a class="back" href="{{ url_for('work_board', path_key=key) }}">📋 보드로</a>
+  </div>
+
+  {% if error %}<div class="note">{{ error }}</div>{% endif %}
+
+  <div class="nav">
+    <button type="button" id="prev" onclick="go(1)" aria-label="지난주">‹</button>
+    <div class="lbl" id="lbl"></div>
+    <button type="button" id="next" onclick="go(-1)" aria-label="다음주">›</button>
+  </div>
+  <div class="sum">
+    <div class="d"><b id="sd">0</b><span>완료</span></div>
+    <div class="m"><b id="sm">0</b><span>미완료</span></div>
+  </div>
+
+  {# 8주치를 전부 그려 두고 하나만 보인다 — 주를 넘길 때 다시 안 받는다 #}
+  {% for w in weeks %}
+  <div class="week" data-i="{{ loop.index0 }}" data-label="{{ w.label }}"
+       data-cur="{{ 1 if w.is_current else 0 }}"
+       data-done="{{ w.done | length }}" data-missed="{{ w.missed | length }}">
+    {% for o in w.owners %}
+    <div class="own">
+      <div class="oh">👤 {{ o.owner or '담당 없음' }}
+        <span class="cnt"><span class="d">완료 {{ o.done | length }}</span> ·
+          <span class="m">미완료 {{ o.missed | length }}</span></span>
+      </div>
+      {% for r in o.done %}
+      <div class="r d" data-id="{{ r.id }}">
+        <span class="ic">✅</span>
+        <span class="tx">{{ r.content }}</span>
+        {% if r.source == 'meeting' %}<span class="mi" title="{{ r.meeting_title or '회의' }}">🗓️</span>{% endif %}
+        <span class="when">{{ r.done_date.month }}/{{ r.done_date.day }}</span>
+        {# 실수로 체크한 것을 되돌린다 — 보드로 다시 올라간다 #}
+        <button class="undo" type="button" title="완료 취소" onclick="undo(this)">↩</button>
+      </div>
+      {% endfor %}
+      {% for r in o.missed %}
+      <div class="r m" data-id="{{ r.id }}">
+        <span class="ic">⏳</span>
+        <span class="tx">{{ r.content }}</span>
+        {% if r.source == 'meeting' %}<span class="mi" title="{{ r.meeting_title or '회의' }}">🗓️</span>{% endif %}
+        <span class="when">기한 {{ r.due.month }}/{{ r.due.day }}{% if r.dday and '지남' in r.dday %} · {{ r.dday }}{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">이 주에는 끝낸 업무도, 기한이 있던 업무도 없어요.</div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+
+  <p class="rule">완료 = 그 주에 끝낸 업무 · 미완료 = 그 주가 기한이었는데 그 주 안에 못 끝낸 업무.
+    기한 없는 업무는 어느 주의 미완료로도 세지 않아요 — 보드에서 기한을 넣어 주세요.</p>
+
+</div>
+
+<script>
+  var KEY = "{{ key }}";
+  var weeks = Array.prototype.slice.call(document.querySelectorAll(".week"));
+  var cur = 0;   // 0 = 이번 주, 커질수록 과거
+
+  function show(i) {
+    cur = Math.max(0, Math.min(weeks.length - 1, i));
+    weeks.forEach(function (w, k) { w.classList.toggle("on", k === cur); });
+    var w = weeks[cur];
+    if (!w) return;
+    document.getElementById("lbl").innerHTML = w.dataset.label +
+      (w.dataset.cur === "1" ? '<small class="cur">이번 주</small>'
+                             : '<small>' + (cur === 1 ? "지난주" : cur + "주 전") + "</small>");
+    document.getElementById("sd").textContent = w.dataset.done;
+    document.getElementById("sm").textContent = w.dataset.missed;
+    document.getElementById("next").disabled = cur === 0;
+    document.getElementById("prev").disabled = cur === weeks.length - 1;
+    try { history.replaceState(null, "", location.pathname + (cur ? "?w=" + cur : "")); } catch (e) {}
+  }
+  function go(d) { show(cur + d); }
+
+  // 완료 취소 — 되돌리면 보드에 다시 올라간다
+  function undo(btn) {
+    var row = btn.closest(".r");
+    if (!confirm("완료를 취소할까요? 보드에 다시 올라가요.")) return;
+    fetch("/" + KEY + "/work/task/" + row.dataset.id + "/done", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "fetch" },
+      body: JSON.stringify({ done: false }),
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.ok) throw new Error(d.error);
+      location.reload();
+    }).catch(function () { alert("되돌리지 못했어요. 잠시 뒤 다시 시도해주세요."); });
+  }
+
+  var q = parseInt(new URLSearchParams(location.search).get("w") || "0", 10);
+  show(isNaN(q) ? 0 : q);
+</script>
+</body>
+</html>

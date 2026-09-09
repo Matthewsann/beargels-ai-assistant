@@ -108,6 +108,7 @@ jobs:
           upload service/templates/photo_recheck.html
           upload service/templates/home.html
           upload service/templates/work.html
+          upload service/templates/work_week.html
           upload service/templates/blog_base.html
           upload service/templates/blog.html
           upload service/templates/blog_post.html

@@ -257,3 +257,112 @@ def parse_id(task_id: str):
     if head not in ("w", "m") or not num.isdigit():
         return None, None
     return ("work" if head == "w" else "meeting"), int(num)
+
+
+# ---------------------------------------------------------------------------
+# 주간 보기 — 누가 무엇을 끝냈고, 무엇을 못 끝냈나 (사장님 2026-09-09)
+# ---------------------------------------------------------------------------
+# 보드는 '지금 열린 것'만 보여서 끝낸 업무는 사라진다. 여기서는 done_at 을
+# 살려 주(월~일, KST)마다 담당자별로 되짚어 본다. 규칙은 둘뿐이다:
+#   완료   = 그 주에 끝낸 것(done_at 이 그 주)
+#   미완료 = 그 주가 기한이었는데 그 주 안에 못 끝낸 것
+# 기한 없는 열린 업무는 '미완료'로 세지 않는다 — 어느 주의 잘못도 아니다.
+
+def week_bounds(d: date) -> tuple[date, date]:
+    """d 가 속한 주의 (월요일, 일요일)."""
+    start = d - timedelta(days=d.weekday())
+    return start, start + timedelta(days=6)
+
+
+def _done_date(v):
+    """done_at(UTC timestamptz) → 매장 기준(KST) 날짜. 없거나 깨지면 None."""
+    if not v:
+        return None
+    try:
+        t = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return t.astimezone(KST).date()
+
+
+def bucket_week(rows, start: date, end: date) -> dict:
+    """한 주치 판정 — 순수 함수라 테스트가 날짜만 고정해 돌린다.
+
+    rows: _norm() 이 만든 dict 들(done/done_at/due_date/owner/content…).
+    """
+    done, missed = [], []
+    for r in rows:
+        dd = _done_date(r.get("done_at")) if r.get("done") else None
+        due = _as_date(r.get("due_date"))
+        if dd and start <= dd <= end:
+            done.append({**r, "done_date": dd})
+        elif due and start <= due <= end and (dd is None or dd > end):
+            missed.append({**r, "due": due})
+    done.sort(key=lambda r: (r["done_date"], r["id"]))
+    missed.sort(key=lambda r: (r["due"], r["id"]))
+
+    box = {}
+    for r in done:
+        box.setdefault(r["owner"], {"done": [], "missed": []})["done"].append(r)
+    for r in missed:
+        box.setdefault(r["owner"], {"done": [], "missed": []})["missed"].append(r)
+    owners = [{"owner": k, **v} for k, v in box.items()]
+    # 일 많은 순, '담당 없음'은 맨 뒤
+    owners.sort(key=lambda o: (o["owner"] == "", -(len(o["done"]) + len(o["missed"]))))
+    return {"start": start, "end": end, "done": done, "missed": missed,
+            "owners": owners}
+
+
+def _norm(r, source) -> dict:
+    return {
+        "id": f"{'w' if source == 'work' else 'm'}:{r.get('id')}",
+        "source": source,
+        "content": r.get("content") or "",
+        "owner": (r.get("owner") or "").strip(),
+        "due_date": r.get("due_date"),
+        "done": bool(r.get("done")),
+        "done_at": r.get("done_at"),
+        "meeting_id": r.get("meeting_id"),
+        "meeting_title": r.get("meeting_title"),
+    }
+
+
+def _all_rows() -> list[dict]:
+    """열린 것·끝낸 것 전부(두 표). 관리자 업무는 수십 건이라 다 읽어도 가볍다."""
+    out = []
+    try:
+        for r in (get_client().table(TABLE).select("*")
+                  .limit(1000).execute().data or []):
+            out.append(_norm(r, "work"))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        rows = (get_client().table("meeting_tasks")
+                .select("id,content,owner,due_date,done,done_at,meeting_id,"
+                        "meetings(title,meeting_date)")
+                .limit(1000).execute().data or [])
+        for r in rows:
+            r["meeting_title"] = (r.get("meetings") or {}).get("title")
+            out.append(_norm(r, "meeting"))
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def weekly_report(weeks: int = 8) -> list[dict]:
+    """최근 weeks 주(이번 주부터 과거로). 화면이 한 번에 받아 그 자리에서 넘긴다."""
+    rows = _all_rows()
+    cur_start, _ = week_bounds(today())
+    out = []
+    for i in range(weeks):
+        start = cur_start - timedelta(days=7 * i)
+        end = start + timedelta(days=6)
+        w = bucket_week(rows, start, end)
+        w["label"] = f"{start.month}/{start.day} – {end.month}/{end.day}"
+        w["is_current"] = i == 0
+        for r in w["missed"]:
+            r["dday"] = dday_label(r["due_date"])
+        out.append(w)
+    return out

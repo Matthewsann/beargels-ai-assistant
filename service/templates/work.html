@@ -16,6 +16,8 @@
   .head { display:flex; align-items:baseline; gap:8px; margin:2px 2px 12px; }
   .head b { font-size:17px; }
   .head small { color:var(--muted); font-size:11.5px; margin-left:auto; }
+  .head .wk { font-size:11.5px; color:var(--accent); background:var(--accent-bg);
+              border-radius:20px; padding:3px 10px; text-decoration:none; margin-left:6px; }
 
   .note { font-size:12px; padding:11px 12px; border-radius:9px; margin-bottom:14px;
           background:var(--bad-bg); color:var(--bad); }
@@ -133,6 +135,7 @@
 
   <div class="head">
     <b>📋 업무 보드</b>
+    <a class="wk" href="{{ url_for('work_week', path_key=key) }}">📅 주간 보기</a>
     <small>열린 업무 {{ total }}</small>
   </div>
 

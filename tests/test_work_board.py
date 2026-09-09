@@ -135,3 +135,86 @@ def test_회의_할_일은_회의_표에_그대로_둔다():
     assert "work_tasks" in src
     # 회의 할 일을 work_tasks 로 복사해 넣는 코드가 있으면 유령 업무가 남는다
     assert "insert" not in inspect.getsource(wk._meeting_rows)
+
+
+# --- 주간 보기 — 완료/미완료 판정 규칙 (2026-09-09) --------------------------
+# 보드는 열린 것만 보여서 끝낸 업무가 사라진다. 주간 보기는 done_at 을 살려
+# "누가 무엇을 끝냈고 못 끝냈나"를 주(월~일, KST)마다 되짚는다.
+
+WEEK_START = date(2026, 9, 7)     # 월
+WEEK_END = date(2026, 9, 13)      # 일
+
+
+def _row(id_, owner="정산", due=None, done=False, done_at=None):
+    return {"id": id_, "source": "work", "content": id_, "owner": owner,
+            "due_date": due, "done": done, "done_at": done_at}
+
+
+def test_주는_월요일부터_일요일까지(wk):
+    s, e = wk.week_bounds(date(2026, 9, 10))     # 목
+    assert (s, e) == (WEEK_START, WEEK_END)
+    assert wk.week_bounds(WEEK_START)[0] == WEEK_START
+    assert wk.week_bounds(WEEK_END)[1] == WEEK_END
+
+
+def test_done_at_은_매장_시간으로_읽는다(wk):
+    """UTC 23:30 는 한국에선 다음 날 08:30 — 주가 바뀔 수 있다."""
+    assert wk._done_date("2026-09-13T15:30:00+00:00") == date(2026, 9, 14)   # 다음 주 월
+    assert wk._done_date("2026-09-13T14:59:00+00:00") == date(2026, 9, 13)   # 아직 일요일
+    assert wk._done_date(None) is None and wk._done_date("nonsense") is None
+
+
+def test_그_주에_끝낸_것이_완료(wk):
+    w = wk.bucket_week([_row("a", done=True, done_at="2026-09-09T02:00:00+00:00")],
+                       WEEK_START, WEEK_END)
+    assert [r["id"] for r in w["done"]] == ["a"] and w["missed"] == []
+
+
+def test_기한이_그_주였는데_못_끝낸_것이_미완료(wk):
+    w = wk.bucket_week([_row("a", due="2026-09-10")], WEEK_START, WEEK_END)
+    assert [r["id"] for r in w["missed"]] == ["a"] and w["done"] == []
+
+
+def test_기한은_그_주였지만_다음_주에_끝낸_것도_그_주엔_미완료(wk):
+    """그 주 안에 못 끝낸 사실은 남는다 — 다음 주 '완료'로는 따로 잡힌다."""
+    r = _row("a", due="2026-09-10", done=True, done_at="2026-09-15T02:00:00+00:00")
+    w = wk.bucket_week([r], WEEK_START, WEEK_END)
+    assert [x["id"] for x in w["missed"]] == ["a"]
+    nxt = wk.bucket_week([r], WEEK_START + timedelta(days=7), WEEK_END + timedelta(days=7))
+    assert [x["id"] for x in nxt["done"]] == ["a"] and nxt["missed"] == []
+
+
+def test_기한_없는_열린_업무는_어느_주의_미완료도_아니다(wk):
+    """어느 주의 잘못도 아니다 — 보드가 '오래됨'으로 따로 챙긴다."""
+    w = wk.bucket_week([_row("a", due=None)], WEEK_START, WEEK_END)
+    assert w["done"] == [] and w["missed"] == []
+
+
+def test_다른_주_업무는_섞이지_않는다(wk):
+    rows = [_row("prev", due="2026-09-06"),
+            _row("next", done=True, done_at="2026-09-14T02:00:00+00:00")]
+    w = wk.bucket_week(rows, WEEK_START, WEEK_END)
+    assert w["done"] == [] and w["missed"] == []
+
+
+def test_담당자별로_묶고_담당_없음은_맨_뒤(wk):
+    rows = [_row("a", owner="", due="2026-09-08"),
+            _row("b", owner="서주희", done=True, done_at="2026-09-08T02:00:00+00:00"),
+            _row("c", owner="정산", due="2026-09-08"),
+            _row("d", owner="정산", done=True, done_at="2026-09-09T02:00:00+00:00")]
+    w = wk.bucket_week(rows, WEEK_START, WEEK_END)
+    names = [o["owner"] for o in w["owners"]]
+    assert names[0] == "정산", "일 많은 사람이 먼저"
+    assert names[-1] == "", "담당 없음은 맨 뒤"
+    jeong = w["owners"][0]
+    assert [r["id"] for r in jeong["done"]] == ["d"]
+    assert [r["id"] for r in jeong["missed"]] == ["c"]
+
+
+def test_주간_리포트는_이번_주가_첫_칸(wk):
+    rep = wk.weekly_report(weeks=3)
+    assert len(rep) == 3
+    assert rep[0]["is_current"] and not rep[1]["is_current"]
+    assert rep[0]["start"] == wk.week_bounds(wk.today())[0]
+    assert rep[1]["start"] == rep[0]["start"] - timedelta(days=7)
+    assert all("label" in w and "owners" in w for w in rep)

@@ -3919,6 +3919,22 @@ def work_board(path_key):
     )
 
 
+@app.route("/<path_key>/work/week")
+def work_week(path_key):
+    """주간 보기 — 누가 무엇을 끝냈고 무엇을 못 끝냈나(사장님 2026-09-09).
+
+    보드는 열린 것만 보여서 끝낸 업무가 사라진다. 여기서는 8주치를 한 번에
+    내려보내고 화면(JS)이 주를 넘긴다 — 주마다 다시 받지 않는다.
+    """
+    check(path_key)
+    error, weeks = None, []
+    try:
+        weeks = wk.weekly_report(weeks=8)
+    except Exception as e:  # noqa: BLE001
+        error = f"주간 기록을 불러오지 못했어요: {str(e)[:150]}"
+    return render_template("work_week.html", key=path_key, weeks=weeks, error=error)
+
+
 @app.route("/<path_key>/work/task", methods=["POST"])
 def work_task_new(path_key):
     """업무 등록 — 내용만 있으면 되고 담당자·기한은 나중에 채워도 된다."""
