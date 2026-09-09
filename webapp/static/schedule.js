@@ -140,14 +140,14 @@
         .catch(function () { flash('저장하지 못했어요 — 창을 닫지 말고 다시 시도해주세요.', true); });
     }, 400);
   }
-  function saveConfig() {
+  function saveConfig(quiet) {
     if (MODE !== 'admin') return;
     post(API + '/api/config', {
       bizHours: CFG.bizHours, closedDows: CFG.closedDows, closedDates: CFG.closedDates,
-      specialDays: CFG.specialDays,
+      specialDays: CFG.specialDays, recentTimes: CFG.recentTimes,
       presets: CFG.presets, staff: CFG.staff, salesPerHead: CFG.salesPerHead,
       showHoliday: CFG.showHoliday, showWeather: CFG.showWeather,
-    }).then(function () { flash('저장했어요'); })
+    }).then(function () { if (!quiet) flash('저장했어요'); })
       .catch(function () { flash('설정을 저장하지 못했어요.', true); });
   }
 
@@ -482,7 +482,20 @@
   }
 
   // ── 근무 추가/수정 모달 ───────────────────────────────────
-  var md = null;
+  var md = null, mdRecents = [];
+
+  // 방금 쓴 시간을 기억한다 — 고정 시간대에 없는 시간을 다시 쓸 때
+  // 드롭다운을 또 돌리지 않게. 끌어서 옮긴 건 넣지 않는다(고른 게 아니라서).
+  function rememberTime(s, e) {
+    if (!(e > s)) return;
+    if ((CFG.presets || []).some(function (p) { return p.s === s && p.e === e; })) return;
+    var list = (CFG.recentTimes || []).filter(function (r) {
+      return !(+r.s === s && +r.e === e);
+    });
+    list.unshift({ s: s, e: e });
+    CFG.recentTimes = list.slice(0, 3);
+    saveConfig(true);
+  }
   function openAdd(wi, di, hour) {
     var ps = CFG.presets || [];
     var p = ps.filter(function (p) { return Math.abs(p.s - hour) < 1.5; })[0] || ps[0] || { s: hour, e: hour + 5 };
@@ -505,9 +518,19 @@
       return '<button class="' + (s.name === md.who ? 'on' : '') + '" onclick="SCHED.pickWho(\'' + esc(s.name) + '\')">'
         + '<i class="pdot" style="background:' + s.c + '"></i>' + esc(s.name) + '</button>';
     }).join('') || '<span class="cap">설정에서 직원을 먼저 추가해주세요.</span>';
+    // 고정 시간대 + 최근에 쓴 시간(고정에 없는 것만 3개)
+    mdRecents = (CFG.recentTimes || []).filter(function (r) {
+      return +r.e > +r.s && !(CFG.presets || []).some(function (p) {
+        return p.s === +r.s && p.e === +r.e;
+      });
+    }).slice(0, 3);
     $('mdPresets').innerHTML = (CFG.presets || []).map(function (p, i) {
       return '<button class="' + ((p.s === md.s && p.e === md.e) ? 'on' : '') + '" onclick="SCHED.pickPreset(' + i + ')">'
         + esc(p.name) + ' <span class="num cap">' + hm(p.s) + '–' + hm(p.e) + '</span></button>';
+    }).join('') + mdRecents.map(function (r, i) {
+      return '<button class="recent ' + ((+r.s === md.s && +r.e === md.e) ? 'on' : '') + '"'
+        + ' onclick="SCHED.pickRecent(' + i + ')" title="최근에 쓴 시간">'
+        + '🕘 <span class="num">' + hm(+r.s) + '–' + hm(+r.e) + '</span></button>';
     }).join('');
     $('mdStartWrap').innerHTML = tpick(md.s, { hiddenId: 'mdStart', label: '시작', cb: function () { window.SCHED.modalTime(); } });
     $('mdEndWrap').innerHTML = tpick(md.e, { hiddenId: 'mdEnd', label: '종료', cb: function () { window.SCHED.modalTime(); } });
@@ -1052,6 +1075,7 @@
     },
     pickWho: function (n) { md.who = n; renderModal(); },
     pickPreset: function (i) { var p = CFG.presets[i]; md.s = p.s; md.e = p.e; renderModal(); },
+    pickRecent: function (i) { var r = mdRecents[i]; if (!r) return; md.s = +r.s; md.e = +r.e; renderModal(); },
     modalTime: function () { md.s = toH($('mdStart').value); md.e = toH($('mdEnd').value); renderModal(); },
     _tp: function (n) {   // 시/분 드롭다운이 바뀌면 값을 합쳐서 전달한다
       var box = $(n); if (!box) return;
@@ -1066,6 +1090,7 @@
       var day = WEEKS[md.wi].days[md.di];
       if (md.mode === 'add') day.push({ w: md.who, s: md.s, e: md.e });
       else { day[md.idx].w = md.who; day[md.idx].s = md.s; day[md.idx].e = md.e; }
+      rememberTime(md.s, md.e);
       var wi = md.wi;
       window.SCHED.closeModal(); saveWeek(wi); renderAll();
     },

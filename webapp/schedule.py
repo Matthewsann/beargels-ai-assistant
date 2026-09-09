@@ -77,6 +77,9 @@ def default_config() -> dict:
             {"name": "마감", "s": 16, "e": 21.5},
         ],
         "staff": [],
+        # 근무 추가창에서 마지막으로 고른 시간 3개 — 고정 시간대에 없는 시간을
+        # 다시 쓸 때 드롭다운을 또 돌리지 않게 버튼으로 띄운다.
+        "recentTimes": [],
         "salesPerHead": 35,
         "showHoliday": True,
         "showWeather": True,
@@ -342,7 +345,7 @@ def api_save_config():
     body = request.get_json(silent=True) or {}
     cfg = load_config()
     for key in ("bizHours", "closedDows", "closedDates", "specialDays", "presets",
-                "staff", "salesPerHead", "showHoliday", "showWeather"):
+                "staff", "recentTimes", "salesPerHead", "showHoliday", "showWeather"):
         if key in body:
             cfg[key] = body[key]
     save_config(cfg)
