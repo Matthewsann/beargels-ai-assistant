@@ -61,9 +61,37 @@ def add_task(content, owner=None, due_date=None, memo=None):
         "due_date": due_date or None,
         "memo": (memo or "").strip()[:500] or None,
     }
+    dup = _recent_same(row)
+    if dup:                       # 같은 업무가 방금 들어왔다 — 두 번 세지 않는다
+        return dup
     res = get_client().table(TABLE).insert(row).execute()
     _touch()
     return res.data[0] if res.data else None
+
+
+# 같은 내용이 이만큼 안에 또 들어오면 '두 번 눌린 것'으로 본다.
+# 폰에서 저장이 느릴 때 한 번 더 누르거나, 네트워크가 재시도하면 2건이 생겼다
+# (사장님 2026-09-10). 화면에도 잠금을 걸었지만 여기서 한 번 더 막는다 —
+# 화면 잠금은 새로고침·다른 기기·재전송을 못 막는다.
+DUP_SECONDS = 90
+
+
+def _recent_same(row: dict) -> dict | None:
+    """방금 등록된 똑같은 업무가 있으면 그 행을 돌려준다(없으면 None).
+
+    실패해도 등록은 되어야 하므로 조회가 깨지면 조용히 넘어간다.
+    """
+    try:
+        cut = (datetime.now(timezone.utc) - timedelta(seconds=DUP_SECONDS)).isoformat()
+        rows = (get_client().table(TABLE).select("*")
+                .eq("content", row["content"]).eq("done", False)
+                .gte("created_at", cut).execute().data) or []
+    except Exception:  # noqa: BLE001
+        return None
+    for r in rows:                 # 담당자까지 같아야 같은 업무로 본다
+        if (r.get("owner") or None) == row["owner"]:
+            return r
+    return None
 
 
 def update_task(task_id, **fields):

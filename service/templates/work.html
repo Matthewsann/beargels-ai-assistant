@@ -374,6 +374,7 @@
 
   function openNew() {
     editing = null;
+    lockSave(false);
     document.getElementById("dTitle").textContent = "＋ 업무 추가";
     setField("dContent", ""); setField("dOwner", "");
     setField("dDue", ""); setField("dMemo", "");
@@ -388,6 +389,7 @@
   function openEdit(el, focus) {
     var row = el.closest(".t");
     editing = row.dataset.id;
+    lockSave(false);
     document.getElementById("dTitle").textContent = "업무 수정";
     setField("dContent", row.dataset.content);
     setField("dOwner", row.dataset.owner);
@@ -414,7 +416,20 @@
   function setField(id, v) { document.getElementById(id).value = v || ""; }
   function val(id) { return document.getElementById(id).value.trim(); }
 
+  // 저장이 끝나기 전에 또 눌리면 업무가 2건 생겼다(사장님 2026-09-10).
+  // 폰에서는 저장이 1초쯤 걸려 "안 눌렸나?" 하고 한 번 더 누르게 된다.
+  var saving = false;
+
+  function lockSave(on) {
+    saving = on;
+    var b = document.querySelector("#taskDlg .go");
+    if (!b) return;
+    b.disabled = on;
+    b.textContent = on ? "저장 중…" : "저장";
+  }
+
   function saveTask() {
+    if (saving) return;
     var content = val("dContent");
     if (!content) { alert("무엇을 해야 하는지 적어주세요."); return; }
     // 빈 값도 그대로 보낸다 — 서버가 '지움'으로 받는다(담당자·기한 비우기).
@@ -422,10 +437,14 @@
                  due_date: val("dDue") || null, memo: val("dMemo") };
     var url = editing ? "/" + KEY + "/work/task/" + editing + "/update"
                       : "/" + KEY + "/work/task";
+    lockSave(true);
     post(url, body).then(function (d) {
-      if (!d.ok) { alert(d.error || "저장하지 못했어요."); return; }
+      if (!d.ok) { lockSave(false); alert(d.error || "저장하지 못했어요."); return; }
       location.reload();      // 순위가 바뀔 수 있어 다시 그린다
-    }).catch(function () { alert("저장하지 못했어요. 잠시 뒤 다시 시도해주세요."); });
+    }).catch(function () {
+      lockSave(false);
+      alert("저장하지 못했어요. 잠시 뒤 다시 시도해주세요.");
+    });
   }
 
   function removeTask() {
