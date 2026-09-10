@@ -244,20 +244,27 @@ def gather(**calls) -> dict:
 
 
 def cached(seconds: float):
-    """같은 답을 몇 초 동안 재사용하는 아주 작은 캐시(인자 없는 함수용)."""
-    def deco(fn):
-        box = {"t": 0.0, "v": None}
+    """같은 답을 몇 초 동안 재사용하는 아주 작은 캐시.
 
-        def wrap():
+    인자별로 따로 기억한다(2026-09-10 Phase 0). 예전엔 인자를 아예 안 받아
+    `_owner_alerts(limit=10)` 처럼 부르면 TypeError 가 났고, 그래서 알림함은
+    기본값 5건 말고는 꺼낼 수 없었다. 인자 없는 호출은 예전과 똑같이 동작한다.
+    """
+    def deco(fn):
+        boxes: dict = {}
+
+        def wrap(*args, **kwargs):
+            key = (args, tuple(sorted(kwargs.items())))
+            box = boxes.setdefault(key, {"t": 0.0, "v": None})
             now = time.monotonic()
             if box["v"] is not None and now - box["t"] < seconds:
                 return box["v"]
-            box["v"], box["t"] = fn(), now
+            box["v"], box["t"] = fn(*args, **kwargs), now
             return box["v"]
         # 화면에서 뭔가를 바꾼 직후엔 캐시가 남아 '안 바뀐 것처럼' 보인다.
         # 그럴 때 부르라고 비우는 문을 열어 둔다(2026-08-28).
         def cache_clear():
-            box["t"], box["v"] = 0.0, None
+            boxes.clear()
 
         wrap.cache_clear = cache_clear
         wrap.__name__ = fn.__name__

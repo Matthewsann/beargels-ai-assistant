@@ -28,6 +28,7 @@ import re
 from assistant.beargels import (
     _clean_author, classify_review, generate_review_reply,
 )
+from alerts import session_expired
 from crawler.browser import (
     BrowserSession, SessionExpiredError, human_pause, is_session_expired,
 )
@@ -506,6 +507,11 @@ class ReplyToReviewAction(WriteAction):
         page.goto(COUPANG_REVIEWS_URL, wait_until="domcontentloaded")
         human_pause(2.0, 3.0)
         if is_session_expired(page):
+            # 수집기(coupang.py)와 같은 알림 — 게시 중에 풀린 세션은 예외로만
+            # 올라가 error_log 의 kind 가 'SessionExpiredError' 로 남았고, 그 이름은
+            # 알림함 화이트리스트('SessionExpired')에 안 걸려 조용히 묻혔다
+            # (2026-09-10 Phase 0). 이름을 여기 이름으로 통일한다.
+            session_expired("쿠팡이츠")
             raise SessionExpiredError("[쿠팡] 세션 만료 — 재로그인 필요.")
 
         payload = {
@@ -635,6 +641,7 @@ class ReplyToReviewAction(WriteAction):
         except Exception:  # noqa: BLE001 — 못 떠도 아래 검사·탐색이 이어받는다
             pass
         if is_session_expired(page):
+            session_expired("배민")          # 쿠팡 쪽과 같은 이유(Phase 0)
             raise SessionExpiredError("[배민] 세션 만료 — 재로그인 필요.")
         # 공지 팝업이 떠 있으면 '더보기'·버튼 클릭을 가로챈다 — 수집기와
         # 똑같이 먼저 닫는다. 이걸 안 해서 목록이 안 펼쳐졌다(2026-08-16).

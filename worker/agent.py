@@ -803,6 +803,14 @@ def run_post_job(job) -> None:
         db.log_error("worker", f"답글 등록 실패(리뷰 {rid}): {e}",
                      kind=type(e).__name__, path="run_post_job",
                      detail=traceback.format_exc())
+        # 사장님 알림함에도 남긴다(2026-09-10 Phase 0). 위 error_log 의 kind 는
+        # 예외 클래스명이라 알림함 화이트리스트에 안 걸려, 게시가 안 된 리뷰가
+        # /todo 를 열지 않으면 아무에게도 안 보였다(8월 실측 50건). 세션 만료는
+        # crawler 가 session_expired() 로 이미 알렸으니 여기서는 게시 실패만.
+        if type(e).__name__ == "ReplyPostError":
+            notify_owner(f"답글 등록 실패(리뷰 {rid}) — {str(e)[:160]} "
+                         "(답글 처리 화면에서 다시 시도할 수 있어요)",
+                         kind="Notice", source="worker", path="run_post_job")
         try:
             db.mark_drafted(rid)    # 카드 복귀 → 직원 재시도 가능
         except Exception:  # noqa: BLE001
@@ -1154,8 +1162,20 @@ def _sync_ledger_sheet() -> str:
         return "장부 시트 " + r.get("note", "반영")
     except Exception as e:  # noqa: BLE001
         logger.warning("장부 시트 반영 실패(무시): %s", e)
+        # ⚠️ 이 kind 는 그대로 둔다 — 경영 대시보드의 장부 경고(ledger_store.
+        #    recent_sync_error)가 'LedgerSheetError' 를 읽는다.
         db.log_error("worker", f"장부 시트 반영 실패: {str(e)[:200]}",
                      kind="LedgerSheetError", path="_sync_ledger_sheet")
+        # 사장님 알림함에도(2026-09-10 Phase 0). 위 kind 는 알림함 화이트리스트
+        # 밖이라 6일 연속 실패(2026-09-04~09)가 /sales 를 열기 전엔 안 보였다.
+        # 원인·할 일은 대시보드가 쓰는 번역을 그대로 쓴다.
+        try:
+            from database.ledger_store import explain_sync_error
+            cause, fix = explain_sync_error(str(e))
+        except Exception:  # noqa: BLE001 — 번역 실패가 알림을 막으면 안 된다
+            cause, fix = "장부를 읽지 못했어요", ""
+        notify_owner(f"장부 자동 반영 실패 — {cause}. {fix}".strip(),
+                     kind="Notice", source="worker", path="_sync_ledger_sheet")
         return f"장부 시트 실패: {str(e)[:60]}"
 
 

@@ -44,6 +44,14 @@
   .note { font-size:12px; padding:11px 12px; border-radius:9px; margin-bottom:14px;
           background:var(--warn-bg); color:var(--warn); }
   .note.bad { background:var(--bad-bg); color:var(--bad); }
+  /* 알림함 — 리뷰 현황(dashboard.html)과 같은 모양 */
+  .alertbox { display:flex; gap:10px; align-items:flex-start; background:var(--warn-bg);
+              color:var(--warn); border:1px solid var(--warn); border-radius:10px;
+              padding:11px 12px; margin-bottom:10px; font-size:13px; }
+  .alertbox .alertmsg { flex:1; white-space:pre-wrap; word-break:break-word; }
+  .alertbox .btn { border:1px solid var(--line); background:var(--card); color:var(--ink);
+                   border-radius:9px; padding:8px 14px; font-size:13px; font-family:inherit;
+                   cursor:pointer; flex-shrink:0; }
   .go { display:inline-block; margin-top:8px; font-size:13px; text-decoration:none;
         color:var(--accent); background:var(--accent-bg); border-radius:9px;
         padding:8px 13px; }
@@ -75,6 +83,17 @@
   {% include "_tabs.html" %}
 
   {% if error %}<div class="note bad">{{ error }}</div>{% endif %}
+
+  {# 알림함 — 현황·답글 처리 화면과 같은 알림. 라우트는 alerts 를 넘기고
+     있었는데 이 템플릿만 그리지 않아 여기서는 안 보였다(2026-09-10 Phase 0). #}
+  {% for a in alerts %}
+  <div class="alertbox">
+    <div class="alertmsg"><b>🔔 {{ a.at }}</b><br>{{ a.message }}</div>
+    <form method="post" action="{{ url_for('ack_alert', path_key=key, alert_id=a.id) }}">
+      <button class="btn" type="submit">확인</button>
+    </form>
+  </div>
+  {% endfor %}
 
   <div class="note">
     만점 리뷰에 묻혀 놓치기 쉬운 리뷰만 따로 뺐어요. 답글을 달려면
