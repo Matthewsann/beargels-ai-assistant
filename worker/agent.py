@@ -38,7 +38,7 @@ from assistant.beargels import (  # noqa: E402
     classify_review, generate_review_reply, order_count_of,
 )
 from assistant.meeting_ai import MeetingAIUnavailable, organize as ai_organize  # noqa: E402
-from alerts import notify_owner  # noqa: E402
+from alerts import notifications_ready, notify, notify_owner  # noqa: E402
 from database import meeting_store  # noqa: E402
 from database import supabase_client as db  # noqa: E402
 
@@ -1032,6 +1032,22 @@ def maybe_request_nag() -> None:
         if not stale:
             return
         db.menu_set_setting("request_nag_day", today)
+        if notifications_ready():
+            # Phase 2 (2026-09-11): 요청 하나 = 알림 한 줄. 같은 요청이 내일 또
+            # 잡히면 새 줄이 아니라 횟수만 는다(notifications 표의 dedupe_key).
+            # 식별자는 reviews.id — [공유 완료]가 kv request_shared 에 남기는
+            # 것과 같은 번호라, Phase 3 의 자동 해소가 그대로 이어 쓸 수 있다.
+            for i in stale:
+                if not i.get("id"):
+                    continue
+                notify(event_type="request.unshared",
+                       dedupe_key=f"request.unshared:review:{i['id']}",
+                       title=f"고객 요청 미전파 — [{i['topic']}] {i['quote'][:24]}…",
+                       message=(f"{REQUEST_NAG_STALE_DAYS}일 넘게 단톡방에 안 갔어요. "
+                                "리뷰 현황 화면에서 [복사]→[공유 완료]"),
+                       source="worker", source_ref=f"review:{i['id']}")
+            return
+        # 표가 아직 없으면 예전 그대로 — 묶음 한 줄을 error_log 에.
         tops = " · ".join(f"[{i['topic']}] {i['quote'][:24]}…" for i in stale[:3])
         notify_owner(
             f"단톡방에 전파 안 된 고객 요청 {len(stale)}건이 {REQUEST_NAG_STALE_DAYS}일 "

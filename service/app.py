@@ -53,6 +53,7 @@ load_dotenv(pathlib.Path(__file__).resolve().parent / ".env")
 load_dotenv(ROOT / ".env")
 
 from database import supabase_client as db  # noqa: E402
+from database import notification_store as notif  # noqa: E402
 from assistant import customer_requests as cr  # noqa: E402
 
 class _SafeRequest(Request):
@@ -533,6 +534,58 @@ def ack_alert(path_key, alert_id):
     return redirect(request.referrer or url_for("home", path_key=path_key))
 
 
+# ── 새 알림함(notifications 표) — Phase 2 (2026-09-11) ─────────────────────
+# 고객 요청 미전파 한 종류만 이 표로 온다. 표가 없으면(마이그레이션 전) 비어
+# 있고, 위 error_log 알림함은 그대로 돈다. 홈 한 화면에서만 보인다 — 다른
+# 4화면의 [확인]은 error_log 를 닫는 버튼이라 이 표의 id 를 넘기면 안 된다.
+@cached(15)
+def _notif_alerts(limit=5) -> list[dict]:
+    """열린 알림(읽은 것 포함) 최신순. 표가 없거나 실패하면 빈 목록."""
+    try:
+        if not notif.available():
+            return []
+        rows = notif.inbox(limit=limit)
+    except Exception:  # noqa: BLE001
+        return []
+    return [{"id": r.get("id"), "status": r.get("status"),
+             "read": r.get("status") == "read",
+             "at": _kst_label(r.get("created_at")),
+             "title": (r.get("title") or "").strip(),
+             "message": (r.get("message") or "").strip(),
+             "occurrences": int(r.get("occurrences") or 1),
+             "link": r.get("link") or ""} for r in rows]
+
+
+@app.route("/<path_key>/notice/<int:nid>/read", methods=["POST"])
+def notice_read(path_key, nid):
+    """[확인] — 읽었다. 문제는 열린 채로 남는다(재알림 정책은 Phase 3)."""
+    check(path_key)
+    try:
+        notif.mark_read(nid)
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"알림 읽음 처리 실패({nid}): {e}",
+                     kind=type(e).__name__, path=request.path)
+    _notif_alerts.cache_clear()
+    if _ajax():
+        return jsonify({"ok": True})
+    return redirect(request.referrer or url_for("home", path_key=path_key))
+
+
+@app.route("/<path_key>/notice/<int:nid>/resolve", methods=["POST"])
+def notice_resolve(path_key, nid):
+    """[처리됨] — 해결. 같은 문제가 또 보여도 되살리지 않는다(notification_store.record)."""
+    check(path_key)
+    try:
+        notif.mark_resolved(nid, by="사장님(화면)", reason="manual")
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"알림 처리됨 실패({nid}): {e}",
+                     kind=type(e).__name__, path=request.path)
+    _notif_alerts.cache_clear()
+    if _ajax():
+        return jsonify({"ok": True})
+    return redirect(request.referrer or url_for("home", path_key=path_key))
+
+
 # 플랫폼 리뷰 관리 페이지 — '실제 답글 보러가기' 바로가기용(리뷰별 딥링크는
 # 두 플랫폼 다 제공하지 않아 리뷰 목록 페이지로 보낸다).
 # ⚠️ 이 웹앱은 PythonAnywhere 에서 도는데 **서버 시계가 UTC** 다.
@@ -900,6 +953,7 @@ def home(path_key):
             req_n=lambda: len(_customer_requests()[0]),
             learning=_learning_cached,
             alerts=_owner_alerts,
+            nalerts=_notif_alerts,     # 새 알림함(notifications 표, Phase 2)
             owners=lambda: db.get_setting("home_owners", {}) or {},
             updated=_last_collect_cached,
             # 회의에서 정한 할 일도 홈에서 챙긴다(사장님 결정 2026-08-27).
@@ -932,6 +986,7 @@ def home(path_key):
         req_n=g.get("req_n") or 0,
         blog_ready=blog_ready, owners=owners,
         learning=g.get("learning"), error=error, alerts=g.get("alerts") or [],
+        nalerts=g.get("nalerts") or [],
         meet_tasks=g.get("meet_tasks") or [], meet_open=g.get("meet_open") or 0,
         updated=_updated_view(g.get("updated")),
         work_top=g.get("work_top") or [],

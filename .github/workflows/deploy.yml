@@ -38,6 +38,7 @@ on:
       - 'database/ledger_store.py'
       - 'database/meeting_store.py'
       - 'database/work_store.py'
+      - 'database/notification_store.py'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
@@ -147,6 +148,7 @@ jobs:
           upload database/ledger_store.py
           upload database/meeting_store.py
           upload database/work_store.py
+          upload database/notification_store.py
 
       - name: 웹앱 재시작
         run: |
