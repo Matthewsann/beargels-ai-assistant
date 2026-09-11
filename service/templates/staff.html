@@ -188,16 +188,8 @@
 
   {% if error %}<div class="note bad">{{ error }}</div>{% endif %}
 
-  {# 알림함 — 민감 리뷰·로그인 만료 등 사장님이 봐야 할 일(확인하면 닫힘) #}
-  {% for a in alerts %}
-  <div class="alertbox">
-    <div class="alertmsg"><b>🔔 {{ a.at }}</b><br>{{ a.message }}</div>
-    <form method="post" action="{{ url_for('ack_alert', path_key=key, alert_id=a.id) }}"
-          onsubmit="return actNow(this, {hide: '.alertbox'})">
-      <button class="btn" type="submit">확인</button>
-    </form>
-  </div>
-  {% endfor %}
+  {# 알림함 — 두 저장소 합본, 다섯 화면 공용(_inbox.html). 이 화면의 actNow 를 알아서 탄다 #}
+  {% include "_inbox.html" %}
 
   <div class="panel">
     <div class="status" id="wstat">

@@ -312,7 +312,8 @@ def svc(monkeypatch):
 
 def _gather_stub(**calls):
     out = {k: None for k in calls}
-    for k in ("alerts", "nalerts", "meet_tasks", "work_top", "briefs"):
+    # Phase 3-B-1 부터 홈은 alerts/nalerts 대신 합본 inbox 를 받는다
+    for k in ("inbox", "alerts", "nalerts", "meet_tasks", "work_top", "briefs"):
         if k in calls:
             out[k] = calls[k]()
     return out

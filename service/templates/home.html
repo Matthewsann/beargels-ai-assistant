@@ -28,10 +28,6 @@
   .alertbox .btn { border:1px solid var(--line); background:var(--card); color:var(--ink);
               border-radius:8px; padding:8px 14px; font-size:13px; flex-shrink:0;
               font-family:inherit; cursor:pointer; }
-  /* 새 알림함(notifications) — 읽은 건 흐리게, 버튼은 [확인]·[처리됨] 둘 */
-  .alertbox.seen { opacity:.72; }
-  .alertbox .nbtns { display:flex; flex-direction:column; gap:6px; flex-shrink:0; }
-  .alertbox .nbtns form { margin:0; }
 
   /* 오늘 할 일 — 큰 카드 한 장. 0건이면 조용해진다. */
   .today { display:block; background:var(--accent-bg); border:1px solid var(--accent);
@@ -151,34 +147,8 @@
 
   {% if error %}<div class="note">{{ error }}</div>{% endif %}
 
-  {# 알림함 — 어느 구성에서든 알림이 제일 먼저 보인다 #}
-  {% for a in alerts %}
-  <div class="alertbox">
-    <div class="alertmsg"><b>🔔 {{ a.at }}</b><br>{{ a.message }}</div>
-    <form method="post" action="{{ url_for('ack_alert', path_key=key, alert_id=a.id) }}">
-      <button class="btn" type="submit">확인</button>
-    </form>
-  </div>
-  {% endfor %}
-
-  {# 새 알림함(notifications 표, Phase 2) — 지금은 고객 요청 미전파 1종만.
-     같은 요청은 새 줄 대신 'N회 확인됨'으로 는다. [확인]=읽음(문제는 남음),
-     [처리됨]=해결. 표가 없으면 이 목록은 비어 있고 위 알림함이 그대로 돈다. #}
-  {% for n in nalerts %}
-  <div class="alertbox{% if n.read %} seen{% endif %}" data-nid="{{ n.id }}">
-    <div class="alertmsg"><b>🔔 {{ n.at }}</b>{% if n.occurrences > 1 %} · {{ n.occurrences }}회 확인됨{% endif %}{% if n.read %} · 확인함{% endif %}<br>{{ n.title }}{% if n.message %}<br><small>{{ n.message }}</small>{% endif %}</div>
-    <div class="nbtns">
-      {% if not n.read %}
-      <form method="post" action="{{ url_for('notice_read', path_key=key, nid=n.id) }}">
-        <button class="btn" type="submit">확인</button>
-      </form>
-      {% endif %}
-      <form method="post" action="{{ url_for('notice_resolve', path_key=key, nid=n.id) }}">
-        <button class="btn" type="submit">처리됨</button>
-      </form>
-    </div>
-  </div>
-  {% endfor %}
+  {# 알림함 — 어느 구성에서든 알림이 제일 먼저 보인다. 두 저장소 합본, 다섯 화면 공용 #}
+  {% include "_inbox.html" %}
 
   <a class="today {{ 'calm' if not stat.todo }}" href="{{ url_for('todo', path_key=key) }}">
     {% if stat.todo %}

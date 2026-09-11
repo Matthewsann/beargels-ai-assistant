@@ -514,6 +514,7 @@ def _owner_alerts(limit=5) -> list[dict]:
         out.append({"id": r.get("id"),
                     "kind": r.get("kind"),
                     "at": _kst_label(r.get("at")),
+                    "ts": r.get("at"),              # 정렬용 원본 시각(합친 알림함)
                     "message": (r.get("message") or "").strip()})
         if len(out) >= limit:
             break
@@ -529,6 +530,7 @@ def ack_alert(path_key, alert_id):
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"알림 확인 실패({alert_id}): {e}",
                      kind=type(e).__name__, path=request.path)
+    _owner_alerts.cache_clear()      # 닫은 줄이 15초 더 보이지 않게(Phase 3-B-1)
     if _ajax():
         return jsonify({"ok": True})
     return redirect(request.referrer or url_for("home", path_key=path_key))
@@ -549,11 +551,48 @@ def _notif_alerts(limit=5) -> list[dict]:
         return []
     return [{"id": r.get("id"), "status": r.get("status"),
              "read": r.get("status") == "read",
-             "at": _kst_label(r.get("created_at")),
+             # 마지막으로 확인된 시각을 보여준다 — "언제 생겼나"보다 "지금도 그런가"
+             "at": _kst_label(r.get("last_seen_at") or r.get("created_at")),
+             "ts": r.get("last_seen_at") or r.get("created_at"),
              "title": (r.get("title") or "").strip(),
              "message": (r.get("message") or "").strip(),
              "occurrences": int(r.get("occurrences") or 1),
              "link": r.get("link") or ""} for r in rows]
+
+
+def _ts(v) -> datetime:
+    """정렬용 — DB 시각 문자열을 datetime 으로. 못 읽으면 맨 뒤."""
+    try:
+        d = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+    except Exception:  # noqa: BLE001
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+
+INBOX_LIMIT = 5
+
+
+def _inbox(limit=INBOX_LIMIT) -> list[dict]:
+    """두 알림 저장소를 한 목록으로 — 다섯 화면이 같은 _inbox.html 로 그린다 (Phase 3-B-1).
+
+    · e:<id> = error_log(예전 알림함, 미처리만) · n:<id> = notifications(열린 것, 읽음 포함)
+    · 정렬은 '마지막으로 보인 시각' — error_log 는 at, notifications 는 last_seen_at
+    · 두 저장소 사이 중복 제거는 하지 않는다: 예전 묶음 Notice("요청 N건")와 새 줄
+      (요청별)은 안전하게 짝지을 열쇠가 없다. 표가 생긴 뒤 새 요청은 새 길로만 가므로
+      옛 묶음은 [확인]으로 자연히 사라진다.
+    캐시는 두 원천 함수에 있다(15초) — 여기서는 합치기만 하므로 따로 캐시하지 않는다.
+    """
+    items = []
+    for a in _owner_alerts():
+        items.append({"uid": f"e:{a['id']}", "src": "e", "id": a["id"], "at": a["at"],
+                      "ts": _ts(a.get("ts")), "title": a["message"], "message": "",
+                      "read": False, "occurrences": 1})
+    for n in _notif_alerts():
+        items.append({"uid": f"n:{n['id']}", "src": "n", "id": n["id"], "at": n["at"],
+                      "ts": _ts(n.get("ts")), "title": n["title"], "message": n["message"],
+                      "read": bool(n["read"]), "occurrences": n["occurrences"]})
+    items.sort(key=lambda x: x["ts"], reverse=True)
+    return items[:limit]
 
 
 @app.route("/<path_key>/notice/<int:nid>/read", methods=["POST"])
@@ -952,8 +991,7 @@ def home(path_key):
             # _customer_requests 는 2분 캐시라 홈에 얹어도 왕복이 늘지 않는다.
             req_n=lambda: len(_customer_requests()[0]),
             learning=_learning_cached,
-            alerts=_owner_alerts,
-            nalerts=_notif_alerts,     # 새 알림함(notifications 표, Phase 2)
+            inbox=_inbox,              # 알림함 — 두 저장소 합본(Phase 3-B-1)
             owners=lambda: db.get_setting("home_owners", {}) or {},
             updated=_last_collect_cached,
             # 회의에서 정한 할 일도 홈에서 챙긴다(사장님 결정 2026-08-27).
@@ -985,8 +1023,7 @@ def home(path_key):
         "home.html", key=path_key, stat=stat, greet=greet, today=today,
         req_n=g.get("req_n") or 0,
         blog_ready=blog_ready, owners=owners,
-        learning=g.get("learning"), error=error, alerts=g.get("alerts") or [],
-        nalerts=g.get("nalerts") or [],
+        learning=g.get("learning"), error=error, inbox=g.get("inbox") or [],
         meet_tasks=g.get("meet_tasks") or [], meet_open=g.get("meet_open") or 0,
         updated=_updated_view(g.get("updated")),
         work_top=g.get("work_top") or [],
@@ -1042,7 +1079,7 @@ def review_home(path_key):
             job=_latest_job_cached,
             learning=_learning_cached,
             worker=_worker_view,
-            alerts=_owner_alerts,
+            inbox=_inbox,
             requests=_customer_requests,
         )
         stat = {
@@ -1070,7 +1107,7 @@ def review_home(path_key):
         "dashboard.html", key=path_key, stat=stat,
         learning=g.get("learning"),
         worker=g.get("worker") or _worker_view(),
-        job=job, error=error, alerts=g.get("alerts") or [],
+        job=job, error=error, inbox=g.get("inbox") or [],
         requests=reqs, requests_more=reqs_more,
         # 단톡방에 붙여 넣을 글은 서버에서 미리 만들어 둔다 — 화면 JS 가
         # 다시 조립하면 두 곳이 어긋난다.
@@ -1117,7 +1154,7 @@ def todo(path_key):
             waiting=lambda: db.search_reviews(has_draft=False, limit=1,
                                               **filters),
             approved=lambda: db.count_by_status("approved"),
-            job=_latest_job_cached, worker=_worker_view, alerts=_owner_alerts)
+            job=_latest_job_cached, worker=_worker_view, inbox=_inbox)
         found, total = g["rows"] or ([], 0)
         reviews = []
         for row in found:
@@ -1142,7 +1179,7 @@ def todo(path_key):
         job=job, error=error, waiting=waiting, approved_count=approved_count,
         plat=plat, sort=sort, q=q or "", rating=rating, rating_max=rating_max,
         kind=kind, days=days, total=len(reviews),
-        alerts=g.get("alerts") or [],
+        inbox=g.get("inbox") or [],
         active_tab="todo", tab_counts=_tab_counts(),
         # '아침에 등록' 버튼에 쓸 문구 + 밤에는 그 버튼을 기본으로 강조한다
         # (사장님 확정 2026-08-28: 22시~아침 8시는 예약이 기본).
@@ -2371,7 +2408,7 @@ def care_reviews(path_key):
     return render_template(
         "care.html", key=path_key, rows=rows, error=error, total=total,
         mode=mode, plat=plat, sort=sort, page=page, days=days, rep=rep or "",
-        pages=max(1, -(-total // PAGE_SIZE)), alerts=_owner_alerts(),
+        pages=max(1, -(-total // PAGE_SIZE)), inbox=_inbox(),
         active_tab="prob", tab_counts=_tab_counts(),
     )
 
@@ -3990,7 +4027,7 @@ def work_board(path_key):
     return render_template(
         "work.html", key=path_key, tasks=tasks, owners=owners, top=top, ver=_ver("work"),
         derived=derived, who=who, total=len(tasks), error=error,
-        alerts=_owner_alerts(),
+        inbox=_inbox(),
     )
 
 

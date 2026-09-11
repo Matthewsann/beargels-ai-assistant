@@ -141,14 +141,8 @@
 
   {% if error %}<div class="note">{{ error }}</div>{% endif %}
 
-  {% for a in alerts %}
-  <div class="alertbox">
-    <div class="alertmsg"><b>🔔 {{ a.at }}</b><br>{{ a.message }}</div>
-    <form method="post" action="{{ url_for('ack_alert', path_key=key, alert_id=a.id) }}">
-      <button class="okb" type="submit">확인</button>
-    </form>
-  </div>
-  {% endfor %}
+  {# 알림함 — 두 저장소 합본, 다섯 화면 공용(_inbox.html) #}
+  {% include "_inbox.html" %}
 
   {# 비서가 하는 일 — 규칙으로 순위를 매기고 '왜 지금인지'를 붙인다.
      담당자 필터와 무관하게 항상 전체 기준으로 고른다. #}

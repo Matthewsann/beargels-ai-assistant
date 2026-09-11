@@ -84,16 +84,8 @@
 
   {% if error %}<div class="note bad">{{ error }}</div>{% endif %}
 
-  {# 알림함 — 현황·답글 처리 화면과 같은 알림. 라우트는 alerts 를 넘기고
-     있었는데 이 템플릿만 그리지 않아 여기서는 안 보였다(2026-09-10 Phase 0). #}
-  {% for a in alerts %}
-  <div class="alertbox">
-    <div class="alertmsg"><b>🔔 {{ a.at }}</b><br>{{ a.message }}</div>
-    <form method="post" action="{{ url_for('ack_alert', path_key=key, alert_id=a.id) }}">
-      <button class="btn" type="submit">확인</button>
-    </form>
-  </div>
-  {% endfor %}
+  {# 알림함 — 두 저장소 합본, 다섯 화면 공용(_inbox.html) #}
+  {% include "_inbox.html" %}
 
   <div class="note">
     만점 리뷰에 묻혀 놓치기 쉬운 리뷰만 따로 뺐어요. 답글을 달려면
