@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+import time
 from datetime import date, datetime, timedelta, timezone
 
 from .supabase_client import get_client, touch_version
@@ -50,8 +51,11 @@ def today() -> date:
 # 등록·수정 (담당자가 하는 일)
 # ---------------------------------------------------------------------------
 
-def add_task(content, owner=None, due_date=None, memo=None):
-    """업무 하나 등록. content 만 있으면 되고 나머지는 나중에 채워도 된다."""
+def add_task(content, owner=None, due_date=None, memo=None, parent=None):
+    """업무 하나 등록. content 만 있으면 되고 나머지는 나중에 채워도 된다.
+
+    parent: 하위 업무로 달 때 상위 업무 id("w:12" 또는 12). 한 단계만 된다.
+    """
     content = (content or "").strip()
     if not content:
         raise ValueError("업무 내용이 비었습니다")
@@ -61,6 +65,8 @@ def add_task(content, owner=None, due_date=None, memo=None):
         "due_date": due_date or None,
         "memo": (memo or "").strip()[:500] or None,
     }
+    if parent:
+        row["parent_id"] = _check_parent(parent)
     dup = _recent_same(row)
     if dup:                       # 같은 업무가 방금 들어왔다 — 두 번 세지 않는다
         return dup
@@ -88,10 +94,96 @@ def _recent_same(row: dict) -> dict | None:
                 .gte("created_at", cut).execute().data) or []
     except Exception:  # noqa: BLE001
         return None
-    for r in rows:                 # 담당자까지 같아야 같은 업무로 본다
-        if (r.get("owner") or None) == row["owner"]:
+    for r in rows:                 # 담당자·상위까지 같아야 같은 업무로 본다
+        if ((r.get("owner") or None) == row["owner"]
+                and r.get("parent_id") == row.get("parent_id")):
             return r
     return None
+
+
+# ---------------------------------------------------------------------------
+# 하위 업무 (2026-09-11) — work_tasks.parent_id (schema_v14.sql)
+# ---------------------------------------------------------------------------
+# 한 단계만 둔다. 회의 할 일은 상위가 될 수 없다(다른 표라 FK 가 못 가리킨다).
+# 칸이 아직 없으면(마이그레이션 전) 보드는 예전처럼 돌고, 하위 추가만 안내한다.
+
+_sub = {"ok": None, "until": 0.0}
+_SUB_RECHECK_SEC = 600
+
+
+def subtasks_ready() -> bool:
+    """work_tasks.parent_id 칸이 있어서 하위 업무를 쓸 수 있는가."""
+    if _sub["ok"] is not None and time.monotonic() < _sub["until"]:
+        return bool(_sub["ok"])
+    try:
+        get_client().table(TABLE).select("parent_id").limit(1).execute()
+        _sub["ok"], _sub["until"] = True, float("inf")
+    except Exception:  # noqa: BLE001 — 칸이 없거나 잠깐 끊겼다: 10분 뒤 다시 본다
+        _sub["ok"], _sub["until"] = False, time.monotonic() + _SUB_RECHECK_SEC
+    return bool(_sub["ok"])
+
+
+def _check_parent(parent) -> int:
+    """상위로 달 수 있는 업무인지 확인하고 숫자 id 를 돌려준다. 안 되면 ValueError."""
+    if isinstance(parent, int):
+        pid = parent
+    else:
+        source, pid = parse_id(parent)
+        if source == "meeting":
+            raise ValueError("회의에서 나온 할 일에는 하위 업무를 달 수 없어요")
+        if not source:
+            raise ValueError("상위 업무를 찾지 못했어요")
+    if not subtasks_ready():
+        raise ValueError("하위 업무는 준비가 필요해요 — schema_v14.sql 을 한 번 실행해주세요")
+    rows = (get_client().table(TABLE).select("id,parent_id")
+            .eq("id", pid).limit(1).execute().data) or []
+    if not rows:
+        raise ValueError("상위 업무를 찾지 못했어요")
+    if rows[0].get("parent_id"):
+        raise ValueError("하위 업무 아래에는 또 달 수 없어요(한 단계만)")
+    return pid
+
+
+def nest(views: list[dict], ref=None) -> list[dict]:
+    """평평한 줄들을 '상위 + subs' 로 묶는다. 순수 함수 — 테스트가 그대로 부른다.
+
+    - 상위(parent_id 없음)만 돌려준다. 각 상위에 subs(열린 것 먼저) · sub_open ·
+      sub_total 을 붙인다.
+    - 상위의 순위는 **자기와 열린 하위 중 가장 급한 것**을 따른다. 하위 하나가
+      오늘까지면 상위가 '급함'으로 올라와야 묻히지 않는다. 그때 설명은 어느
+      하위 때문인지 밝힌다.
+    - 상위에 담당자가 없어도 하위를 누가 맡았으면 '아무도 안 맡았어요'가 아니다.
+    - 상위를 못 찾은 하위(상위가 끝났거나 지워짐)는 버린다.
+    """
+    ref = ref or today()
+    kids: dict = {}
+    tops = []
+    for t in views:
+        p = t.get("parent_id")
+        if t.get("source") == "work" and p:
+            kids.setdefault(p, []).append(t)
+        else:
+            tops.append(t)
+    for t in tops:
+        subs = kids.get(t.get("raw_id"), []) if t.get("source") == "work" else []
+        subs.sort(key=lambda s: (bool(s.get("done")), s.get("created_at") or "",
+                                 s.get("raw_id") or 0))
+        open_subs = [s for s in subs if not s.get("done")]
+        t["subs"] = subs
+        t["sub_total"] = len(subs)
+        t["sub_open"] = len(open_subs)
+        t["owners"] = task_owners(t)
+        if not open_subs or t.get("done"):
+            continue
+        if not t.get("owner") and any(s.get("owner") for s in open_subs):
+            t["pri"] = priority_of({"owner": "하위 담당", "due_date": t.get("due_date"),
+                                    "created_at": t.get("created_at")}, ref)
+        best = min(open_subs, key=lambda s: s["pri"]["rank"])
+        if best["pri"]["rank"] < t["pri"]["rank"]:
+            why = best["pri"]["why"]
+            t["pri"] = {**best["pri"],
+                        "why": f"하위 '{best['content'][:14]}' {why}".strip()}
+    return tops
 
 
 def update_task(task_id, **fields):
@@ -113,12 +205,34 @@ def update_task(task_id, **fields):
 
 
 def set_done(task_id, done=True):
-    """완료 체크. 되돌리면 완료 시각도 지운다."""
+    """완료 체크. 되돌리면 완료 시각도 지운다.
+
+    상위를 끝내면 남은 하위도 같이 끝낸다 — 상위가 완료 목록으로 가면서 열린
+    하위가 보드에서 사라진 채 주간 보기에 '미완료'로 남는 걸 막는다. 되돌릴 때는
+    하위를 건드리지 않는다(무엇을 이미 했는지는 그대로 남아야 한다).
+    """
+    now = _now()
     out = (get_client().table(TABLE).update({
         "done": bool(done),
-        "done_at": _now() if done else None,
-        "updated_at": _now(),
+        "done_at": now if done else None,
+        "updated_at": now,
     }).eq("id", task_id).execute().data)
+    if subtasks_ready():
+        try:
+            if done:
+                (get_client().table(TABLE).update({
+                    "done": True, "done_at": now, "updated_at": now,
+                }).eq("parent_id", task_id).eq("done", False).execute())
+            else:
+                # 끝난 상위 밑의 하위를 되살리면 상위도 다시 연다 — 안 그러면
+                # 열린 하위가 끝난 상위에 매달려 보드 어디에도 안 보인다.
+                pid = (out or [{}])[0].get("parent_id")
+                if pid:
+                    (get_client().table(TABLE).update({
+                        "done": False, "done_at": None, "updated_at": now,
+                    }).eq("id", pid).eq("done", True).execute())
+        except Exception:  # noqa: BLE001 — 본인 완료 처리는 이미 됐다
+            pass
     _touch()
     return out
 
@@ -219,6 +333,9 @@ def open_tasks() -> list[dict]:
         out.append(_view(r, "work", ref))
     for r in _meeting_rows():
         out.append(_view(r, "meeting", ref))
+    # 하위 업무는 상위 밑으로 들어간다(t["subs"]). 끝난 상위는 여기서 뺀다 —
+    # 끝난 하위를 진행률로 보이려고 같이 읽어 왔을 뿐이다.
+    out = [t for t in nest(out, ref) if not t["done"]]
     # 우선순위 → 기한 빠른 순 → 오래된 순. 기한 없는 건 뒤로.
     out.sort(key=lambda t: (
         t["pri"]["rank"],
@@ -229,11 +346,60 @@ def open_tasks() -> list[dict]:
 
 
 def _work_rows() -> list[dict]:
+    """열린 업무 + (하위 업무가 있으면) 끝난 하위까지 — 진행률 '2/3'을 보이려고."""
     try:
-        return (get_client().table(TABLE).select("*")
+        rows = (get_client().table(TABLE).select("*")
                 .eq("done", False).limit(MAX_OPEN).execute().data) or []
     except Exception:  # noqa: BLE001 — 표가 아직 없어도 보드는 떠야 한다
         return []
+    # 끝난 하위는 **열린 상위의 것만** — 전부 읽으면 쌓일수록 무거워진다.
+    tops = [r["id"] for r in rows if not r.get("parent_id")]
+    if tops and subtasks_ready():
+        try:
+            rows += (get_client().table(TABLE).select("*")
+                     .eq("done", True).in_("parent_id", tops)
+                     .limit(MAX_OPEN).execute().data) or []
+        except Exception:  # noqa: BLE001 — 진행률만 덜 정확해진다
+            pass
+    return rows
+
+
+# 완료 목록에 보이는 최대 건수. 그보다 지난 건 주간 보기(8주)에서 본다.
+MAX_DONE = 40
+
+
+def done_tasks(limit: int = MAX_DONE) -> list[dict]:
+    """끝낸 업무 — 최근에 끝낸 순. 되돌리기·고치기·지우기를 보드에서 하려고.
+
+    두 표를 합치고, 직접 등록한 업무는 하위까지 묶는다(_view + nest 그대로).
+    """
+    ref = today()
+    views = []
+    try:
+        for r in (get_client().table(TABLE).select("*")
+                  .limit(1000).execute().data or []):
+            views.append(_view(r, "work", ref))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        rows = (get_client().table("meeting_tasks")
+                .select("id,content,owner,due_date,memo,done,done_at,meeting_id,"
+                        "meetings(title,meeting_date)")
+                .eq("done", True).order("done_at", desc=True)
+                .limit(limit).execute().data or [])
+        for r in rows:
+            m = r.get("meetings") or {}
+            r["meeting_title"] = m.get("title")
+            r["meeting_date"] = m.get("meeting_date")
+            views.append(_view(r, "meeting", ref))
+    except Exception:  # noqa: BLE001
+        pass
+    out = [t for t in nest(views, ref) if t["done"]]
+    out.sort(key=lambda t: t.get("done_at") or "", reverse=True)
+    for t in out:
+        dd = _done_date(t.get("done_at"))
+        t["done_label"] = f"{dd.month}/{dd.day}" if dd else ""
+    return out[:limit]
 
 
 def _meeting_rows() -> list[dict]:
@@ -265,17 +431,35 @@ def _view(r, source, ref) -> dict:
         "memo": r.get("memo"),
         "meeting_id": r.get("meeting_id"),
         "meeting_title": r.get("meeting_title"),
+        "parent_id": r.get("parent_id") if source == "work" else None,
+        "done": bool(r.get("done")),
+        "done_at": r.get("done_at"),
         "pri": pri,
         "dday": dday_label(due, ref),
     }
+
+
+def task_owners(t) -> list[str]:
+    """이 업무에 손이 걸린 사람들 — 상위 담당 + 열린 하위 담당(중복 없이).
+
+    하위만 맡은 사람도 담당자 필터에서 자기 일을 찾을 수 있어야 한다.
+    """
+    out = []
+    for o in [t.get("owner")] + [s.get("owner") for s in t.get("subs") or []
+                                 if not s.get("done")]:
+        o = (o or "").strip()
+        if o and o not in out:
+            out.append(o)
+    return out
 
 
 def owner_counts(tasks) -> list[dict]:
     """담당자별 건수 — 많은 순, '담당자 없음'은 항상 맨 뒤."""
     box = {}
     for t in tasks:
-        box.setdefault(t["owner"], 0)
-        box[t["owner"]] += 1
+        for o in task_owners(t) or [""]:
+            box.setdefault(o, 0)
+            box[o] += 1
     rows = [{"owner": k, "n": v} for k, v in box.items() if k]
     rows.sort(key=lambda x: -x["n"])
     if box.get(""):
@@ -373,9 +557,14 @@ def _all_rows() -> list[dict]:
     """열린 것·끝낸 것 전부(두 표). 관리자 업무는 수십 건이라 다 읽어도 가볍다."""
     out = []
     try:
-        for r in (get_client().table(TABLE).select("*")
-                  .limit(1000).execute().data or []):
-            out.append(_norm(r, "work"))
+        rows = get_client().table(TABLE).select("*").limit(1000).execute().data or []
+        names = {r.get("id"): r.get("content") or "" for r in rows}
+        for r in rows:
+            n = _norm(r, "work")
+            # 하위 업무는 무엇의 일부인지 같이 보여야 주간 보기에서 읽힌다
+            if r.get("parent_id") in names:
+                n["content"] = f"{names[r['parent_id']][:20]} › {n['content']}"
+            out.append(n)
     except Exception:  # noqa: BLE001
         pass
     try:

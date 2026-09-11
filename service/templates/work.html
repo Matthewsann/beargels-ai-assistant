@@ -81,6 +81,34 @@
   .t .side .mi { font-size:11px; }
   .t.gone { opacity:.45; } .t.gone .txt { text-decoration:line-through; }
   .t.hide { display:none; }
+  .t.has-subs { border-bottom:none; }
+  .t .side .prog { font-size:11px; font-variant-numeric:tabular-nums; color:var(--accent);
+                   background:var(--accent-bg); border-radius:20px; padding:0 7px; }
+
+  /* ── 하위 업무 — 상위 밑에 들여서. 한 단계만 ── */
+  .subs { margin:-3px 0 0 29px; padding:0 0 5px 9px; border-left:2px solid var(--line);
+          border-bottom:1px solid var(--line); }
+  .subs.hide { display:none; }
+  .st { display:flex; gap:8px; align-items:center; min-height:31px; padding:2px 0; }
+  .st input[type=checkbox] { width:15px; height:15px; margin:0; flex-shrink:0;
+        accent-color:var(--ok); cursor:pointer; }
+  .st .body { flex:1; min-width:0; display:flex; align-items:center; gap:8px; cursor:pointer; }
+  .st .txt { flex:1; min-width:0; font-size:12.5px; white-space:nowrap; overflow:hidden;
+             text-overflow:ellipsis; }
+  .st .side { flex-shrink:0; display:flex; gap:5px; font-size:11px; color:var(--muted);
+              white-space:nowrap; }
+  .st .side .late { color:var(--bad); font-weight:700; }
+  .st.gone { opacity:.5; } .st.gone .txt { text-decoration:line-through; }
+  .subadd { border:none; background:transparent; color:var(--accent); font-family:inherit;
+            font-size:11.5px; padding:3px 0; cursor:pointer; }
+
+  /* ── 끝낸 업무 — 접어 두고, 펴면 되돌리기·고치기·지우기 ── */
+  .fold { font-family:inherit; font-size:11.5px; padding:5px 11px; border-radius:9px;
+          border:1px solid var(--line); background:var(--card); color:var(--muted); cursor:pointer; }
+  .donelist .t .txt { color:var(--muted); }
+  .donelist .t .side .dd { color:var(--ok); }
+  .donelist .more { font-size:11.5px; color:var(--muted); text-align:center; padding:9px 0 10px; }
+  .donelist .more a { color:var(--accent); }
 
   /* ── 담당자 필터(즉시) ── */
   .who { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:9px; }
@@ -127,10 +155,63 @@
   /* 지우기는 저장 버튼과 떨어뜨려 둔다 — 실수로 눌리면 되돌릴 길이 없다 */
   .dlg button.del { width:100%; margin-top:13px; border:none; background:transparent;
                     color:var(--bad); font-size:12.5px; padding:6px; }
+  .dlg button.sub, .dlg button.reopen { width:100%; margin-top:9px; border-style:dashed;
+                    color:var(--accent); font-size:13px; padding:9px; }
 </style>
 </head>
 <body>
 {% include "_sidebar.html" %}
+
+{# 업무 한 줄 + 그 밑의 하위 업무. 보드와 '끝낸 업무'가 같은 모양을 쓴다 —
+   두 벌로 나뉘면 한쪽만 고쳐지기 마련이다. #}
+{% macro row(t, done_list=False) -%}
+{%- set rid = ('d-' if done_list else '') ~ (t.id | replace(':', '-')) -%}
+<div class="t{{ ' has-subs' if t.sub_total }}" id="{{ rid }}" data-id="{{ t.id }}"
+     data-source="{{ t.source }}" data-level="{{ t.pri.level }}"
+     data-content="{{ t.content }}" data-owner="{{ t.owner }}"
+     data-owners="{{ t.owners | join('|') }}" data-subs="{{ t.sub_open or 0 }}"
+     data-due="{{ t.due_date or '' }}" data-memo="{{ t.memo or '' }}"
+     {% if done_list %}data-done="{{ t.done_label }}"{% endif %}
+     {% if t.source == 'meeting' and t.meeting_id %}data-mlink="{{ url_for('meeting_detail', path_key=key, mid=t.meeting_id) }}"{% endif %}
+     title="{{ '' if done_list else t.pri.why }}">
+  <input type="checkbox" onchange="doneTask(this)" aria-label="완료" {{ 'checked' if done_list }}>
+  <span class="bar {{ '' if done_list else t.pri.level }}"></span>
+  <div class="body" onclick="openEdit(this)">
+    <div class="txt">{{ t.content }}</div>
+    <div class="side">
+      {%- if t.sub_total %}<span class="prog" title="하위 업무 끝낸 수 / 전체">☑ {{ t.sub_total - t.sub_open }}/{{ t.sub_total }}</span>{% endif -%}
+      {%- if t.memo %}<span class="mi" title="메모 있음">📝</span>{% endif -%}
+      {%- if t.source == 'meeting' %}<span class="mi" title="{{ t.meeting_title or '회의' }}">🗓️</span>{% endif -%}
+      <span class="{{ 'dim' if not t.owner }}">{{ t.owner or '담당 없음' }}</span>
+      {%- if done_list %}<span class="dd">{{ t.done_label }} 끝냄</span>
+      {%- elif t.dday %}<span class="dd {{ 'late' if t.pri.level == 'hi' }}">{{ t.dday }}</span>{% endif -%}
+    </div>
+  </div>
+</div>
+{%- if t.sub_total %}
+<div class="subs" id="subs-{{ rid }}">
+  {%- for c in t.subs %}
+  <div class="st{{ ' gone' if c.done }}" data-id="{{ c.id }}" data-source="work"
+       data-parent="{{ t.id }}" data-pcontent="{{ t.content }}"
+       data-content="{{ c.content }}" data-owner="{{ c.owner }}"
+       data-due="{{ c.due_date or '' }}" data-memo="{{ c.memo or '' }}">
+    <input type="checkbox" onchange="doneTask(this)" aria-label="완료" {{ 'checked' if c.done }}>
+    <div class="body" onclick="openEdit(this)">
+      <div class="txt">{{ c.content }}</div>
+      <div class="side">
+        {%- if c.memo %}<span title="메모 있음">📝</span>{% endif -%}
+        {%- if c.owner %}<span>{{ c.owner }}</span>{% endif -%}
+        {%- if c.dday and not c.done %}<span class="{{ 'late' if c.pri.level == 'hi' }}">{{ c.dday }}</span>{% endif -%}
+      </div>
+    </div>
+  </div>
+  {%- endfor %}
+  {%- if not done_list %}
+  <button class="subadd" type="button" onclick="openNew('{{ t.id }}')">＋ 하위 업무</button>
+  {%- endif %}
+</div>
+{%- endif %}
+{%- endmacro %}
 <div class="wrap">
 
   <div class="head">
@@ -186,29 +267,24 @@
   {# 줄은 한 번만 그려 두고, JS 가 묶음(우선순위/담당자)마다 머리를 끼워 넣고
      접었다 편다. 여유 묶음은 처음엔 접혀 있다 — 급한 것부터 보여야 하니까. #}
   <div class="list" id="list">
-    {% for t in tasks %}
-    <div class="t" id="{{ t.id | replace(':', '-') }}" data-id="{{ t.id }}"
-         data-source="{{ t.source }}" data-level="{{ t.pri.level }}"
-         data-content="{{ t.content }}" data-owner="{{ t.owner }}"
-         data-due="{{ t.due_date or '' }}" data-memo="{{ t.memo or '' }}"
-         {% if t.source == 'meeting' and t.meeting_id %}data-mlink="{{ url_for('meeting_detail', path_key=key, mid=t.meeting_id) }}"{% endif %}
-         title="{{ t.pri.why }}">
-      <input type="checkbox" onchange="doneTask(this)" aria-label="완료">
-      <span class="bar {{ t.pri.level }}"></span>
-      <div class="body" onclick="openEdit(this)">
-        <div class="txt">{{ t.content }}</div>
-        <div class="side">
-          {%- if t.memo %}<span class="mi" title="메모 있음">📝</span>{% endif -%}
-          {%- if t.source == 'meeting' %}<span class="mi" title="{{ t.meeting_title or '회의' }}">🗓️</span>{% endif -%}
-          <span class="{{ 'dim' if not t.owner }}">{{ t.owner or '담당 없음' }}</span>
-          {%- if t.dday %}<span class="dd {{ 'late' if t.pri.level == 'hi' }}">{{ t.dday }}</span>{% endif -%}
-        </div>
-      </div>
-    </div>
-    {% endfor %}
+    {% for t in tasks %}{{ row(t) }}{% endfor %}
     <div class="empty-msg" id="empty" hidden>열린 업무가 없어요. 👍</div>
   </div>
   <button class="addbtn" type="button" onclick="openNew()">＋ 업무 추가</button>
+
+  {# 끝낸 업무 — 보드에서 사라지면 되돌리거나 고칠 길이 없었다(사장님 2026-09-11).
+     평소엔 접어 둔다: 급한 것부터 보여야 하니까. #}
+  {% if done %}
+  <div class="sec-row">
+    <div class="sec-lbl" style="margin:0">✅ 끝낸 업무 <span id="doneN">{{ done | length }}</span></div>
+    <button class="fold" type="button" id="doneBtn" onclick="toggleDone()">펼치기</button>
+  </div>
+  <div class="list donelist" id="doneList" hidden>
+    {% for t in done %}{{ row(t, True) }}{% endfor %}
+    <div class="more">체크를 풀면 보드로 돌아가요 · 최근 {{ done | length }}건만 보여요.
+      더 지난 건 <a href="{{ url_for('work_week', path_key=key) }}">📅 주간 보기</a></div>
+  </div>
+  {% endif %}
 
   {% if derived %}
   <div class="sec-lbl">비서가 모아둔 것</div>
@@ -242,6 +318,10 @@
       <button type="button" onclick="taskDlg.close()">취소</button>
       <button class="go" type="button" onclick="saveTask()">저장</button>
     </div>
+    <button id="dSub" class="sub" type="button" hidden onclick="openNew(editing)">
+      ＋ 이 업무에 하위 업무 추가</button>
+    <button id="dReopen" class="reopen" type="button" hidden onclick="reopenTask()">
+      ↩ 아직 안 끝났어요 — 보드로 되돌리기</button>
     {# 지우기는 실수로 눌리지 않게 아래에 따로, 직접 등록한 업무만 #}
     <button id="dDel" class="del" type="button" hidden onclick="removeTask()">
       🗑️ 이 업무 지우기</button>
@@ -250,6 +330,7 @@
 
 <script>
   var KEY = "{{ key }}";
+  var SUB_READY = {{ 'true' if sub_ready else 'false' }};
   // 동기화(_livesync.html)가 편집 창이 열린 동안엔 다시 그리지 않게
   window.bgBusy = function () { var d = document.getElementById("taskDlg"); return !!(d && d.open); };
 
@@ -262,17 +343,51 @@
   }
 
   // 완료 체크 — 그 자리에서 흐려지고, 새로고침하면 목록에서 빠진다.
+  // 끝낸 업무 목록에서 체크를 풀면 '되돌리기' — 보드로 돌아가야 하니 다시 그린다.
   function doneTask(box) {
-    var row = box.closest(".t");
-    row.classList.toggle("gone", box.checked);
-    post("/" + KEY + "/work/task/" + row.dataset.id + "/done", { done: box.checked })
-      .then(function (d) { if (!d.ok) throw new Error(d.error); })
+    var row = box.closest(".t, .st");
+    var on = box.checked;
+    var inDone = !!row.closest("#doneList");
+    var left = +(row.dataset.subs || 0);
+    if (on && row.classList.contains("t") && left > 0 &&
+        !confirm("하위 업무 " + left + "개가 아직 남았어요.\n같이 끝낸 걸로 할까요?")) {
+      box.checked = false;
+      return;
+    }
+    if (!inDone) row.classList.toggle("gone", on);
+    post("/" + KEY + "/work/task/" + row.dataset.id + "/done", { done: on })
+      .then(function (d) {
+        if (!d.ok) throw new Error(d.error);
+        if (inDone) { location.reload(); return; }
+        if (row.classList.contains("st")) updProg(row);
+      })
       .catch(function () {
-        box.checked = !box.checked;
-        row.classList.toggle("gone", box.checked);
+        box.checked = !on;
+        if (!inDone) row.classList.toggle("gone", !on);
         alert("저장하지 못했어요. 잠시 뒤 다시 눌러주세요.");
       });
   }
+
+  // 하위 하나를 체크하면 상위의 '☑ 1/3' 과 남은 수를 그 자리에서 고친다.
+  function updProg(sub) {
+    var box = sub.closest(".subs");
+    var all = box.querySelectorAll(".st").length;
+    var fin = box.querySelectorAll(".st input:checked").length;
+    var parent = document.getElementById(box.id.replace(/^subs-/, ""));
+    if (!parent) return;
+    parent.dataset.subs = all - fin;
+    var p = parent.querySelector(".prog");
+    if (p) p.textContent = "☑ " + fin + "/" + all;
+  }
+
+  function toggleDone(force) {
+    var box = document.getElementById("doneList");
+    if (!box) return;
+    box.hidden = force === undefined ? !box.hidden : !force;
+    document.getElementById("doneBtn").textContent = box.hidden ? "펼치기" : "접기";
+    try { localStorage.setItem("work.doneOpen", box.hidden ? "" : "1"); } catch (e) {}
+  }
+  try { if (localStorage.getItem("work.doneOpen")) toggleDone(true); } catch (e) {}
 
   // ── 묶음(우선순위/담당자)과 담당자 필터 — 전부 이 자리에서, 다시 안 받는다 ──
   // 주소를 바꾸며 다시 받던 방식은 폰에서 매번 2초씩 멈춰 보였다(2026-09-08).
@@ -302,20 +417,32 @@
     try { localStorage.setItem("work.closed", JSON.stringify(CLOSED)); } catch (e) {}
     render();
   }
+  // 상위 담당뿐 아니라 열린 하위를 맡은 사람도 그 업무를 자기 것으로 본다.
+  function ownersOf(row) {
+    return (row.dataset.owners || "").split("|").filter(function (x) { return x; });
+  }
   function matches(row) {
     if (!WHO) return true;
-    return WHO === "__none" ? !row.dataset.owner : row.dataset.owner === WHO;
+    var os = ownersOf(row);
+    return WHO === "__none" ? !os.length : os.indexOf(WHO) >= 0;
   }
 
   function render() {
     var list = document.getElementById("list");
     var rows = Array.prototype.slice.call(list.querySelectorAll(".t"));
+    // 하위 묶음은 상위 줄을 따라다닌다(묶음이 바뀌어 줄이 옮겨 가도)
+    rows.forEach(function (r) { r._subs = r._subs || document.getElementById("subs-" + r.id); });
     // 묶음 머리는 매번 새로 그린다
     list.querySelectorAll(".grp").forEach(function (g) { g.remove(); });
 
     // 담당자 칩 건수 — 필터와 무관하게 전체 기준
-    var owners = {};
-    rows.forEach(function (r) { var o = r.dataset.owner || "__none"; owners[o] = (owners[o] || 0) + 1; });
+    var owners = {}, heads = {};
+    rows.forEach(function (r) {
+      var os = ownersOf(r);
+      (os.length ? os : ["__none"]).forEach(function (o) { owners[o] = (owners[o] || 0) + 1; });
+      var h = r.dataset.owner || "__none";          // 담당자 묶음은 상위 담당 기준
+      heads[h] = (heads[h] || 0) + 1;
+    });
     document.querySelectorAll("#who button").forEach(function (b) {
       var w = b.dataset.who, n = w ? (owners[w] || 0) : rows.length;
       b.querySelector("b").textContent = n;
@@ -331,10 +458,10 @@
     if (MODE === "pri") {
       groups = PRI.map(function (g) { return { key: g[0], label: g[1], cls: g[0] }; });
     } else {
-      var names = Object.keys(owners).filter(function (k) { return k !== "__none"; })
-        .sort(function (a, b) { return owners[b] - owners[a]; });
+      var names = Object.keys(heads).filter(function (k) { return k !== "__none"; })
+        .sort(function (a, b) { return heads[b] - heads[a]; });
       groups = names.map(function (n) { return { key: "o:" + n, label: "👤 " + n, cls: "" }; });
-      if (owners["__none"]) groups.push({ key: "o:", label: "👤 담당 없음", cls: "" });
+      if (heads["__none"]) groups.push({ key: "o:", label: "👤 담당 없음", cls: "" });
     }
 
     var shown = 0;
@@ -352,10 +479,25 @@
                     '<span class="tw">▼</span>';
       h.onclick = function () { toggleGrp(g.key); };
       list.appendChild(h);
-      mine.forEach(function (r) { r.classList.toggle("hide", closed); list.appendChild(r); });
+      mine.forEach(function (r) {
+        r.classList.toggle("hide", closed);
+        list.appendChild(r);
+        if (r._subs) { r._subs.classList.toggle("hide", closed); list.appendChild(r._subs); }
+      });
     });
     // 어느 묶음에도 안 들어간 줄(필터에 안 맞는 것)은 숨긴다
-    rows.forEach(function (r) { if (!matches(r)) r.classList.add("hide"); });
+    rows.forEach(function (r) {
+      if (matches(r)) return;
+      r.classList.add("hide");
+      if (r._subs) r._subs.classList.add("hide");
+    });
+    // 끝낸 업무도 같은 담당자 필터를 따른다
+    document.querySelectorAll("#doneList .t").forEach(function (r) {
+      var hide = !matches(r);
+      r.classList.toggle("hide", hide);
+      if (r._subs === undefined) r._subs = document.getElementById("subs-" + r.id);
+      if (r._subs) r._subs.classList.toggle("hide", hide);
+    });
     document.getElementById("empty").hidden = shown > 0;
     list.appendChild(document.getElementById("empty"));
     document.getElementById("shown").textContent =
@@ -366,25 +508,44 @@
   // 추가·수정 한 창 — 지금 무엇을 고치는 중인지 기억해 둔다.
   var editing = null;   // null 이면 '추가', 아니면 그 업무의 id
 
-  function openNew() {
+  var parentFor = null;  // 하위 업무를 추가하는 중이면 그 상위 id
+
+  // parent 를 주면 그 업무의 하위 업무로 추가한다.
+  function openNew(parent) {
+    if (parent && !SUB_READY) {
+      alert("하위 업무는 준비가 필요해요.\n관리자가 schema_v14.sql 을 한 번 실행하면 쓸 수 있어요.");
+      return;
+    }
+    var prow = parent ? document.querySelector('#list .t[data-id="' + parent + '"]') : null;
     editing = null;
+    parentFor = parent || null;
     lockSave(false);
-    document.getElementById("dTitle").textContent = "＋ 업무 추가";
-    setField("dContent", ""); setField("dOwner", "");
+    document.getElementById("dTitle").textContent = parent ? "＋ 하위 업무 추가" : "＋ 업무 추가";
+    setField("dContent", "");
+    // 하위는 보통 상위 담당이 이어서 한다 — 미리 채워 두고, 다르면 고친다
+    setField("dOwner", prow ? prow.dataset.owner : "");
     setField("dDue", ""); setField("dMemo", "");
-    document.getElementById("dSrc").hidden = true;
+    var src = document.getElementById("dSrc");
+    src.hidden = !prow;
+    if (prow) src.textContent = "↳ 상위 업무: " + prow.dataset.content;
     document.getElementById("dDel").hidden = true;
-    taskDlg.showModal();
+    document.getElementById("dSub").hidden = true;
+    document.getElementById("dReopen").hidden = true;
+    if (!taskDlg.open) taskDlg.showModal();
     document.getElementById("dContent").focus();
   }
 
   // 줄 아무 데나 누르면 열린다. focus 를 주면 그 칸으로 커서가 간다
   // (칩을 눌렀을 때 바로 그 값을 고칠 수 있게).
   function openEdit(el, focus) {
-    var row = el.closest(".t");
+    var row = el.closest(".t, .st");
     editing = row.dataset.id;
+    parentFor = null;
     lockSave(false);
-    document.getElementById("dTitle").textContent = "업무 수정";
+    var isSub = row.classList.contains("st");
+    var inDone = !!row.closest("#doneList");
+    document.getElementById("dTitle").textContent =
+      isSub ? "하위 업무 수정" : inDone ? "끝낸 업무 수정" : "업무 수정";
     setField("dContent", row.dataset.content);
     setField("dOwner", row.dataset.owner);
     setField("dDue", row.dataset.due);
@@ -400,7 +561,18 @@
         (link ? '<a href="' + link + '">그 회의 화면</a>' : "회의 화면") +
         "에서 지워주세요.";
     }
+    if (isSub) {
+      src.hidden = false;
+      src.textContent = "↳ 상위 업무: " + row.dataset.pcontent;
+    } else if (inDone && !meeting) {
+      src.hidden = false;
+      src.textContent = "✅ " + row.dataset.done + " 에 끝낸 업무예요.";
+    }
     document.getElementById("dDel").hidden = meeting;
+    // 하위의 하위는 없다(한 단계만). 끝낸 업무에는 새 하위를 달지 않는다.
+    document.getElementById("dSub").hidden =
+      !SUB_READY || meeting || isSub || inDone;
+    document.getElementById("dReopen").hidden = !(inDone && !isSub);
 
     taskDlg.showModal();
     var id = { owner: "dOwner", due: "dDue", memo: "dMemo" }[focus] || "dContent";
@@ -429,6 +601,7 @@
     // 빈 값도 그대로 보낸다 — 서버가 '지움'으로 받는다(담당자·기한 비우기).
     var body = { content: content, owner: val("dOwner"),
                  due_date: val("dDue") || null, memo: val("dMemo") };
+    if (!editing && parentFor) body.parent = parentFor;
     var url = editing ? "/" + KEY + "/work/task/" + editing + "/update"
                       : "/" + KEY + "/work/task";
     lockSave(true);
@@ -441,9 +614,23 @@
     });
   }
 
+  function reopenTask() {
+    if (!editing) return;
+    post("/" + KEY + "/work/task/" + editing + "/done", { done: false }).then(function (d) {
+      if (!d.ok) { alert(d.error || "되돌리지 못했어요."); return; }
+      location.reload();
+    }).catch(function () { alert("되돌리지 못했어요. 잠시 뒤 다시 시도해주세요."); });
+  }
+
   function removeTask() {
     if (!editing) return;
-    if (!confirm("이 업무를 지울까요? 되돌릴 수 없어요.")) return;
+    var row = document.querySelector('.t[data-id="' + editing + '"]');
+    var subs = row && row._subs !== undefined ? row._subs
+             : row && document.getElementById("subs-" + row.id);
+    var n = subs ? subs.querySelectorAll(".st").length : 0;
+    var msg = n ? "이 업무와 하위 업무 " + n + "개를 모두 지울까요? 되돌릴 수 없어요."
+                : "이 업무를 지울까요? 되돌릴 수 없어요.";
+    if (!confirm(msg)) return;
     post("/" + KEY + "/work/task/" + editing + "/delete").then(function (d) {
       if (!d.ok) { alert(d.error || "지우지 못했어요."); return; }
       location.reload();

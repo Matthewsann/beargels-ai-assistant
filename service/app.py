@@ -4012,7 +4012,7 @@ def _photo_todo_count() -> int:
 def work_board(path_key):
     """업무 보드 — 관리자 업무를 한자리에서 보고 배정한다."""
     check(path_key)
-    error, tasks, owners, top, derived = None, [], [], [], []
+    error, tasks, owners, top, derived, done = None, [], [], [], [], []
     # 담당자 필터는 화면(JS)이 그 자리에서 건다 — 줄은 전부 내려보낸다.
     # 주소를 바꾸며 다시 받던 방식은 폰에서 매번 2초씩 멈춰 보였다(2026-09-08).
     # ?who= 는 옛 링크·새로고침용 초깃값으로만 쓴다.
@@ -4022,12 +4022,13 @@ def work_board(path_key):
         owners = wk.owner_counts(tasks)
         top = wk.top_priorities(tasks)
         derived = _derived_work()
+        done = wk.done_tasks()          # 끝낸 것도 되돌리고 고칠 수 있게(2026-09-11)
     except Exception as e:  # noqa: BLE001
         error = f"업무를 불러오지 못했어요: {str(e)[:150]}"
     return render_template(
         "work.html", key=path_key, tasks=tasks, owners=owners, top=top, ver=_ver("work"),
-        derived=derived, who=who, total=len(tasks), error=error,
-        inbox=_inbox(),
+        derived=derived, who=who, total=len(tasks), error=error, done=done,
+        sub_ready=wk.subtasks_ready(), inbox=_inbox(),
     )
 
 
@@ -4076,12 +4077,14 @@ def version_of(path_key, topic):
 
 @app.route("/<path_key>/work/task", methods=["POST"])
 def work_task_new(path_key):
-    """업무 등록 — 내용만 있으면 되고 담당자·기한은 나중에 채워도 된다."""
+    """업무 등록 — 내용만 있으면 되고 담당자·기한은 나중에 채워도 된다.
+    parent("w:12")를 주면 그 업무의 하위 업무로 단다."""
     check(path_key)
     d = request.get_json(force=True, silent=True) or {}
     try:
         row = wk.add_task(d.get("content"), owner=d.get("owner"),
-                          due_date=d.get("due_date") or None, memo=d.get("memo"))
+                          due_date=d.get("due_date") or None, memo=d.get("memo"),
+                          parent=d.get("parent") or None)
         return jsonify({"ok": True, "id": f"w:{row['id']}"})
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 200
