@@ -148,3 +148,23 @@ def mark_resolved(row_id: int, by: str = "manual", reason: str = "manual") -> di
     """[처리됨] — 해결. 이후 같은 키가 또 보여도 되살리지 않는다(record 참고)."""
     return _update(row_id, {"status": "resolved", "resolved_at": _now_iso(),
                             "resolved_by": by, "resolve_reason": reason})
+
+
+def resolve_by_key(dedupe_key: str, by: str = "auto", reason: str = "auto") -> dict | None:
+    """문제가 실제로 해소됐을 때 — 열린 줄이 있으면 resolved 로. 없으면 None.
+
+    Phase 3-A(2026-09-11): 고객 요청 [공유 완료]가 부른다. 새 줄을 만들지 않고,
+    이미 닫힌 줄은 건드리지 않는다. 표가 없거나 조회가 실패해도 예외를 올리지
+    않는다 — 해소 기록 실패가 본 작업(공유 완료 표시)을 막으면 안 된다.
+    """
+    try:
+        if not available():
+            return None
+        open_row = next((r for r in _rows_for(dedupe_key)
+                         if r.get("status") in OPEN_STATES), None)
+        if not open_row:
+            return None
+        return mark_resolved(open_row["id"], by=by, reason=reason)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("알림 자동 해소 실패(%s): %s", dedupe_key, str(e)[:120])
+        return None

@@ -2149,6 +2149,17 @@ def requests_shared(path_key):
         keep = sorted(_shared_request_ids() | ids)[-300:]
         db.menu_set_setting(REQUEST_SHARED_KEY, keep)
         _customer_requests.cache_clear()     # 화면이 바로 줄어들게
+        # 공유가 끝났으면 그 요청의 알림도 닫는다(Phase 3-A, 2026-09-11).
+        # 알림 쪽 실패가 공유 완료 표시를 막으면 안 되므로 따로 감싼다.
+        # 화면엔 로그인이 없어 '누가'는 직원웹으로만 남는다.
+        try:
+            for rid in ids:
+                notif.resolve_by_key(f"request.unshared:review:{rid}",
+                                     by="직원웹(공유 완료)", reason="request_shared")
+            _notif_alerts.cache_clear()
+        except Exception as e:  # noqa: BLE001
+            db.log_error("service", f"요청 알림 자동 해소 실패: {e}",
+                         kind=type(e).__name__, path=request.path)
         return jsonify({"ok": True, "count": len(ids)})
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"요청사항 공유 완료 처리 실패: {e}",
