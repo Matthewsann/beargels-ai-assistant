@@ -28,6 +28,11 @@ logger = logging.getLogger(__name__)
 _POLICY = {
     "request.unshared": {"severity": "high", "recipient_type": "role",
                          "recipient_id": "owner", "link": "/review"},
+    # 기한이 **지난** 업무 하나 = 알림 한 줄 (Phase 3-B-2, 2026-09-12). 오늘·내일
+    # 기한(rank 1·2)은 예전 묶음 잔소리에 그대로 두고, 여기엔 rank 0 만 온다 —
+    # 알림 수가 불어나지 않게. 키는 보드가 쓰는 id 그대로 w:<id> / m:<id>.
+    "work.overdue": {"severity": "high", "recipient_type": "role",
+                     "recipient_id": "owner", "link": "/work"},
 }
 
 

@@ -1094,6 +1094,20 @@ def maybe_work_nag() -> None:
             f"기한이 급한 업무가 {len(urgent)}건 있어요 — {tops} "
             f"(업무 보드에서 확인)",
             kind="Notice", source="worker")
+        # Phase 3-B-2 (2026-09-12): 위 묶음은 그대로 두고, **기한이 지난 것(rank 0)**만
+        # 업무 하나 = 알림 한 줄로 notifications 표에 적는다. 내일 또 잡히면 새 줄이
+        # 아니라 횟수만 는다. 업무를 끝내면 work_store.set_done / meeting_store 가 닫는다.
+        # 오늘·내일(rank 1·2)은 넣지 않는다 — 알림 수가 불어나면 진짜 위험이 묻힌다.
+        # 표가 없으면(notifications_ready False) 예전과 똑같이 묶음 한 줄뿐이다.
+        if notifications_ready():
+            for t in urgent:
+                if t["pri"]["rank"] != 0 or not t.get("id"):
+                    continue
+                notify(event_type="work.overdue",
+                       dedupe_key=f"work.overdue:{t['id']}",
+                       title=t["content"][:120],
+                       message=f"{t['pri']['why']} · 담당 {t['owner'] or '없음'}",
+                       source="worker", source_ref=t["id"])
     except Exception as e:  # noqa: BLE001 — 알림 실패가 루프를 막으면 안 된다
         logger.warning("업무 리마인드 판단 실패: %s", str(e)[:120])
 

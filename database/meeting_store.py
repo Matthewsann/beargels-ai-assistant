@@ -234,11 +234,14 @@ def save_tasks(meeting_id, items):
             tid = None
         if tid and tid in old:
             done = bool(it.get("done"))
-            if done != bool(old[tid].get("done")):
+            flipped_done = done != bool(old[tid].get("done"))
+            if flipped_done:
                 row["done"] = done
                 row["done_at"] = _now() if done else None
             client.table(TASKS).update(row).eq("id", tid).execute()
             keep.add(tid)
+            if flipped_done and done:          # 수정 화면에서 체크로 끝낸 것도 닫는다
+                _resolve_overdue_notice(tid)
         else:
             row["meeting_id"] = meeting_id
             row["done"] = bool(it.get("done"))
@@ -260,7 +263,23 @@ def set_task_done(task_id, done=True):
         "done_at": _now() if done else None,
     }).eq("id", task_id).execute().data)
     _touch()
+    if done:
+        _resolve_overdue_notice(task_id)
     return out
+
+
+def _resolve_overdue_notice(task_id) -> None:
+    """끝낸 회의 할 일의 '기한 지남' 알림(work.overdue:m:<id>)을 닫는다 (Phase 3-B-2).
+
+    set_task_done(체크)과 save_tasks(수정 화면) 두 길이 같이 부른다. 완료 처리는
+    이미 끝난 뒤라 여기서 무슨 일이 나도 완료를 무르지 않는다. 되돌리기는 닫힌
+    알림을 되살리지 않는다(Phase 2 규칙).
+    """
+    try:
+        from . import notification_store as ns
+        ns.resolve_by_key(f"work.overdue:m:{task_id}", by="직원웹(완료)", reason="task_done")
+    except Exception:  # noqa: BLE001 — 알림은 부가 기록이다
+        pass
 
 
 def update_task(task_id, **fields):

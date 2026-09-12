@@ -234,7 +234,24 @@ def set_done(task_id, done=True):
         except Exception:  # noqa: BLE001 — 본인 완료 처리는 이미 됐다
             pass
     _touch()
+    if done:
+        _resolve_overdue_notice(task_id)
     return out
+
+
+def _resolve_overdue_notice(task_id) -> None:
+    """끝낸 업무의 '기한 지남' 알림(work.overdue:w:<id>)을 닫는다 (Phase 3-B-2).
+
+    완료 처리는 이미 끝난 뒤라 여기서 무슨 일이 나도 완료를 무르지 않는다.
+    되돌리기(done=False)는 닫힌 알림을 되살리지 않는다 — 다음 잔소리가 다시
+    잡아도 횟수만 는다(Phase 2 규칙). 하위 업무(v14)가 같이 끝나도 하위 알림은
+    아직 만들지 않으므로 여기서 닫을 것도 없다.
+    """
+    try:
+        from . import notification_store as ns
+        ns.resolve_by_key(f"work.overdue:w:{task_id}", by="직원웹(완료)", reason="task_done")
+    except Exception:  # noqa: BLE001 — 알림은 부가 기록이다
+        pass
 
 
 def delete_task(task_id):
