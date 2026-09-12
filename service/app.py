@@ -346,6 +346,42 @@ def _work_top_cached():
         return []
 
 
+@cached(5)      # 홈 '오늘의 운영 판단' — 업무 캐시(5초)와 같은 리듬. 원천별 캐시가 이미
+                # 있어(요청 2분·문제 리뷰 15초) 여기서는 규칙 계산만 더한다.
+def _judgments_cached() -> list[dict]:
+    """오늘의 운영 판단(Phase 3-C-1) — 있는 데이터를 규칙으로 네 칸에 담는다.
+
+    알림을 만들지 않는다(일꾼이 만든다). 여기서는 업무 보드·고객 요청·문제 리뷰를
+    읽어 service/operations_judgment 규칙에 넣을 뿐이다. 어느 원천이 죽어도 나머지
+    판단은 낸다 — 홈이 이것 때문에 죽으면 안 된다.
+    """
+    from database import work_store as _wk
+    from service import operations_judgment as oj
+    g = gather(
+        tasks=_wk.open_tasks,
+        # 창(7일) 안의 전파 안 된 요청 전부 — 기본 20건은 최신순이라 묵은 건이 잘린다.
+        requests=lambda: _customer_requests(limit=200)[0],
+        escalate=lambda: db.count_pending(with_draft=True, escalate=True),
+        tabs=_tab_counts,
+    )
+    try:
+        return oj.get_daily_judgments(
+            tasks=g.get("tasks") or [], requests=g.get("requests") or [],
+            review_counts={"escalate": g.get("escalate") or 0,
+                           "attention": (g.get("tabs") or {}).get("prob") or 0})
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _judgment_groups(judgments) -> list[dict]:
+    """홈이 그릴 모양 — 칸별로 묶고 빈 칸은 뺀다. 판단이 없거나 깨져도 홈은 뜬다."""
+    try:
+        from service import operations_judgment as oj
+        return oj.group(judgments or [])
+    except Exception:  # noqa: BLE001
+        return []
+
+
 @cached(15)
 def _tab_counts() -> dict:
     """리뷰 답글 탭 바(할 일·문제·등록함·전체)의 배지 숫자.
@@ -1003,6 +1039,8 @@ def home(path_key):
             # 이번 주 콘텐츠 — 찍을 것·도착한 소재·제작·발행을 한 화면에
             # (설계 2026-09-04: 지금은 네 화면에 흩어져 있다).
             briefs=_briefs_cached,
+            # 오늘의 운영 판단 — "지금 뭘 처리해야 하나" 네 칸(Phase 3-C-1, 2026-09-12)
+            judgments=_judgments_cached,
         )
         stat = {
             "todo": (g["todo_baemin"] or 0) + (g["todo_coupang"] or 0),
@@ -1028,6 +1066,7 @@ def home(path_key):
         updated=_updated_view(g.get("updated")),
         work_top=g.get("work_top") or [],
         week_content=_week_content(g.get("briefs")),
+        judgments=_judgment_groups(g.get("judgments")),
         ver=_ver("work"),
     )
 

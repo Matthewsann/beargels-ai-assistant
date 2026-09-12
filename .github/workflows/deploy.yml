@@ -131,6 +131,7 @@ jobs:
           upload service/mkt_page.py
           upload service/sales_page.py
           upload service/dashboard_page.py
+          upload service/operations_judgment.py
           upload service/templates/sales.html
           upload service/templates/sales_lock.html
           upload service/menu_images.py

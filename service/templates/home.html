@@ -47,6 +47,25 @@
   .sec-lbl { font-size:12px; color:var(--muted); margin:16px 2px 8px; font-weight:600;
              letter-spacing:.04em; }
 
+  /* 오늘의 운영 판단 — 칸(급함→오늘→확인→지켜보기)마다 왼쪽 띠 색이 다르다.
+     줄 하나가 곧 링크: 누르면 그 일을 처리하는 화면으로 간다. */
+  .judge { display:flex; flex-direction:column; gap:8px; }
+  .jgrp { background:var(--card); border:1px solid var(--line); border-radius:13px;
+          padding:8px 12px 4px; border-left:4px solid var(--line); }
+  .jgrp.urgent { border-left-color:var(--bad); }
+  .jgrp.today  { border-left-color:var(--warn); }
+  .jgrp.check  { border-left-color:#e2b200; }
+  .jgrp.watch  { border-left-color:var(--muted); }
+  .jlbl { font-size:12.5px; font-weight:700; margin-bottom:2px; }
+  .jgrp.urgent .jlbl { color:var(--bad); }
+  .jgrp.today .jlbl { color:var(--warn); }
+  .jitem { display:block; padding:8px 0; border-top:1px solid var(--line);
+           text-decoration:none; color:var(--ink); }
+  .jitem .jt { display:block; font-size:13.5px; word-break:break-word; }
+  .jitem .jr { display:block; font-size:11.5px; color:var(--muted); margin-top:2px; }
+  .jmore { display:block; padding:6px 0 4px; font-size:12px; color:var(--accent);
+           text-decoration:none; text-align:center; border-top:1px solid var(--line); }
+
   /* 언제 기준인가 — 홈은 열 때마다 크롤링하지 않는다(수 분 걸린다).
      탭하면 리뷰 현황(수집 버튼이 있는 화면)으로 간다. */
   .updated { display:inline-flex; align-items:center; gap:5px; margin:-8px 2px 12px;
@@ -149,6 +168,27 @@
 
   {# 알림함 — 어느 구성에서든 알림이 제일 먼저 보인다. 두 저장소 합본, 다섯 화면 공용 #}
   {% include "_inbox.html" %}
+
+  {# 오늘의 운영 판단 — "지금 뭘 처리해야 하나"를 네 칸으로(Phase 3-C-1, 2026-09-12).
+     규칙만(service/operations_judgment.py), AI 없음. 빈 칸은 안 그린다. 줄마다 그 일을
+     처리하는 화면으로 바로 간다(업무 보드의 그 줄·리뷰 현황의 요청 칸·문제 탭). #}
+  {% if judgments %}
+  <div class="sec-lbl">오늘의 운영 판단</div>
+  <div class="judge">
+    {% for gp in judgments %}
+    <div class="jgrp {{ gp.category }}">
+      <div class="jlbl">{{ gp.icon }} {{ gp.label }}</div>
+      {% for j in gp['items'] %}
+      <a class="jitem" href="/{{ key }}{{ j.link }}" data-key="{{ j.dedupe_key }}">
+        <span class="jt">{{ j.title }}</span>
+        <span class="jr">{{ j.reason }}</span>
+      </a>
+      {% endfor %}
+      {% if gp.more %}<a class="jmore" href="/{{ key }}{{ gp.more_link }}">+{{ gp.more }}건 더 →</a>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   <a class="today {{ 'calm' if not stat.todo }}" href="{{ url_for('todo', path_key=key) }}">
     {% if stat.todo %}
