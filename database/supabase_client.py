@@ -12,6 +12,7 @@ Supabase 클라이언트
 import logging
 import os
 import re
+import threading
 from datetime import date, datetime, timedelta
 
 from dotenv import load_dotenv
@@ -41,16 +42,82 @@ _REVIEW_COLS = (
 #    달렸는지는 별도 칼럼 platform_replied 로만 반영한다(아래 save_reviews).
 
 _client: Client | None = None
+_client_lock = threading.Lock()
+
+# HTTP/2 를 끈다 (Phase 3-C-3, 2026-09-12). postgrest-py 는 기본으로 httpx http2=True 라
+# 모든 스레드가 **연결 하나**에 스트림을 다중화한다. PythonAnywhere(프록시 경유)에서
+# 직원 웹이 화면 하나에 조회 15건을 동시에 보내면 그 연결의 읽기가
+# `httpx.ReadError: [Errno 11] Resource temporarily unavailable` 로 터지고, 같은 연결에
+# 걸린 스트림이 **한꺼번에** 실패했다(서버 error.log 09-07~12: 42건, 한 순간에 3개 원천
+# 동시 실패). HTTP/1.1 이면 스레드마다 연결을 따로 써서 한 번의 읽기 오류가 다른
+# 조회로 번지지 않는다. 되돌리려면 .env 에 SUPABASE_HTTP2=1.
+SUPABASE_HTTP2 = os.getenv("SUPABASE_HTTP2", "0") == "1"
+
+
+def _use_http1(client: Client) -> None:
+    """postgrest 세션을 HTTP/1.1 httpx 클라이언트로 바꾼다 — 주소·헤더·타임아웃은 그대로."""
+    try:
+        import httpx
+        old = client.postgrest.session
+        client.postgrest.session = httpx.Client(
+            base_url=old.base_url, headers=dict(old.headers), timeout=old.timeout,
+            follow_redirects=True, http2=False)
+        try:
+            old.close()
+        except Exception:  # noqa: BLE001
+            pass
+        logger.info("supabase postgrest: HTTP/1.1 세션 사용")
+    except Exception as e:  # noqa: BLE001 — 바꾸지 못하면 예전(HTTP/2) 그대로 간다
+        logger.warning("HTTP/1.1 전환 실패(HTTP/2 그대로): %s: %s", type(e).__name__, str(e)[:100])
 
 
 def get_client() -> Client:
-    """Supabase 클라이언트(싱글턴)."""
+    """Supabase 클라이언트(싱글턴). 스레드 여럿이 처음 부를 때 두 개가 생기지 않게 잠근다."""
     global _client
     if _client is None:
-        if not SUPABASE_URL or not SUPABASE_KEY:
-            raise RuntimeError(".env 에 SUPABASE_URL / SUPABASE_KEY 를 설정하세요.")
-        _client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        with _client_lock:
+            if _client is None:
+                if not SUPABASE_URL or not SUPABASE_KEY:
+                    raise RuntimeError(".env 에 SUPABASE_URL / SUPABASE_KEY 를 설정하세요.")
+                c = create_client(SUPABASE_URL, SUPABASE_KEY)
+                if not SUPABASE_HTTP2:
+                    _use_http1(c)
+                _client = c
     return _client
+
+
+# ---------------------------------------------------------------------------
+# 조회 한 번 = run_query 한 번 — 일시적 연결 오류만 1회 재시도, 원인은 로그에 (Phase 3-C-3)
+# ---------------------------------------------------------------------------
+# 예전엔 조회가 터지면 각 함수가 조용히 빈 결과를 줬고, 로그에는 예외 종류도 없었다.
+# 여기서 (원천 이름 · 예외 클래스 · 안전한 메시지)를 남기고, 네트워크가 잠깐 흔들린
+# 것(httpx.TransportError — ReadError·ConnectError·RemoteProtocolError 등)만 한 번 더
+# 시도한다. 서버가 거절한 것(APIError: 표 없음·권한)이나 코드 오류는 재시도하지 않는다.
+# 시간초과(TimeoutException)도 재시도하지 않는다 — 화면 응답 시간이 두 배가 되니까.
+
+def _is_transient(e: Exception) -> bool:
+    try:
+        import httpx
+    except Exception:  # noqa: BLE001
+        return False
+    return isinstance(e, httpx.TransportError) and not isinstance(e, httpx.TimeoutException)
+
+
+def run_query(what: str, fn):
+    """fn() 을 실행한다. 일시적 연결 오류면 1회 재시도. 실패는 예외로 올린다(삼키지 않는다)."""
+    try:
+        return fn()
+    except Exception as e:  # noqa: BLE001
+        if not _is_transient(e):
+            logger.warning("[db] %s 실패 — %s: %s", what, type(e).__name__, str(e)[:120])
+            raise
+        logger.warning("[db] %s 일시 오류 — %s: %s → 1회 재시도",
+                       what, type(e).__name__, str(e)[:120])
+    try:
+        return fn()
+    except Exception as e:  # noqa: BLE001
+        logger.error("[db] %s 재시도도 실패 — %s: %s", what, type(e).__name__, str(e)[:120])
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -900,13 +967,12 @@ def search_reviews(platform=None, rating=None, replied=None, q=None,
 
     try:
         if count_only:                      # 요약용 — 별점만 받아 온다
-            resp = _base("rating").limit(limit).execute()
+            resp = run_query("reviews 검색(요약)", lambda: _base("rating").limit(limit).execute())
             return resp.data or [], (resp.count if resp.count is not None
                                      else len(resp.data or []))
-        resp = (_order_reviews(_base(), sort)
-                .range(offset, offset + limit - 1).execute())
+        resp = run_query("reviews 검색", lambda: (
+            _order_reviews(_base(), sort).range(offset, offset + limit - 1).execute()))
     except Exception:  # noqa: BLE001 — platform_replied 미적용 스키마 대비
-        logger.exception("리뷰 검색 실패")
         if strict:
             raise
         return [], 0
@@ -993,10 +1059,9 @@ def get_attention_reviews(platform=None, mode="all", limit=30, offset=0,
                   .neq("reply_status", "skipped")
                   .not_.is_("platform_replied", "true")
                   .gte("written_date", since))
-        resp = (_order_reviews(q, sort)
-                .range(offset, offset + limit - 1).execute())
+        resp = run_query("reviews 관리 필요", lambda: (
+            _order_reviews(q, sort).range(offset, offset + limit - 1).execute()))
     except Exception:  # noqa: BLE001 — 조회 실패가 화면을 막지 않게
-        logger.exception("관리 필요 리뷰 조회 실패")
         if strict:
             raise
         return [], 0
@@ -1025,9 +1090,8 @@ def _count(q, strict=False) -> int:
             (운영 판단, Phase 3-C-2)만 켠다. 기본은 예전 그대로 0.
     """
     try:
-        return q.limit(1).execute().count or 0
+        return run_query("reviews 건수", lambda: q.limit(1).execute().count) or 0
     except Exception:  # noqa: BLE001 — 숫자 하나 때문에 화면이 죽으면 안 된다
-        logger.exception("건수 조회 실패")
         if strict:
             raise
         return 0

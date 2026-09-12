@@ -21,7 +21,7 @@ import logging
 import time
 from datetime import date, datetime, timedelta, timezone
 
-from .supabase_client import get_client, touch_version
+from .supabase_client import get_client, run_query, touch_version
 
 
 def _touch():
@@ -381,10 +381,13 @@ def open_tasks_checked() -> tuple[list[dict], list[str]]:
 def _work_rows(errors: list | None = None) -> list[dict]:
     """열린 업무 + (하위 업무가 있으면) 끝난 하위까지 — 진행률 '2/3'을 보이려고."""
     try:
-        rows = (get_client().table(TABLE).select("*")
-                .eq("done", False).limit(MAX_OPEN).execute().data) or []
+        # run_query: 일시적 연결 오류(ReadError 등)면 1회 재시도하고 원인을 로그에 남긴다
+        # (Phase 3-C-3). 표가 없다는 답(APIError)은 재시도하지 않는다.
+        rows = run_query("work_tasks 열린 업무", lambda: (
+            get_client().table(TABLE).select("*")
+            .eq("done", False).limit(MAX_OPEN).execute().data)) or []
     except Exception as e:  # noqa: BLE001 — 표가 아직 없어도 보드는 떠야 한다
-        logger.warning("업무 표 조회 실패: %s", str(e)[:120])
+        logger.warning("업무 표 조회 실패: %s: %s", type(e).__name__, str(e)[:120])
         if errors is not None:
             errors.append("업무")
         return []
@@ -442,9 +445,10 @@ def _meeting_rows(errors: list | None = None) -> list[dict]:
     """회의 할 일 — meeting_store 를 거쳐 회의 제목까지 함께 받는다."""
     try:
         from . import meeting_store as mt
-        return mt.open_tasks(limit=MAX_OPEN) or []
+        return run_query("meeting_tasks 열린 할 일",
+                         lambda: mt.open_tasks(limit=MAX_OPEN)) or []
     except Exception as e:  # noqa: BLE001
-        logger.warning("회의 할 일 조회 실패: %s", str(e)[:120])
+        logger.warning("회의 할 일 조회 실패: %s: %s", type(e).__name__, str(e)[:120])
         if errors is not None:
             errors.append("회의 할 일")
         return []

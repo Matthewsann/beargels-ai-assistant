@@ -335,17 +335,6 @@ def _week_content(briefs_rows):
     return [decorate(b) for b in out]
 
 
-@cached(5)      # 홈이 열릴 때마다 업무 두 표를 다 읽지 않게 — 단, 동기화로 다시
-                # 그렸을 때 묵은 답이 나오면 안 되니 짧게(2026-09-09)
-def _work_top_cached():
-    """홈에 실을 '오늘 이것부터' 상위 3개. 업무 보드와 같은 규칙으로 고른다."""
-    try:
-        from database import work_store as _wk
-        return _wk.top_priorities(_wk.open_tasks(), limit=3)
-    except Exception:  # noqa: BLE001 — 홈이 이것 때문에 죽으면 안 된다
-        return []
-
-
 @cached(5)      # 홈 '오늘의 운영 판단' — 업무 캐시(5초)와 같은 리듬. 원천별 캐시가 이미
                 # 있어(요청 2분·문제 리뷰 15초) 여기서는 규칙 계산만 더한다.
 def _judgments_cached() -> list[dict]:
@@ -386,10 +375,17 @@ def _judgments_cached() -> list[dict]:
         v = g.get(k)
         src[k] = oj.source(k, v, ok=v is not None, error="" if v is not None else "gather")
     try:
-        return oj.judge_sources(src)
+        rep = oj.judge_sources(src)
     except Exception as e:  # noqa: BLE001 — 규칙이 깨져도 홈은 떠야 하고, 조용히 '없음'이 되면 안 된다
-        return {"judgments": [], "failed": ["운영 판단"], "complete": False,
-                "warning": f"{oj.WARNING_TEXT} — 운영 판단 계산 실패({type(e).__name__})"}
+        rep = {"judgments": [], "failed": ["운영 판단"], "complete": False,
+               "warning": f"{oj.WARNING_TEXT} — 운영 판단 계산 실패({type(e).__name__})"}
+    # 홈이 같은 원천을 또 읽지 않게(Phase 3-C-3) — '오늘 이것부터'·요청 건수·민감 리뷰
+    # 건수는 여기서 읽은 것을 그대로 쓴다. 한 화면에 같은 표를 두 번 두드리던 것을 없앤다.
+    rep["tasks"] = src["tasks"]["data"] or []
+    rep["tasks_failed"] = not src["tasks"]["ok"]
+    rep["requests"] = src["requests"]["data"] or []
+    rep["escalate"] = src["escalate"]["data"]        # None = 못 셌음
+    return rep
 
 
 def _judgment_groups(report) -> list[dict]:
@@ -1062,13 +1058,11 @@ def home(path_key):
         g = gather(
             todo_baemin=lambda: db.count_pending(with_draft=True, platform="baemin"),
             todo_coupang=lambda: db.count_pending(with_draft=True, platform="coupang"),
-            escalate=lambda: db.count_pending(with_draft=True, escalate=True),
+            # escalate(민감 리뷰 건수)·req_n(전파 안 된 요청)·work_top(오늘 이것부터)은
+            # 운영 판단(judgments)이 이미 읽은 것을 그대로 쓴다 — 예전엔 같은 표를 한
+            # 화면에서 두 번씩 두드렸다(Phase 3-C-3, 2026-09-12 프로덕션 로그 실측).
             oldest=db.oldest_pending_date,
             blog_ready=lambda: blog.count_posts("ready"),
-            # 전파 안 된 고객 요청 — /review 안에만 있으면 아무도 화면을 안
-            # 열었을 때 그대로 묻힌다(2026-08-30 감사). 홈에도 건수를 띄운다.
-            # _customer_requests 는 2분 캐시라 홈에 얹어도 왕복이 늘지 않는다.
-            req_n=lambda: len(_customer_requests()[0]),
             learning=_learning_cached,
             inbox=_inbox,              # 알림함 — 두 저장소 합본(Phase 3-B-1)
             owners=lambda: db.get_setting("home_owners", {}) or {},
@@ -1077,19 +1071,18 @@ def home(path_key):
             # 표가 아직 없으면 gather 가 None 으로 돌려주고 홈은 그대로 뜬다.
             meet_tasks=lambda: mt.open_tasks(limit=6),
             meet_open=mt.open_task_count,
-            # 업무 보드가 고른 '오늘 이것부터' — 홈에는 상위 3개만(2026-08-31).
-            work_top=_work_top_cached,
             # 이번 주 콘텐츠 — 찍을 것·도착한 소재·제작·발행을 한 화면에
             # (설계 2026-09-04: 지금은 네 화면에 흩어져 있다).
             briefs=_briefs_cached,
             # 오늘의 운영 판단 — "지금 뭘 처리해야 하나" 네 칸(Phase 3-C-1, 2026-09-12)
             judgments=_judgments_cached,
         )
+        rep = g.get("judgments") if isinstance(g.get("judgments"), dict) else {}
         stat = {
             "todo": (g["todo_baemin"] or 0) + (g["todo_coupang"] or 0),
             "todo_baemin": g["todo_baemin"] or 0,
             "todo_coupang": g["todo_coupang"] or 0,
-            "escalate": g["escalate"] or 0,
+            "escalate": rep.get("escalate") or 0,
         }
         oldest = g["oldest"]
         stat["oldest_days"] = (
@@ -1099,15 +1092,20 @@ def home(path_key):
         owners = g["owners"] or {}
     except Exception as e:  # noqa: BLE001
         error = f"현황을 불러오지 못했어요: {str(e)[:150]}"
-        g = {}
+        g, rep = {}, {}
+    # '오늘 이것부터' — 업무 보드와 같은 규칙(top_priorities), 원천은 판단과 공유.
+    # 업무 표를 못 읽었으면 빈 카드 대신 그 말을 한다(Phase 3-C-2 의 남은 구멍).
+    from database import work_store as _wk
+    work_top = _wk.top_priorities(rep.get("tasks") or [], limit=3)
+    work_top_warn = "업무 데이터를 불러오지 못했어요 — 업무 보드에서 확인해 주세요"         if rep.get("tasks_failed") else ""
     return render_template(
         "home.html", key=path_key, stat=stat, greet=greet, today=today,
-        req_n=g.get("req_n") or 0,
+        req_n=len(rep.get("requests") or []),
         blog_ready=blog_ready, owners=owners,
         learning=g.get("learning"), error=error, inbox=g.get("inbox") or [],
         meet_tasks=g.get("meet_tasks") or [], meet_open=g.get("meet_open") or 0,
         updated=_updated_view(g.get("updated")),
-        work_top=g.get("work_top") or [],
+        work_top=work_top, work_top_warn=work_top_warn,
         week_content=_week_content(g.get("briefs")),
         judgments=_judgment_groups(g.get("judgments")),
         judge_warning=_judgment_warning(g.get("judgments")),

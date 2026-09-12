@@ -92,6 +92,7 @@
            font-variant-numeric:tabular-nums; }
   .mtask .due.late { color:var(--bad); font-weight:700; }
   .mtask.gone { opacity:.45; }
+  .mtask.mtwarn { color:var(--warn); font-size:12.5px; }
   .mtask.gone .tx { text-decoration:line-through; }
   .mtmore { display:block; text-align:center; font-size:12px; color:var(--accent);
             text-decoration:none; padding:9px 0 10px; }
@@ -217,8 +218,10 @@
 
   {# 업무 보드가 고른 '오늘 이것부터' — 회의 할 일과 직접 등록 업무를 함께 본다
      (2026-08-31). 완료 체크·담당자 지정 같은 손대는 일은 보드에서 한다. #}
-  {% if work_top %}
+  {% if work_top or work_top_warn %}
   <a class="mtasks" href="{{ url_for('work_board', path_key=key) }}">
+    {# 업무 표를 못 읽었으면 말한다(Phase 3-C-3) — 빈 카드가 '급한 일 없음'으로 보이면 안 된다 #}
+    {% if work_top_warn %}<div class="mtask mtwarn">⚠️ {{ work_top_warn }}</div>{% endif %}
     {% for t in work_top %}
     <div class="mtask">
       <span class="wpri {{ t.pri.level }}">{{ loop.index }}</span>
