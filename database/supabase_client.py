@@ -845,8 +845,10 @@ def _search_filter(q):
 def search_reviews(platform=None, rating=None, replied=None, q=None,
                    limit=50, offset=0, sort="new", days=None, kind=None,
                    rating_max=None, source=None, count_only=False,
-                   pending_only=False, has_draft=None):
+                   pending_only=False, has_draft=None, strict=False):
     """수집된 **모든** 리뷰를 조건으로 찾는다 — 전체 리뷰 관리 화면용.
+
+    strict=True 면 조회 실패를 예외로 올린다(기본은 예전처럼 빈 결과) — Phase 3-C-2.
 
     Args:
         platform: 'baemin' | 'coupang' | None(전체)
@@ -905,6 +907,8 @@ def search_reviews(platform=None, rating=None, replied=None, q=None,
                 .range(offset, offset + limit - 1).execute())
     except Exception:  # noqa: BLE001 — platform_replied 미적용 스키마 대비
         logger.exception("리뷰 검색 실패")
+        if strict:
+            raise
         return [], 0
     return resp.data or [], (resp.count if resp.count is not None
                              else len(resp.data or []))
@@ -952,12 +956,14 @@ ATTENTION_WINDOW_DAYS = int(os.getenv("REPLY_EDIT_DAYS", "30"))
 
 
 def get_attention_reviews(platform=None, mode="all", limit=30, offset=0,
-                          sort="new", days=None, replied=None, select="*"):
+                          sort="new", days=None, replied=None, select="*",
+                          strict=False):
     """별점 5점 미만 + CS(불만·민감) 리뷰만 모아 본다 — 관리 필요 화면용.
 
     Args:
         mode: 'all'(둘 다) | 'low'(별점 5점 미만만) | 'cs'(CS 유형만)
         select: 배지에서 건수만 셀 때는 "id" 로 좁혀 payload 를 줄인다.
+        strict: True 면 조회 실패를 예외로 올린다(기본은 예전처럼 빈 결과).
     Returns: (행 목록, 조건에 맞는 전체 건수)
     """
     try:
@@ -991,6 +997,8 @@ def get_attention_reviews(platform=None, mode="all", limit=30, offset=0,
                 .range(offset, offset + limit - 1).execute())
     except Exception:  # noqa: BLE001 — 조회 실패가 화면을 막지 않게
         logger.exception("관리 필요 리뷰 조회 실패")
+        if strict:
+            raise
         return [], 0
     return resp.data or [], (resp.count if resp.count is not None
                              else len(resp.data or []))
@@ -1010,20 +1018,27 @@ def _pending_base(select="id"):
             .or_("platform_replied.is.null,platform_replied.eq.false"))
 
 
-def _count(q) -> int:
-    """조건에 맞는 건수만 받아온다(행은 안 받는다)."""
+def _count(q, strict=False) -> int:
+    """조건에 맞는 건수만 받아온다(행은 안 받는다).
+
+    strict: True 면 실패를 예외로 올린다 — '0건'과 '못 셌음'을 구분해야 하는 쪽
+            (운영 판단, Phase 3-C-2)만 켠다. 기본은 예전 그대로 0.
+    """
     try:
         return q.limit(1).execute().count or 0
     except Exception:  # noqa: BLE001 — 숫자 하나 때문에 화면이 죽으면 안 된다
         logger.exception("건수 조회 실패")
+        if strict:
+            raise
         return 0
 
 
-def count_pending(with_draft=None, platform=None, escalate=False) -> int:
+def count_pending(with_draft=None, platform=None, escalate=False, strict=False) -> int:
     """등록해야 할 리뷰 건수.
 
     with_draft: True=초안 있는 것만, False=초안 없는 것만, None=전체
     escalate:   True=사장님이 직접 대응할 민감 리뷰만
+    strict:     True=조회 실패를 예외로(기본 False=0 으로 삼킴)
     """
     q = _pending_base()
     if platform:
@@ -1034,7 +1049,7 @@ def count_pending(with_draft=None, platform=None, escalate=False) -> int:
         q = q.is_("reply_draft", "null")
     if escalate:
         q = q.or_("kind.eq.escalate,reply_draft.like.⚠️%")
-    return _count(q)
+    return _count(q, strict=strict)
 
 
 def count_by_status(status) -> int:

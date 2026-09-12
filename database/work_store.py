@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+import logging
 import time
 from datetime import date, datetime, timedelta, timezone
 
@@ -26,6 +27,8 @@ from .supabase_client import get_client, touch_version
 def _touch():
     """쓰기 뒤 '업무가 바뀌었다' 표식 — 열려 있는 화면들이 이걸 보고 다시 그린다."""
     touch_version("work")
+
+logger = logging.getLogger(__name__)
 
 TABLE = "work_tasks"
 
@@ -336,19 +339,22 @@ def dday_label(due, ref=None) -> str:
 # 조회 — 두 곳을 읽어 합친다
 # ---------------------------------------------------------------------------
 
-def open_tasks() -> list[dict]:
+def open_tasks(errors: list | None = None) -> list[dict]:
     """안 끝난 관리자 업무 전부(우선순위순).
 
     각 행: id(문자열 "w:12"/"m:34") · source("work"|"meeting") · content ·
            owner · due_date · created_at · memo · 출처 표시용 meeting_* ·
            pri(우선순위 dict) · dday
     회의 할 일까지 합치므로, 보드 한 곳에서 담당자·기한을 다 볼 수 있다.
+
+    errors: 넘기면 조회에 실패한 원천 이름("업무"/"회의 할 일")을 여기에 적는다.
+            안 넘기면 예전 그대로 — 실패한 원천은 조용히 빈 목록(보드는 떠야 하니까).
     """
     ref = today()
     out = []
-    for r in _work_rows():
+    for r in _work_rows(errors):
         out.append(_view(r, "work", ref))
-    for r in _meeting_rows():
+    for r in _meeting_rows(errors):
         out.append(_view(r, "meeting", ref))
     # 하위 업무는 상위 밑으로 들어간다(t["subs"]). 끝난 상위는 여기서 뺀다 —
     # 끝난 하위를 진행률로 보이려고 같이 읽어 왔을 뿐이다.
@@ -362,12 +368,25 @@ def open_tasks() -> list[dict]:
     return out
 
 
-def _work_rows() -> list[dict]:
+def open_tasks_checked() -> tuple[list[dict], list[str]]:
+    """open_tasks 와 같되, **못 읽은 원천을 함께** 돌려준다 (Phase 3-C-2, 2026-09-12).
+
+    Returns: (업무 목록, 실패한 원천 이름들). 실패가 비어 있어야 '업무 없음'을 믿을 수 있다.
+    '빈 목록'과 '조회 실패'가 같아 보이면 운영 판단이 "할 일 없음"이라고 거짓말을 한다.
+    """
+    errors: list[str] = []
+    return open_tasks(errors), errors
+
+
+def _work_rows(errors: list | None = None) -> list[dict]:
     """열린 업무 + (하위 업무가 있으면) 끝난 하위까지 — 진행률 '2/3'을 보이려고."""
     try:
         rows = (get_client().table(TABLE).select("*")
                 .eq("done", False).limit(MAX_OPEN).execute().data) or []
-    except Exception:  # noqa: BLE001 — 표가 아직 없어도 보드는 떠야 한다
+    except Exception as e:  # noqa: BLE001 — 표가 아직 없어도 보드는 떠야 한다
+        logger.warning("업무 표 조회 실패: %s", str(e)[:120])
+        if errors is not None:
+            errors.append("업무")
         return []
     # 끝난 하위는 **열린 상위의 것만** — 전부 읽으면 쌓일수록 무거워진다.
     tops = [r["id"] for r in rows if not r.get("parent_id")]
@@ -419,12 +438,15 @@ def done_tasks(limit: int = MAX_DONE) -> list[dict]:
     return out[:limit]
 
 
-def _meeting_rows() -> list[dict]:
+def _meeting_rows(errors: list | None = None) -> list[dict]:
     """회의 할 일 — meeting_store 를 거쳐 회의 제목까지 함께 받는다."""
     try:
         from . import meeting_store as mt
         return mt.open_tasks(limit=MAX_OPEN) or []
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        logger.warning("회의 할 일 조회 실패: %s", str(e)[:120])
+        if errors is not None:
+            errors.append("회의 할 일")
         return []
 
 

@@ -180,6 +180,58 @@ def get_daily_judgments(tasks=None, requests=None, review_counts=None, today=Non
     return out
 
 
+# ── 원천 상태 — '없음'과 '못 읽음'을 구분한다 (Phase 3-C-2, 2026-09-12) ──────────
+#
+# 원천 함수들은 조회가 실패해도 조용히 빈 목록·0 을 돌려준다(화면이 죽지 않게).
+# 판단 엔진이 그걸 그대로 믿으면 "할 일 없음"이라는 거짓 판단이 된다. 그래서
+# 판단에 넣기 전에 원천마다 ok/실패를 붙이고, 하나라도 실패하면 화면에 말한다.
+
+#: 원천 이름 → 화면에 보일 말. 판단 원천이 늘면 여기에 한 줄.
+SOURCE_LABELS = {
+    "tasks": "업무 보드", "requests": "고객 요청",
+    "escalate": "민감 리뷰 건수", "attention": "문제 리뷰 건수",
+}
+WARNING_TEXT = "일부 운영 데이터를 불러오지 못했습니다. 확인이 필요합니다."
+
+
+def source(name, data=None, ok=True, error="", detail=False):
+    """원천 결과 하나 — {"name", "ok", "data", "error"}. ok=False 면 data 는 부분값이거나 None.
+
+    error: 로그용 짧은 문구. detail=True 면 사람이 읽을 꼬리표라 화면에도 붙는다
+           (예: "회의 할 일" — 업무 보드 중 그 부분만 실패).
+    """
+    return {"name": name, "ok": bool(ok), "data": data,
+            "error": str(error or "")[:120], "detail": bool(detail)}
+
+
+def judge_sources(sources: dict, today=None) -> dict:
+    """원천 결과 묶음 → {"judgments", "failed", "warning", "complete"}.
+
+    sources: {"tasks": source(...), "requests": source(...), "escalate": source(...),
+              "attention": source(...)} — 빠진 열쇠는 '못 읽음'으로 본다.
+    실패한 원천의 data 가 부분값(예: 업무는 읽고 회의 할 일만 실패)이면 그 부분은
+    판단에 쓴다 — 건강한 쪽의 판단까지 버리지 않는다. 단 warning 은 반드시 붙는다.
+    """
+    def get(k):
+        s = (sources or {}).get(k)
+        return s if s else source(k, None, ok=False, error="missing")
+    t, r, e, a = get("tasks"), get("requests"), get("escalate"), get("attention")
+    judgments = get_daily_judgments(
+        tasks=t["data"] or [], requests=r["data"] or [],
+        review_counts={"escalate": e["data"] or 0, "attention": a["data"] or 0},
+        today=today)
+    failed = []
+    for k, s in (("tasks", t), ("requests", r), ("escalate", e), ("attention", a)):
+        if not s["ok"]:
+            label = SOURCE_LABELS.get(k, k)
+            # error 는 사람 말로 된 짧은 꼬리표만(예: 업무 보드 중 "회의 할 일"만 실패).
+            # 예외 문구는 로그에 있다 — 홈에는 안 싣는다.
+            failed.append(f"{label}: {s['error']}" if s.get("detail") else label)
+    warning = f"{WARNING_TEXT} — {', '.join(failed)}" if failed else ""
+    return {"judgments": judgments, "failed": failed, "warning": warning,
+            "complete": not failed}
+
+
 def group(judgments, per=SHOW_PER_CATEGORY):
     """화면용 — 칸별로 묶고 빈 칸은 뺀다. 각 칸은 per 줄까지, 나머지는 more 로."""
     box = {c: [] for c, _, _, _ in CATEGORIES}

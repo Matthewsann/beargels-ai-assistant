@@ -357,29 +357,54 @@ def _judgments_cached() -> list[dict]:
     """
     from database import work_store as _wk
     from service import operations_judgment as oj
+    # Phase 3-C-2 (2026-09-12): 원천마다 '못 읽음'을 드러내는 길로 부른다. 원천 함수들은
+    # 기본값에서 실패를 삼키고 빈 결과를 주는데(화면이 죽지 않게), 판단이 그걸 믿으면
+    # "할 일 없음"이라는 거짓말이 된다. strict/checked 는 이 호출에만 켠다 — 다른
+    # 화면은 예전 그대로다. gather 는 예외·시간초과를 None 으로 준다 = 실패.
     g = gather(
-        tasks=_wk.open_tasks,
+        tasks=_wk.open_tasks_checked,
         # 창(7일) 안의 전파 안 된 요청 전부 — 기본 20건은 최신순이라 묵은 건이 잘린다.
-        requests=lambda: _customer_requests(limit=200)[0],
-        escalate=lambda: db.count_pending(with_draft=True, escalate=True),
-        tabs=_tab_counts,
+        requests=lambda: _customer_requests_checked(limit=200),
+        escalate=lambda: db.count_pending(with_draft=True, escalate=True, strict=True),
+        attention=lambda: db.get_attention_reviews(replied=False, limit=1, select="id",
+                                                   strict=True)[1],
     )
+    src = {}
+    t = g.get("tasks")
+    if t is None:
+        src["tasks"] = oj.source("tasks", None, ok=False, error="gather")
+    else:
+        tasks, errs = t
+        src["tasks"] = oj.source("tasks", tasks, ok=not errs, error="·".join(errs), detail=True)
+    r = g.get("requests")
+    if r is None:
+        src["requests"] = oj.source("requests", None, ok=False, error="gather")
+    else:
+        items, _more, err = r
+        src["requests"] = oj.source("requests", items, ok=not err, error=err)
+    for k in ("escalate", "attention"):
+        v = g.get(k)
+        src[k] = oj.source(k, v, ok=v is not None, error="" if v is not None else "gather")
     try:
-        return oj.get_daily_judgments(
-            tasks=g.get("tasks") or [], requests=g.get("requests") or [],
-            review_counts={"escalate": g.get("escalate") or 0,
-                           "attention": (g.get("tabs") or {}).get("prob") or 0})
-    except Exception:  # noqa: BLE001
-        return []
+        return oj.judge_sources(src)
+    except Exception as e:  # noqa: BLE001 — 규칙이 깨져도 홈은 떠야 하고, 조용히 '없음'이 되면 안 된다
+        return {"judgments": [], "failed": ["운영 판단"], "complete": False,
+                "warning": f"{oj.WARNING_TEXT} — 운영 판단 계산 실패({type(e).__name__})"}
 
 
-def _judgment_groups(judgments) -> list[dict]:
+def _judgment_groups(report) -> list[dict]:
     """홈이 그릴 모양 — 칸별로 묶고 빈 칸은 뺀다. 판단이 없거나 깨져도 홈은 뜬다."""
     try:
         from service import operations_judgment as oj
-        return oj.group(judgments or [])
+        rows = report.get("judgments") if isinstance(report, dict) else report
+        return oj.group(rows or [])
     except Exception:  # noqa: BLE001
         return []
+
+
+def _judgment_warning(report) -> str:
+    """원천을 못 읽었으면 그 말 한 줄. 없으면 빈 문자열."""
+    return (report.get("warning") or "") if isinstance(report, dict) else ""
 
 
 @cached(15)
@@ -799,8 +824,14 @@ def _shared_request_ids() -> set:
 
 
 @cached(120)
-def _customer_requests(limit=20):
-    """최근 리뷰에서 고객 요청사항만 골라낸다(AI 없이 규칙으로).
+def _customer_requests_checked(limit=20):
+    """_customer_requests 의 본체 — (항목, 잘린 건수, 실패 문구) 세 값 (Phase 3-C-2).
+
+    세 번째 값이 비어 있어야 '요청 없음'을 믿을 수 있다. 리뷰 검색이 실패하면 문구가
+    붙고 항목은 빈 목록이다 — 운영 판단은 그걸 '못 읽음'으로 보고, 현황 화면(예전
+    모양 _customer_requests)은 예전처럼 빈 칸으로 그린다.
+
+    최근 리뷰에서 고객 요청사항만 골라낸다(AI 없이 규칙으로).
 
     공유를 끝낸 건은 빼고 준다 — 단톡방에 이미 올린 이야기가 계속 남아 있으면
     무엇이 새것인지 알 수 없다(사장님 요청 2026-08-28).
@@ -813,7 +844,8 @@ def _customer_requests(limit=20):
         #    작성일로만 자르면 늦게 수집된 리뷰(예: 전체 백필)는 화면에 한
         #    번도 못 뜨고 사라진다. 그래서 조회는 넉넉히(30일) 가져와 여기서
         #    거른다 — 공유 완료가 정상 퇴장이고, 창 만료는 어쩔 수 없을 때만.
-        rows, _ = db.search_reviews(days=30, limit=300, sort="new")
+        # strict: 검색 실패를 빈 결과가 아니라 예외로 — 아래서 '못 읽음'이 된다.
+        rows, _ = db.search_reviews(days=30, limit=300, sort="new", strict=True)
         done = _shared_request_ids()
         cut = (datetime.now(KST) - timedelta(days=REQUEST_DAYS)) \
             .strftime("%Y-%m-%d")
@@ -822,12 +854,23 @@ def _customer_requests(limit=20):
                  and max(i.get("date") or "", i.get("collected") or "") >= cut]
         # 잘라냈으면 몇 건이 더 있는지 함께 준다 — 조용히 자르면 화면 숫자만
         # 믿고 '다 봤다'고 오해한다.
-        return items[:limit], max(0, len(items) - limit)
+        return items[:limit], max(0, len(items) - limit), ""
     except Exception as e:  # noqa: BLE001 — 이 칸 때문에 현황 화면이 죽으면 안 된다
         db.log_error("service", f"고객 요청사항 추출 실패: {e}",
                      kind=type(e).__name__, path="_customer_requests",
                      detail=traceback.format_exc())
-        return [], 0
+        return [], 0, f"조회 실패({type(e).__name__})"
+
+
+def _customer_requests(limit=20):
+    """예전 모양 (항목, 잘린 건수) — 실패는 예전처럼 빈 결과. 실패 여부까지 필요한 쪽
+    (운영 판단)은 _customer_requests_checked 를 쓴다. 캐시는 본체에 있다."""
+    items, more, _err = _customer_requests_checked(limit=limit)
+    return items, more
+
+
+# 예전 이름으로 비워도 같은 캐시가 비워진다(공유 완료 뒤 등).
+_customer_requests.cache_clear = _customer_requests_checked.cache_clear
 
 
 PLATFORM_REVIEW_URL = {
@@ -1067,6 +1110,7 @@ def home(path_key):
         work_top=g.get("work_top") or [],
         week_content=_week_content(g.get("briefs")),
         judgments=_judgment_groups(g.get("judgments")),
+        judge_warning=_judgment_warning(g.get("judgments")),
         ver=_ver("work"),
     )
 
