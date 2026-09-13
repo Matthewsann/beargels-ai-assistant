@@ -216,6 +216,8 @@ def test_care_page_renders_alerts(svc, monkeypatch):
     monkeypatch.setattr(m.db, "get_errors", lambda only_unfixed=True, limit=100: [
         {"id": 7, "kind": "Notice", "at": "2026-09-10T01:00:00+00:00",
          "message": "장부 자동 반영 실패 — 구글 로그인이 막혀 있어요."}])
+    # 알림함은 두 저장소 합본(5칸) — 실DB notifications 가 채우면 이 줄이 밀린다(2026-09-13 실측)
+    monkeypatch.setattr(m, "_notif_alerts", lambda *a, **k: [])
     m._owner_alerts.cache_clear()
 
     html = m.app.test_client().get(f"/{KEY}/care").get_data(as_text=True)

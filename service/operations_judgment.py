@@ -18,6 +18,16 @@
 
 입력은 화면(app.py)이 이미 읽어 둔 것을 넘긴다 — 여기서 supabase 를 새로 두드리지
 않는다. 업무만 안 넘기면 work_store.open_tasks() 로 직접 읽는다.
+
+판단 → 실행 → 완료 (Phase 3-D, 2026-09-13) — 감사 결과 판단 종류마다 이미 실행 대상이 있다:
+  A. 기존 업무가 곧 실행 대상: work.overdue / work.today / work.unassigned / work.stale
+     → task_ref(w:<id>|m:<id>) 로 그 업무를 가리키고, 완료는 기존 완료 체크(set_done)
+       그대로. 끝내면 판단은 사라지고 work.overdue 알림은 기존 훅이 닫는다.
+  B. 기존 행동 화면이 실행 대상: request.unshared → 리뷰 현황 [복사]→[공유 완료]
+     (완료 = request_shared), review.escalate/attention → 답글 등록(완료 = 리뷰 상태).
+  C. 정보성: watch(오래된 업무) — 기한을 정하거나 정리, 보드에서.
+  D. 새 업무 모델이 필요한 것: 없음. 그래서 **판단이 업무를 만들지 않는다** —
+     같은 문제에 두 번째 업무가 생기면 완료 기준이 둘로 갈라진다.
 """
 
 from datetime import date, datetime, timedelta
@@ -36,6 +46,19 @@ REQUEST_STALE_DAYS = 3
 
 #: 한 칸에 몇 줄까지 그리나 — 사장님이 10초 안에 읽어야 한다. 나머지는 "+N건" 링크.
 SHOW_PER_CATEGORY = 4
+
+#: 판단 종류 → 실행 방법 (Phase 3-D). kind 가 "task" 면 홈에서 바로 완료 체크할 수 있고
+#: (task_ref 로 기존 업무를 가리킨다), 나머지는 그 화면으로 가서 기존 동작을 한다.
+#: done_by 는 '무엇이 완료의 근거인가' — 판단이 아니라 원천 상태가 진실이다.
+ACTIONS = {
+    "work.overdue":    {"label": "업무 처리", "kind": "task",   "done_by": "업무 완료 체크"},
+    "work.today":      {"label": "업무 처리", "kind": "task",   "done_by": "업무 완료 체크"},
+    "work.unassigned": {"label": "담당자 정하기", "kind": "assign", "done_by": "담당자 지정(보드)"},
+    "work.stale":      {"label": "기한 정하기", "kind": "due",    "done_by": "기한 지정 또는 완료(보드)"},
+    "request.unshared": {"label": "공유 처리", "kind": "share", "done_by": "리뷰 현황 [공유 완료] (request_shared)"},
+    "review.escalate": {"label": "답글 처리", "kind": "reply",  "done_by": "답글 등록(리뷰 상태)"},
+    "review.attention": {"label": "답글 처리", "kind": "reply", "done_by": "답글 등록(리뷰 상태)"},
+}
 
 
 def _today():
@@ -61,6 +84,8 @@ def _anchor(task_id: str) -> str:
 
 def _item(category, title, reason, source_type, source_id, link, dedupe_key,
           has_notification=False, sort=()):
+    # 열쇠의 첫 토막이 판단 종류다: work.overdue:w:39 → work.overdue, review.escalate → 그대로
+    act = ACTIONS.get(str(dedupe_key).split(":")[0], {})
     return {
         "category": category,
         "priority": PRIORITY[category],
@@ -73,6 +98,11 @@ def _item(category, title, reason, source_type, source_id, link, dedupe_key,
         # 일꾼이 같은 열쇠로 notifications 표에 줄을 적는 종류인가. True 면 알림함의
         # 그 줄과 같은 문제다 — 여기서 또 만들지 않는다.
         "has_notification": has_notification,
+        # 실행 경로(Phase 3-D): 업무 판단은 기존 업무(task_ref)를 가리킨다 — 새 업무를 만들지 않는다.
+        "action": act.get("label", "확인하기"),
+        "action_kind": act.get("kind", "open"),
+        "done_by": act.get("done_by", ""),
+        "task_ref": source_id if source_type == "work" else None,
         "_sort": tuple(sort),
     }
 

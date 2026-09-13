@@ -403,6 +403,16 @@ def _judgment_warning(report) -> str:
     return (report.get("warning") or "") if isinstance(report, dict) else ""
 
 
+def _after_task_change() -> None:
+    """업무를 끝내거나 고친 뒤 — 홈 판단(5초)·알림함(15초) 캐시를 비워 다음 화면이 바로
+    맞게 한다(Phase 3-D). 캐시가 없으면 조용히 넘어간다."""
+    for fn in (_judgments_cached, _notif_alerts):
+        try:
+            fn.cache_clear()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 @cached(15)
 def _tab_counts() -> dict:
     """리뷰 답글 탭 바(할 일·문제·등록함·전체)의 배지 숫자.
@@ -2303,6 +2313,7 @@ def requests_shared(path_key):
                 notif.resolve_by_key(f"request.unshared:review:{rid}",
                                      by="직원웹(공유 완료)", reason="request_shared")
             _notif_alerts.cache_clear()
+            _judgments_cached.cache_clear()      # 홈 판단의 '고객 요청 미전파' 줄도 바로
         except Exception as e:  # noqa: BLE001
             db.log_error("service", f"요청 알림 자동 해소 실패: {e}",
                          kind=type(e).__name__, path=request.path)
@@ -4057,6 +4068,7 @@ def meeting_task_done(path_key, tid):
     done = bool(data.get("done", True))
     try:
         mt.set_task_done(tid, done)
+        _after_task_change()
         return jsonify({"ok": True, "done": done})
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"회의 할일 체크 실패(#{tid}): {e}",
@@ -4263,6 +4275,7 @@ def work_task_update(path_key, task_id):
             wk.update_task(tid, **fields)
         else:
             mt.update_task(tid, **fields)
+        _after_task_change()        # 담당자·기한이 바뀌면 '담당 없음'·'오래됨' 판단도 바로
         return jsonify({"ok": True})
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"업무 수정 실패({task_id}): {e}",
@@ -4284,6 +4297,9 @@ def work_task_done(path_key, task_id):
             wk.set_done(tid, done)
         else:
             mt.set_task_done(tid, done)
+        # 홈 '오늘의 운영 판단'이 바로 줄어들게, 자동 해소된 알림도 알림함에서 바로 빠지게
+        # (Phase 3-D). 완료 자체는 이미 끝났다 — 캐시 비우기는 부가 동작.
+        _after_task_change()
         return jsonify({"ok": True})
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"업무 완료 처리 실패({task_id}): {e}",

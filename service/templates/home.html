@@ -67,6 +67,13 @@
            text-decoration:none; text-align:center; border-top:1px solid var(--line); }
   .jwarn { font-size:12.5px; color:var(--warn); background:var(--warn-bg); border-radius:10px;
            padding:8px 12px; margin-bottom:8px; }
+  /* 실행 경로 — 어디서 무엇을 하면 끝나는지. 업무면 그 자리에서 완료 체크 */
+  .jact { display:flex; align-items:center; gap:8px; margin-top:5px; }
+  .jgo { font-size:11.5px; color:var(--accent); font-weight:600; }
+  .jdone { margin-left:auto; border:1px solid var(--line); background:var(--card); color:var(--ok);
+           border-radius:8px; padding:3px 10px; font-size:12px; font-family:inherit; cursor:pointer; }
+  .jitem.gone { opacity:.45; }
+  .jitem.gone .jt { text-decoration:line-through; }
 
   /* 언제 기준인가 — 홈은 열 때마다 크롤링하지 않는다(수 분 걸린다).
      탭하면 리뷰 현황(수집 버튼이 있는 화면)으로 간다. */
@@ -186,9 +193,19 @@
     <div class="jgrp {{ gp.category }}">
       <div class="jlbl">{{ gp.icon }} {{ gp.label }}</div>
       {% for j in gp['items'] %}
-      <a class="jitem" href="/{{ key }}{{ j.link }}" data-key="{{ j.dedupe_key }}">
+      {# 줄 = 그 일을 처리하는 화면 링크. 업무 판단은 기존 업무 그대로라(task_ref) 여기서
+         바로 완료 체크할 수 있다 — 새 업무를 만들지 않는다(Phase 3-D). 완료는 보드와 같은
+         /work/task/<id>/done 이고, 끝내면 work.overdue 알림은 기존 훅이 닫는다. #}
+      <a class="jitem" href="/{{ key }}{{ j.link }}" data-key="{{ j.dedupe_key }}"
+         {% if j.task_ref %}data-task="{{ j.task_ref }}"{% endif %}>
         <span class="jt">{{ j.title }}</span>
         <span class="jr">{{ j.reason }}</span>
+        <span class="jact">
+          <span class="jgo">{{ j.action }} →</span>
+          {% if j.action_kind == 'task' %}
+          <button class="jdone" type="button" onclick="judgeDone(event, this)">✓ 완료</button>
+          {% endif %}
+        </span>
       </a>
       {% endfor %}
       {% if gp.more %}<a class="jmore" href="/{{ key }}{{ gp.more_link }}">+{{ gp.more }}건 더 →</a>{% endif %}
@@ -408,6 +425,27 @@
           '<div class="note">실패: ' + wcEsc(e.message) + "</div>";
         btn.disabled = false; btn.textContent = label;
       });
+  }
+
+  // 운영 판단의 업무 줄 [✓ 완료] — 보드와 같은 완료 처리(/work/task/<id>/done). 링크 안의
+  // 버튼이라 페이지 이동을 막는다. 성공하면 줄을 흐리게 남긴다(새로고침하면 사라진다).
+  function judgeDone(ev, btn) {
+    ev.preventDefault(); ev.stopPropagation();
+    var row = btn.closest(".jitem");
+    var id = row && row.dataset.task;
+    if (!id || btn.disabled) return;
+    btn.disabled = true; btn.textContent = "저장 중…";
+    fetch("/{{ key }}/work/task/" + id + "/done", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "fetch" },
+      body: JSON.stringify({ done: true }),
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.ok) throw new Error();
+      row.classList.add("gone"); btn.textContent = "완료됨";
+    }).catch(function () {
+      btn.disabled = false; btn.textContent = "✓ 완료";
+      alert("저장하지 못했어요. 잠시 뒤 다시 눌러주세요.");
+    });
   }
 
   // 회의 할 일 체크 — 그 자리에서 저장하고 흐리게 남긴다(새로고침하면 사라진다).
