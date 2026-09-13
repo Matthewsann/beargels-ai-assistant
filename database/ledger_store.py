@@ -336,6 +336,23 @@ def recent_sync_error(days=3):
     return {"at": rows[0]["at"], "cause": cause, "fix": fix}
 
 
+def request_sync(by=None):
+    """웹 '장부 최신화' 버튼 → 집 PC 일꾼에게 잡 요청(연타 방지 포함).
+
+    포스 장부 반영(request_pos_import, mkt_store)과 따로 두는 이유: 저건
+    배달 주문 수집까지 같이 하느라 느리고, 이건 시트/CSV 읽기 하나뿐이라
+    사장님이 버튼을 누르고 몇 초 안에 결과를 보고 싶을 때 맞다.
+    """
+    live = (get_client().table("jobs").select("*")
+            .eq("kind", "ledger_sync")
+            .in_("status", ["pending", "running"])
+            .order("requested_at", desc=True).limit(1).execute().data)
+    if live:
+        return live[0]
+    row = {"kind": "ledger_sync", "status": "pending", "requested_by": by or ""}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
 def ledger_targets() -> dict:
     return get_setting(TARGETS_KEY, {}) or {}
 

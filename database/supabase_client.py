@@ -640,7 +640,7 @@ def last_collect_at():
 INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "wake", "reel",
                          "reel_video", "reel_topics", "pipe",
                          "reel_full", "reel_ideas", "reel_ref", "reel_published",
-                         "reel_shoot", "content_intake")
+                         "reel_shoot", "content_intake", "ledger_sync")
 
 
 def claim_next_job(interactive_only=False):

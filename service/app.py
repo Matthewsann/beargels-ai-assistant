@@ -3641,6 +3641,7 @@ def mkt_import(path_key):
 
 from service import sales_page  # noqa: E402
 from service import dashboard_page  # noqa: E402
+from database import ledger_store  # noqa: E402
 
 OWNER_COOKIE = "bg_owner"           # 옛 기억 쿠키 — 이제 안 쓴다(있으면 지운다)
 NAV_TOKEN_SECONDS = 30 * 60         # 화면 안 월 이동에만 쓰는 임시 토큰 수명
@@ -3764,6 +3765,45 @@ def sales_goal(path_key):
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/sales/refresh", methods=["POST"])
+def sales_refresh(path_key):
+    """'장부 최신화' 버튼 — 집 PC 일꾼에게 장부 시트 재반영을 지금 요청한다.
+
+    자동 반영이 막혀 있어도(구글 로그인 문제) 폴더에 CSV 를 넣어 뒀다면
+    이 버튼으로 하루를 안 기다리고 바로 반영된다. 완성은 sales_refresh_status
+    폴링이 판정한다 — 여기선 요청만.
+    """
+    check(path_key)
+    f = request.get_json(force=True, silent=True) or {}
+    key = _owner_key()
+    if key and not _sales_ok("", str(f.get("t") or ""), key):
+        return jsonify({"ok": False, "error": "다시 로그인해 주세요"}), 401
+    try:
+        job = ledger_store.request_sync(by="sales")
+        return jsonify({"ok": True, "job_id": job.get("id") if job else None})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"장부 최신화 요청 실패: {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/<path_key>/sales/refresh/<int:job_id>")
+def sales_refresh_status(path_key, job_id):
+    """장부 최신화 잡 상태 — 화면이 몇 초마다 물어본다."""
+    check(path_key)
+    key = _owner_key()
+    if key and not _sales_ok("", (request.args.get("t") or "").strip(), key):
+        abort(404)
+    try:
+        job = db.get_job(job_id)
+    except Exception:  # noqa: BLE001
+        job = None
+    if not job:
+        return jsonify(status="none")
+    return jsonify(status=job.get("status"), message=job.get("message") or "")
 
 
 # ---------------------------------------------------------------------------

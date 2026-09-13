@@ -1183,9 +1183,14 @@ POS_IMPORT_TIMES = os.getenv("WORKER_POS_IMPORT_TIMES", "10:20")
 _last_pos_slot = None
 
 
-def _sync_ledger_sheet() -> str:
-    """구글 시트 '베어글스_장부' 요약 → ledger_monthly. 실패해도 포스 반영은
-    막지 않는다(token.json 이 없으면 3_google_login.bat 안내만 남긴다)."""
+def _sync_ledger_sheet(notify: bool = True) -> str:
+    """장부(폴더 CSV 또는 구글 시트) → ledger_monthly. 실패해도 포스 반영은
+    막지 않는다. 성공·실패 어느 쪽이든 사람이 읽을 문장을 돌려준다.
+
+    notify=False 는 사장님이 [장부 최신화] 버튼을 눌러 화면에서 결과를 보고
+    있을 때 — 그 결과를 홈 알림함에 또 쌓으면 누를 때마다 같은 알림이 하나씩
+    늘어난다(notify_owner 는 중복을 안 거른다). 하루 1회 자동 반영만 알린다.
+    """
     try:
         from worker import ledger_sheet
         r = ledger_sheet.sync()
@@ -1196,17 +1201,39 @@ def _sync_ledger_sheet() -> str:
         #    recent_sync_error)가 'LedgerSheetError' 를 읽는다.
         db.log_error("worker", f"장부 시트 반영 실패: {str(e)[:200]}",
                      kind="LedgerSheetError", path="_sync_ledger_sheet")
-        # 사장님 알림함에도(2026-09-10 Phase 0). 위 kind 는 알림함 화이트리스트
-        # 밖이라 6일 연속 실패(2026-09-04~09)가 /sales 를 열기 전엔 안 보였다.
         # 원인·할 일은 대시보드가 쓰는 번역을 그대로 쓴다.
         try:
             from database.ledger_store import explain_sync_error
             cause, fix = explain_sync_error(str(e))
-        except Exception:  # noqa: BLE001 — 번역 실패가 알림을 막으면 안 된다
+        except Exception:  # noqa: BLE001 — 번역 실패가 결과를 막으면 안 된다
             cause, fix = "장부를 읽지 못했어요", ""
-        notify_owner(f"장부 자동 반영 실패 — {cause}. {fix}".strip(),
-                     kind="Notice", source="worker", path="_sync_ledger_sheet")
-        return f"장부 시트 실패: {str(e)[:60]}"
+        if notify:
+            # 사장님 알림함에도(2026-09-10 Phase 0). 위 kind 는 알림함 화이트리스트
+            # 밖이라 6일 연속 실패(2026-09-04~09)가 /sales 를 열기 전엔 안 보였다.
+            notify_owner(f"장부 자동 반영 실패 — {cause}. {fix}".strip(),
+                         kind="Notice", source="worker", path="_sync_ledger_sheet")
+        return f"장부 시트 실패: {cause}. {fix}".strip()
+
+
+def run_ledger_sync_job(job) -> None:
+    """웹 '장부 최신화' 버튼 요청 처리 — ledger_sync 잡 하나만, 빠르게.
+
+    _sync_ledger_sheet() 는 성공·실패 어느 쪽이든 사람이 읽을 문장을
+    돌려준다(실패 알림·error_log 기록도 그 안에서 끝난다) — 그 문장을
+    그대로 잡 결과에 남겨 화면 폴링이 보여준다.
+    """
+    jid = job["id"]
+    db.worker_ping("working", "장부 최신화 중")
+    try:
+        msg = _sync_ledger_sheet(notify=False)   # 결과는 화면이 보여준다
+        db.finish_job(jid, "error" if "실패" in msg else "done", msg,
+                      0 if "실패" in msg else 1)
+    except Exception as e:  # noqa: BLE001
+        db.log_error("worker", f"장부 최신화 잡 실패: {e}", kind=type(e).__name__,
+                     path="run_ledger_sync_job", detail=traceback.format_exc())
+        db.finish_job(jid, "error", str(e)[:300], 0)
+    finally:
+        db.worker_ping("idle", "대기 중")
 
 
 def run_pos_import_job(job) -> None:
@@ -2107,6 +2134,8 @@ def run_job(job) -> None:
         return run_menu_job(job)
     if job.get("kind") == "pos_import":
         return run_pos_import_job(job)
+    if job.get("kind") == "ledger_sync":
+        return run_ledger_sync_job(job)
     if job.get("kind") == "meeting_organize":
         return run_meeting_organize_job(job)
     if job.get("kind") == "reel":
