@@ -72,3 +72,17 @@ def test_반영_날짜를_같이_알려준다():
     m = months(**{"2026-07": "confirmed"})
     a = dp.ledger_alert(m, TODAY, "2026-09-03T10:00:00+00:00", None)
     assert a["synced"] == "2026-09-03"
+
+
+def test_실패_뒤에_성공했으면_실패를_잊는다():
+    """로그인을 풀고 바로 반영됐는데 '막혀 있어요'가 사흘 더 떠 있으면 안 된다."""
+    m = months(**{"2026-07": "confirmed", "2026-08": "confirmed"})
+    old_err = dict(ERR, at="2026-09-13T04:04:00+00:00")
+    assert dp.ledger_alert(m, TODAY, "2026-09-13T04:07:00+00:00", old_err) is None
+
+
+def test_성공_뒤에_또_실패하면_그건_알린다():
+    m = months(**{"2026-07": "confirmed", "2026-08": "confirmed"})
+    new_err = dict(ERR, at="2026-09-13T05:00:00+00:00")
+    a = dp.ledger_alert(m, TODAY, "2026-09-13T04:07:00+00:00", new_err)
+    assert a and a["blocked"]

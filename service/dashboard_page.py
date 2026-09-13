@@ -471,6 +471,11 @@ def ledger_alert(months: list, today: date, synced_at=None, sync_err=None):
     끝난 달은 장부에 **확정**으로 들어와 있어야 한다. 지난달이 없거나 아직
     '예상'이면 화면이 조용히 옛 달을 진단해 버린다 — 그걸 막는다.
     """
+    # 실패 뒤에 성공했으면 그 실패는 지난 일이다 — 로그인을 풀고 바로 반영됐는데
+    # '막혀 있어요'가 사흘 더 떠 있었다(2026-09-13 실측). 반영 시각이 실패 시각보다
+    # 뒤면 실패를 잊는다.
+    if sync_err and synced_at and str(sync_err.get("at") or "") <= str(synced_at):
+        sync_err = None
     py, pm = sp.prev_month(today.year, today.month)
     want = f"{py}-{pm:02d}"                     # 마지막으로 끝난 달
     have = {r["ym"]: r.get("status") for r in months}
