@@ -416,17 +416,78 @@
 
   {# ═══════════ 2. 매출 ═══════════ #}
   <div class="page" id="p2">
-    {% if v.sales_gauges %}<div class="gauges">{% for g in v.sales_gauges %}{{ gauge(g) }}{% endfor %}</div>{% endif %}
+    {# ── 사장님이 보고 싶은 것(2026-09-13): 실제 매출총액 · 폐기율 · 서비스&식대 · 단체주문 ── #}
+    {% set k = v.sales_kpi %}
+    {% if k %}
+    <div class="sec">{{ k.month }} 매출장부 <small>장부 파일 '매출장부' 시트{% if k.status != 'confirmed' %} · 예상치{% endif %}</small></div>
+    {% if not k.has_sheet %}
+    <div class="note">{{ k.month }}은 매출장부 시트 항목(실제 매출·폐기·식대·단체)이 아직 안 읽혔어요. [🔄 장부 최신화]를 눌러보세요.</div>
+    {% endif %}
+    <div class="kpis">
+      <div class="kpi">
+        <div class="lb">실제 매출총액</div>
+        {% if k.actual_total is not none %}
+        <div class="n">{{ won(k.actual_total) }}<small>원</small></div>
+        <div class="cmp">
+          <div><span>매장 실제</span><b>{{ won(k.store_actual) }}</b></div>
+          <div><span>배달</span><b>{{ won(k.delivery_sales) }}</b></div>
+          <div><span>지난달 대비</span>{{ pctv(k.actual_total_pct, '지난달 없음') }}</div>
+        </div>
+        {% else %}<div class="n nd" style="font-size:15px">시트에 없음</div>{% endif %}
+      </div>
+      <div class="kpi">
+        <div class="lb">폐기율</div>
+        {% if k.waste_rate is not none %}
+        <div class="n">{{ (k.waste_rate * 100)|round(2) }}<small>%</small></div>
+        <div class="cmp">
+          <div><span>폐기 금액</span><b>{{ won(k.waste) }}</b></div>
+          <div><span>지난달</span><b>{{ ((k.waste_rate_prev or 0) * 100)|round(2) if k.waste_rate_prev is not none else '—' }}%</b></div>
+        </div>
+        {% else %}<div class="n nd" style="font-size:15px">시트에 없음</div>
+        <div class="cmp"><div><span>매장_매출_폐기 행이 비어 있어요</span></div></div>{% endif %}
+      </div>
+      <div class="kpi">
+        <div class="lb">서비스·직원식대 비율</div>
+        {% if k.staff_rate is not none %}
+        <div class="n">{{ (k.staff_rate * 100)|round(2) }}<small>%</small></div>
+        <div class="cmp">
+          <div><span>금액</span><b>{{ won(k.staff) }}</b></div>
+          <div><span>지난달</span><b>{{ ((k.staff_rate_prev or 0) * 100)|round(2) if k.staff_rate_prev is not none else '—' }}%</b></div>
+        </div>
+        {% else %}<div class="n nd" style="font-size:15px">시트에 없음</div>{% endif %}
+      </div>
+      <div class="kpi">
+        <div class="lb">단체주문</div>
+        {% if k.group_amount is not none %}
+        <div class="n">{{ won(k.group_amount) }}<small>원</small></div>
+        <div class="cmp">
+          <div><span>건수</span><b>{% if k.group_count is not none %}{{ k.group_count }}건{% else %}<span class="nd">시트에 행 없음</span>{% endif %}</b></div>
+          <div><span>지난달</span><b>{{ won(k.group_prev) if k.group_prev is not none else '—' }}</b></div>
+        </div>
+        {% else %}<div class="n nd" style="font-size:15px">이달 없음</div>
+        <div class="cmp"><div><span>시트 '매장_단체주문' 행이 비어 있어요</span></div></div>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="sec">주간 매출 추이 <small>최근 12주 · 월요일 시작 · 포스</small></div>
+    <div class="card">
+      <div class="legend"><span><span class="sw" style="background:var(--store)"></span>매장</span><span><span class="sw" style="background:var(--deliv)"></span>배달</span></div>
+      <div class="cw"><canvas id="c24"></canvas></div>
+    </div>
+    <div class="g2">
+      <div class="card"><h4>요일별 매출 평균 <small>최근 8주 · 만원</small></h4><div class="cw sm"><canvas id="c25"></canvas></div></div>
+      {% if v.has_ledger %}<div class="card"><h4>매장 vs 배달 비중</h4><div class="cw sm"><canvas id="c23"></canvas></div></div>{% endif %}
+    </div>
+
+    {% if v.sales_gauges %}<div class="sec">월 요약 <small>장부 시트</small></div><div class="gauges">{% for g in v.sales_gauges %}{{ gauge(g) }}{% endfor %}</div>{% endif %}
     {% if v.has_ledger %}
     <div class="card">
       <h4>채널별 월 매출 추이 <small>만원 · 장부 시트 + 포스</small></h4>
       <div class="legend"><span><span class="sw" style="background:var(--bl)"></span>매장</span><span><span class="sw" style="background:var(--gr)"></span>배민</span><span><span class="sw" style="background:var(--yl)"></span>쿠팡</span><span><span class="sw" style="background:var(--rd)"></span>요기요 등</span></div>
       <div class="cw"><canvas id="c21"></canvas></div>
     </div>
-    <div class="g2">
-      <div class="card"><h4>전월 대비 증감</h4><div class="cw sm"><canvas id="c22"></canvas></div></div>
-      <div class="card"><h4>매장 vs 배달 비중</h4><div class="cw sm"><canvas id="c23"></canvas></div></div>
-    </div>
+    <div class="card"><h4>전월 대비 증감</h4><div class="cw sm"><canvas id="c22"></canvas></div></div>
     {% endif %}
 
     <div class="sec">{{ v.m }}월 일별 매출 (포스) <small>{{ v.prev.label }}은 점선</small></div>
@@ -697,6 +758,29 @@ function slDay(i) {
 /* ── P2 매출 ── */
 function drawP2() {
   drawDaily();
+  // 주간 추이 (포스) — 매장/배달 쌓기, 만원
+  const W = V.weekly;
+  if ($('c24') && W.labels.length) {
+    new Chart($('c24'), { type: 'bar', data: { labels: W.labels, datasets: [
+        { label: '매장', data: W.store.map(v => Math.round(v / 10000)), backgroundColor: cv('--store') || BL, borderRadius: 3, barPercentage: .7 },
+        { label: '배달', data: W.delivery.map(v => Math.round(v / 10000)), backgroundColor: cv('--deliv') || '#a34d78', borderRadius: 3, barPercentage: .7 }] },
+      options: { ...co, plugins: { legend: { display: false }, tooltip: { mode: 'index', callbacks: {
+        title: it => `${it[0].label} 주 (${W.days[it[0].dataIndex]}일 장부)`,
+        label: c => ` ${c.dataset.label} ${c.raw.toLocaleString()}만원`,
+        footer: it => `합계 ${it.reduce((a, b) => a + b.raw, 0).toLocaleString()}만원` } } },
+        scales: { x: { ...xaxis, stacked: true, ticks: { ...xaxis.ticks, font: { size: 9.5 } } }, y: { ...axis(v => v + '만'), stacked: true } } } });
+  }
+  // 요일별 평균 (포스 최근 8주) — 매장/배달 쌓기
+  const D = V.dow_split;
+  if ($('c25')) {
+    new Chart($('c25'), { type: 'bar', data: { labels: DOW.split(''), datasets: [
+        { label: '매장', data: D.store.map(v => Math.round(v / 10000)), backgroundColor: cv('--store') || BL, borderRadius: 3, barPercentage: .66 },
+        { label: '배달', data: D.delivery.map(v => Math.round(v / 10000)), backgroundColor: cv('--deliv') || '#a34d78', borderRadius: 3, barPercentage: .66 }] },
+      options: { ...co, plugins: { legend: { display: false }, tooltip: { mode: 'index', callbacks: {
+        label: c => ` ${c.dataset.label} ${c.raw.toLocaleString()}만원`,
+        footer: it => `하루 평균 ${it.reduce((a, b) => a + b.raw, 0).toLocaleString()}만원 · ${D.days[it[0].dataIndex]}일 표본` } } },
+        scales: { x: { ...xaxis, stacked: true, ticks: { ...xaxis.ticks, font: { size: 12 } } }, y: { ...axis(v => v + '만'), stacked: true } } } });
+  }
   if (!V.has_ledger || !$('c21')) return;
   const S = V.sales_series, M = S.labels;
   const line = (label, data, c, dash) => ({ label, data, borderColor: c, backgroundColor: c + '10', pointRadius: 3, pointBackgroundColor: c, borderWidth: 2, tension: .35, fill: !dash, borderDash: dash ? [4, 3] : [] });

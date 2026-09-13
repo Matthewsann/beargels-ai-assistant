@@ -59,8 +59,22 @@ _RATE_COLS = {"rent_rate", "labor_rate"}
 _INT_COLS = {"sales_total", "orders_total", "store_sales", "store_orders",
              "delivery_sales", "delivery_orders", "settlement", "cogs",
              "delivery_fees", "fixed_cost", "labor_cost", "op_profit",
-             "non_op_cost", "net_profit"}
+             "non_op_cost", "net_profit",
+             # '매출장부' 시트에서 오는 것들 (schema_v15, 2026-09-13)
+             "store_actual_sales", "store_waste", "store_staff_meal",
+             "group_amount", "group_count"}
 COLUMNS = sorted(_INT_COLS | _RATE_COLS)
+
+# '매출장부' 시트 행 이름 → 컬럼 (앞부분 일치). 사장님이 매출 탭에서 보고 싶은
+# 것(2026-09-13): 실제 매출총액(폐기·식대 뺀 값), 폐기율, 서비스&식대 비율, 단체주문.
+# '매장_단체주문_건수' 행은 시트에 아직 없다 — 사장님이 추가하면 그대로 읽힌다.
+_SALES_ROW_MAP = (
+    ("매장_실제_매출총액", "store_actual_sales"),
+    ("매장_매출_폐기", "store_waste"),
+    ("매장_매출_서비스", "store_staff_meal"),      # '매장_매출_서비스&직원식대'
+    ("매장_단체주문_건수", "group_count"),         # 긴 이름이 먼저 — 순서 중요
+    ("매장_단체주문", "group_amount"),
+)
 
 KST = timezone(timedelta(hours=9))
 
@@ -204,6 +218,50 @@ def parse_summary_csv(text, modified_at=None, today=None):
     return rows, targets
 
 
+def parse_sales_rows(rows):
+    """'매출장부' 시트(행 목록) → {ym: {store_actual_sales, store_waste, …}}.
+
+    요약시트와 같은 꼴(월 열이 'N월' 로 이어짐)이지만 라벨이 A열에 있고 헤더가
+    2행이다. xlsx(openpyxl)든 CSV(csv.reader)든 '셀 값 행 목록'으로 넘기면 된다.
+    값이 없는 달은 키를 만들지 않는다 — 0 으로 채우면 '폐기 0원'으로 읽힌다.
+    """
+    header_i, months = None, []
+    for i, row in enumerate(list(rows)[:10]):
+        cols = _month_columns(row)
+        if len(cols) >= 3:
+            header_i, months = i, cols
+            break
+    if header_i is None:
+        raise ValueError("매출장부 시트에서 'N월' 헤더 행을 찾지 못했어요")
+    out = {}
+    for row in list(rows)[header_i + 1:]:
+        if not row:
+            continue
+        label = str(row[0] or "").strip()
+        col = next((c for k, c in _SALES_ROW_MAP if label.startswith(k)), None)
+        if not col:
+            continue
+        for j, ym in months:
+            v, _ = _cell(row[j]) if j < len(row) else (None, False)
+            if v is None:
+                continue
+            out.setdefault(ym, {})[col] = int(round(v))
+    return out
+
+
+def parse_sales_csv(text):
+    return parse_sales_rows(list(csv.reader(io.StringIO(text))))
+
+
+def merge_sales(rows, sales_by_ym):
+    """요약 행들에 매출장부 항목을 달별로 얹는다(제자리). 없는 달은 그대로."""
+    for r in rows:
+        extra = (sales_by_ym or {}).get(r["ym"])
+        if extra:
+            r.update(extra)
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # 파생 지표 (순수)
 # ---------------------------------------------------------------------------
@@ -265,6 +323,12 @@ def derive(row: dict) -> dict:
         "store_ticket": _rate(r.get("store_sales"), r.get("store_orders")),
         "delivery_ticket": _rate(r.get("delivery_sales"), r.get("delivery_orders")),
         "delivery_share": _rate(r.get("delivery_sales"), sales),
+        # 매출장부 시트 항목 (없으면 None — 화면이 '시트에 없음'으로 보여준다)
+        "waste_rate": _rate(r.get("store_waste"), r.get("store_sales")),
+        "staff_rate": _rate(r.get("store_staff_meal"), r.get("store_sales")),
+        "actual_total": ((r["store_actual_sales"] + r["delivery_sales"])
+                         if (r.get("store_actual_sales") is not None
+                             and r.get("delivery_sales") is not None) else None),
     })
     return r
 

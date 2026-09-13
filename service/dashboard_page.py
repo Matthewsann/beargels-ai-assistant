@@ -424,6 +424,86 @@ def hour_profile(hourly_rows) -> dict:
             "delivery": [round(deliv[h] / n) for h in hours]}
 
 
+def weekly_series(daily: dict, end: date, weeks: int = 12) -> dict:
+    """주간 매출 추이 — 월요일 시작 주 단위, 최근 N주. 매장/배달 따로(원).
+
+    partial(매장 장부 없는 날)은 매장 합계에서 빼고 days 에 안 센다 —
+    0원으로 더하면 그 주 매장 매출이 푹 꺼진 것처럼 보인다.
+    """
+    monday = end - timedelta(days=end.weekday())
+    starts = [monday - timedelta(days=7 * i) for i in range(weeks - 1, -1, -1)]
+    out = {"labels": [], "store": [], "delivery": [], "days": [], "start": str(starts[0]), "end": str(end)}
+    for s in starts:
+        st = dl = 0
+        n = 0
+        for i in range(7):
+            d = s + timedelta(days=i)
+            if d > end:
+                break
+            row = daily.get(str(d))
+            if not row or row.get("total", 0) <= 0:
+                continue
+            dl += row.get("delivery", 0) or 0
+            if not row.get("partial"):
+                st += row.get("store", 0) or 0
+                n += 1
+        out["labels"].append(f"{s.month}/{s.day}")
+        out["store"].append(st)
+        out["delivery"].append(dl)
+        out["days"].append(n)
+    # 마지막 주가 하루이틀뿐이면 뺀다 — 막대가 푹 꺼져 '매출 급락'으로 읽힌다
+    if len(out["labels"]) > 1 and out["days"][-1] < 3:
+        for key in ("labels", "store", "delivery", "days"):
+            out[key].pop()
+    return out
+
+
+def dow_split(daily: dict, d1: date, d2: date) -> dict:
+    """요일별 하루 평균 — 매장/배달/합계 따로(원). 휴무·partial 제외."""
+    s_st, s_dl, s_tt, cnt = [0] * 7, [0] * 7, [0] * 7, [0] * 7
+    d = d1
+    while d <= d2:
+        row = daily.get(str(d))
+        if row and row.get("total", 0) > 0 and not row.get("partial"):
+            w = d.weekday()
+            s_st[w] += row.get("store", 0) or 0
+            s_dl[w] += row.get("delivery", 0) or 0
+            s_tt[w] += row.get("total", 0) or 0
+            cnt[w] += 1
+        d += timedelta(days=1)
+    avg = lambda arr: [round(arr[i] / cnt[i]) if cnt[i] else 0 for i in range(7)]
+    return {"store": avg(s_st), "delivery": avg(s_dl), "total": avg(s_tt), "days": cnt}
+
+
+def sales_kpi(R: dict | None, P: dict | None) -> dict | None:
+    """매출 탭 상단 4칸 — 사장님이 보고 싶은 것(2026-09-13).
+
+    실제 매출총액 = 매장_실제_매출총액(폐기·식대 뺀 값) + 배달 매출.
+    폐기율·식대율은 매장 매출 대비. 단체주문은 시트 값 그대로(건수 행은 선택).
+    시트에 없는 항목은 None — 화면이 '시트에 없음'으로 정직하게 보여준다.
+    """
+    if not R:
+        return None
+    P = P or {}
+    def pct_chg(a, b):
+        return _chg(a, b)
+    return {
+        "month": R.get("label"), "full": R.get("full"), "status": R.get("status"),
+        "actual_total": R.get("actual_total"),
+        "actual_total_pct": _chg(R.get("actual_total"), P.get("actual_total")),
+        "store_actual": R.get("store_actual_sales"), "store_sales": R.get("store_sales"),
+        "delivery_sales": R.get("delivery_sales"),
+        "waste": R.get("store_waste"), "waste_rate": R.get("waste_rate"),
+        "waste_rate_prev": P.get("waste_rate"),
+        "staff": R.get("store_staff_meal"), "staff_rate": R.get("staff_rate"),
+        "staff_rate_prev": P.get("staff_rate"),
+        "group_amount": R.get("group_amount"), "group_count": R.get("group_count"),
+        "group_prev": P.get("group_amount"),
+        "has_sheet": any(R.get(k) is not None for k in
+                         ("store_actual_sales", "store_waste", "store_staff_meal", "group_amount")),
+    }
+
+
 def dow_profile(daily: dict, d1: date, d2: date) -> list:
     """요일별 하루 평균 총매출 (휴무·partial 제외)."""
     sums, cnts = [0] * 7, [0] * 7
@@ -537,6 +617,14 @@ def build_dashboard(y: int, m: int, today: date | None = None, explicit: bool = 
     def series(key, scale=True):
         return [(man(r.get(key)) if scale else r.get(key)) if r.get(key) is not None else None for r in months]
 
+    # 매출 탭 상단 — 보고 있는 달의 매출장부 항목(없으면 마지막 확정 달)
+    R = next((r for r in months if r["ym"] == v["ym"]), None) or L
+    RP = None
+    if R:
+        ri = months.index(R)
+        RP = months[ri - 1] if ri > 0 else None
+    kpi = sales_kpi(R, RP)
+
     sales_series = {
         "labels": labels, "status": [r.get("status") for r in months],
         "total": series("sales_total"), "store": series("store_sales"), "delivery": series("delivery_sales"),
@@ -641,13 +729,19 @@ def build_dashboard(y: int, m: int, today: date | None = None, explicit: bool = 
     last_pos = date.fromisoformat(v["last_pos"]) if v.get("last_pos") else None
     hp = {"hours": [], "store": [], "delivery": [], "days": 0}
     dow = [0] * 7
+    weekly = {"labels": [], "store": [], "delivery": [], "days": []}
+    dsplit = {"store": [0] * 7, "delivery": [0] * 7, "total": [0] * 7, "days": [0] * 7}
     if last_pos:
         h_end = min(last_pos, last)
         h_start = h_end - timedelta(days=sp.HEATMAP_DAYS - 1)
         hrows, _ = sp._safe(lambda: mkt_store.hourly_between(h_start, h_end), [])
         hp = hour_profile(hrows)
         drows, _ = sp._safe(lambda: mkt_store.sales_between(h_start, h_end), [])
-        dow = dow_profile(mkt_store.totals_by_date(drows), h_start, h_end)
+        d8 = mkt_store.totals_by_date(drows)
+        dow = dow_profile(d8, h_start, h_end)
+        dsplit = dow_split(d8, h_start, h_end)
+        # 주간 추이 12주 — span_rows(장부 첫 달~보는 달)가 이미 그 범위를 덮는다
+        weekly = weekly_series(mkt_store.totals_by_date(span_rows), h_end, weeks=12)
     contrib = (L.get("contribution_rate") if L else None) or 0.35
     sim = {
         "contribution_rate": round(contrib, 4),
@@ -685,6 +779,8 @@ def build_dashboard(y: int, m: int, today: date | None = None, explicit: bool = 
         "sales_gauges": sales_gauges,
         "products_extra": products_extra,
         "ops": {"hour": hp, "dow": dow},
+        "sales_kpi": kpi,
+        "weekly": weekly, "dow_split": dsplit,
         "sim": sim,
     })
     return v
