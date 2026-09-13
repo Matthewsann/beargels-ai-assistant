@@ -2172,6 +2172,34 @@ def regen(path_key, review_id):
         return jsonify({"ok": False, "error": str(e)[:150]}), 200
 
 
+@app.route("/<path_key>/review/<int:review_id>/rescrape", methods=["POST"])
+def rescrape(path_key, review_id):
+    """'이 리뷰 다시 긁기' — 스크랩이 실물과 다른 것 같을 때(사진 누락·글
+    잘림 등) 그 리뷰만 집 PC 가 플랫폼에서 다시 읽어 덮어쓴다
+    (사장님 요청 2026-09-13). 크롤링이라 보통 30초~1분 걸린다."""
+    check(path_key)
+    try:
+        job = db.request_rescrape(review_id, by="직원웹")
+        return jsonify({"ok": True, "job_id": (job or {}).get("id")})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"재수집 요청 실패(review {review_id}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:150]}), 200
+
+
+@app.route("/<path_key>/rescrape-state/<int:job_id>")
+def rescrape_state(path_key, job_id):
+    """재수집 진행 상태 — 버튼 쪽 JS 가 3초마다 확인한다."""
+    check(path_key)
+    try:
+        job = db.get_job(job_id) or {}
+        return jsonify({"status": job.get("status") or "",
+                        "message": job.get("message") or ""})
+    except Exception:  # noqa: BLE001 — 폴링 한 번의 실패는 조용히 넘긴다
+        return jsonify({"status": "", "message": ""})
+
+
 @app.route("/<path_key>/review/<int:review_id>/draft")
 def draft_state(path_key, review_id):
     """초안 현재 상태 — 재생성 폴링용(JS 가 3초마다 확인)."""

@@ -602,6 +602,24 @@ def request_regen(review_id, by=None):
     return (get_client().table("jobs").insert(row).execute().data or [None])[0]
 
 
+def request_rescrape(review_id, by=None):
+    """직원이 '이 리뷰 다시 긁기'를 눌렀다 → 집 PC 일꾼에게 단건 재수집을 요청한다.
+
+    스크랩된 리뷰가 실물과 다른 것 같을 때(사진 누락·글 잘림 등) 그 리뷰만
+    플랫폼에서 다시 읽어 덮어쓴다(사장님 요청 2026-09-13). regen 과 같은 꼴 —
+    대상 리뷰 id 는 message 에, 연타는 재사용으로 막는다.
+    """
+    live = (get_client().table("jobs").select("*")
+            .eq("kind", "rescrape").eq("message", str(review_id))
+            .in_("status", ["pending", "running"])
+            .order("requested_at", desc=True).limit(1).execute().data)
+    if live:
+        return live[0]
+    row = {"kind": "rescrape", "status": "pending",
+           "requested_by": by or "", "message": str(review_id)}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
 def get_review(review_id):
     """리뷰 1건(없으면 None) — 재생성 등 단건 작업용."""
     rows = (get_client().table("reviews").select("*")
@@ -637,7 +655,7 @@ def last_collect_at():
 
 # 직원이 화면 앞에서 결과를 기다리는 작업 — 리뷰수집(수 분) 뒤에 밀리면
 # 3분 폴링 안에 끝나지 않아 '아직 확인이 안 돼요'로 보인다. 먼저 집는다.
-INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "wake", "reel",
+INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "rescrape", "wake", "reel",
                          "reel_video", "reel_topics", "pipe",
                          "reel_full", "reel_ideas", "reel_ref", "reel_published",
                          "reel_shoot", "content_intake", "ledger_sync")

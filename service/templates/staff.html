@@ -343,6 +343,9 @@
           {% endif %}
           <button class="btn" type="button" id="g{{ r.id }}"
                   onclick="regenIt({{ r.id }}, '{{ url_for('regen', path_key=key, review_id=r.id) }}', '{{ url_for('draft_state', path_key=key, review_id=r.id) }}')">🔄 AI</button>
+          <button class="btn" type="button" id="rs{{ r.id }}"
+                  title="화면의 리뷰가 실물과 다른 것 같을 때(사진 누락·글 잘림) 이 리뷰만 플랫폼에서 다시 읽어와요"
+                  onclick="rescrapeIt({{ r.id }}, '{{ url_for('rescrape', path_key=key, review_id=r.id) }}', '{{ url_for('rescrape_state', path_key=key, job_id=0) }}')">📡 다시 긁기</button>
         </div>
         <div class="copied" id="c{{ r.id }}">복사됐어요!</div>
         {% endif %}
@@ -392,6 +395,9 @@
           <span class="findkey" id="fk{{ r.id }}" data-key="{{ r.find_key }}"
                 >복사됨: {{ r.find_key }} — 열린 창에서 Ctrl+F 로 찾으세요</span>
           {% endif %}
+          <button class="btn" type="button" id="rs{{ r.id }}"
+                  title="화면의 리뷰가 실물과 다른 것 같을 때(사진 누락·글 잘림) 이 리뷰만 플랫폼에서 다시 읽어와요"
+                  onclick="rescrapeIt({{ r.id }}, '{{ url_for('rescrape', path_key=key, review_id=r.id) }}', '{{ url_for('rescrape_state', path_key=key, job_id=0) }}')">📡 다시 긁기</button>
           <form method="post" action="{{ url_for('skip', path_key=key, review_id=r.id) }}"
                 style="display:contents"
                 onsubmit="return actNow(this, {hide: '.card', confirm: '이 리뷰를 넘어갈까요?\n(이미 앱에서 직접 등록했거나 답글이 필요 없는 경우)'})">
@@ -509,6 +515,37 @@ function regenIt(id, regenUrl, draftUrl) {
       }, 3000);
     });
   }).catch(() => stop('🔄 AI 재생성'));
+}
+
+// 다시 긁기 = 화면의 리뷰가 실물과 다를 때(사진 누락 등) 그 리뷰 하나만 집 PC 가
+// 플랫폼에서 다시 읽어 덮어쓴다. 크롤링이라 30초~1분 — 잡 상태를 3초마다 확인하고,
+// 끝나면 무엇이 달라졌는지 알려준 뒤 새로고침해 새 내용(사진·글)을 보여준다.
+function rescrapeIt(id, reqUrl, stateUrl0) {
+  if (!confirm('이 리뷰를 플랫폼에서 다시 읽어옵니다.\n(약 30초~1분 걸려요. 화면의 리뷰가 실물과 다를 때만 쓰세요)')) return;
+  const btn = document.getElementById('rs' + id);
+  const stop = () => { btn.disabled = false; btn.textContent = '📡 다시 긁기'; };
+  btn.disabled = true; btn.textContent = '📡 다시 읽는 중…';
+  fetch(reqUrl, {method: 'POST'}).then(r => r.json()).then(res => {
+    if (!res.ok || !res.job_id) { stop(); alert('요청 실패: ' + (res.error || '')); return; }
+    const stateUrl = stateUrl0.replace(/0$/, String(res.job_id));
+    let tries = 0;
+    const poll = setInterval(() => {
+      tries += 1;
+      fetch(stateUrl).then(r => r.json()).then(j => {
+        if (j.status === 'done') {
+          clearInterval(poll);
+          alert('다시 읽어왔어요.\n' + (j.message || ''));
+          location.reload();
+        } else if (j.status === 'error') {
+          clearInterval(poll); stop();
+          alert('다시 읽기 실패: ' + (j.message || ''));
+        } else if (tries >= 40) {     // 40회 × 3초 = 2분
+          clearInterval(poll); stop();
+          alert('아직 결과가 안 왔어요. 집 PC 프로그램이 꺼져 있으면 "프로그램 깨우기"를 눌러주세요.');
+        }
+      }).catch(() => {});
+    }, 3000);
+  }).catch(() => { stop(); alert('요청을 보내지 못했어요.'); });
 }
 
 // 초안 칸 자동 높이 — 긴 답글(300자 가까이)이 6줄 칸에 잘려 스크롤해야 했다.

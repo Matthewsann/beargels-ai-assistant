@@ -519,6 +519,74 @@ def run_regen_job(job) -> None:
         db.worker_ping("idle", "대기 중")
 
 
+def _rescrape_diff(old, new) -> str:
+    """재수집 전/후 무엇이 달라졌는지 사람 말로. 안 달라졌으면 그대로 말한다."""
+    def _photos(raw):
+        return len(raw.get("images") or []) if isinstance(raw, dict) else None
+
+    changes = []
+    b, a = _photos(old.get("raw")), _photos(new.get("raw"))
+    if b != a:
+        changes.append(f"사진 {'?' if b is None else b}→{a}장")
+    if (old.get("content") or "") != (new.get("content") or ""):
+        changes.append("리뷰 글 갱신")
+    if old.get("rating") != new.get("rating"):
+        changes.append(f"별점 {old.get('rating')}→{new.get('rating')}")
+    return " · ".join(changes) if changes else "이전 수집과 같음(원본 그대로였어요)"
+
+
+def run_rescrape_job(job) -> None:
+    """웹의 '이 리뷰 다시 긁기' — 스크랩이 의심스러운 리뷰 1건을 플랫폼에서
+    다시 읽어 덮어쓴다(사장님 요청 2026-09-13, 사진 유실 사고의 후속).
+
+    전체 수집(수 분)과 달리 최근 목록만 훑어 해당 리뷰번호를 찾는다.
+    최근 목록에 없으면 실패로 알린다 — 오래된 리뷰는 전체 수집이 맞는 길.
+    """
+    jid = job["id"]
+    try:
+        rid = int(job.get("message") or 0)
+        row = db.get_review(rid)
+        if not row:
+            db.finish_job(jid, "error", f"리뷰 {rid} 를 찾을 수 없습니다", 0)
+            return
+        plat, rno = row.get("platform"), str(row.get("review_no") or "")
+        db.worker_ping("working", "리뷰 1건 다시 읽는 중")
+        if not ensure_chrome():
+            db.finish_job(jid, "error",
+                          "크롤링용 Chrome 을 켜지 못했습니다 — 집 PC 확인 필요", 0)
+            return
+        if plat == "baemin":
+            from crawler.baemin import BaeminCrawler
+            with BaeminCrawler() as c:
+                revs = c.fetch_reviews(max_scroll=BAEMIN_SCROLL)
+        elif plat == "coupang":
+            from crawler.coupang import CoupangCrawler
+            with CoupangCrawler() as c:
+                revs = c.fetch_reviews(days=COUPANG_DAYS)
+        else:
+            db.finish_job(jid, "error", f"다시 긁기를 지원하지 않는 플랫폼: {plat}", 0)
+            return
+        match = next((r for r in revs
+                      if str(r.get("review_no") or "") == rno), None)
+        if match is None:
+            db.finish_job(jid, "error",
+                          f"{plat} 최근 목록에서 리뷰 {rno} 를 찾지 못했습니다 — "
+                          "오래된 리뷰면 [전체 리뷰 수집]으로 받아야 해요", 0)
+            return
+        diff = _rescrape_diff(row, match)
+        db.save_reviews([match])
+        db.finish_job(jid, "done", f"리뷰 {rid} 다시 읽음 — {diff}", 1)
+        logger.info("재수집 #%s 완료 (리뷰 %s: %s)", jid, rid, diff)
+    except Exception as e:  # noqa: BLE001
+        logger.error("재수집 #%s 실패: %s", jid, e)
+        db.log_error("worker", f"재수집 #{jid} 실패: {e}",
+                     kind=type(e).__name__, path="run_rescrape_job",
+                     detail=traceback.format_exc())
+        db.finish_job(jid, "error", str(e)[:400], 0)
+    finally:
+        db.worker_ping("idle", "대기 중")
+
+
 def run_meeting_organize_job(job) -> None:
     """웹의 '✨ AI로 정리' 요청 — 논의 내용에서 결정사항·업무를 제안해 덧붙인다.
 
@@ -2126,6 +2194,8 @@ def run_job(job) -> None:
         return None
     if job.get("kind") == "regen":
         return run_regen_job(job)
+    if job.get("kind") == "rescrape":
+        return run_rescrape_job(job)
     if job.get("kind") == "post":
         return run_post_job(job)
     if job.get("kind") == "post_edit":
