@@ -36,6 +36,10 @@ QUALITY_MIN = 80
 LENGTH_MIN = 1500   # evaluator·프롬프트와 동일 기준(2026-08-30 통일)
 # 퇴고 최대 횟수. 1회로 부족한 경우(짧고+개선점 많음)를 위해 2회까지.
 MAX_REVISIONS = 2
+# 대표 키워드가 본문에 이 횟수 미만이면 점수와 무관하게 퇴고를 건다(2026-09-15 사장님:
+# "대표 키워드 반복 1회밖에 안 돼"). 검색은 정확한 문자열을 센다(evaluator 와 같은 기준).
+KW_MIN = 3
+KW_MAX = 5
 
 
 def _load() -> dict:
@@ -144,6 +148,48 @@ def improve(body: str, title: str, main_keyword: str,
     return raw
 
 
+KW_PROMPT = """아래 블로그 본문에 대표 키워드 「{kw}」를 **이 글자 그대로** {need}번 더 넣어라.
+자리: 첫 문단에 없으면 첫 문단에 1번, 소제목(`## ` 줄) 하나에 1번, 마무리 문단에 1번 — 자연스러운 문장 안에.
+규칙: 다른 문장은 한 글자도 바꾸지 마라. `[📷 …]` `[🎬 …]` `[매장 정보]` 블록·해시태그는 그대로.
+키워드를 줄이거나 바꿔 쓰면(예: 앞 단어 떼기) 안 센다. 설명 없이 고친 본문 전체만 출력.
+
+[본문]
+{body}"""
+
+
+def ensure_keyword(body: str, main_keyword: str) -> tuple[str, int]:
+    """마지막 안전망: 퇴고 뒤에도 대표 키워드가 KW_MIN 미만이면 그것만 끼워 넣는 짧은 호출.
+
+    돌려주는 값: (본문, 최종 횟수). 사진 표시가 깨지거나 횟수가 안 늘면 원본 유지.
+    """
+    if not main_keyword:
+        return body, 0
+    n = body.count(main_keyword)
+    if n >= KW_MIN:
+        return body, n
+    import llm
+    try:
+        raw = llm.complete(user=KW_PROMPT.format(kw=main_keyword, need=KW_MIN - n, body=body),
+                           max_tokens=4000, prefer="gemini", quality=True).strip()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("키워드 보강 호출 실패: %s", str(e)[:100])
+        return body, n
+    raw = re.sub(r"^```.*?\n|\n```$", "", raw, flags=re.DOTALL)
+    raw = strip_meta_head(raw)
+    marks = re.findall(r"\[[📷🎬][^\]]*\]", body)
+    if any(m not in raw for m in marks):
+        logger.warning("키워드 보강본이 사진 표시를 잃음 — 원본 유지")
+        return body, n
+    if _plain_len(raw) < _plain_len(body) * 0.9:
+        logger.warning("키워드 보강본이 본문을 줄임 — 원본 유지")
+        return body, n
+    n2 = raw.count(main_keyword)
+    if n2 <= n:
+        return body, n
+    logger.info("대표 키워드 보강: %d → %d회", n, n2)
+    return raw, n2
+
+
 def _plain_len(body: str) -> int:
     """사진 표시를 뺀 본문 글자 수."""
     return len(re.sub(r"\[[📷🎬][^\]]*\]", "", body).strip())
@@ -161,9 +207,17 @@ def gate(body: str, title: str, main_keyword: str) -> tuple[str, dict]:
     first_score = q["score"]
     for _ in range(MAX_REVISIONS):
         short = _plain_len(body) < LENGTH_MIN
-        if q["score"] >= QUALITY_MIN and not short:
+        kw_n = body.count(main_keyword) if main_keyword else KW_MIN
+        if q["score"] >= QUALITY_MIN and not short and kw_n >= KW_MIN:
             break
         improvements = list(q.get("improvements") or [])
+        # 기계 점검 경고(키워드 횟수·제목 길이·사진 수)는 AI 총평보다 객관적이다 — 항상 먹인다
+        improvements = [w for w in (q.get("warns") or [])] + improvements
+        if kw_n < KW_MIN and main_keyword:
+            improvements.insert(0, (
+                f"대표 키워드 「{main_keyword}」가 본문에 {kw_n}회뿐이다. **이 글자 그대로** "
+                f"{KW_MIN}~{KW_MAX}회가 되게 {KW_MIN - kw_n}번 이상 더 넣어라 — 첫 문단·소제목 하나·"
+                f"마무리 문단에 자연스럽게. 줄여 쓰거나 바꿔 쓰면 안 센다. 다른 문장은 그대로 둔다."))
         if short:
             improvements.insert(0, (
                 f"본문이 {_plain_len(body)}자로 짧다. 금고에 있는 사실만으로 "
@@ -185,6 +239,12 @@ def gate(body: str, title: str, main_keyword: str) -> tuple[str, dict]:
     if q.get("revised"):
         q["before_score"] = first_score
     q["chars"] = _plain_len(body)
+    # 퇴고를 다 돌고도 대표 키워드가 모자라면, 그것만 끼워 넣는 짧은 호출로 채운다
+    try:
+        body, kw_final = ensure_keyword(body, main_keyword)
+        q["kw_count"] = kw_final
+    except Exception as e:  # noqa: BLE001
+        logger.warning("키워드 안전망 실패(무시): %s", str(e)[:100])
     return body, q
 
 

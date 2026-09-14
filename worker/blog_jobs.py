@@ -267,6 +267,9 @@ def do_draft(payload: dict) -> tuple[int, str]:
         q_note = f" · 품질 {quality['score']}점"
         if quality.get("revised"):
             q_note += f"(퇴고로 {quality.get('before_score')}→{quality['score']})"
+        kwn = body.count(data.get("main_keyword") or "") if data.get("main_keyword") else None
+        if kwn is not None:
+            q_note += f" · 키워드 {kwn}회" + ("" if kwn >= 3 else " ⚠")
     except Exception as e:  # noqa: BLE001 — 평가 실패가 저장을 막으면 안 된다
         logger.warning("품질 평가 실패: %s", str(e)[:120])
 
