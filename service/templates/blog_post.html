@@ -2,7 +2,6 @@
 {% block heading %}글 보기{% endblock %}
 {% block sub %}② 초안 → ③ 사진 → ④ 품질 확인 → ⑤ 임시저장{% endblock %}
 {% block content %}
-  {% if scoring %}<meta http-equiv="refresh" content="15">{% endif %}
 
   <a href="{{ url_for('blog_home', path_key=key) }}"
      style="font-size:13px; color:var(--muted); text-decoration:none;">← 블로그로</a>
@@ -224,7 +223,7 @@
   <div class="sec" id="quality">④ 품질 확인
     <span style="font-weight:400; color:var(--muted); font-size:12px;">— 사진·수정을 반영한 지금 글 기준 · 기준 {{ quality_min }}점</span>
   </div>
-  {% if scoring %}<div class="note">⏳ 채점 중이에요 — 이 화면은 15초마다 스스로 새로고침됩니다.</div>{% endif %}
+    {% if scoring %}<div class="note">⏳ 채점 중이에요 (30초~2분) — 끝나면 이 화면이 스스로 새로 그려집니다.</div>{% endif %}
   <div class="panel">
     {% if quality %}
     <div style="display:flex; align-items:center; gap:14px;">
@@ -258,16 +257,19 @@
     {% else %}
     <div style="font-size:13px; color:var(--muted);">아직 지금 글로 채점한 적이 없어요. 사진과 문장을 다 손보셨으면 눌러주세요.</div>
     {% endif %}
-    {% if not scoring %}
+    {# 버튼은 채점 중에도 사라지지 않는다 — 잠긴 채 "채점 중"으로 보이고, 끝나면 아래
+       스크립트가 화면을 새로 그린다(사라지니 "채점 불가"로 보였다, 2026-09-15). #}
     <div class="row" style="margin-top:12px;">
       <form method="post" action="{{ url_for('blog_post_score', path_key=key, post_id=post.id) }}" style="flex:1;">
         <input type="hidden" name="mode" value="score">
-        <button class="btn wide" type="submit" {{ 'disabled' if not worker.alive else '' }}>🔍 {{ '다시 채점' if quality else '품질 채점' }}</button>
+        <button class="btn wide" type="submit" {{ 'disabled' if scoring or not worker.alive else '' }}>
+          {{ '⏳ 채점 중…' if scoring else ('🔍 다시 채점' if quality else '🔍 품질 채점') }}</button>
       </form>
       {% if quality and (quality.improvements or quality.warns) %}
       <form method="post" action="{{ url_for('blog_post_score', path_key=key, post_id=post.id) }}" style="flex:1;">
         <input type="hidden" name="mode" value="polish">
-        <button class="btn wide" type="submit" {{ 'disabled' if not worker.alive else '' }}>✨ 개선점대로 다듬기</button>
+        <button class="btn wide" type="submit" {{ 'disabled' if scoring or not worker.alive else '' }}>
+          {{ '⏳ 다듬는 중…' if scoring else '✨ 개선점대로 다듬기' }}</button>
       </form>
       {% endif %}
     </div>
@@ -275,7 +277,6 @@
       채점은 기계 점검(분량·키워드·소제목) + AI 전문가 평가, 무료. <b>다듬기</b>는 사진 자리를 그대로 둔 채
       문장만 고치고 다시 채점합니다 — 지금 본문은 보관되니 ‹ 화살표로 되돌릴 수 있어요.
     </div>
-    {% endif %}
   </div>
 
   {# ══ ⑤ 임시저장 ═══════════════════════════════════════════════ #}
@@ -335,6 +336,24 @@
 
   {% endif %}
 
+  {% if scoring %}
+  <script>
+    // 채점이 끝나면 화면을 새로 그린다 — 5초마다 서버에 묻는다(2분 넘으면 한 번 그냥 새로 그림).
+    (function () {
+      var tries = 0;
+      function ask() {
+        fetch("{{ url_for('blog_post_busy', path_key=key, post_id=post.id) }}", {cache: "no-store"})
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (!d.scoring || ++tries > 24) location.replace(location.pathname + "#quality");
+            else setTimeout(ask, 5000);
+          })
+          .catch(function () { setTimeout(ask, 8000); });
+      }
+      setTimeout(ask, 5000);
+    })();
+  </script>
+  {% endif %}
   <script>
     // 사진을 고르면 바로 올린다. 올리는 동안 버튼을 '올리는 중'으로 바꿔 두 번 누르지 않게.
     function upGo(inp) {

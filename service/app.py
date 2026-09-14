@@ -3139,6 +3139,18 @@ def blog_post_photo(path_key, post_id):
                             note=note) + "#photos")
 
 
+@app.route("/<path_key>/blog/post/<int:post_id>/busy")
+def blog_post_busy(path_key, post_id):
+    """글 화면이 5초마다 묻는다 — 채점·초안 잡이 끝났으면 화면을 새로 그리려고.
+    (body 안의 meta refresh 는 폰 브라우저가 무시하기도 했다 — 2026-09-15 사장님 신고)"""
+    check(path_key)
+    try:
+        busy = blog.busy_kinds()
+    except Exception:  # noqa: BLE001
+        busy = set()
+    return jsonify({"scoring": "blog_score" in busy, "drafting": "blog_draft" in busy})
+
+
 @app.route("/<path_key>/blog/post/<int:post_id>/score", methods=["POST"])
 def blog_post_score(path_key, post_id):
     """④ 품질 확인 — 지금 글 그대로를 채점(score)하거나 개선점대로 다듬는다(polish)."""
