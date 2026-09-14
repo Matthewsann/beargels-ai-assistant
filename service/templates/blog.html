@@ -94,7 +94,7 @@
 
   {# ── 부가 기능은 접어 둔다 — 4단계 흐름을 가리지 않게 ───────────── #}
   <details class="panel" style="margin-top:16px;">
-    <summary style="cursor:pointer; font-size:14px; font-weight:600;">🔧 소재함 · 순위 · 반응 · 채널 배분안</summary>
+    <summary style="cursor:pointer; font-size:14px; font-weight:600;">🔧 소재함 · 순위 · 반응</summary>
 
     <a class="btn wide" style="margin-top:10px;" target="_blank" rel="noopener"
        href="https://drive.google.com/drive/folders/1cJf1C4C3LGAUqDdF9M8ckglPR0ViHBSw">
@@ -138,54 +138,10 @@
     </div>
     {% endif %}
 
-    <form method="post" action="{{ url_for('blog_plan', path_key=key) }}" style="margin-top:14px;">
-      <button class="btn wide" type="submit" {{ 'disabled' if not worker.alive else '' }}>🧭 채널 배분안 만들기</button>
-    </form>
-    <div style="font-size:12px; color:var(--muted); margin:6px 0 0;">
-      주제 폴더의 소재를 블로그·인스타·당근·플레이스에 겹치지 않게 나눠줍니다.
-    </div>
-
-    {% if plans %}
-    <div class="sec">🧭 채널 배분안</div>
-    {% for pl in plans %}
-    <div class="card">
-      <div class="meta">
-        {% if pl.status == 'pending' %}<span class="tag c">승인 대기</span>
-        {% else %}<span class="tag g">승인됨</span>{% endif %}
-        <span>{{ pl.topic }}</span>
-      </div>
-      {% if pl.plan.angle %}<span class="ttl">“{{ pl.plan.angle }}”</span>{% endif %}
-      {% for ch, c in pl.plan.channels.items() %}
-      <div style="font-size:12px; margin-top:6px; padding-left:2px;">
-        <b>{{ {'blog':'📝 블로그','insta':'🎬 인스타','danggeun':'🥕 당근','place':'📍 플레이스'}.get(ch, ch) }}</b> ·
-        {% if c.photos %}사진 {{ c.photos|length }}장{% endif %}
-        {% if c.clip %} + 클립{% endif %}
-        {% if c.cover %} · 커버 1장{% endif %}
-        {% if c.reel %}<div style="color:var(--muted);">릴스: {{ c.reel }}</div>{% endif %}
-        {% if c.title_hint %}<div style="color:var(--muted);">제목: {{ c.title_hint }}</div>{% endif %}
-        {% if c.copy_hint %}<div style="color:var(--muted);">{{ c.copy_hint }}</div>{% endif %}
-      </div>
-      {% endfor %}
-      {% if pl.plan.note %}<div style="font-size:12px; color:var(--muted); margin-top:6px;">💡 {{ pl.plan.note }}</div>{% endif %}
-      {% if pl.status == 'pending' %}
-      <div class="row" style="margin-top:9px;">
-        <form method="post" action="{{ url_for('blog_plan_decide', path_key=key, plan_id=pl.id) }}" style="flex:1;">
-          <input type="hidden" name="status" value="approved">
-          <button class="btn sm wide" type="submit">✅ 이대로 진행</button>
-        </form>
-        <form method="post" action="{{ url_for('blog_plan_decide', path_key=key, plan_id=pl.id) }}" style="flex:1;">
-          <input type="hidden" name="status" value="rejected">
-          <button class="btn sm wide" type="submit">↻ 다시 짜줘</button>
-        </form>
-      </div>
-      {% elif pl.status == 'approved' and pl.plan.channels.blog %}
-      <form method="post" action="{{ url_for('blog_draft_from_plan', path_key=key, plan_id=pl.id) }}" style="margin-top:9px;">
-        <button class="btn sm wide" type="submit" {{ 'disabled' if not worker.alive else '' }}>✍️ 블로그 몫(배분된 사진들)으로 초안 만들기</button>
-      </form>
-      {% endif %}
-    </div>
-    {% endfor %}
-    {% endif %}
+    {# 채널 배분안 버튼은 뺐다(사장님 2026-09-15). 저장 표(media_plans, 007 SQL)가 아직
+       없어 눌러도 실패했고, 채널 간 겹침 허용(8/29)·콘텐츠 브리프(9/4)·③ 사진 선택
+       (9/14)으로 역할이 겹친다. 라우트·일꾼 코드는 그대로 — 당근·플레이스를 시작할 때
+       007 SQL 을 돌리고 이 자리에 다시 넣으면 된다(git 이력 6a983f2 의 이 파일). #}
   </details>
 
 {% endblock %}
