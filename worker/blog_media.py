@@ -408,14 +408,29 @@ def held_rels(except_post_id=None) -> dict:
     out: dict = {}
     try:
         from database import blog_store
-        rows = (blog_store.get_client().table("blog_posts").select("id,body")
+        rows = (blog_store.get_client().table("blog_posts")
+                .select("id,body,status,published_at,created_at")
                 .neq("status", "trashed").execute().data) or []
     except Exception as e:  # noqa: BLE001 — DB 가 안 닿으면 예전처럼(원장만)
         logger.warning("쥔 사진 조회 실패(무시): %s", str(e)[:100])
         return out
+    from datetime import datetime, timedelta, timezone
+    cutoff = datetime.now(timezone.utc) - timedelta(days=HELD_PUBLISHED_DAYS)
     for r in rows:
         if except_post_id is not None and str(r.get("id")) == str(except_post_id):
             continue
+        if r.get("status") == "published":
+            # 발행된 지 오래된 글의 사진은 놓아준다 — 상시(매장·메뉴) 컷이 영원히
+            # 잠기면 몇 달 뒤엔 쓸 사진이 없다. 주제 사진은 어차피 원장이 막는다.
+            ts = str(r.get("published_at") or r.get("created_at") or "")
+            try:
+                when = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                if when.tzinfo is None:
+                    when = when.replace(tzinfo=timezone.utc)
+                if when < cutoff:
+                    continue
+            except ValueError:
+                pass
         for m in MARK.finditer(r.get("body") or ""):
             tok = m.group(1).strip()
             if tok.lower().endswith(tuple(PHOTO_EXT | VIDEO_EXT)):
@@ -423,9 +438,13 @@ def held_rels(except_post_id=None) -> dict:
     return out
 
 
-# 상시(_) 사진은 회전용이라 쥐고 있어도 빼지 않는다 — 단, 안 쥔 상시 사진이
-# 이만큼 남아 있으면 쥔 것은 목록에서 뺀다(같은 매장컷이 글마다 나오는 것을 막는다).
-EVERGREEN_KEEP_MIN = 4
+# 사장님 지시(2026-09-15 저녁): "다음부터 만드는 초안에서는 이미지 중복 안 되게" —
+# 다른 살아있는 글이 쥔 사진은 상시(매장·메뉴) 컷이라도 **절대** 다시 내놓지 않는다.
+# 대신 발행된 지 이만큼 지난 글은 사진을 놓아준다(상시 컷 회전). 쓸 사진이 모자라면
+# 초안 메시지가 "사진을 더 올려 달라"고 말한다 — 몰래 겹치지 않는다.
+HELD_PUBLISHED_DAYS = 60
+# 새 초안에 내놓을 사진이 이보다 적으면 메시지로 경고한다
+THIN_POOL = 6
 
 
 def catalog(index: dict | None = None, include_bad: bool = False,
@@ -455,14 +474,9 @@ def catalog(index: dict | None = None, include_bad: bool = False,
         evergreen = (v.get("slot") or "").startswith("_")
         if not evergreen and media_ledger.used_in(rel, channel):
             continue    # 주제 소재는 채널당 1회 — 소진되면 끝(주제 단위 소진 모델)
-        if not evergreen and held.get(rel):
-            continue    # 다른 초안이 이미 쥔 주제 사진 — 그 글이 나갈 때까지 그 글 것
-        # 쥔 횟수가 많을수록 뒤로(상시 사진 회전). 문자열 정렬 키라 '9-n' 꼴로.
-        items.append((rel, v, (f"{9 - min(held.get(rel, 0), 9)}" + (last_used(rel) or "")) if evergreen else ""))
-    # 안 쥔 상시 사진이 넉넉하면 쥔 상시 사진은 아예 뺀다
-    free_ever = [t for t in items if t[1].get("slot", "").startswith("_") and not held.get(t[0])]
-    if len(free_ever) >= EVERGREEN_KEEP_MIN:
-        items = [t for t in items if not (t[1].get("slot", "").startswith("_") and held.get(t[0]))]
+        if held.get(rel):
+            continue    # 다른 살아있는 글이 쥔 사진 — 상시 컷이라도 다시 안 내놓는다(중복 금지)
+        items.append((rel, v, last_used(rel) if evergreen else ""))
     # 정렬: 상시(_*)를 앞에 두되 **안 쓴 것·오래전에 쓴 것 우선**(회전),
     # 주제 소재는 주제 이름순 + 대표사진 후보 우선.
     items.sort(key=lambda t: (0 if t[1].get("slot", "").startswith("_") else 1,
@@ -554,6 +568,25 @@ def freeze_marks(body: str, cat: dict | None = None) -> str:
 
     out = MARK.sub(sub, body)
     return re.sub(r"\n{3,}", "\n\n", out)      # 지운 자리에 빈 줄이 남지 않게
+
+
+def dedupe_marks(body: str) -> tuple[str, int]:
+    """한 글 안에서 같은 사진 표시가 두 번 나오면 뒤의 것을 지운다. (본문, 지운 수)."""
+    seen, dropped = set(), 0
+
+    def sub(m):
+        nonlocal dropped
+        tok = m.group(1).strip()
+        if not tok.lower().endswith(tuple(PHOTO_EXT | VIDEO_EXT)):
+            return m.group(0)
+        if tok in seen:
+            dropped += 1
+            return ""
+        seen.add(tok)
+        return m.group(0)
+
+    out = MARK.sub(sub, body or "")
+    return re.sub(r"\n{3,}", "\n\n", out), dropped
 
 
 def used_media(body: str, cat: dict | None = None) -> list[dict]:

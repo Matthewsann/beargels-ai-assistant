@@ -239,9 +239,16 @@ def do_draft(payload: dict) -> tuple[int, str]:
     try:
         import blog_media
         body = blog_media.freeze_marks(body)
+        body, dropped = blog_media.dedupe_marks(body)      # 한 글 안 같은 사진 두 번 금지
         media = blog_media.used_media(body)
         if media:
-            photo_note = f" · 사진 {len(media)}장"
+            photo_note = f" · 사진 {len(media)}장" + (f"(겹친 {dropped}장 뺌)" if dropped else "")
+        try:
+            pool = len(blog_media.catalog(except_post_id=post_id if old else None))
+            if pool < blog_media.THIN_POOL:
+                photo_note += f" · ⚠ 아직 안 쓴 사진이 {pool}장뿐 — 소재함에 사진을 더 올려주세요"
+        except Exception:  # noqa: BLE001
+            pass
             # 웹에서 어떤 사진인지 눈으로 확인할 수 있게 작은 미리보기를 올린다
             blog_media.ensure_thumbs(media)
         else:
