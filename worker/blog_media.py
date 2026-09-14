@@ -228,6 +228,22 @@ def build_index(force: bool = False, limit: int | None = None,
     if limit:
         todo = todo[:limit]
 
+    # 못 여는 파일은 묶음에 넣기 전에 걸러낸다. 예전엔 묶음(4장) 중 한 장이
+    # 안 열리면 나머지 세 장까지 통째로 버렸다 — 드라이브가 스캔과 태깅 사이에
+    # 파일 이름을 바꾸거나(IMG_2623.PNG → "IMG_2623 (1).PNG") 아직 내려받지
+    # 않은 파일이 그렇다. 그 묶음에 있던 HEIC 3장이 매번 조용히 빠졌다
+    # (2026-09-15 실측). 사라진 파일은 다음 스캔에서 새 이름으로 다시 잡힌다.
+    ok = []
+    for f in todo:
+        path = full_path(f["rel"])
+        try:
+            with open(path, "rb") as fh:
+                fh.read(16)
+            ok.append(f)
+        except OSError as e:
+            logger.warning("사진을 못 열어 건너뜀(%s): %s", f["rel"], str(e)[:80])
+    todo = ok
+
     for i in range(0, len(todo), BATCH):
         chunk = todo[i:i + BATCH]
         paths = [full_path(f["rel"]) for f in chunk]
