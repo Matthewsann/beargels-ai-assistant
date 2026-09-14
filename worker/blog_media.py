@@ -397,8 +397,39 @@ def pick_video(want: str = "", index: dict | None = None,
 # 사진 목록을 먼저 보여주고, AI가 있는 사진으로 글을 짜게 한다. 글 안에서는
 # `[📷 P07]` 처럼 번호로 가리키고, 나중에 resolve() 가 실제 파일로 바꾼다.
 
+def held_rels(except_post_id=None) -> dict:
+    """살아있는 글(휴지통 제외)들이 본문에 쥐고 있는 사진 → {rel: 쥔 글 수}.
+
+    원장은 **네이버에 넣은 뒤**에야 적히므로, 초안을 연달아 열 편 만들면 열 편이
+    같은 사진함을 보고 같은 대표컷을 고른다(2026-09-15 실측: 매장 사진 한 장이 7편에).
+    그래서 초안 단계부터 '누가 쥐고 있나'를 센다. except_post_id 는 자기 글(다시
+    뽑기·사진 고르기)은 빼고 세기 위한 것.
+    """
+    out: dict = {}
+    try:
+        from database import blog_store
+        rows = (blog_store.get_client().table("blog_posts").select("id,body")
+                .neq("status", "trashed").execute().data) or []
+    except Exception as e:  # noqa: BLE001 — DB 가 안 닿으면 예전처럼(원장만)
+        logger.warning("쥔 사진 조회 실패(무시): %s", str(e)[:100])
+        return out
+    for r in rows:
+        if except_post_id is not None and str(r.get("id")) == str(except_post_id):
+            continue
+        for m in MARK.finditer(r.get("body") or ""):
+            tok = m.group(1).strip()
+            if tok.lower().endswith(tuple(PHOTO_EXT | VIDEO_EXT)):
+                out[tok] = out.get(tok, 0) + 1
+    return out
+
+
+# 상시(_) 사진은 회전용이라 쥐고 있어도 빼지 않는다 — 단, 안 쥔 상시 사진이
+# 이만큼 남아 있으면 쥔 것은 목록에서 뺀다(같은 매장컷이 글마다 나오는 것을 막는다).
+EVERGREEN_KEEP_MIN = 4
+
+
 def catalog(index: dict | None = None, include_bad: bool = False,
-            channel: str = "blog") -> dict:
+            channel: str = "blog", except_post_id=None) -> dict:
     """{"P01": {사진 기록}, ...} — AI 에게 보여줄 번호표를 붙인 사진 목록.
 
     channel 이 이미 쓴 소재는 원장 기준으로 뺀다(같은 채널 재탕 방지).
@@ -406,6 +437,7 @@ def catalog(index: dict | None = None, include_bad: bool = False,
     """
     import media_ledger
     idx = index if index is not None else load_index()
+    held = held_rels(except_post_id) if channel == "blog" else {}
 
     def last_used(rel):
         # 채널 구분 없이 본다 — 사장님이 막고 싶은 건 '콘텐츠 1·2·3 에 같은
@@ -423,7 +455,14 @@ def catalog(index: dict | None = None, include_bad: bool = False,
         evergreen = (v.get("slot") or "").startswith("_")
         if not evergreen and media_ledger.used_in(rel, channel):
             continue    # 주제 소재는 채널당 1회 — 소진되면 끝(주제 단위 소진 모델)
-        items.append((rel, v, last_used(rel) if evergreen else ""))
+        if not evergreen and held.get(rel):
+            continue    # 다른 초안이 이미 쥔 주제 사진 — 그 글이 나갈 때까지 그 글 것
+        # 쥔 횟수가 많을수록 뒤로(상시 사진 회전). 문자열 정렬 키라 '9-n' 꼴로.
+        items.append((rel, v, (f"{9 - min(held.get(rel, 0), 9)}" + (last_used(rel) or "")) if evergreen else ""))
+    # 안 쥔 상시 사진이 넉넉하면 쥔 상시 사진은 아예 뺀다
+    free_ever = [t for t in items if t[1].get("slot", "").startswith("_") and not held.get(t[0])]
+    if len(free_ever) >= EVERGREEN_KEEP_MIN:
+        items = [t for t in items if not (t[1].get("slot", "").startswith("_") and held.get(t[0]))]
     # 정렬: 상시(_*)를 앞에 두되 **안 쓴 것·오래전에 쓴 것 우선**(회전),
     # 주제 소재는 주제 이름순 + 대표사진 후보 우선.
     items.sort(key=lambda t: (0 if t[1].get("slot", "").startswith("_") else 1,
@@ -439,7 +478,7 @@ def catalog(index: dict | None = None, include_bad: bool = False,
     # 원본은 blog_video.py 가 구간을 골라 클립으로 만들 때만 쓰인다.
     vids = [(k, v) for k, v in idx.items()
             if v.get("kind") == "video" and "/_클립/" in f"/{k}"
-            and not media_ledger.used_in(k, channel)]
+            and not media_ledger.used_in(k, channel) and not held.get(k)]
     for j, (rel, v) in enumerate(vids, 1):
         out[f"V{j:02d}"] = {**v, "rel": rel}
     return out

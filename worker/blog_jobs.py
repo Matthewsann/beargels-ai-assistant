@@ -232,6 +232,7 @@ def do_draft(payload: dict) -> tuple[int, str]:
         only_rels=payload.get("photos") or None,   # 승인된 배분안의 블로그 몫
         retry_reason=reason,
         facts=store_facts_text(),                  # 영업시간 등은 이 값만 — 지어내지 않게
+        except_post_id=post_id if old else None,   # 다시 뽑기는 자기 사진을 다시 써도 된다
     )
     body = data.get("body") or ""
     photo_note = ""
@@ -305,6 +306,10 @@ def do_draft(payload: dict) -> tuple[int, str]:
             pass
     if brief and not old:
         _brief_link(brief["id"], post_id, data.get("title") or topic)
+    try:
+        blog_media.publish_catalog()        # 이 글이 쥔 사진은 ③ 고르기 목록에서 빠진다
+    except Exception as e:  # noqa: BLE001
+        logger.warning("사진 목록 발행 실패: %s", str(e)[:100])
     head = "초안 다시 뽑기 완료" if old else "초안 저장 완료"
     return 1, (f"{head} (#{post_id}){q_note}{photo_note}"
                f" — {data.get('title', '')[:40]}")
