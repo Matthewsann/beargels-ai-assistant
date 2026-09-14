@@ -381,7 +381,10 @@
         form.querySelectorAll('input[type=hidden]').forEach(function (h) { fd.append(h.name, h.value); });
         fd.append('photo', blob, (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg');
         lab.textContent = '⏳ 올리는 중… (' + Math.round(blob.size / 1024) + 'KB)';
-        return fetch(form.action, {method: 'POST', body: fd, credentials: 'same-origin'});
+        // ⚠ form.action 이 아니다 — 폼 안에 name="action" 숨은 칸이 있어 그 요소가 잡힌다
+        //   (2026-09-15 실측: '/post/3/[object HTMLInputElement]' 로 가서 404).
+        var url = form.getAttribute('action');
+        return fetch(url, {method: 'POST', body: fd, credentials: 'same-origin'});
       }).then(function (r) {
         location.replace(r.url || location.pathname);   // 서버의 redirect(note 포함)로 이동
       }).catch(function () {
