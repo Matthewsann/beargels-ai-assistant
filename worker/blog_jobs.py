@@ -89,6 +89,10 @@ def do_media() -> tuple[int, str]:
     videos = len(idx) - photos
     added = len(idx) - before
     grew = f"새 사진 {added}장 · " if added > 0 else ""
+    try:
+        blog_media.publish_catalog()      # 웹의 '사진 선택'이 새 사진을 보게
+    except Exception as e:  # noqa: BLE001
+        logger.warning("사진 목록 발행 실패: %s", str(e)[:100])
     return len(idx), f"{grew}사진함 사진 {photos}장 · 영상 {videos}개"
 
 
@@ -189,6 +193,15 @@ def do_draft(payload: dict) -> tuple[int, str]:
             q_note += f"(퇴고로 {quality.get('before_score')}→{quality['score']})"
     except Exception as e:  # noqa: BLE001 — 평가 실패가 저장을 막으면 안 된다
         logger.warning("품질 평가 실패: %s", str(e)[:120])
+
+    # 퇴고가 사진 표시를 새로 지어내는 일이 있다(2026-09-14 글#3 실측: `[📷 사진:
+    # 이른 아침 햇살이…]` 같은 설명형 표시 6개). 표시 굳히기를 퇴고 **뒤에** 한 번
+    # 더 돌려 사진함에 없는 표시는 지우고, 파일명만 적힌 것은 경로로 굳힌다.
+    try:
+        import blog_media
+        body = blog_media.freeze_marks(body)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("퇴고 뒤 사진 표시 정리 실패: %s", str(e)[:100])
 
     # ★ 해시태그를 본문 맨 끝에 문단으로 넣는다(사장님 지적 2026-08-28 —
     #   태그가 DB에만 있고 네이버엔 안 들어가고 있었다). 네이버 공식 태그칸은
@@ -326,6 +339,7 @@ def do_publish(payload: dict) -> tuple[int, str]:
     try:
         import blog_media
         moved = blog_media.mark_used(inserted, label=f"글 #{post_id}")
+        blog_media.publish_catalog()      # 방금 쓴 사진은 고르기 목록에서 빠진다
     except Exception as e:  # noqa: BLE001 — 기록 실패가 발행 성공을 덮으면 안 된다
         logger.warning("원장 기록 실패: %s", str(e)[:120])
 

@@ -250,6 +250,14 @@ def request_blog_job(kind, payload=None, by=None):
     return res.data[0] if res.data else None
 
 
+def busy_kinds() -> set:
+    """지금 대기·진행 중인 블로그 잡 종류들 — 화면이 '쓰는 중'을 알리는 데 쓴다."""
+    rows = (get_client().table(JOBS).select("kind")
+            .in_("status", ["pending", "running"]).like("kind", "blog_%")
+            .execute().data) or []
+    return {r.get("kind") for r in rows}
+
+
 def latest_blog_job(kind=None):
     q = get_client().table(JOBS).select("*")
     q = q.eq("kind", kind) if kind else q.like("kind", "blog_%")

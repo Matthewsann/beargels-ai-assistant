@@ -535,7 +535,7 @@ def prepare(rel: str) -> pathlib.Path:
 # (인스타 완성본이 쓰는 그 버킷). 키는 rel 경로의 해시라 ASCII 이고, 웹이
 # 같은 해시를 계산하면 URL 이 나온다 — 주고받을 목록이 따로 필요 없다.
 THUMB_PREFIX = "blogthumbs"
-THUMB_PX = 320                      # 폰에서 작게 보는 용도. 20~40KB 남짓.
+THUMB_PX = 640                      # 글 화면이 본문 안에 사진을 통째로 보여준다(2026-09-14). 40~80KB.
 THUMB_STATE = ROOT / "data" / "blog_thumbs.json"
 
 
@@ -613,7 +613,7 @@ def ensure_thumbs(rels) -> int:
             stamp = int(full_path(rel).stat().st_mtime)
         except Exception:  # noqa: BLE001 — 파일이 없으면(보관 이동 등) 건너뛴다
             continue
-        if done.get(key) == stamp:
+        if done.get(key) == f"{stamp}:{THUMB_PX}":   # 크기를 바꾸면 다시 만든다
             continue
         try:
             data = _thumb_bytes(rel)
@@ -621,7 +621,7 @@ def ensure_thumbs(rels) -> int:
                 continue
             bucket.upload(f"{THUMB_PREFIX}/{key}", data,
                           {"content-type": "image/jpeg", "upsert": "true"})
-            done[key] = stamp
+            done[key] = f"{stamp}:{THUMB_PX}"
             made += 1
         except Exception as e:  # noqa: BLE001 — 한 장 실패가 나머지를 막지 않는다
             logger.warning("미리보기 실패(%s): %s", rel, str(e)[:100])
@@ -633,6 +633,47 @@ def ensure_thumbs(rels) -> int:
             logger.warning("미리보기 기록 저장 실패: %s", str(e)[:100])
         logger.info("사진 미리보기 %d장 올림", made)
     return made
+
+
+# 웹의 ③ '사진 선택'이 읽는 목록. 사진함(인덱스)은 집 PC 파일이라 웹이 못 본다.
+# 그래서 사진함을 훑거나 글을 네이버에 넣을 때마다 "지금 블로그가 쓸 수 있는
+# 사진" 목록을 공개 버킷에 올려 둔다(briefs·ideas 와 같은 state/ 우편함 방식).
+CATALOG_KEY = "state/blog_catalog.json"
+
+
+def publish_catalog() -> int:
+    """카탈로그(이미 쓴 소재 제외)를 미리보기와 함께 버킷에 올린다. 올린 개수."""
+    import json
+    import time
+    try:
+        cat = catalog()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("카탈로그 발행 실패(목록): %s", str(e)[:120])
+        return 0
+    items = []
+    for _pid, v in cat.items():
+        rel = v.get("rel")
+        if not rel:
+            continue
+        items.append({
+            "rel": rel, "slot": v.get("slot") or "", "kind": v.get("kind") or "photo",
+            "subject": v.get("subject") or v.get("caption") or "",
+            "scene": v.get("scene") or "", "hero": bool(v.get("hero")),
+            "key": thumb_key(rel),
+        })
+    ensure_thumbs([i["rel"] for i in items])
+    try:
+        from sns_automation import cloud_sync
+        cloud_sync._bucket().upload(
+            CATALOG_KEY,
+            json.dumps({"updated": int(time.time()), "items": items},
+                       ensure_ascii=False).encode("utf-8"),
+            {"content-type": "application/json; charset=utf-8", "upsert": "true"})
+    except Exception as e:  # noqa: BLE001
+        logger.warning("카탈로그 발행 실패(업로드): %s", str(e)[:120])
+        return 0
+    logger.info("사진 목록 발행: %d개", len(items))
+    return len(items)
 
 
 # ---------------------------------------------------------------------------

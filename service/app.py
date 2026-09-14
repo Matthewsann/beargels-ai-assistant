@@ -2616,6 +2616,108 @@ _THUMB_BASE = (os.getenv("SUPABASE_URL", "").rstrip("/")
                if os.getenv("SUPABASE_URL") else "")
 
 
+# 집 PC 가 올려둔 '지금 블로그가 쓸 수 있는 사진' 목록(worker/blog_media.publish_catalog).
+BLOG_CATALOG_KEY = "state/blog_catalog.json"
+_blog_catalog_cache = {"at": 0.0, "items": []}
+
+
+def _blog_catalog() -> list[dict]:
+    """③ 사진 선택이 고를 수 있는 사진들. 60초 캐시 — 버킷을 매번 두드리지 않는다."""
+    import hashlib
+    now = time.time()
+    if now - _blog_catalog_cache["at"] < 60:
+        return _blog_catalog_cache["items"]
+    items = _blog_catalog_cache["items"]
+    try:
+        from sns_automation import cloud_sync
+        raw = cloud_sync._bucket().download(BLOG_CATALOG_KEY)
+        items = json.loads(raw.decode("utf-8")).get("items") or []
+        for it in items:
+            key = it.get("key") or (hashlib.sha1(it["rel"].encode("utf-8")).hexdigest()[:16] + ".jpg")
+            it["thumb"] = f"{_THUMB_BASE}/{key}" if _THUMB_BASE else ""
+            it["name"] = it["rel"].rpartition("/")[2]
+            it["video"] = it.get("kind") == "video"
+    except Exception as e:  # noqa: BLE001 — 목록이 없으면 빈 채로(고르기만 안 될 뿐)
+        db.log_error("service", f"블로그 사진 목록 읽기 실패: {e}",
+                     kind=type(e).__name__, path="_blog_catalog")
+    _blog_catalog_cache.update(at=now, items=items)
+    return items
+
+
+def _blog_step(post: dict) -> int:
+    """4단계(주제→초안→사진→임시저장) 중 이 글이 지금 서 있는 칸.
+
+    초안이 있으면 ③ 사진 선택 차례, 네이버에 넣었으면 ④까지 끝(5).
+    """
+    if not post:
+        return 1
+    return 5 if post.get("prepared_at") else 3
+
+
+def _mark_for(rel: str) -> str:
+    icon = "🎬" if rel.lower().endswith((".mp4", ".mov", ".m4v")) else "📷"
+    return f"[{icon} {rel}]"
+
+
+_MARK_LINE = re.compile(r"\[\s*[📷🎬]\s*([^\[\]\n]{1,200}?)\s*\]")
+_MEDIA_EXT = (".jpg", ".jpeg", ".png", ".heic", ".webp", ".mp4", ".mov", ".m4v")
+
+
+def _is_media_rel(rel: str) -> bool:
+    """사진 표시가 진짜 파일을 가리키나(AI 가 지어낸 `[📷 사진: 설명]` 은 아니다)."""
+    return (rel or "").lower().endswith(_MEDIA_EXT)
+
+
+def _blog_chunks(body: str) -> list[str]:
+    """본문을 빈 줄 기준 토막으로 나누되, 사진 표시 한 줄은 항상 제 토막으로.
+
+    화면(_blog_render)과 '이 문단 뒤에 사진 넣기'(insert_after)가 **같은 번호**를
+    보게 하려고 한 함수로 뽑았다. 토막을 다시 이으면 빈 줄이 한 줄로 정리된다.
+    """
+    out = []
+    for raw_chunk in re.split(r"\n\s*\n", (body or "").strip()):
+        buf = []
+        for ln in raw_chunk.split("\n"):
+            if _MARK_LINE.fullmatch(ln.strip()):
+                if buf:
+                    out.append("\n".join(buf))
+                    buf = []
+                out.append(ln.strip())
+            else:
+                buf.append(ln)
+        if buf:
+            out.append("\n".join(buf))
+    return [c for c in out if c.strip()]
+
+
+def _blog_render(body: str) -> list[dict]:
+    """본문 → 네이버에 들어갈 모습 그대로의 블록 목록(문단·소제목·구분선·사진·정보·태그)."""
+    import hashlib
+    blocks = []
+    for i, c in enumerate(_blog_chunks(body)):
+        m = _MARK_LINE.fullmatch(c)
+        if m:
+            rel = m.group(1).strip()
+            if not _is_media_rel(rel):
+                continue                      # 지어낸 표시는 화면에도 안 보인다
+            key = hashlib.sha1(rel.encode("utf-8")).hexdigest()[:16] + ".jpg"
+            blocks.append({"t": "img", "i": i, "rel": rel,
+                           "name": rel.rpartition("/")[2],
+                           "video": rel.lower().endswith((".mp4", ".mov", ".m4v")),
+                           "thumb": f"{_THUMB_BASE}/{key}" if _THUMB_BASE else ""})
+        elif re.match(r"^#{1,4}\s+", c):
+            blocks.append({"t": "h", "i": i, "text": re.sub(r"^#{1,4}\s+", "", c).strip()})
+        elif re.fullmatch(r"-{3,}\s*", c):
+            blocks.append({"t": "hr", "i": i})
+        elif c.lstrip().startswith("[매장 정보]"):
+            blocks.append({"t": "info", "i": i, "text": c})
+        elif all(tok.startswith("#") for tok in c.split()):
+            blocks.append({"t": "tags", "i": i, "text": c})
+        else:
+            blocks.append({"t": "p", "i": i, "text": c})
+    return blocks
+
+
 def _blog_photos(body: str) -> list[dict]:
     """본문에 박힌 사진 표시를 목록으로 뽑는다.
 
@@ -2626,7 +2728,7 @@ def _blog_photos(body: str) -> list[dict]:
     import hashlib
     out, seen = [], set()
     for icon, rel in _PHOTO_MARK.findall(body or ""):
-        if rel in seen:
+        if rel in seen or not _is_media_rel(rel):
             continue
         seen.add(rel)
         slot, _, name = rel.rpartition("/")
@@ -2672,12 +2774,16 @@ def _blog_job_view(job) -> dict | None:
 def blog_home(path_key):
     check(path_key)
     error = None
-    posts, recs, ranks, job, plans = [], [], [], None, []
+    posts, recs, ranks, job, plans, busy = [], [], [], None, [], set()
     try:
         posts = blog.list_posts(limit=50)
         recs = blog.list_recommendations()
         ranks = blog.latest_ranks()
         job = _blog_job_view(blog.latest_blog_job())
+        try:
+            busy = blog.busy_kinds()
+        except Exception:  # noqa: BLE001
+            busy = set()
         try:
             plans = blog.latest_plans()
         except Exception:  # noqa: BLE001 — 007 SQL 을 아직 안 돌렸으면 없는 테이블
@@ -2687,8 +2793,11 @@ def blog_home(path_key):
         db.log_error("service", f"블로그 화면 로드 실패: {e}",
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
+    for p in posts:
+        p["step"] = _blog_step(p)
     return render_template("blog.html", key=path_key, posts=posts, recs=recs,
                            plans=plans, note=(request.args.get("note") or "")[:200],
+                           drafting=("blog_draft" in busy),
                            ranks=ranks, job=job, worker=_worker_view(), error=error)
 
 
@@ -2849,8 +2958,25 @@ def blog_post(path_key, post_id):
     prev = _blog_prev_version(post_id)
     preview = bool(prev) and request.args.get("v") == "prev"
     shown = prev if preview else post
+    photos = _blog_photos((shown or {}).get("body", ""))
+    # ③ 사진 선택 — ?swap=<rel> 은 그 사진을 바꾸는 중, ?swap= (빈값)은 추가하는 중.
+    swap = request.args.get("swap")           # 이 사진을 바꾸는 중
+    after = request.args.get("after")         # 이 토막 뒤에 넣는 중
+    picking = swap is not None or after is not None
+    catalog = []
+    if picking:
+        used = {p["rel"] for p in photos}
+        catalog = [c for c in _blog_catalog() if c["rel"] not in used]
+    blocks = _blog_render((shown or {}).get("body", ""))
+    after_text = ""
+    if after not in (None, ""):
+        for b in blocks:
+            if str(b["i"]) == after and b.get("text"):
+                after_text = b["text"][:50]
     return render_template("blog_post.html", key=path_key, post=post,
-                           photos=_blog_photos((shown or {}).get("body", "")),
+                           photos=photos, step=_blog_step(post), blocks=blocks,
+                           picking=picking, swap=swap or "", after=after if after is not None else "",
+                           after_text=after_text, catalog=catalog,
                            note=(request.args.get("note") or "")[:200],
                            prev=prev, preview=preview,
                            prev_at=_updated_view((prev or {}).get('at')),
@@ -2860,6 +2986,66 @@ def blog_post(path_key, post_id):
                            stats_prev=_blog_stats((prev or {}).get("body", "")),
                            reasons=BLOG_REGEN_REASONS,
                            worker=_worker_view(), error=error)
+
+
+@app.route("/<path_key>/blog/post/<int:post_id>/photo", methods=["POST"])
+def blog_post_photo(path_key, post_id):
+    """③ 사진 선택 — 본문의 사진 표시를 빼고·바꾸고·더한다(집 PC 안 거침).
+
+    사진은 본문 안의 `[📷 경로]` 한 줄이 전부라, 그 줄만 고치면 된다. 자리는
+    AI 가 문맥에 맞춰 잡아둔 것이니 '바꾸기'는 같은 자리에 넣는다. 네이버에
+    넣어둔 임시저장본과는 달라지므로 prepared_at 을 지워 ④를 다시 하게 한다.
+    """
+    check(path_key)
+    act = request.form.get("action") or ""
+    rel = (request.form.get("rel") or "").strip()
+    new = (request.form.get("new_rel") or "").strip()
+    post = blog.get_post(post_id)
+    if not post:
+        abort(404)
+    body = post.get("body") or ""
+    note = ""
+    try:
+        if act == "remove" and rel:
+            pat = re.compile(r"[ \t]*\[\s*[📷🎬]\s*" + re.escape(rel) + r"\s*\][ \t]*\n?")
+            body, n = pat.subn("", body, count=1)
+            note = "사진을 뺐어요." if n else "그 사진이 본문에 없어요."
+        elif act == "replace" and rel and new:
+            pat = re.compile(r"\[\s*[📷🎬]\s*" + re.escape(rel) + r"\s*\]")
+            body, n = pat.subn(_mark_for(new), body, count=1)
+            note = "사진을 바꿨어요." if n else "바꿀 자리를 못 찾았어요."
+        elif act == "insert_after" and new:
+            chunks = _blog_chunks(body)
+            try:
+                at = int(request.form.get("after") or -1)
+            except ValueError:
+                at = -1
+            if 0 <= at < len(chunks):
+                chunks.insert(at + 1, _mark_for(new))
+                body = "\n\n".join(chunks)
+                note = "그 자리에 사진을 넣었어요."
+            else:
+                note = "넣을 자리를 못 찾았어요 — 화면을 새로고침한 뒤 다시 해주세요."
+        elif act == "add" and new:
+            mark = _mark_for(new)
+            # 매장정보 블록이나 맨 끝 해시태그 문단 **앞**에 넣는다 — 글의 흐름 끝, 정보 블록 전.
+            m = re.search(r"\n\s*\[매장 정보\]|\n(?:#\S+\s*)+$", body)
+            if m:
+                body = body[:m.start()].rstrip() + "\n\n" + mark + "\n" + body[m.start():]
+            else:
+                body = body.rstrip() + "\n\n" + mark + "\n"
+            note = "사진을 넣었어요. 자리를 옮기려면 본문에서 그 줄을 옮겨주세요."
+        else:
+            note = "무엇을 할지 알 수 없어요."
+        if body != (post.get("body") or ""):
+            blog.update_post(post_id, body=body, prepared_at=None)
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"사진 선택 실패(post {post_id}, {act}): {e}",
+                     kind=type(e).__name__, path=request.path,
+                     detail=traceback.format_exc())
+        note = f"사진을 바꾸지 못했어요: {str(e)[:100]}"
+    return redirect(url_for("blog_post", path_key=path_key, post_id=post_id,
+                            note=note) + "#photos")
 
 
 @app.route("/<path_key>/blog/post/<int:post_id>/regen", methods=["POST"])
