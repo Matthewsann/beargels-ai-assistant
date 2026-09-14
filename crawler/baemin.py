@@ -391,9 +391,16 @@ class BaeminCrawler:
 
     # 머리말 표지 — 이 중 마지막 것 뒤부터가 리뷰 본문이다.
     # 머리말 표지 — 이 중 **마지막** 것 뒤부터가 리뷰 본문이다.
-    _HEAD_MARK = re.compile(r"\(최근[^)]*\)|\d+\s*회\s*주문\s*고객|리뷰번호\s*\d+")
-    # 본문이 끝나는 지점. '사장님'은 카드 안에 딸려 오는 답글 영역의 시작이다.
-    _BODY_END = re.compile(r"주문메뉴|배달리뷰|사장님")
+    # '파트너님에게만 보이는 리뷰입니다'는 비공개 리뷰 안내문(손님 글 아님) —
+    # 머리말로 취급해 본문에서 뺀다(2026-09-14, 리뷰 2026090702916164 실사례).
+    _HEAD_MARK = re.compile(r"\(최근[^)]*\)|\d+\s*회\s*주문\s*고객|리뷰번호\s*\d+"
+                            r"|파트너님에게만\s*보이는\s*리뷰입니다\.?")
+    # 본문이 끝나는 지점. 카드 순서상 본문 뒤엔 주문메뉴 → 배달리뷰 → (답글)이
+    # 오므로 이 둘이 확실한 끝 표시다. ⚠️ '사장님'을 여기 같이 두면 손님이
+    # 본문에 쓴 "사장님 죄송합니다.."에서 잘린다(2026-09-14 실사례) — 그래서
+    # 주문메뉴·배달리뷰가 둘 다 없는 카드에서만 답글 표지로 폴백한다.
+    _BODY_END = re.compile(r"주문메뉴|배달리뷰")
+    _REPLY_MARK = re.compile(r"사장님")
 
     @staticmethod
     def _extract_body(raw, parts=None):
@@ -404,7 +411,8 @@ class BaeminCrawler:
            그래서 표지는 '본문 끝 표시' 이전 구간에서만 찾는다.
         """
         text = " ".join((raw or "").split())
-        e = BaeminCrawler._BODY_END.search(text)
+        e = (BaeminCrawler._BODY_END.search(text)
+             or BaeminCrawler._REPLY_MARK.search(text))
         zone_end = e.start() if e else len(text)
         marks = list(BaeminCrawler._HEAD_MARK.finditer(text, 0, zone_end))
         start = marks[-1].end() if marks else 0

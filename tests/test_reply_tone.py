@@ -309,6 +309,36 @@ def test_owner_reply_is_not_mistaken_for_body():
     assert B._extract_body(card) == "배달이 늦었어요"
 
 
+def test_body_mentioning_the_owner_is_not_cut():
+    """손님이 본문에 '사장님'이라고 쓰면 거기서 잘리면 안 된다.
+
+    실사례(2026-09-14, 리뷰 2026090702916164): "아니.. 그.. 사장님 죄송합니다..
+    너무 배고픈 상태에서..." 가 "아니.. 그.." 로 잘려 저장됐고, 재수집해도
+    같은 파서라 똑같이 잘렸다. 본문 끝은 주문메뉴·배달리뷰로만 판단한다.
+    """
+    from crawler.baemin import BaeminCrawler as B
+    card = ("알뜰배달 Meokja 2026년 9월 7일 리뷰번호 2026090702916164 "
+            "파트너님에게만 보이는 리뷰입니다. 아니.. 그.. 사장님 죄송합니다.. "
+            "너무 배고픈 상태에서 너무 맛있는 음식들을 받아서.. 다들 정신없이 "
+            "먹고 사진이 없네요.. "
+            "주문메뉴 파리지엔 잠봉&뵈르 치아바타 샌드위치 배달리뷰 좋아요 "
+            "사장님 댓글 등록하기")
+    body = B._extract_body(card)
+    assert body.startswith("아니.. 그.. 사장님 죄송합니다")
+    assert "사진이 없네요" in body                 # 끝까지 살아 있다
+    # 비공개 안내문은 손님 글이 아니다 — 본문에 붙이지 않는다
+    assert "파트너님에게만" not in body
+
+
+def test_menuless_card_still_stops_before_reply():
+    """주문메뉴·배달리뷰가 없는 카드는 답글 표지('사장님')로 폴백해 자른다."""
+    from crawler.baemin import BaeminCrawler as B
+    card = ("알뜰배달 제리 2026년 3월 3일 리뷰번호 2026030300000002 "
+            "2회 주문 고객 (최근 6개월 누적 주문) 잘 먹었어요 "
+            "사장님 2026년 3월 3일 감사합니다, 제리 고객님.")
+    assert B._extract_body(card) == "잘 먹었어요"
+
+
 # --- 등록한 답글을 AI로 다시 쓸 때 상태가 유지되는지 (2026-08-24) ----------
 # 예전엔 재생성이 무조건 reply_status 를 'drafted' 로 되돌려, '등록한 답글'
 # 화면에서 AI 재생성을 누르면 그 답글이 목록에서 사라졌다.
