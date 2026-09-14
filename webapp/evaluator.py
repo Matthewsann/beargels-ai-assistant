@@ -74,8 +74,8 @@ def mechanical_check(body: str, title: str, main_keyword: str,
     photos = len(re.findall(r"\[📷", body))
     checks.append({
         "label": "사진 위치", "value": f"{photos}곳",
-        "status": "ok" if photos >= 5 else "warn",
-        "hint": "실물 사진 7~10장(D.I.A. 점수 핵심)",
+        "status": "ok" if photos >= 6 else "warn",      # 프롬프트 '7~9장(최소 6)' 과 같은 기준(2026-09-15)
+        "hint": "실물 사진 7~9장, 최소 6장(D.I.A. 점수 핵심)",
     })
 
     has_info = bool(re.search(r"(주소|영업시간|인천|연수구|☎|전화)", body))
@@ -106,6 +106,9 @@ REVIEW_PROMPT = """너는 네이버 블로그 상위노출 전문 SEO 컨설턴�
 [평가할 글]
 제목: {title}
 대표 키워드: {main_keyword}
+※ 본문의 `[📷 파일경로]` `[🎬 파일경로]` 는 **사진·영상 자리표시**다 — 발행 시 그 자리에 실제 사진이
+   들어간다. 독자에게 보이는 글자가 아니므로 "경로가 노출된다"고 감점하지 말고, 사진 개수·배치로만 평가하라.
+   `[매장 정보]` 블록은 시스템이 확정값으로 채운 것이니 그 자체를 지적하지 마라.
 본문:
 {body}
 

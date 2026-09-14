@@ -30,12 +30,12 @@ STORE = ROOT / "data" / "blog_quality.json"
 
 # 이 점수 밑이면 자동 퇴고를 시도한다. 퇴고 후에도 낮으면 그대로 저장하되
 # 점수가 메시지에 붙어 사장님이 걸러 볼 수 있다.
-QUALITY_MIN = 80
+QUALITY_MIN = 90     # 사장님 2026-09-15: 90점 이상. 채점은 AI 라 ±3점 흔들린다 — 목표이지 보장은 아님
 # 이 글자 수(사진 표시 제외) 밑이면 점수와 무관하게 확장 퇴고를 건다.
 # 네이버 상위노출 기준 1,500자 — 짧은 글은 무료 모델의 고질 약점이다.
 LENGTH_MIN = 1500   # evaluator·프롬프트와 동일 기준(2026-08-30 통일)
 # 퇴고 최대 횟수. 1회로 부족한 경우(짧고+개선점 많음)를 위해 2회까지.
-MAX_REVISIONS = 2
+MAX_REVISIONS = 3    # 90점 목표라 한 번 더(호출 ≈ 초안 1 + 평가 4 + 퇴고 3)
 # 대표 키워드가 본문에 이 횟수 미만이면 점수와 무관하게 퇴고를 건다(2026-09-15 사장님:
 # "대표 키워드 반복 1회밖에 안 돼"). 검색은 정확한 문자열을 센다(evaluator 와 같은 기준).
 KW_MIN = 3
@@ -149,7 +149,8 @@ def improve(body: str, title: str, main_keyword: str,
 
 
 KW_PROMPT = """아래 블로그 본문에 대표 키워드 「{kw}」를 **이 글자 그대로** {need}번 더 넣어라.
-자리: 첫 문단에 없으면 첫 문단에 1번, 소제목(`## ` 줄) 하나에 1번, 마무리 문단에 1번 — 자연스러운 문장 안에.
+자리: **본문 시작 200자 안(첫 문장)에 없으면 거기에 반드시 1번**, 소제목(`## ` 줄) 하나에 1번,
+마무리 문단에 1번 — 자연스러운 문장 안에.
 규칙: 다른 문장은 한 글자도 바꾸지 마라. `[📷 …]` `[🎬 …]` `[매장 정보]` 블록·해시태그는 그대로.
 키워드를 줄이거나 바꿔 쓰면(예: 앞 단어 떼기) 안 센다. 설명 없이 고친 본문 전체만 출력.
 
@@ -165,11 +166,12 @@ def ensure_keyword(body: str, main_keyword: str) -> tuple[str, int]:
     if not main_keyword:
         return body, 0
     n = body.count(main_keyword)
-    if n >= KW_MIN:
+    intro_ok = main_keyword in body[:200]
+    if n >= KW_MIN and intro_ok:
         return body, n
     import llm
     try:
-        raw = llm.complete(user=KW_PROMPT.format(kw=main_keyword, need=KW_MIN - n, body=body),
+        raw = llm.complete(user=KW_PROMPT.format(kw=main_keyword, need=max(1, KW_MIN - n), body=body),
                            max_tokens=4000, prefer="gemini", quality=True).strip()
     except Exception as e:  # noqa: BLE001
         logger.warning("키워드 보강 호출 실패: %s", str(e)[:100])
@@ -184,10 +186,36 @@ def ensure_keyword(body: str, main_keyword: str) -> tuple[str, int]:
         logger.warning("키워드 보강본이 본문을 줄임 — 원본 유지")
         return body, n
     n2 = raw.count(main_keyword)
-    if n2 <= n:
+    if n2 < n or (n2 == n and intro_ok) or (main_keyword not in raw[:200] and not intro_ok and n2 <= n):
         return body, n
     logger.info("대표 키워드 보강: %d → %d회", n, n2)
     return raw, n2
+
+
+_TIME_RE = re.compile(
+    r"(?:오전|오후|아침|저녁|밤|새벽)?\s*\d{1,2}\s*시(?:\s*\d{1,2}\s*분|\s*반)?"
+    r"|\b\d{1,2}:\d{2}\b")
+
+
+def _unconfirmed_times(body: str) -> list[str]:
+    """본문(매장 정보 블록 제외)에서 확정 영업시간에 없는 시각 표현을 찾는다."""
+    try:
+        import blog_jobs
+        hours = (blog_jobs.store_info().get("hours") or "")
+    except Exception:  # noqa: BLE001
+        hours = ""
+    text = re.sub(r"\[매장 정보\][^\n]*(?:\n(?![ \t]*\n)[^\n]*)*", "", body or "")
+    text = re.sub(r"\[[📷🎬][^\]]*\]", "", text)
+    ok_nums = set(re.findall(r"\d{1,2}", hours))
+    out = []
+    for m in _TIME_RE.finditer(text):
+        tok = m.group(0).strip()
+        nums = re.findall(r"\d{1,2}", tok)
+        if nums and all(n in ok_nums for n in nums):
+            continue                      # 확정 영업시간에 있는 숫자면 통과
+        if tok not in out:
+            out.append(tok)
+    return out[:4]
 
 
 def _plain_len(body: str) -> int:
@@ -208,11 +236,22 @@ def gate(body: str, title: str, main_keyword: str) -> tuple[str, dict]:
     for _ in range(MAX_REVISIONS):
         short = _plain_len(body) < LENGTH_MIN
         kw_n = body.count(main_keyword) if main_keyword else KW_MIN
-        if q["score"] >= QUALITY_MIN and not short and kw_n >= KW_MIN:
+        kw_intro = (main_keyword in body[:200]) if main_keyword else True   # evaluator 와 같은 기준
+        if q["score"] >= QUALITY_MIN and not short and kw_n >= KW_MIN and kw_intro:
             break
         improvements = list(q.get("improvements") or [])
         # 기계 점검 경고(키워드 횟수·제목 길이·사진 수)는 AI 총평보다 객관적이다 — 항상 먹인다
         improvements = [w for w in (q.get("warns") or [])] + improvements
+        # 확정 매장 사실에 없는 시간 표현(예: "매일 오전 10시")은 거짓 정보 — 지우게 한다
+        # (2026-09-15 실측: 본문 '오전 10시' vs 매장 정보 '7:20~23:00' 을 채점기가 잡아냈다)
+        for bad in _unconfirmed_times(body):
+            improvements.insert(0, (
+                f"본문의 「{bad}」 는 확정 매장 사실(영업시간)에 없는 시간이다 — 그 표현을 빼거나, "
+                f"확정값 그대로만 써라. 시간·가격·수치는 지어내지 않는다."))
+        if not kw_intro:
+            improvements.insert(0, (
+                f"본문 첫 문단(시작 200자 안)에 대표 키워드 「{main_keyword}」가 없다. 첫 문장을 이 키워드가 "
+                f"그 글자 그대로 들어가게 고쳐라(사진 표시는 그대로 두고 그 다음 글줄부터)."))
         if kw_n < KW_MIN and main_keyword:
             improvements.insert(0, (
                 f"대표 키워드 「{main_keyword}」가 본문에 {kw_n}회뿐이다. **이 글자 그대로** "

@@ -178,6 +178,43 @@ def stamp_store_block(body: str, info: dict | None = None) -> str:
     return body.rstrip() + "\n\n" + block + "\n"
 
 
+# 메뉴 관리 DB 의 매장 판매가 — 채점기가 늘 "구체적 가격"을 요구하는데(2026-09-15
+# 실측) 금고엔 가격이 없어 AI 가 못 쓰거나 지어낼 위험이 있었다. 블로그가 인용할
+# 카테고리만 골라 확정 사실로 준다(배달가 아님 — 매장가).
+MENU_FACT_CATEGORIES = ("베이커리", "샌드위치", "샐러드", "산도", "케이크", "세트",
+                        "시그니처", "커피", "논커피", "크림치즈")
+MENU_FACT_MAX = 70
+
+
+def menu_facts_text() -> str:
+    """확정 메뉴·매장가 목록(프롬프트용). DB 가 안 닿으면 빈 문자열."""
+    try:
+        from database import supabase_client as sdb
+        items = sdb.menu_all() or []
+    except Exception as e:  # noqa: BLE001
+        logger.warning("메뉴 사실 읽기 실패(무시): %s", str(e)[:100])
+        return ""
+    by_cat: dict = {}
+    for it in items:
+        if not it.get("store_active", True) or not it.get("store_price"):
+            continue
+        cat = it.get("category") or ""
+        if cat not in MENU_FACT_CATEGORIES:
+            continue
+        by_cat.setdefault(cat, []).append((it.get("name") or "").strip() + f" {int(it['store_price']):,}원")
+    lines, n = [], 0
+    for cat in MENU_FACT_CATEGORIES:
+        names = by_cat.get(cat) or []
+        if not names:
+            continue
+        take = names[: max(2, (MENU_FACT_MAX - n) // max(1, len(MENU_FACT_CATEGORIES)))]
+        lines.append(f"- {cat}: " + " · ".join(take))
+        n += len(take)
+        if n >= MENU_FACT_MAX:
+            break
+    return "\n".join(lines)
+
+
 def store_facts_text() -> str:
     """AI 프롬프트용 '확정 매장 사실' — 이것만 쓰고, 없는 건 언급하지 말라고 못박는다."""
     info = store_info()
@@ -186,6 +223,9 @@ def store_facts_text() -> str:
     txt = "\n".join(lines)
     if missing:
         txt += "\n- (미정 — 본문에서 언급하지 말 것: " + ", ".join(missing) + ")"
+    menu = menu_facts_text()
+    if menu:
+        txt += ("\n[확정 메뉴·매장가 — 글에서 가격을 말할 땐 이 값만 그대로(다른 숫자 금지)]\n" + menu)
     return txt
 
 
@@ -267,13 +307,26 @@ def do_draft(payload: dict) -> tuple[int, str]:
     # 퇴고가 사진 표시를 새로 지어내는 일이 있다(2026-09-14 글#3 실측: `[📷 사진:
     # 이른 아침 햇살이…]` 같은 설명형 표시 6개). 표시 굳히기를 퇴고 **뒤에** 한 번
     # 더 돌려 사진함에 없는 표시는 지우고, 파일명만 적힌 것은 경로로 굳힌다.
+    # AI 가 제목을 본문 첫 줄에 한 번 더 쓴다(2026-09-15 글#20 실측) — 네이버는 제목 칸이
+    # 따로 있어 그대로 두면 제목이 두 번 보인다. 맨 앞(사진 표시 뒤)의 제목 줄을 걷어낸다.
+    _title = (data.get("title") or topic or "").strip()
+    if _title:
+        _lines = body.split("\n")
+        for _k, _ln in enumerate(_lines[:4]):
+            if _ln.strip() and not _ln.lstrip().startswith("[") and \
+               re.sub(r"\W", "", _ln) == re.sub(r"\W", "", _title):
+                del _lines[_k]
+                body = "\n".join(_lines)
+                break
     try:
         import blog_media
         body = blog_media.freeze_marks(body)
         body, dropped = blog_media.dedupe_marks(body)      # 퇴고가 복제한 표시도 여기서 잡는다
+        # 무료 모델은 사진을 3~4장만 놓는다 — 절 내용에 맞는 안 쓴 사진으로 7장까지 채운다
+        body, filled = blog_media.fill_photos(body, except_post_id=post_id if old else None)
         media = blog_media.used_media(body)
         if media:
-            photo_note = f" · 사진 {len(media)}장" + (f"(겹친 {dropped}장 뺌)" if dropped else "")
+            photo_note = f" · 사진 {len(media)}장" + (f"(자동 채움 {filled})" if filled else "") + (f"(겹친 {dropped}장 뺌)" if dropped else "")
             blog_media.ensure_thumbs(media)                # 웹 미리보기
         else:
             photo_note = " · ⚠ 사진 0장 — 사진함을 확인해 주세요"
@@ -290,6 +343,10 @@ def do_draft(payload: dict) -> tuple[int, str]:
     #   태그가 DB에만 있고 네이버엔 안 들어가고 있었다). 네이버 공식 태그칸은
     #   발행(예약) 레이어에만 있는데 그건 이제 사람이 직접 다루므로, 태그
     #   노출은 본문 해시태그로 잡는다. 태그칸은 사람이 발행할 때 직접 채운다.
+    # AI 가 프롬프트의 강조를 흉내 내 본문에 **굵게** 를 쓴다(2026-09-15 실측) — 네이버는
+    # 별표를 그대로 찍는다. 저장 전에 걷어낸다(퇴고·키워드 보강 뒤라 여기서 한 번).
+    body = re.sub(r"\*\*(.+?)\*\*", r"\1", body)
+    body = re.sub(r"(?<![*\w])\*(?!\*)([^*\n]+?)\*(?![*\w])", r"\1", body)
     body = stamp_store_block(body)      # AI 가 뭐라고 썼든 [매장 정보]는 확정값으로
 
     tags = [t.strip().lstrip("#").replace(" ", "") for t in (data.get("tags") or [])]

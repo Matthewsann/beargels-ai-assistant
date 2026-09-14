@@ -570,6 +570,101 @@ def freeze_marks(body: str, cat: dict | None = None) -> str:
     return re.sub(r"\n{3,}", "\n\n", out)      # 지운 자리에 빈 줄이 남지 않게
 
 
+PHOTO_TARGET = 7      # 프롬프트 '7~9장(최소 6)' — 채점기가 6 미만이면 감점한다
+
+
+def fill_photos(body: str, target: int = PHOTO_TARGET,
+                except_post_id=None) -> tuple[str, int]:
+    """사진이 모자란 초안에 절(## 소제목) 내용과 어울리는 사진을 채워 넣는다. (본문, 넣은 수)
+
+    무료 모델은 '7~9장'이라 해도 3~4장만 놓는다(2026-09-15 실측). 사진 수는 네이버
+    D.I.A. 점수의 핵심이라, 사진이 없는 절마다 그 절의 글과 가장 잘 맞는 **안 쓴**
+    사진(다른 글이 쥔 것 제외)을 첫 문단 뒤에 한 장씩 넣는다. 맞는 게 없으면 안 넣는다.
+    """
+    body = body or ""
+    have = [m.group(1).strip() for m in MARK.finditer(body)
+            if m.group(1).strip().lower().endswith(tuple(PHOTO_EXT | VIDEO_EXT))]
+    if len(have) >= target:
+        return body, 0
+    cat = catalog(except_post_id=except_post_id)
+    pool = {v["rel"]: v for v in cat.values() if v.get("kind") == "photo" and v["rel"] not in have}
+    if not pool:
+        return body, 0
+    # 절 나누기: 빈 줄 기준 토막, `## ` 로 시작하는 토막이 절의 머리
+    chunks = [c for c in re.split(r"\n\s*\n", body.strip()) if c.strip()]
+    used = set(have)
+    added = 0
+    i = 0
+    while i < len(chunks) and len(have) + added < target:
+        if chunks[i].startswith("## "):
+            # 이 절의 범위: 다음 소제목 전까지
+            j = i + 1
+            while j < len(chunks) and not chunks[j].startswith("## "):
+                j += 1
+            section = chunks[i:j]
+            if not any(MARK.search(c) for c in section):
+                want = " ".join(section)[:400]
+                best, best_s = None, 0.5             # 이 점수도 못 넘으면 엉뚱한 사진
+                for rel, v in pool.items():
+                    if rel in used:
+                        continue
+                    s = _score(v, want)
+                    if s > best_s:
+                        best, best_s = rel, s
+                if best:
+                    # 첫 문단(소제목 다음 토막) 뒤에 넣는다. 문단이 없으면 소제목 뒤.
+                    at = i + 1 if j > i + 1 else i
+                    chunks.insert(at + 1, f"[📷 {best}]")
+                    used.add(best)
+                    added += 1
+                    j += 1
+            i = j
+        else:
+            i += 1
+    # 두 번째 돌기: 아직 모자라면 긴 절(400자 이상) 끝에 한 장씩 더 — 절당 최대 2장
+    i = 0
+    while i < len(chunks) and len(have) + added < target:
+        if chunks[i].startswith("## "):
+            j = i + 1
+            while j < len(chunks) and not chunks[j].startswith("## "):
+                j += 1
+            section = chunks[i:j]
+            n_photos = sum(1 for c in section if MARK.search(c))
+            text = " ".join(c for c in section if not MARK.search(c))
+            if n_photos < 2 and len(text) >= 400:
+                best, best_s = None, 0.5
+                for rel, v in pool.items():
+                    if rel in used:
+                        continue
+                    s = _score(v, text[-400:])
+                    if s > best_s:
+                        best, best_s = rel, s
+                if best:
+                    chunks.insert(j, f"[📷 {best}]")
+                    used.add(best)
+                    added += 1
+                    j += 1
+            i = j
+        else:
+            i += 1
+    # 그래도 모자라면(절이 적으면) 맨 앞 대표컷 — 본문이 사진으로 시작하지 않을 때만
+    if len(have) + added < target and not MARK.match(chunks[0] if chunks else ""):
+        best, best_s = None, 0.5
+        for rel, v in pool.items():
+            if rel in used:
+                continue
+            s = _score(v, " ".join(chunks[:2])[:300]) + (2.0 if v.get("hero") else 0)
+            if s > best_s:
+                best, best_s = rel, s
+        if best:
+            chunks.insert(0, f"[📷 {best}]")
+            used.add(best)
+            added += 1
+    if added:
+        logger.info("사진 자동 채움: %d장 → 총 %d장", added, len(have) + added)
+    return "\n\n".join(chunks) + ("\n" if body.endswith("\n") else ""), added
+
+
 def dedupe_marks(body: str) -> tuple[str, int]:
     """한 글 안에서 같은 사진 표시가 두 번 나오면 뒤의 것을 지운다. (본문, 지운 수)."""
     seen, dropped = set(), 0
