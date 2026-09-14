@@ -2718,12 +2718,15 @@ def _blog_upload_photo(post_id: int, fs) -> str:
     small.thumbnail((640, 640), Image.LANCZOS)
     tbuf = _io.BytesIO(); small.save(tbuf, "JPEG", quality=72, optimize=True)
 
-    b = cloud_sync._bucket()
-    b.upload(f"blogup/{post_id}/{name}", buf.getvalue(),
-             {"content-type": "image/jpeg", "upsert": "true"})
+    # 두 번의 버킷 업로드가 처리 시간의 대부분(실측 3.5초 중 ~3초)이라 동시에 보낸다.
     key = hashlib.sha1(rel.encode("utf-8")).hexdigest()[:16] + ".jpg"
-    b.upload(f"blogthumbs/{key}", tbuf.getvalue(),
-             {"content-type": "image/jpeg", "upsert": "true"})
+    jobs = [(f"blogup/{post_id}/{name}", buf.getvalue()), (f"blogthumbs/{key}", tbuf.getvalue())]
+
+    def _put(item):
+        cloud_sync._bucket().upload(item[0], item[1], {"content-type": "image/jpeg", "upsert": "true"})
+
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        list(ex.map(_put, jobs))          # 예외는 여기서 다시 올라온다
     return rel
 
 
