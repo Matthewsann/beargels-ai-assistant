@@ -35,7 +35,7 @@ from database import blog_store as store  # noqa: E402
 logger = logging.getLogger(__name__)
 
 BLOG_KINDS = ("blog_recommend", "blog_draft", "blog_publish", "blog_rank",
-              "blog_media", "blog_learn", "blog_react", "blog_plan")
+              "blog_media", "blog_learn", "blog_react", "blog_plan", "blog_score")
 
 # 순위 추적 기본 키워드(창고 글의 대표 키워드에 더해 항상 확인)
 DEFAULT_KEYWORDS = ("송도 베이글", "송도 카페")
@@ -289,6 +289,73 @@ def build_blocks(body: str) -> tuple[list[dict], int]:
         except Exception as e:  # noqa: BLE001 — 사진 한 장 때문에 글 전체를 막지 않는다
             logger.warning("사진 준비 실패(%s): %s", b.get("rel"), str(e)[:100])
     return blocks, n
+
+
+# ④ 품질 확인 — 초안 때 매긴 점수는 사장님이 사진을 바꾸고 문장을 고치면 낡는다.
+# 임시저장 전에 **지금 글 그대로**를 다시 채점하고, 원하면 개선점대로 다듬는다.
+# 결과는 웹이 읽는 menu_settings(범용 key-value)에 둔다 — 새 표를 만들지 않는다.
+SCORES_KEY = "blog_quality_scores"
+
+
+def _body_hash(body: str) -> str:
+    import hashlib
+    return hashlib.sha1((body or "").encode("utf-8")).hexdigest()[:16]
+
+
+def do_score(payload: dict) -> tuple[int, str]:
+    """글 하나를 채점(mode=score)하거나, 직전 채점의 개선점대로 다듬고 재채점(mode=polish)."""
+    import blog_media
+    import blog_quality
+    import evaluator
+    from database import supabase_client as sdb
+
+    post_id = payload.get("post_id")
+    post = store.get_post(post_id) if post_id else None
+    if not post:
+        raise ValueError(f"글 #{post_id} 를 찾을 수 없습니다.")
+    title = post.get("title") or ""
+    kw = post.get("main_keyword") or ""
+    body = post.get("body") or ""
+    all_scores = sdb.get_setting(SCORES_KEY) or {}
+    polished = False
+
+    if payload.get("mode") == "polish":
+        prev = all_scores.get(str(post_id)) or {}
+        imps = list(prev.get("improvements") or []) + list(prev.get("warns") or [])
+        if not imps or prev.get("body_hash") != _body_hash(body):
+            imps = (blog_quality.score(body, title, kw).get("improvements") or [])
+        better = blog_quality.improve(body, title, kw, imps[:6]) if imps else None
+        if better:
+            better = blog_media.freeze_marks(better)     # 사진 표시가 깨졌으면 안 쓴다
+            if blog_media.used_media(better) and better.strip() != body.strip():
+                keep_version(post_id, post)               # 되돌릴 수 있게
+                store.update_post(post_id, body=better, prepared_at=None)
+                body = better
+                polished = True
+
+    q = blog_quality.score(body, title, kw)
+    checks = evaluator.mechanical_check(body, title, kw)
+    plain = blog_quality._plain_len(body)
+    entry = {
+        "score": q.get("score"), "ai_score": q.get("ai_score"),
+        "one_line": q.get("one_line", ""), "brand_fit": q.get("brand_fit", ""),
+        "improvements": q.get("improvements") or [], "warns": q.get("warns") or [],
+        "checks": [{"label": c.get("label"), "value": c.get("value"),
+                    "status": c.get("status"), "hint": c.get("hint")} for c in checks],
+        "chars": plain, "photos": len(blog_media.used_media(body)),
+        "body_hash": _body_hash(body), "at": store._now(), "polished": polished,
+    }
+    all_scores[str(post_id)] = entry
+    if len(all_scores) > 30:
+        for k in sorted(all_scores, key=lambda k: all_scores[k].get("at") or "")[:-30]:
+            all_scores.pop(k, None)
+    sdb.menu_set_setting(SCORES_KEY, all_scores)
+    try:
+        blog_quality.record(post_id, title, {**q, "revised": polished})
+    except Exception:  # noqa: BLE001
+        pass
+    head = "다듬고 다시 채점" if polished else ("다듬을 게 없어 채점만" if payload.get("mode") == "polish" else "품질 채점")
+    return 1, f"{head} — {entry['score']}점 · {plain:,}자 · 경고 {len(entry['warns'])}개 — {title[:30]}"
 
 
 def do_publish(payload: dict) -> tuple[int, str]:
@@ -596,6 +663,7 @@ def do_rank(payload: dict) -> tuple[int, str]:
 _HANDLERS = {
     "blog_recommend": lambda p: do_recommend(),
     "blog_draft": do_draft,
+    "blog_score": do_score,
     "blog_publish": do_publish,
     "blog_rank": do_rank,
     "blog_media": lambda p: do_media(),

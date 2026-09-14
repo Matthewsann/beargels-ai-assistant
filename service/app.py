@@ -2644,14 +2644,38 @@ def _blog_catalog() -> list[dict]:
     return items
 
 
-def _blog_step(post: dict) -> int:
-    """4단계(주제→초안→사진→임시저장) 중 이 글이 지금 서 있는 칸.
+BLOG_SCORES_KEY = "blog_quality_scores"
+BLOG_QUALITY_MIN = 80
 
-    초안이 있으면 ③ 사진 선택 차례, 네이버에 넣었으면 ④까지 끝(5).
+
+def _blog_quality(post_id, body: str) -> dict | None:
+    """이 글의 마지막 채점. fresh=지금 본문 그대로를 채점한 것인지(고치면 낡는다)."""
+    import hashlib
+    try:
+        q = (db.get_setting(BLOG_SCORES_KEY) or {}).get(str(post_id))
+    except Exception:  # noqa: BLE001
+        return None
+    if not q:
+        return None
+    q = dict(q)
+    q["fresh"] = q.get("body_hash") == hashlib.sha1((body or "").encode("utf-8")).hexdigest()[:16]
+    q["at_view"] = _updated_view(q.get("at"))
+    return q
+
+
+def _blog_step(post: dict, quality: dict | None = None) -> int:
+    """5단계(주제→초안→사진→품질→임시저장) 중 이 글이 지금 서 있는 칸.
+
+    초안이 있으면 ③, 지금 본문 그대로 채점돼 있으면 ⑤ 임시저장 차례,
+    네이버에 넣었으면 전부 끝(6). 글을 고치면 채점이 낡아 다시 ③으로.
     """
     if not post:
         return 1
-    return 5 if post.get("prepared_at") else 3
+    if post.get("prepared_at"):
+        return 6
+    if quality and quality.get("fresh"):
+        return 5
+    return 3
 
 
 BLOG_UPLOAD_MAX = 15 * 1024 * 1024        # 폰 원본 사진도 넉넉한 15MB
@@ -2799,6 +2823,7 @@ def _blog_job_view(job) -> dict | None:
         "blog_publish": "네이버 초안 넣기", "blog_rank": "순위 확인",
         "blog_media": "사진함 살펴보기", "blog_learn": "수정에서 배우기",
         "blog_react": "반응 수집", "blog_plan": "채널 배분안",
+        "blog_score": "품질 확인",
     }.get(job.get("kind"), job.get("kind") or "")
     msg = job.get("message") or ""
     # 흔한 실패 원문을 사장님이 읽을 수 있는 말로 (리뷰 화면과 같은 배려)
@@ -2842,8 +2867,12 @@ def blog_home(path_key):
         db.log_error("service", f"블로그 화면 로드 실패: {e}",
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
+    try:
+        _all_q = db.get_setting(BLOG_SCORES_KEY) or {}
+    except Exception:  # noqa: BLE001
+        _all_q = {}
     for p in posts:
-        p["step"] = _blog_step(p)
+        p["step"] = _blog_step(p, _blog_quality(p["id"], p.get("body", "")) if str(p["id"]) in _all_q else None)
     return render_template("blog.html", key=path_key, posts=posts, recs=recs,
                            plans=plans, note=(request.args.get("note") or "")[:200],
                            drafting=("blog_draft" in busy),
@@ -3017,13 +3046,19 @@ def blog_post(path_key, post_id):
         used = {p["rel"] for p in photos}
         catalog = [c for c in _blog_catalog() if c["rel"] not in used]
     blocks = _blog_render((shown or {}).get("body", ""))
+    quality = _blog_quality(post_id, post.get("body", ""))
+    try:
+        scoring = "blog_score" in blog.busy_kinds()
+    except Exception:  # noqa: BLE001
+        scoring = False
     after_text = ""
     if after not in (None, ""):
         for b in blocks:
             if str(b["i"]) == after and b.get("text"):
                 after_text = b["text"][:50]
     return render_template("blog_post.html", key=path_key, post=post,
-                           photos=photos, step=_blog_step(post), blocks=blocks,
+                           photos=photos, step=_blog_step(post, quality), blocks=blocks,
+                           quality=quality, scoring=scoring, quality_min=BLOG_QUALITY_MIN,
                            picking=picking, swap=swap or "", after=after if after is not None else "",
                            after_text=after_text, catalog=catalog,
                            note=(request.args.get("note") or "")[:200],
@@ -3102,6 +3137,24 @@ def blog_post_photo(path_key, post_id):
         note = f"사진을 바꾸지 못했어요: {str(e)[:100]}"
     return redirect(url_for("blog_post", path_key=path_key, post_id=post_id,
                             note=note) + "#photos")
+
+
+@app.route("/<path_key>/blog/post/<int:post_id>/score", methods=["POST"])
+def blog_post_score(path_key, post_id):
+    """④ 품질 확인 — 지금 글 그대로를 채점(score)하거나 개선점대로 다듬는다(polish)."""
+    check(path_key)
+    mode = "polish" if request.form.get("mode") == "polish" else "score"
+    note = ("개선점대로 다듬는 중이에요 (1~2분). 끝나면 새 본문과 점수가 여기 뜹니다."
+            if mode == "polish" else "채점 중이에요 (30초~1분). 끝나면 여기 점수가 뜹니다.")
+    try:
+        job = blog.request_blog_job("blog_score", {"post_id": post_id, "mode": mode}, by="web") or {}
+        if job.get("_duplicate"):
+            note = "이미 채점 중이에요 — 잠시만요."
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"품질 확인 요청 실패(post {post_id}): {e}",
+                     kind=type(e).__name__, path=request.path, detail=traceback.format_exc())
+        note = f"요청이 접수되지 않았어요: {str(e)[:120]}"
+    return redirect(url_for("blog_post", path_key=path_key, post_id=post_id, note=note) + "#quality")
 
 
 @app.route("/<path_key>/blog/post/<int:post_id>/regen", methods=["POST"])

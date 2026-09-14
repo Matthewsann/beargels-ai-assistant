@@ -1,7 +1,8 @@
 {% extends "blog_base.html" %}
 {% block heading %}글 보기{% endblock %}
-{% block sub %}② 초안 → ③ 사진 선택 → ④ 임시저장{% endblock %}
+{% block sub %}② 초안 → ③ 사진 → ④ 품질 확인 → ⑤ 임시저장{% endblock %}
 {% block content %}
+  {% if scoring %}<meta http-equiv="refresh" content="15">{% endif %}
 
   <a href="{{ url_for('blog_home', path_key=key) }}"
      style="font-size:13px; color:var(--muted); text-decoration:none;">← 블로그로</a>
@@ -209,7 +210,7 @@
       <button class="btn wide" type="submit" style="margin-top:9px;" {{ 'disabled' if not worker.alive else '' }}>🔄 초안 다시 뽑기</button>
       <div style="font-size:12px; color:var(--muted); margin-top:6px;">
         지금 본문은 보관돼서 <b>되돌릴 수 있어요.</b> 사진은 다시 고릅니다.
-        {% if post.prepared_at %}<br>⚠️ 네이버 임시저장본은 옛 글 그대로예요 — 다시 뽑은 뒤 ④를 한 번 더 해주세요.{% endif %}
+        {% if post.prepared_at %}<br>⚠️ 네이버 임시저장본은 옛 글 그대로예요 — 다시 뽑은 뒤 ⑤를 한 번 더 해주세요.{% endif %}
       </div>
     </form>
     {% if prev %}
@@ -219,8 +220,73 @@
     {% endif %}
   </details>
 
-  {# ══ ④ 임시저장 ═══════════════════════════════════════════════ #}
-  <div class="sec">④ 임시저장</div>
+  {# ══ ④ 품질 확인 — 임시저장 전에 지금 글 그대로를 채점한다(사장님 2026-09-15) ══ #}
+  <div class="sec" id="quality">④ 품질 확인
+    <span style="font-weight:400; color:var(--muted); font-size:12px;">— 사진·수정을 반영한 지금 글 기준 · 기준 {{ quality_min }}점</span>
+  </div>
+  {% if scoring %}<div class="note">⏳ 채점 중이에요 — 이 화면은 15초마다 스스로 새로고침됩니다.</div>{% endif %}
+  <div class="panel">
+    {% if quality %}
+    <div style="display:flex; align-items:center; gap:14px;">
+      <div style="font-size:34px; font-weight:700; line-height:1;
+                  color:{{ 'var(--ok)' if quality.score >= quality_min else 'var(--warn)' }};">{{ quality.score }}<span style="font-size:14px; font-weight:500;">점</span></div>
+      <div style="flex:1; min-width:0; font-size:12.5px; color:var(--muted);">
+        {{ '{:,}'.format(quality.chars) }}자 · 사진 {{ quality.photos }}장 · 경고 {{ quality.warns|length }}개
+        {% if quality.at_view %}· {{ quality.at_view.ago }} 채점{% endif %}
+        {% if not quality.fresh %}<br><b style="color:var(--warn);">글이 그 뒤로 바뀌었어요 — 다시 채점하세요.</b>{% endif %}
+      </div>
+    </div>
+    {% if quality.one_line %}<div style="font-size:13px; margin-top:10px;">💬 {{ quality.one_line }}</div>{% endif %}
+    {% if quality.checks %}
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:6px; margin-top:10px;">
+      {% for c in quality.checks %}
+      <div style="font-size:12px; padding:6px 8px; border-radius:7px;
+                  background:{{ 'var(--ok-bg)' if c.status == 'ok' else 'var(--warn-bg)' }};
+                  color:{{ 'var(--ok)' if c.status == 'ok' else 'var(--warn)' }};" title="{{ c.hint }}">
+        {{ '✓' if c.status == 'ok' else '⚠' }} {{ c.label }} <b>{{ c.value }}</b>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if quality.improvements %}
+    <div style="font-size:12.5px; margin-top:10px;"><b>고치면 좋은 점</b>
+      <ul style="margin:4px 0 0; padding-left:18px;">
+        {% for i in quality.improvements %}<li style="margin:2px 0;">{{ i }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% else %}
+    <div style="font-size:13px; color:var(--muted);">아직 지금 글로 채점한 적이 없어요. 사진과 문장을 다 손보셨으면 눌러주세요.</div>
+    {% endif %}
+    {% if not scoring %}
+    <div class="row" style="margin-top:12px;">
+      <form method="post" action="{{ url_for('blog_post_score', path_key=key, post_id=post.id) }}" style="flex:1;">
+        <input type="hidden" name="mode" value="score">
+        <button class="btn wide" type="submit" {{ 'disabled' if not worker.alive else '' }}>🔍 {{ '다시 채점' if quality else '품질 채점' }}</button>
+      </form>
+      {% if quality and (quality.improvements or quality.warns) %}
+      <form method="post" action="{{ url_for('blog_post_score', path_key=key, post_id=post.id) }}" style="flex:1;">
+        <input type="hidden" name="mode" value="polish">
+        <button class="btn wide" type="submit" {{ 'disabled' if not worker.alive else '' }}>✨ 개선점대로 다듬기</button>
+      </form>
+      {% endif %}
+    </div>
+    <div style="font-size:12px; color:var(--muted); margin-top:6px;">
+      채점은 기계 점검(분량·키워드·소제목) + AI 전문가 평가, 무료. <b>다듬기</b>는 사진 자리를 그대로 둔 채
+      문장만 고치고 다시 채점합니다 — 지금 본문은 보관되니 ‹ 화살표로 되돌릴 수 있어요.
+    </div>
+    {% endif %}
+  </div>
+
+  {# ══ ⑤ 임시저장 ═══════════════════════════════════════════════ #}
+  <div class="sec">⑤ 임시저장</div>
+  {% if not post.prepared_at %}
+    {% if not quality or not quality.fresh %}
+    <div class="note" style="margin-bottom:8px;">💡 ④ 품질 확인을 먼저 해보세요. 물론 안 하고 넣어도 됩니다 — 발행은 어차피 사장님이 직접 보고 누르니까요.</div>
+    {% elif quality.score < quality_min %}
+    <div class="note" style="margin-bottom:8px;">⚠️ {{ quality.score }}점 — 기준 {{ quality_min }}점에 못 미쳐요. 위 <b>개선점대로 다듬기</b>를 한 번 눌러보시거나, 그대로 넣으셔도 됩니다.</div>
+    {% endif %}
+  {% endif %}
   {% if post.prepared_at %}
   <div class="note" style="margin-bottom:8px;">✅ 네이버에 임시저장돼 있어요 (사진 {{ photos|length }}장 포함).
     아래 <b>네이버 블로그 바로가기</b>에서 확인하고, 사진·태그까지 보신 뒤 직접 <b>발행</b> 또는 <b>예약 발행</b>을 눌러주세요.</div>
