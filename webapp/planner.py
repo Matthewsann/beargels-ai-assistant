@@ -159,6 +159,8 @@ DRAFT_PROMPT = """너는 베어글스 송도점의 네이버 블로그 마케팅
 {knowledge}
 ===== SEO 지식 =====
 {seo}
+===== 확정 매장 사실 (영업시간·전화·주차 등은 **이 값만** 쓴다. '미정'인 것은 본문에서 언급하지 않는다. 지어내면 거짓 정보가 된다) =====
+{facts}
 ===== 지금 쓸 수 있는 사진 (사진함) =====
 {photos}
 ===== 발행 글 성과 (반응 피드백) =====
@@ -192,7 +194,8 @@ DRAFT_PROMPT = """너는 베어글스 송도점의 네이버 블로그 마케팅
   · 영상(V01 …)이 목록에 있으면 글 중간에 1개까지 `[🎬 V01]` 로 넣어도 좋다.
   · 사진 목록이 비어 있으면 사진 표시 없이 글만 쓴다.
 - 사실(메뉴명·주소 등)은 금고 표기를 그대로 쓴다. 지어내지 않는다. 없는 정보는 비운다.
-- 맨 아래에 매장정보(주소·영업시간 등, 금고에 있는 것만) 블록을 넣는다.
+- 맨 아래에 `[매장 정보]` 라는 **한 줄만** 쓴다. 내용은 시스템이 확정값으로 채운다 — 상호·주소·
+  영업시간 줄을 네가 쓰지 마라(금고의 `[예: …]`·`[채우기]` 는 예시일 뿐 사실이 아니다).
 
 [출력] 아래 JSON 하나만 순수 출력(코드블록/설명 금지):
 {{
@@ -265,7 +268,7 @@ def make_recommendations() -> list[dict]:
 def make_draft_data(topic: str, post_type: str = "정보성", title: str = "",
                     main_keyword: str = "", sub_keywords: list[str] | None = None,
                     only_rels: list[str] | None = None,
-                    retry_reason: str = "") -> dict:
+                    retry_reason: str = "", facts: str = "") -> dict:
     """확정 기획 + 금고 전체를 근거로 초안 '데이터'만 만들어 돌려준다(저장은 호출자 몫).
 
     로컬 라이브러리에 넣을지, Supabase 에 넣을지는 부르는 쪽이 정한다.
@@ -282,7 +285,7 @@ def make_draft_data(topic: str, post_type: str = "정보성", title: str = "",
                  "  → 앞 초안은 이 점 때문에 물렸다. 이번 글에서 반드시 고칠 것."
                  + NL_)
     prompt = DRAFT_PROMPT.format(
-        retry=retry,
+        retry=retry, facts=facts or "(아직 적힌 것 없음 — 매장 사실은 본문에서 언급하지 말 것)",
         knowledge=knowledge, seo=seo, photos=photos or "(사진함이 비어 있음)",
         performance=load_performance() or "(아직 성과 데이터 없음)",
         topic=topic, post_type=post_type,

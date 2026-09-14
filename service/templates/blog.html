@@ -93,6 +93,28 @@
     <div class="panel"><div class="empty">아직 글이 없어요.<br>위 글감에서 <b>② 이 주제로 초안 쓰기</b>를 누르면 여기 생겨요.</div></div>
   {% endif %}
 
+  {# ── 매장 정보: 글 끝 [매장 정보] 블록의 원천. AI 가 지어내지 않게 여기 값만 쓴다 ── #}
+  {% set store_empty = not (store.hours or store.phone) %}
+  <details class="panel" id="store" style="margin-top:16px;" {{ 'open' if store_empty else '' }}>
+    <summary style="cursor:pointer; font-size:14px; font-weight:600;">
+      🏪 매장 정보 <span style="font-weight:400; color:var(--muted); font-size:12px;">— 글 끝에 자동으로 붙는 블록</span>
+      {% if store_empty %}<span class="tag c" style="margin-left:6px;">채워주세요</span>{% endif %}
+    </summary>
+    <form method="post" action="{{ url_for('blog_store_info', path_key=key) }}" style="margin-top:10px;">
+      {% for k, label, ph in store_fields %}
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:7px;">
+        <span style="flex:none; width:58px; font-size:12.5px; color:var(--muted);">{{ label }}</span>
+        <input name="{{ k }}" value="{{ store.get(k, '') }}" placeholder="{{ ph }}" style="flex:1; font-size:13px;">
+      </div>
+      {% endfor %}
+      <button class="btn wide" type="submit" style="margin-top:4px;">💾 매장 정보 저장</button>
+      <div style="font-size:12px; color:var(--muted); margin-top:7px;">
+        AI는 여기 적힌 값만 씁니다. <b>비워 두면 그 줄은 아예 안 나가고</b>, 지어내지도 않습니다.
+        바뀌면 여기만 고치세요 — 임시저장하는 순간 모든 글에 새 값이 들어갑니다.
+      </div>
+    </form>
+  </details>
+
   {# ── 부가 기능은 접어 둔다 — 4단계 흐름을 가리지 않게 ───────────── #}
   <details class="panel" style="margin-top:16px;">
     <summary style="cursor:pointer; font-size:14px; font-weight:600;">🔧 소재함 · 순위 · 반응</summary>

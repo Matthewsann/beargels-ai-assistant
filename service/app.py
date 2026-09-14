@@ -2876,6 +2876,7 @@ def blog_home(path_key):
     return render_template("blog.html", key=path_key, posts=posts, recs=recs,
                            plans=plans, note=(request.args.get("note") or "")[:200],
                            drafting=("blog_draft" in busy),
+                           store=_store_info(), store_fields=STORE_FIELDS,
                            ranks=ranks, job=job, worker=_worker_view(), error=error)
 
 
@@ -3137,6 +3138,40 @@ def blog_post_photo(path_key, post_id):
         note = f"사진을 바꾸지 못했어요: {str(e)[:100]}"
     return redirect(url_for("blog_post", path_key=path_key, post_id=post_id,
                             note=note) + "#photos")
+
+
+# 글 끝 [매장 정보] 블록의 원천 — 폰에서 고치는 칸(worker/blog_jobs.py store_info 와 같은 키)
+STORE_INFO_KEY = "store_info"
+STORE_FIELDS = (
+    ("name", "상호", "베어글스 송도 타임스페이스점"),
+    ("address", "주소", "인천광역시 연수구 하모니로 158 C동 108호"),
+    ("hours", "영업시간", "예: 매일 08:00–21:00 (라스트오더 20:30)"),
+    ("closed", "휴무", "예: 연중무휴 / 매주 월요일"),
+    ("phone", "전화", "예: 032-000-0000"),
+    ("parking", "주차", "예: 건물 지하주차장 1시간 무료"),
+    ("delivery", "배달", "배달의민족 · 쿠팡이츠"),
+)
+
+
+def _store_info() -> dict:
+    try:
+        return db.get_setting(STORE_INFO_KEY) or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+@app.route("/<path_key>/blog/store-info", methods=["POST"])
+def blog_store_info(path_key):
+    """매장 정보 저장 — 다음 초안부터, 그리고 임시저장하는 모든 글에 바로 반영된다."""
+    check(path_key)
+    info = {k: (request.form.get(k) or "").strip()[:120] for k, _, _ in STORE_FIELDS}
+    try:
+        db.menu_set_setting(STORE_INFO_KEY, info)
+        note = "매장 정보를 저장했어요. 임시저장하는 글부터 이 값이 들어갑니다."
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"매장 정보 저장 실패: {e}", kind=type(e).__name__, path=request.path)
+        note = f"저장하지 못했어요: {str(e)[:100]}"
+    return redirect(url_for("blog_home", path_key=path_key, note=note) + "#store")
 
 
 @app.route("/<path_key>/blog/post/<int:post_id>/busy")

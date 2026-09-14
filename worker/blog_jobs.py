@@ -123,6 +123,72 @@ def keep_version(post_id, post: dict) -> None:
         logger.warning("이전 초안 보관 실패(%s): %s", post_id, str(e)[:120])
 
 
+# ── 매장 정보 블록 ──────────────────────────────────────────────────────
+# 글 끝의 [매장 정보]는 AI 가 쓰게 두면 안 된다. 금고의 영업시간 칸이 `[예: …]`
+# 예시인 채라 AI 가 그걸 보고 시간을 지어냈다(2026-09-15 실측: 글#2 08:30~21:30,
+# 글#3 08:00~21:00 — 둘 다 거짓). 사장님이 웹에서 적은 값(menu_settings.store_info)
+# 하나를 원천으로, 초안 때 찍고 임시저장 때 다시 찍는다 — 값이 바뀌면 옛 초안도
+# 네이버에 넣는 순간 최신이 된다. 빈 칸은 줄 자체를 안 쓴다(지어내지 않는다).
+STORE_INFO_KEY = "store_info"
+STORE_FIELDS = (            # (키, 라벨) — 화면·블록 순서
+    ("name", "상호"), ("address", "주소"), ("hours", "영업시간"),
+    ("closed", "휴무"), ("phone", "전화"), ("parking", "주차"), ("delivery", "배달"),
+)
+_STORE_FALLBACK = {         # 웹에 아직 아무것도 안 적었을 때 — 금고 매장정보.md 의 확정값만
+    "name": "베어글스 송도 타임스페이스점",
+    "address": "인천광역시 연수구 하모니로 158 C동 108호",
+    "delivery": "배달의민족 · 쿠팡이츠",
+}
+
+
+def store_info() -> dict:
+    """사장님이 웹에 적은 매장 정보. 없으면 금고 확정값만."""
+    try:
+        from database import supabase_client as sdb
+        v = sdb.get_setting(STORE_INFO_KEY) or {}
+    except Exception:  # noqa: BLE001
+        v = {}
+    out = dict(_STORE_FALLBACK)
+    out.update({k: (v.get(k) or "").strip() for k, _ in STORE_FIELDS if (v.get(k) or "").strip()})
+    return out
+
+
+def store_block(info: dict | None = None) -> str:
+    """[매장 정보] 고정 블록. 비어 있는 항목은 줄을 만들지 않는다."""
+    info = info or store_info()
+    lines = ["[매장 정보]"]
+    for k, label in STORE_FIELDS:
+        if info.get(k):
+            lines.append(f"- {label}: {info[k]}")
+    return "\n".join(lines)
+
+
+_STORE_RE = re.compile(r"\[매장 정보\][^\n]*(?:\n(?![ \t]*\n)[^\n]*)*")
+
+
+def stamp_store_block(body: str, info: dict | None = None) -> str:
+    """본문의 [매장 정보] 블록을 고정 블록으로 바꿔 넣는다(없으면 해시태그 앞에 붙인다)."""
+    block = store_block(info)
+    body = body or ""
+    if _STORE_RE.search(body):
+        return _STORE_RE.sub(lambda _m: block, body, count=1)
+    m = re.search(r"\n(?:#\S+\s*)+$", body)          # 맨 끝 해시태그 문단 앞에
+    if m:
+        return body[:m.start()].rstrip() + "\n\n" + block + "\n" + body[m.start():]
+    return body.rstrip() + "\n\n" + block + "\n"
+
+
+def store_facts_text() -> str:
+    """AI 프롬프트용 '확정 매장 사실' — 이것만 쓰고, 없는 건 언급하지 말라고 못박는다."""
+    info = store_info()
+    lines = [f"- {label}: {info[k]}" for k, label in STORE_FIELDS if info.get(k)]
+    missing = [label for k, label in STORE_FIELDS if not info.get(k)]
+    txt = "\n".join(lines)
+    if missing:
+        txt += "\n- (미정 — 본문에서 언급하지 말 것: " + ", ".join(missing) + ")"
+    return txt
+
+
 def do_draft(payload: dict) -> tuple[int, str]:
     """기획 주제로 초안 작성 → blog_posts 에 저장.
 
@@ -165,6 +231,7 @@ def do_draft(payload: dict) -> tuple[int, str]:
         sub_keywords=subs,
         only_rels=payload.get("photos") or None,   # 승인된 배분안의 블로그 몫
         retry_reason=reason,
+        facts=store_facts_text(),                  # 영업시간 등은 이 값만 — 지어내지 않게
     )
     body = data.get("body") or ""
     photo_note = ""
@@ -208,6 +275,8 @@ def do_draft(payload: dict) -> tuple[int, str]:
     #   태그가 DB에만 있고 네이버엔 안 들어가고 있었다). 네이버 공식 태그칸은
     #   발행(예약) 레이어에만 있는데 그건 이제 사람이 직접 다루므로, 태그
     #   노출은 본문 해시태그로 잡는다. 태그칸은 사람이 발행할 때 직접 채운다.
+    body = stamp_store_block(body)      # AI 가 뭐라고 썼든 [매장 정보]는 확정값으로
+
     tags = [t.strip().lstrip("#").replace(" ", "") for t in (data.get("tags") or [])]
     tags = [t for t in tags if t][:10]
     if tags and "#" + tags[0] not in body:
@@ -378,6 +447,11 @@ def do_publish(payload: dict) -> tuple[int, str]:
         blog_media.pull_uploads()           # 폰에서 올린 사진이 있으면 먼저 가져온다
     except Exception as e:  # noqa: BLE001
         logger.warning("업로드 사진 가져오기 실패: %s", str(e)[:100])
+    # 매장 정보는 넣는 순간의 최신값으로 — 영업시간이 바뀌었으면 옛 초안도 새 값으로 나간다
+    stamped = stamp_store_block(body)
+    if stamped != body:
+        body = stamped
+        store.update_post(post_id, body=body)   # 웹 화면과 네이버가 같은 글이어야 한다
     blocks, _prepared = build_blocks(body)
 
     cfg = na.load_config()
