@@ -1,9 +1,9 @@
 {# 5단계 진행 막대 — 사장님이 정한 순서(2026-09-14, 품질 확인은 09-15 추가):
-   ① 주제 뽑기 → ② 초안 작성 → ③ 사진 선택 → ④ 품질 확인 → ⑤ 임시저장.
+   ① 주제 뽑기 → ② 초안 작성 → ③ 사진 선택 → ④ 품질 확인 → ⑤ 예약 발행.
    cur 보다 앞은 끝난 칸(✓), cur 는 지금 할 칸. cur=6 이면 전부 끝.
    홈은 cur=1, 글 화면은 app._blog_step() 이 정한다. #}
 <div style="display:flex; gap:3px; margin:4px 0 14px;">
-  {% for n, label in [(1, '주제'), (2, '초안'), (3, '사진'), (4, '품질'), (5, '임시저장')] %}
+  {% for n, label in [(1, '주제'), (2, '초안'), (3, '사진'), (4, '품질'), (5, '예약 발행')] %}
   <div style="flex:1; text-align:center; font-size:11.5px; line-height:1.3; padding:7px 1px;
               border-radius:8px; white-space:nowrap;
               {% if n < cur %}background:var(--ok-bg); color:var(--ok);

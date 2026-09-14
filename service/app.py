@@ -3060,6 +3060,8 @@ def blog_post(path_key, post_id):
     return render_template("blog_post.html", key=path_key, post=post,
                            photos=photos, step=_blog_step(post, quality), blocks=blocks,
                            quality=quality, scoring=scoring, quality_min=BLOG_QUALITY_MIN,
+                           recommend=_recommend_publish_time(),
+                           publishing=("blog_publish" in (blog.busy_kinds() if True else set())),
                            picking=picking, swap=swap or "", after=after if after is not None else "",
                            after_text=after_text, catalog=catalog,
                            note=(request.args.get("note") or "")[:200],
@@ -3183,7 +3185,8 @@ def blog_post_busy(path_key, post_id):
         busy = blog.busy_kinds()
     except Exception:  # noqa: BLE001
         busy = set()
-    return jsonify({"scoring": "blog_score" in busy, "drafting": "blog_draft" in busy})
+    return jsonify({"scoring": "blog_score" in busy, "drafting": "blog_draft" in busy,
+                    "publishing": "blog_publish" in busy})
 
 
 @app.route("/<path_key>/blog/post/<int:post_id>/score", methods=["POST"])
@@ -3299,15 +3302,52 @@ def blog_post_save(path_key, post_id):
 
 @app.route("/<path_key>/blog/post/<int:post_id>/publish", methods=["POST"])
 def blog_post_publish(path_key, post_id):
-    """집 PC 일꾼에게 '네이버 임시저장' 요청. 실제 발행 버튼은 사장님이 직접."""
+    """집 PC 일꾼에게 요청 — mode=reserve 면 네이버 예약 발행까지, 아니면 임시저장만.
+
+    예약은 글마다 사람이 시각을 보고 누른다(사장님 2026-09-15). 스스로 걸지 않는다.
+    """
     check(path_key)
+    payload = {"post_id": post_id}
+    note = "집 PC가 네이버에 넣는 중이에요 (1~3분)."
+    if request.form.get("mode") == "reserve":
+        when = (request.form.get("when") or "").strip()      # 화면의 datetime-local, 한국 시간
+        try:
+            dt = datetime.strptime(when, "%Y-%m-%dT%H:%M").replace(tzinfo=KST)
+        except ValueError:
+            return redirect(url_for("blog_post", path_key=path_key, post_id=post_id,
+                                    note="예약 시각을 읽지 못했어요 — 다시 골라주세요."))
+        if dt < datetime.now(KST) + timedelta(minutes=15):
+            return redirect(url_for("blog_post", path_key=path_key, post_id=post_id,
+                                    note="예약 시각은 지금부터 15분 뒤여야 해요."))
+        payload["reserve_at"] = dt.isoformat()
+        note = f"{dt.strftime('%m/%d %H:%M')} 예약 발행을 걸러 가는 중이에요 (2~4분). 끝나면 위에 '예약 걸어둠'이 뜹니다."
     try:
-        blog.request_blog_job("blog_publish", {"post_id": post_id}, by="web")
+        blog.request_blog_job("blog_publish", payload, by="web")
     except Exception as e:  # noqa: BLE001
         db.log_error("service", f"네이버 초안 요청 실패(post {post_id}): {e}",
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
-    return redirect(url_for("blog_post", path_key=path_key, post_id=post_id))
+        note = f"요청이 접수되지 않았어요: {str(e)[:100]}"
+    return redirect(url_for("blog_post", path_key=path_key, post_id=post_id, note=note))
+
+
+def _recommend_publish_time() -> dict:
+    """예약 발행 추천 시각(KST). 아직 우리 글 반응 데이터가 없어 규칙으로 정한다.
+
+    아침 08:00 — 출근길·브런치 검색이 몰리는 때이고, 하루의 '최신 글' 노출을
+    통째로 받는다. 지금부터 40분 안이면 다음 날로. 반응 데이터가 쌓이면 그걸로
+    바꾼다(blog_perf). 사장님이 화면에서 언제든 고칠 수 있다.
+    """
+    now = datetime.now(KST)
+    cand = now.replace(hour=8, minute=0, second=0, microsecond=0)
+    if cand < now + timedelta(minutes=40):
+        cand += timedelta(days=1)
+    label = ("오늘" if cand.date() == now.date() else
+             "내일" if cand.date() == now.date() + timedelta(days=1) else
+             f"{cand.month}/{cand.day}")
+    return {"value": cand.strftime("%Y-%m-%dT%H:%M"),
+            "label": f"{label} 08:00",
+            "why": "출근길·브런치 검색이 몰리는 아침 시간대 — 하루치 '최신 글' 노출을 통째로 받습니다."}
 
 
 @app.route("/<path_key>/blog/post/<int:post_id>/status", methods=["POST"])

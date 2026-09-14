@@ -454,13 +454,34 @@ def do_publish(payload: dict) -> tuple[int, str]:
         store.update_post(post_id, body=body)   # 웹 화면과 네이버가 같은 글이어야 한다
     blocks, _prepared = build_blocks(body)
 
+    # 예약 발행(사장님 2026-09-15 — 8/29 의 '임시저장까지만'을 번복). 글마다 사람이
+    # 시각을 보고 [예약 발행]을 눌러야만 온다. 초안 생성이 스스로 예약을 걸진 않는다.
+    reserve_at = payload.get("reserve_at")
+    when = None
+    if reserve_at:
+        from datetime import datetime, timedelta, timezone
+        kst = timezone(timedelta(hours=9))
+        when = datetime.fromisoformat(str(reserve_at).replace("Z", "+00:00"))
+        when = (when if when.tzinfo else when.replace(tzinfo=kst)).astimezone(kst)
+        floor = datetime.now(kst) + timedelta(minutes=15)
+        if when < floor:                   # 과거·임박이면 15분 뒤로 밀어 예약
+            when = floor
+    dry = bool(payload.get("dry_run"))
+
     cfg = na.load_config()
     headful = bool(cfg.get("naver", {}).get("headful", True))
     pw, ctx, page = na.launch(cfg, headful=headful)
+    reserve_note, reserved = "", False
     try:
         doc = {"title": post.get("title"), "body": body, "blocks": blocks or None,
                "tags": post.get("tags") or []}
-        ok = na.draft_one(page, cfg, doc)
+        if when is not None:
+            r_ok, msg = na.reserve_one(page, cfg, doc, when, dry_run=dry)
+            reserved = r_ok and not dry
+            reserve_note = f" · {msg}" if r_ok else f" · ⚠ 예약 실패({msg}) — 임시저장으로 남김"
+            ok = True                      # 폴백 임시저장까지 됐으면 글은 들어간 것
+        else:
+            ok = na.draft_one(page, cfg, doc)
     finally:
         try:
             ctx.close()
@@ -477,6 +498,8 @@ def do_publish(payload: dict) -> tuple[int, str]:
                 "로그인(login_helper.py)을 다시 실행해 주세요.")
         raise RuntimeError("네이버 에디터 입력 실패 (화면 구조가 바뀌었을 수 있어요)")
     store.update_post(post_id, prepared_at=store._now())
+    if reserved:
+        store.set_status(post_id, "scheduled", scheduled_at=when.isoformat())
 
     # ★ **실제로 에디터에 들어간** 사진·클립만 원장에 기록한다.
     #   (insert 함수들이 True/False 를 정직하게 돌려주게 고침 — 08-30)
@@ -493,7 +516,8 @@ def do_publish(payload: dict) -> tuple[int, str]:
     # '사진 N장 포함'은 준비한 개수가 아니라 **실제 들어간 개수**를 말한다
     with_photo = f" (사진·영상 {len(inserted)}개 들어감)" if inserted else " (⚠ 미디어 0개)"
     fail_note = f" · ⚠ {len(failed)}개는 업로드 실패" if failed else ""
-    return 1, (f"네이버 임시저장 완료{with_photo}{fail_note}"
+    head = "네이버 예약 발행 설정" if reserved else "네이버 임시저장 완료"
+    return 1, (f"{head}{with_photo}{fail_note}{reserve_note}"
                f" — {post.get('title', '')[:40]}")
 
 

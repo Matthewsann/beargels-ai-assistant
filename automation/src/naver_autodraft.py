@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import sys
 
 import yaml
@@ -121,6 +122,37 @@ DEFAULT_SELECTORS = {
         "button.save_btn__bzc5B",
         "button:has-text('저장')",
         ".btn_save",
+    ],
+    # ── 예약 발행 (2026-08-29 측정, 77c418f 로 걷어냈다가 2026-09-15 사장님 지시로 복원) ──
+    # 발행(게시) 버튼 — 발행 설정 레이어를 연다
+    # ⚠️ 2026-09-15 실측: 'button:has-text('발행')' 이 오른쪽 위 **"예약 발행 1건"** 링크
+    #    (예약 글 목록 팝업)를 먼저 집어 엉뚱한 창이 열렸다. 클래스 해시(m9KHH)는 배포마다
+    #    바뀌므로 접두어로 잡고, 글자로 잡을 땐 '예약'이 든 것을 뺀다.
+    "publish_open": [
+        "button[class*='publish_btn']",
+        "button:has-text('발행'):not(:has-text('예약'))",
+        ".btn_publish",
+    ],
+    # 발행 설정 레이어의 '예약' 라디오/탭
+    "reserve_radio": [
+        "label[for='radio_time2']",                       # 2026-09-15 실측: '예약' 라디오의 라벨
+        "[class*='radio_time']:has-text('예약')",
+        "label:has-text('예약'):not(:has-text('예약 발행'))",
+        "input[data-testid='preTimeRadioBtn']",
+        "label:has-text('예약')",
+    ],
+    # 예약 레이어의 날짜 입력
+    "reserve_date": [
+        "input[class*='input_date']",
+        "input.input_date",
+        ".se-popup input[placeholder*='날짜']",
+    ],
+    # 최종 확정(예약 발행) 버튼 — 레이어 안의 초록 확정 버튼. 글자로만 잡을 땐 '발행'
+    # 하나짜리는 위험(상단 발행 버튼과 겹친다) → 클래스 접두어·'예약 발행' 글자만.
+    "reserve_confirm": [
+        "button[data-testid='seOnePublishBtn']",          # 2026-09-15 실측: 레이어 안 ✓발행
+        "button[class*='confirm_btn']",
+        "button:has-text('예약 발행'):not(:has-text('건'))",
     ],
 }
 # (발행/예약 관련 셀렉터는 2026-08-30 에 삭제 — 발행·예약은 사람이 네이버에서
@@ -741,6 +773,156 @@ def draft_one(page: Page, cfg: dict, post: dict) -> bool:
         save_debug(page, "save_fail")
         print(f"    ✗ 임시저장 클릭 실패: {e}")
         return False
+
+
+def reserve_one(page: Page, cfg: dict, post: dict, when,
+                dry_run: bool = False) -> tuple[bool, str]:
+    """글 하나를 입력하고 네이버 '예약 발행'까지 설정한다.
+
+    when: datetime(한국 시간) — 분은 네이버가 10분 단위만 받으므로 내림.
+    dry_run: 마지막 '예약 발행' 버튼만 **누르지 않고** 화면을 찍어 둔다(점검용).
+    실패하면 임시저장으로 폴백하고 (False, 사유) 를 돌려준다.
+    """
+    selectors = cfg["_selectors"]
+    frame = fill_editor(page, cfg, post)
+    if frame is None:
+        return False, "에디터 입력 실패"
+    clear_popups(page, frame, selectors)
+
+    def fallback(reason: str) -> tuple[bool, str]:
+        print(f"    · 예약 설정 실패({reason}) → 임시저장으로 폴백")
+        save_debug(page, "reserve_fail")
+        try:
+            # page.content() 는 바깥 껍데기(iframe 한 줄)뿐이라 셀렉터 진단이 안 된다 —
+            # 에디터 프레임 안쪽을 따로 남긴다(2026-09-15).
+            (DEBUG_DIR / "reserve_fail_frame.html").write_text(frame.content(), encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            page.keyboard.press("Escape")       # 발행 레이어가 열려 있으면 닫는다(업로드는 이미 끝난 뒤)
+            frame.wait_for_timeout(500)
+        except Exception:  # noqa: BLE001
+            pass
+        clear_popups(page, frame, selectors)
+        loc = first_working(frame, selectors["save"])
+        if loc is not None:
+            try:
+                loc.click(timeout=5000)
+                frame.wait_for_timeout(1500)
+            except Exception:  # noqa: BLE001
+                pass
+        return False, reason
+
+    # ① 발행 설정 레이어 열기
+    open_btn = first_working(frame, selectors["publish_open"])
+    if open_btn is None:
+        return fallback("발행 버튼 없음")
+    try:
+        open_btn.click(timeout=5000)
+        frame.wait_for_timeout(1200)
+    except Exception as e:  # noqa: BLE001
+        return fallback(f"발행 버튼 클릭 실패 {str(e)[:40]}")
+
+    # ①-b 태그 입력(발행 레이어의 '태그 편집' 칸) — 실패해도 발행은 계속
+    tags = [t for t in (post.get("tags") or [])][:10]
+    if tags:
+        try:
+            tag_box = first_working(frame, [
+                "input[placeholder*='태그']", ".tag_input", "input.tag_input__rvo3J"])
+            if tag_box is not None:
+                tag_box.click(timeout=3000)
+                for t in tags:
+                    page.keyboard.type(str(t).lstrip("#"), delay=15)
+                    page.keyboard.press("Enter")
+                    page.wait_for_timeout(150)
+                print(f"    · 태그 {len(tags)}개 입력")
+            else:
+                print("    · 태그 입력칸을 못 찾았습니다(본문 해시태그로 대체)")
+        except Exception as e:  # noqa: BLE001
+            print(f"    · 태그 입력 실패({str(e)[:40]}) — 계속 진행")
+
+    # ② '예약' 선택
+    radio = first_working(frame, selectors["reserve_radio"])
+    if radio is None:
+        return fallback("예약 옵션 없음")
+    try:
+        radio.click(timeout=4000)
+        frame.wait_for_timeout(800)
+    except Exception as e:  # noqa: BLE001
+        return fallback(f"예약 선택 실패 {str(e)[:40]}")
+
+    # ③ 날짜·시각 (2026-09-15 실측 DOM)
+    #   날짜칸 input[class*='input_date'] 는 **readonly** — fill() 은 30초 타임아웃으로 죽는다.
+    #   누르면 jQuery-UI 달력이 열리므로 [다음달]을 필요한 만큼 누르고 날짜 칸을 클릭한다.
+    #   시·분은 select[class*='hour_option'] / select[class*='minute_option'] (분은 10분 단위).
+    try:
+        date_loc = first_working(frame, selectors["reserve_date"])
+        if date_loc is None:
+            return fallback("날짜 칸 없음")
+        date_loc.click(timeout=3000)
+        frame.wait_for_timeout(600)
+        title = frame.locator(".ui-datepicker-title").first
+        mt = re.search(r"(\d{4})\s*년\s*(\d{1,2})\s*월", title.inner_text(timeout=3000))
+        if not mt:
+            return fallback("달력 제목을 못 읽음")
+        steps = (when.year - int(mt.group(1))) * 12 + (when.month - int(mt.group(2)))
+        if steps < 0:
+            return fallback("예약 날짜가 달력보다 과거")
+        for _ in range(steps):
+            frame.locator("button.ui-datepicker-next").first.click(timeout=3000)
+            frame.wait_for_timeout(350)
+        # 날짜 칸은 <button class="ui-state-default">15</button> (2026-09-15 실측 — <a> 가 아니다).
+        # 달력이 발행 레이어의 스크롤 영역에 잘려 아랫줄이 안 보일 때가 있어, 스크롤로
+        # 끌어올린 뒤 누르고, 그래도 안 되면 JS 클릭(보이는지와 무관하게 이벤트 발생)으로.
+        day = frame.locator(
+            f".ui-datepicker td:not(.ui-datepicker-other-month) button.ui-state-default"
+            f":text-is('{when.day}')").first
+        if day.count() == 0:
+            return fallback(f"달력에 {when.day}일 칸 없음")
+        try:
+            day.scroll_into_view_if_needed(timeout=2000)
+            day.click(timeout=3000)
+        except Exception:  # noqa: BLE001
+            day.evaluate("el => el.click()")
+        frame.wait_for_timeout(500)
+
+        hour = f"{when.hour:02d}"
+        minute = f"{(when.minute // 10) * 10:02d}"
+        hs = frame.locator("select[class*='hour_option']").first
+        ms = frame.locator("select[class*='minute_option']").first
+        if hs.count() and ms.count():
+            for sel, val in ((hs, hour), (ms, minute)):
+                try:
+                    sel.select_option(value=val, timeout=3000)
+                except Exception:  # noqa: BLE001 — value 가 '8' 같은 꼴이면 라벨로
+                    sel.select_option(label=val, timeout=3000)
+        else:                                   # 옛 레이아웃 폴백
+            sels = frame.locator(".se-popup select, [class*='publish'] select")
+            if sels.count() >= 2:
+                sels.nth(0).select_option(value=hour)
+                sels.nth(1).select_option(value=minute)
+        frame.wait_for_timeout(500)
+        shown = date_loc.input_value(timeout=2000)
+        print(f"    · 예약 시각 설정: 날짜칸 '{shown}' {hour}:{minute}")
+    except Exception as e:  # noqa: BLE001
+        return fallback(f"시각 설정 실패 {str(e)[:50]}")
+
+    # ④ 최종 '예약 발행' 클릭
+    confirm = first_working(frame, selectors["reserve_confirm"])
+    if confirm is None:
+        return fallback("예약 발행 버튼 없음")
+    if dry_run:
+        save_debug(page, "reserve_dry")
+        print(f"    ✓ (점검) 예약 화면까지 확인 — {when.strftime('%m/%d %H:%M')}, 버튼은 안 눌렀음")
+        fallback("점검 모드 — 실제 예약 안 함")       # 임시저장으로 남겨 둔다
+        return True, f"점검: {when.strftime('%Y-%m-%d %H:%M')} 예약 화면 확인(실제 예약 안 함)"
+    try:
+        confirm.click(timeout=5000)
+        frame.wait_for_timeout(2500)
+    except Exception as e:  # noqa: BLE001
+        return fallback(f"예약 발행 클릭 실패 {str(e)[:40]}")
+    print(f"    ✓ 예약 발행 설정 완료 — {when.strftime('%m/%d %H:%M')}")
+    return True, f"{when.strftime('%Y-%m-%d %H:%M')} 예약 발행 설정"
 
 
 def launch(cfg: dict, headful: bool):
