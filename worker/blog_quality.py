@@ -126,6 +126,45 @@ def strip_meta_head(text: str) -> str:
     return _META_HEAD.sub("", text or "").lstrip("\n")
 
 
+def _restore_marks(original: str, revised: str) -> str:
+    """퇴고본이 잃어버린 사진 표시를 원래 자리(앞 문단과 가장 닮은 문단 뒤)에 되돌려 넣는다.
+
+    무료 모델은 퇴고하며 `[📷 …]` 를 곧잘 빼먹는다(2026-09-15 실측: 4장 중 3장). 예전엔
+    그 퇴고를 통째로 버려 짧고 낮은 초안이 그대로 저장됐다. 표시만 되살리면 퇴고는 살릴 수 있다.
+    """
+    import difflib
+    mark_re = re.compile(r"\[[📷🎬][^\]]*\]")
+    o_chunks = [c for c in re.split(r"\n\s*\n", original.strip()) if c.strip()]
+    r_chunks = [c for c in re.split(r"\n\s*\n", revised.strip()) if c.strip()]
+    present = set(mark_re.findall(revised))
+    missing = []                     # (표시, 원본에서 바로 앞 글 토막)
+    prev_text = ""
+    for c in o_chunks:
+        if mark_re.fullmatch(c.strip()):
+            if c.strip() not in present:
+                missing.append((c.strip(), prev_text))
+        else:
+            prev_text = mark_re.sub("", c).strip()
+    if not missing:
+        return revised
+    for mark, anchor in missing:
+        best, best_r = None, 0.35
+        for k, rc in enumerate(r_chunks):
+            if mark_re.fullmatch(rc.strip()):
+                continue
+            r = difflib.SequenceMatcher(None, anchor[:120], mark_re.sub("", rc)[:120]).ratio()
+            if r > best_r:
+                best, best_r = k, r
+        if best is None:             # 닮은 문단이 없으면 매장 정보·해시태그 앞에
+            tail = next((k for k, rc in enumerate(r_chunks)
+                         if rc.lstrip().startswith("[매장 정보]") or rc.lstrip().startswith("#")), len(r_chunks))
+            r_chunks.insert(tail, mark)
+        else:
+            r_chunks.insert(best + 1, mark)
+    logger.info("퇴고본에 사진 표시 %d개를 되돌려 넣음", len(missing))
+    return "\n\n".join(r_chunks)
+
+
 def improve(body: str, title: str, main_keyword: str,
             improvements: list[str]) -> str | None:
     """개선점을 먹여 한 번 퇴고한 본문. 사진 표시가 깨졌으면 버린다(None)."""
@@ -142,9 +181,12 @@ def improve(body: str, title: str, main_keyword: str,
     marks = re.findall(r"\[[📷🎬][^\]]*\]", body)
     kept = sum(1 for m in marks if m in raw)
     if marks and kept < len(marks):
-        logger.warning("퇴고본이 사진 표시 %d/%d개를 잃음 — 원본 유지",
-                       kept, len(marks))
-        return None
+        raw = _restore_marks(body, raw)              # 잃은 표시를 되돌려 넣고 다시 센다
+        kept = sum(1 for m in marks if m in raw)
+        if kept < len(marks):
+            logger.warning("퇴고본이 사진 표시 %d/%d개를 잃음 — 원본 유지",
+                           kept, len(marks))
+            return None
     return raw
 
 
@@ -266,6 +308,9 @@ def gate(body: str, title: str, main_keyword: str) -> tuple[str, dict]:
             break
         logger.info("품질 %d점·%d자 — 자동 퇴고", q["score"], _plain_len(body))
         better = improve(body, title, main_keyword, improvements)
+        if not better:                                # 무료 모델은 한 번 실패해도 다음엔 된다
+            logger.info("퇴고 실패 — 한 번 더")
+            better = improve(body, title, main_keyword, improvements)
         if not better:
             break
         q2 = score(better, title, main_keyword)
