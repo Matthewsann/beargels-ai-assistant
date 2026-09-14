@@ -238,21 +238,12 @@ def do_draft(payload: dict) -> tuple[int, str]:
     photo_note = ""
     try:
         import blog_media
+        # 번호 표시([📷 P07])를 경로로 굳혀 품질 게이트가 깨끗한 표시를 보게 한다.
+        # 개수 세기·미리보기는 게이트 **뒤에** 한 번만 한다(아래) — 퇴고가 표시를
+        # 복제하거나 지어낼 수 있어서(2026-09-15 실측: 같은 사진이 두 번, 메시지는
+        # '0장'이라고 거짓말 — 예전 코드의 try/else 가 꼬여 있었다).
         body = blog_media.freeze_marks(body)
-        body, dropped = blog_media.dedupe_marks(body)      # 한 글 안 같은 사진 두 번 금지
-        media = blog_media.used_media(body)
-        if media:
-            photo_note = f" · 사진 {len(media)}장" + (f"(겹친 {dropped}장 뺌)" if dropped else "")
-        try:
-            pool = len(blog_media.catalog(except_post_id=post_id if old else None))
-            if pool < blog_media.THIN_POOL:
-                photo_note += f" · ⚠ 아직 안 쓴 사진이 {pool}장뿐 — 소재함에 사진을 더 올려주세요"
-        except Exception:  # noqa: BLE001
-            pass
-            # 웹에서 어떤 사진인지 눈으로 확인할 수 있게 작은 미리보기를 올린다
-            blog_media.ensure_thumbs(media)
-        else:
-            photo_note = " · ⚠ 사진 0장 — 사진함을 확인해 주세요"
+        body, _ = blog_media.dedupe_marks(body)
     except Exception as e:  # noqa: BLE001 — 사진을 못 붙여도 글은 저장한다
         logger.warning("사진 붙이기 실패: %s", str(e)[:120])
 
@@ -279,6 +270,19 @@ def do_draft(payload: dict) -> tuple[int, str]:
     try:
         import blog_media
         body = blog_media.freeze_marks(body)
+        body, dropped = blog_media.dedupe_marks(body)      # 퇴고가 복제한 표시도 여기서 잡는다
+        media = blog_media.used_media(body)
+        if media:
+            photo_note = f" · 사진 {len(media)}장" + (f"(겹친 {dropped}장 뺌)" if dropped else "")
+            blog_media.ensure_thumbs(media)                # 웹 미리보기
+        else:
+            photo_note = " · ⚠ 사진 0장 — 사진함을 확인해 주세요"
+        try:
+            pool = len(blog_media.catalog(except_post_id=post_id if old else None))
+            if pool < blog_media.THIN_POOL:
+                photo_note += f" · ⚠ 아직 안 쓴 사진이 {pool}장뿐 — 소재함에 사진을 더 올려주세요"
+        except Exception:  # noqa: BLE001
+            pass
     except Exception as e:  # noqa: BLE001
         logger.warning("퇴고 뒤 사진 표시 정리 실패: %s", str(e)[:100])
 
