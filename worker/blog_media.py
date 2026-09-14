@@ -120,6 +120,51 @@ def scan() -> list[dict]:
     return out
 
 
+# 사장님이 글 화면에서 폰으로 올린 사진(2026-09-15). 웹(PythonAnywhere)은
+# 소재함 폴더에 못 쓰므로 공개 버킷 `blogup/<글번호>/<파일>` 에 두고, 집 PC 가
+# 여기로 가져온다: 원본소재/업로드/글<번호>/<파일>. 버킷 키는 ASCII 만 되므로
+# 파일 이름은 웹이 ASCII 로 짓고, 한글 폴더 이름은 이쪽에서만 붙인다.
+UPLOAD_DIR = "업로드"
+UPLOAD_PREFIX = "blogup"
+
+
+def pull_uploads() -> int:
+    """버킷 blogup/ 의 사진을 소재함 업로드/ 로 내려받고 버킷에서 지운다. 받은 개수."""
+    try:
+        from sns_automation import cloud_sync
+        b = cloud_sync._bucket()
+        folders = b.list(UPLOAD_PREFIX) or []
+    except Exception as e:  # noqa: BLE001 — 버킷이 안 닿아도 나머지는 돌아야 한다
+        logger.warning("업로드 우편함 확인 실패: %s", str(e)[:100])
+        return 0
+    got = 0
+    for fo in folders:
+        pid = fo.get("name") or ""
+        if not pid or fo.get("id"):            # 파일이면 id 가 있다 — 폴더만
+            continue
+        try:
+            files = b.list(f"{UPLOAD_PREFIX}/{pid}") or []
+        except Exception:  # noqa: BLE001
+            continue
+        dest = shelf_dir() / UPLOAD_DIR / f"글{pid}"
+        for f in files:
+            name = f.get("name") or ""
+            if not name or not f.get("id"):
+                continue
+            key = f"{UPLOAD_PREFIX}/{pid}/{name}"
+            try:
+                data = b.download(key)
+                dest.mkdir(parents=True, exist_ok=True)
+                (dest / name).write_bytes(data)
+                b.remove([key])
+                got += 1
+            except Exception as e:  # noqa: BLE001 — 한 장 실패가 나머지를 막지 않는다
+                logger.warning("업로드 사진 가져오기 실패(%s): %s", key, str(e)[:100])
+    if got:
+        logger.info("업로드 사진 %d장을 소재함으로 가져옴", got)
+    return got
+
+
 def full_path(rel: str) -> pathlib.Path:
     """사진함 안의 실제 경로. 사용완료로 옮겨진 파일도 찾아준다.
 
@@ -129,6 +174,10 @@ def full_path(rel: str) -> pathlib.Path:
     p = shelf_dir() / rel
     if p.exists():
         return p
+    if rel.startswith(UPLOAD_DIR + "/"):
+        pull_uploads()                     # 폰에서 올린 사진은 아직 버킷에만 있을 수 있다
+        if p.exists():
+            return p
     for base in (pathlib.Path(ARCHIVE_DIR), shelf_dir() / USED_DIR):
         if not base.exists():
             continue
@@ -435,6 +484,18 @@ def _lookup(token: str, cat: dict, idx: dict) -> dict | None:
     for rel, v in idx.items():
         if rel.rsplit("/", 1)[-1] == name:
             return {**v, "rel": rel}
+    # 사진함에 아직 안 들어갔어도 **파일이 실제로 있으면** 쓴다 — 사장님이 글 화면에서
+    # 폰으로 올린 사진(업로드/글N/…)은 다음 '사진함 훑기' 전까지 인덱스에 없다.
+    # 예전엔 여기서 None 을 돌려 네이버 넣기가 그 사진을 조용히 빼먹었다(2026-09-15).
+    if "/" in token and token.lower().endswith(tuple(PHOTO_EXT | VIDEO_EXT)):
+        try:
+            if full_path(token).is_file():
+                kind = "video" if token.lower().endswith(tuple(VIDEO_EXT)) else "photo"
+                return {"rel": token, "kind": kind, "slot": token.split("/", 1)[0],
+                        "subject": "", "caption": "", "keywords": [],
+                        "quality": "good", "hero": False}
+        except Exception:  # noqa: BLE001
+            pass
     return None
 
 

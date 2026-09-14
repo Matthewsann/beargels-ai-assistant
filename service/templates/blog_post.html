@@ -113,7 +113,16 @@
         {% if not preview %}
         <figcaption style="display:flex; justify-content:center; align-items:center; gap:6px; margin-top:6px; font-size:12px; color:var(--muted);">
           <span style="max-width:40%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ '▶ ' if b.video else '' }}{{ b.name }}</span>
-          <a class="btn sm" style="padding:4px 9px; font-size:12px;" href="{{ url_for('blog_post', path_key=key, post_id=post.id, swap=b.rel) }}#pick">🔁 바꾸기</a>
+          {# 바꾸기 = 폰에서 사진 고르면 바로 올라가 이 자리에 들어간다(사장님 2026-09-15) #}
+          <form method="post" enctype="multipart/form-data" class="up"
+                action="{{ url_for('blog_post_photo', path_key=key, post_id=post.id) }}" style="margin:0;">
+            <input type="hidden" name="action" value="upload_replace">
+            <input type="hidden" name="rel" value="{{ b.rel }}">
+            <label class="btn sm" style="padding:4px 9px; font-size:12px; cursor:pointer;">🔁 바꾸기
+              <input type="file" name="photo" accept="image/*" hidden onchange="upGo(this)"></label>
+          </form>
+          <a href="{{ url_for('blog_post', path_key=key, post_id=post.id, swap=b.rel) }}#pick"
+             style="font-size:11px; color:var(--muted);">사진함에서</a>
           <form method="post" action="{{ url_for('blog_post_photo', path_key=key, post_id=post.id) }}" style="margin:0;"
                 onsubmit="return confirm('이 사진을 글에서 뺄까요?');">
             <input type="hidden" name="action" value="remove">
@@ -135,9 +144,19 @@
       <div style="position:relative; margin:0 0 14px;">
         <p style="white-space:pre-wrap; margin:0; word-break:keep-all;">{{ b.text }}</p>
         {% if not preview %}
-        <a href="{{ url_for('blog_post', path_key=key, post_id=post.id, after=b.i) }}#pick" title="이 문단 뒤에 사진 넣기"
-           style="display:inline-block; margin-top:4px; font-size:11px; color:var(--muted); text-decoration:none;
-                  border:1px dashed var(--line); border-radius:999px; padding:1px 9px;">＋ 여기 뒤에 사진</a>
+        <div style="display:flex; justify-content:center; align-items:center; gap:8px; margin-top:4px;">
+          <form method="post" enctype="multipart/form-data" class="up"
+                action="{{ url_for('blog_post_photo', path_key=key, post_id=post.id) }}" style="margin:0;">
+            <input type="hidden" name="action" value="upload_after">
+            <input type="hidden" name="after" value="{{ b.i }}">
+            <label title="이 문단 뒤에 사진 넣기"
+                   style="display:inline-block; font-size:11px; color:var(--muted); cursor:pointer;
+                          border:1px dashed var(--line); border-radius:999px; padding:1px 9px;">＋ 여기 뒤에 사진
+              <input type="file" name="photo" accept="image/*" hidden onchange="upGo(this)"></label>
+          </form>
+          <a href="{{ url_for('blog_post', path_key=key, post_id=post.id, after=b.i) }}#pick"
+             style="font-size:11px; color:var(--muted);">사진함에서</a>
+        </div>
         {% endif %}
       </div>
       {% endif %}
@@ -157,7 +176,8 @@
   {% else %}
 
   <div style="font-size:12px; color:var(--muted); margin:8px 2px 12px;">
-    사진 {{ photos|length }}장 · 사진을 누르면 크게 봅니다. 더 넣은 사진은 그 문단 바로 뒤에 들어가요.
+    사진 {{ photos|length }}장 · <b>바꾸기</b>나 <b>＋</b>를 누르면 폰에서 사진을 골라 바로 올립니다(올리는 데 몇 초).
+    사진을 누르면 크게 봅니다.
   </div>
 
   <details class="panel" style="margin-bottom:8px;">
@@ -248,5 +268,16 @@
   </div>
 
   {% endif %}
+
+  <script>
+    // 사진을 고르면 바로 올린다. 올리는 동안 버튼을 '올리는 중'으로 바꿔 두 번 누르지 않게.
+    function upGo(inp) {
+      if (!inp.files || !inp.files.length) return;
+      var lab = inp.parentElement;
+      lab.textContent = '⏳ 올리는 중…';
+      lab.style.pointerEvents = 'none';
+      inp.form.submit();
+    }
+  </script>
 
 {% endblock %}

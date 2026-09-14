@@ -83,6 +83,7 @@ def do_recommend() -> tuple[int, str]:
 def do_media() -> tuple[int, str]:
     """사진함을 다시 훑어 새로 올라온 사진을 AI 가 살펴본다."""
     import blog_media
+    blog_media.pull_uploads()               # 폰에서 올린 사진부터 소재함에
     before = len(blog_media.load_index())
     idx = blog_media.build_index()
     photos = sum(1 for v in idx.values() if v.get("kind") == "photo")
@@ -305,6 +306,11 @@ def do_publish(payload: dict) -> tuple[int, str]:
         raise ValueError(f"글 #{post_id} 를 찾을 수 없습니다.")
 
     body = post.get("body") or ""
+    try:
+        import blog_media
+        blog_media.pull_uploads()           # 폰에서 올린 사진이 있으면 먼저 가져온다
+    except Exception as e:  # noqa: BLE001
+        logger.warning("업로드 사진 가져오기 실패: %s", str(e)[:100])
     blocks, _prepared = build_blocks(body)
 
     cfg = na.load_config()

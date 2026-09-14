@@ -2654,6 +2654,55 @@ def _blog_step(post: dict) -> int:
     return 5 if post.get("prepared_at") else 3
 
 
+BLOG_UPLOAD_MAX = 15 * 1024 * 1024        # 폰 원본 사진도 넉넉한 15MB
+
+
+def _blog_upload_photo(post_id: int, fs) -> str:
+    """폰에서 올린 사진을 버킷에 두고, 본문에 적을 경로(rel)를 돌려준다.
+
+    · 긴 변 1600px JPEG 로 줄여 `blogup/<글번호>/<이름>.jpg` (집 PC 가 가져간다)
+    · 640px 미리보기를 `blogthumbs/<해시>.jpg` — 글 화면에 바로 보이게
+    · rel = 업로드/글<번호>/<이름>.jpg — 집 PC 가 내려받을 자리와 같은 규칙
+    """
+    import hashlib
+    import io as _io
+    import secrets
+    from PIL import Image, ImageOps
+    from sns_automation import cloud_sync
+
+    raw = fs.read(BLOG_UPLOAD_MAX + 1)
+    if not raw:
+        raise ValueError("사진이 비어 있어요.")
+    if len(raw) > BLOG_UPLOAD_MAX:
+        raise ValueError("15MB 가 넘어요 — 사진 앱에서 조금 줄여 보내주세요.")
+    try:
+        img = Image.open(_io.BytesIO(raw))
+        img.load()
+    except Exception:  # noqa: BLE001
+        raise ValueError("이 형식은 못 읽어요. HEIC 라면 폰 설정 [카메라 › 포맷]을 "
+                         "'호환성 우선'으로 두거나 JPG 로 보내주세요.") from None
+    img = ImageOps.exif_transpose(img)
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+    name = f"u{datetime.now(KST).strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}.jpg"
+    rel = f"업로드/글{post_id}/{name}"
+
+    big = img.copy()
+    big.thumbnail((1600, 1600), Image.LANCZOS)
+    buf = _io.BytesIO(); big.save(buf, "JPEG", quality=88, optimize=True)
+    small = img.copy()
+    small.thumbnail((640, 640), Image.LANCZOS)
+    tbuf = _io.BytesIO(); small.save(tbuf, "JPEG", quality=72, optimize=True)
+
+    b = cloud_sync._bucket()
+    b.upload(f"blogup/{post_id}/{name}", buf.getvalue(),
+             {"content-type": "image/jpeg", "upsert": "true"})
+    key = hashlib.sha1(rel.encode("utf-8")).hexdigest()[:16] + ".jpg"
+    b.upload(f"blogthumbs/{key}", tbuf.getvalue(),
+             {"content-type": "image/jpeg", "upsert": "true"})
+    return rel
+
+
 def _mark_for(rel: str) -> str:
     icon = "🎬" if rel.lower().endswith((".mp4", ".mov", ".m4v")) else "📷"
     return f"[{icon} {rel}]"
@@ -3006,6 +3055,13 @@ def blog_post_photo(path_key, post_id):
     body = post.get("body") or ""
     note = ""
     try:
+        # 폰에서 올린 사진 — 먼저 버킷에 두고, 그 경로로 아래 '바꾸기/넣기'를 탄다
+        if act in ("upload_replace", "upload_after"):
+            fs = request.files.get("photo")
+            if not fs or not fs.filename:
+                raise ValueError("사진을 고르지 않았어요.")
+            new = _blog_upload_photo(post_id, fs)
+            act = "replace" if act == "upload_replace" else "insert_after"
         if act == "remove" and rel:
             pat = re.compile(r"[ \t]*\[\s*[📷🎬]\s*" + re.escape(rel) + r"\s*\][ \t]*\n?")
             body, n = pat.subn("", body, count=1)
