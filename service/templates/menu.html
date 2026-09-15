@@ -150,6 +150,8 @@ td.rates{line-height:1.5}
 .rt{display:block;font-size:12px}
 .rt small{color:var(--sub);font-size:10px;margin-right:3px}
 .rt.bad{color:var(--red);font-weight:700}
+.rt .off{color:var(--sub);font-size:11px}
+.rt.basis{font-weight:600}
 /* 판매 스위치 — 11px 텍스트 토글(오탭 1순위)을 44px 급 스위치로 */
 td.stat{text-align:left}
 .sw{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--sub);cursor:pointer;padding:2px 0}
@@ -369,6 +371,8 @@ z-index:60;display:flex;gap:10px;align-items:center;max-width:92%}
   <h3>❓ 계산 기준</h3>
   <p class="note" style="font-size:12px;line-height:1.7">
   · <b>원가율</b> = 재료원가 ÷ 판매가. 재료비·판매가 모두 <b>부가세 포함</b> 기준입니다.
+  기준가는 <b>매장 판매가 켜져 있으면 매장가</b>, <b>매장 판매를 끄면 배달가</b>입니다(칸에 '배달' 표시) —
+  매장에서 안 파는 메뉴는 매장가를 실제로 안 받으니까요.
   <b>배달비·수수료는 여기 넣지 않습니다</b> — 배달비는 주문당 1회라 메뉴에 나누려면
   '주문이 얼마짜리인가'를 가정해야 하고, 그러면 12,500원 주문이면 28% · 17,500원 주문이면 20%로
   숫자가 춤춥니다. 배달비·수수료는 🧮 주문 손익에서 <b>주문 단위</b>로 봅니다.<br><br>
@@ -579,6 +583,11 @@ function costRate(it, ch){
   const p = chPrice(it, ch);
   return (p && it.ingredient_cost != null) ? it.ingredient_cost / p : null;
 }
+// 화면에 보이는 원가율의 기준가 — 매장 판매가 켜져 있으면 매장가, **꺼져 있으면 배달가**
+// (사장님 2026-09-15). 매장에서 안 파는 메뉴에 매장가 기준 원가율을 보여 주면 실제로
+// 안 받는 값으로 판정하게 된다. 정렬·'원가율 초과' 필터·분류 중앙값도 전부 이 값을 쓴다.
+function rateBasis(it){ return it.store_active ? "store" : "baemin"; }
+function shownRate(it){ return costRate(it, rateBasis(it)); }
 
 // 추천 판매가 — 100원 단위로 맞춘다(99원·50원 단위는 키오스크·배달앱에서
 // 잔돈 인상만 준다).
@@ -608,8 +617,8 @@ function breakeven(it, ch){
 // ── 문제 필터 — 통계 숫자를 '탭하면 그것만 보이는' 칩으로(대시보드 정석).
 //    기존 '문제만' 체크박스는 유형 구분이 없어서 이 3개로 대체(상위호환).
 const probNocost = it => it.ingredient_cost == null;
-const probOver   = it => { const r = costRate(it,"store");
-  const rd = costRate(it,"baemin");
+const probOver   = it => { const r = shownRate(it);   // 매장 켜짐→매장가, 꺼짐→배달가
+  const rd = it.store_active ? costRate(it,"baemin") : null;   // 매장이 켜져 있어도 배달 쪽이 넘으면
   const tg = target(it.category);   // 목표는 분류마다 하나 — 매장·배달 공통
   return (r != null && r > tg) || (rd != null && rd > tg); };
 const probBe     = it => { const b = breakeven(it,"coupang");
@@ -880,7 +889,7 @@ const SORTKEYS = {
   store_price: it => it.store_price,
   delivery_price: it => it.delivery_price ?? it.store_price,
   ingredient_cost: it => it.ingredient_cost,
-  rate: it => costRate(it,"store"),
+  rate: it => shownRate(it),          // 매장 꺼진 메뉴는 배달가 기준으로 섞여 정렬된다
 };
 // 숨김(매장·배달 둘 다 내린 것)은 어떻게 정렬하든 맨 아래로 — 안 파는 메뉴가
 // 목록 한가운데 있으면 파는 메뉴를 훑는 데 방해만 된다(사장님 2026-08-28).
@@ -974,7 +983,7 @@ function render(){
                  <th data-sort="rate" title="재료원가 ÷ 판매가 (매장/배달)">원가율${arr("rate")}</th>
                  <th title="이 원가율로 주문이 채워질 때 배달비를 감당하는 최소 주문금액 (쿠팡 기준)">배달<br>손익분기</th>
                  <th>판매</th>`
-              :`<th data-sort="rate" title="재료원가 ÷ 매장가. 분류별 목표를 넘으면 빨간색">원가율<br><span style="font-weight:400">매장가</span>${arr("rate")}</th>
+              :`<th data-sort="rate" title="재료원가 ÷ 판매가. 매장 판매 중이면 매장가, 매장을 끄면 배달가('배달' 표시). 분류별 목표를 넘으면 빨간색">원가율<br><span style="font-weight:400">판매가</span>${arr("rate")}</th>
                 ${isMobile()?"":`<th title="포스·키오스크 노출 (store_active)">매장<br>키오스크</th>
                 <th title="배민·쿠팡 공통 (delivery_active) — 두 앱은 같은 값을 쓴다">배달</th>
                 <th title="네이버 스마트플레이스 등록 여부 — 자동 감지가 아니라 직접 표시하는 체크입니다">네이버</th>`}`}</tr>`;
@@ -1012,7 +1021,10 @@ function render(){
         ${SEL?`<input type="checkbox" class="catbox" onclick="event.stopPropagation()" onchange="selCat('${esc(it.category).replace(/'/g,"\\'")}',this.checked)">`:""}${foldOn?(folded?"▸ ":"▾ "):""}${esc(it.category)}
         <small style="font-weight:400">${folded?`${nCat}개 접힘`:`${nCat}개 · 목표 ${(target(it.category)*100).toFixed(0)}%`}${nProb?` <span class="warn" style="padding:0 4px;border-radius:5px">⚠ ${nProb}</span>`:""}</small></span></td></tr>`; }
     if (folded){ r++; continue; }
-    const rs = costRate(it,"store"), rd = costRate(it,"baemin");
+    // 매장 판매가 꺼진 메뉴는 배달가가 기준(사장님 2026-09-15) — 매장 칸은 '꺼짐'으로 비운다
+    const basisD = !it.store_active;
+    const rs = basisD ? null : costRate(it,"store"), rd = costRate(it,"baemin");
+    const r = basisD ? rd : rs;
     const tg = target(it.category);
 
     if (BULK){
@@ -1075,8 +1087,8 @@ function render(){
       ${(()=>{const sp=suggestPrice(it,"baemin"), cur=it.delivery_price??it.store_price;
         const low = sp!=null && cur!=null && cur < sp;
         return `<td class="${low?"warn":""}">${won(sp)}</td>`;})()}
-      <td class="rates"><span class="rt ${rs!=null&&rs>tg?"bad":""}"><small>매장</small>${pct(rs)}</span>
-        <span class="rt ${rd!=null&&rd>tg?"bad":""}"><small>배달</small>${pct(rd)}</span></td>
+      <td class="rates"><span class="rt ${rs!=null&&rs>tg?"bad":""}"><small>매장</small>${basisD?'<span class="off" title="매장 판매 꺼짐 — 배달가 기준으로 봅니다">꺼짐</span>':pct(rs)}</span>
+        <span class="rt ${rd!=null&&rd>tg?"bad":""} ${basisD?"basis":""}"><small>배달</small>${pct(rd)}</span></td>
       ${(()=>{const b=breakeven(it,"coupang"), lim=+om().min_order||12500;
         if(b==null) return `<td>–</td>`;
         if(b===Infinity) return `<td class="over">불가</td>`;
@@ -1086,7 +1098,7 @@ function render(){
           onchange="toggleActive('${it.sku}','store_active',this.checked)">매장</label>
         <label class="sw"><input type="checkbox" ${it.delivery_active?"checked":""}
           onchange="toggleActive('${it.sku}','delivery_active',this.checked)">배달</label></td>`
-      :`<td class="rates"><span class="rt ${rs!=null&&rs>tg?"bad":""}">${pct(rs)}</span></td>
+      :`<td class="rates"><span class="rt ${r!=null&&r>tg?"bad":""}">${basisD?'<small title="매장 판매 꺼짐 — 배달가 기준">배달</small>':""}${pct(r)}</span></td>
        ${isMobile()?"":`<td class="chdot"><button class="dot ${it.store_active?"on":""}" title="매장·키오스크 노출"
           onclick="toggleActive('${it.sku}','store_active',${!it.store_active})"><i></i></button></td>
        <td class="chdot"><button class="dot ${it.delivery_active?"on":""}" title="배민·쿠팡 노출"
@@ -2018,9 +2030,10 @@ async function saveFees(){
 // 판매중이고 원가·매장가가 있는 메뉴만 센다(목표와 비교하는 지표와 같은 계산).
 function medianRate(cat){
   const rates = DATA.items
-    .filter(i => i.category === cat && isSelling(i)
-             && i.ingredient_cost != null && (i.store_price || i.delivery_price))
-    .map(i => i.ingredient_cost / (i.store_price || i.delivery_price) * 100)
+    .filter(i => i.category === cat && isSelling(i))
+    .map(i => shownRate(i))               // 매장 꺼진 메뉴는 배달가 기준 — 표와 같은 값
+    .filter(r => r != null)
+    .map(r => r * 100)
     .sort((a,b) => a-b);
   return rates.length ? rates[Math.floor(rates.length/2)] : null;
 }

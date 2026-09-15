@@ -861,7 +861,8 @@ function recRowsByMenu(list){
   for(const it of list){
     const lines=recipeLines(it.sku);
     const sp=costSplit(it.sku);
-    const base=it.store_price??it.delivery_price;
+    const storeOn=!!it.store_active && it.store_price!=null;   // 매장 꺼짐 → 배달가 기준
+    const base=storeOn?it.store_price:it.delivery_price;
     const rate=(lines.length&&base)?sp.food/base:null;
     const tg=target(it.category);
     food+=sp.food; pack+=sp.pack; n++;
@@ -870,7 +871,7 @@ function recRowsByMenu(list){
         '<span class="pill" style="background:var(--amberbg);color:var(--amber)">레시피 없음</span>'}</td>
       <td></td><td></td>
       <td>${lines.length?won(sp.food):"–"}</td>
-      <td>${won(base)}</td>
+      <td>${won(base)}${storeOn?"":'<br><span class="sub">배달가</span>'}</td>
       <td style="${rate!=null&&rate>tg?"color:var(--red);font-weight:700":""}">${
         rate==null?"–":(rate*100).toFixed(1)+"%"}</td></tr>`;
     for(const l of lines){
@@ -928,9 +929,11 @@ function renderRecList(){
     const cost=it.ingredient_cost;
     const sp=costSplit(it.sku);
     // 원가율 기준은 매장가 — 배달가는 수수료를 얹어 올린 값이라 원가율이
-    // 실제보다 좋아 보인다. 매장가가 없는 배달 전용 메뉴만 배달가로 계산.
-    const base=it.store_price??it.delivery_price;
-    const basis=it.store_price!=null?"매장":"배달";
+    // 실제보다 좋아 보인다. 단 **매장 판매를 끈 메뉴는 배달가**로 계산한다(사장님
+    // 2026-09-15) — 매장가가 남아 있어도 실제로 안 받는 값이라 기준이 못 된다.
+    const storeOn=!!it.store_active && it.store_price!=null;
+    const base=storeOn?it.store_price:it.delivery_price;
+    const basis=storeOn?"매장":"배달";
     // 목표 원가율과 견주는 분자는 '식자재'다. 포장은 따로 보여준다.
     const rate=(n&&base)?sp.food/base:null;
     const tg=target(it.category);
@@ -964,7 +967,7 @@ function renderRecList(){
     <p class="note">· <b>레시피 없음</b> 칩을 누르면 원가가 아직 없는 메뉴만 모아 봅니다 — 여기부터 채우면 됩니다.<br>
     · 원가율은 <b>매장가 · 식자재</b> 기준입니다 — 배달가는 수수료만큼 올려둔 값이라 원가율이 실제보다 낮게 보이고,
       컵·뚜껑 같은 <b>포장비는 식자재가 아니라서</b> 목표 원가율(35% 등)과 견주면 안 됩니다. 포장비는 옆에 따로 표시됩니다.
-      매장에서 안 파는 메뉴만 배달가 기준(칸에 표시). 목표 초과는 빨간색.</p>`;
+      <b>매장 판매를 끈 메뉴</b>는 배달가 기준(칸에 표시). 목표 초과는 빨간색.</p>`;
   }
   document.getElementById("recChips").innerHTML=chipDefs.map(([c,n])=>
     `<span class="fchip ${c===MCAT?"on":""}" onclick="MCAT='${c}';renderRecList()">${c}<small>${n}</small></span>`).join("");
@@ -1192,10 +1195,12 @@ function renderSetComposer(it){
           <span class="del" onclick="scDel(${c.id})">빼기</span></div>`;}).join("")}</div>`;
   };
   const {total,miss}=setCostCalc();
-  const sp=it.store_price;
+  const setStoreOn=!!it.store_active && !!it.store_price;   // 매장 꺼짐 → 배달가 기준(2026-09-15)
+  const sp=setStoreOn?it.store_price:it.delivery_price;
+  const spLabel=setStoreOn?"매장가":"배달가";
   const sum = comps.length
     ? (miss?`구성 ${miss}곳이 <b style="color:var(--amber)">원가 미상</b>이라 세트 원가를 못 냅니다 — 그 메뉴 레시피부터`
-          :`세트 원가 <b>${w1(total)}원</b>${sp?` · 원가율 ${(total/sp*100).toFixed(1)}% <span class="sub">(매장가 ${won(sp)}원)</span>`:' · <span class="sub">매장가가 없어 원가율 계산 불가</span>'}`)
+          :`세트 원가 <b>${w1(total)}원</b>${sp?` · 원가율 ${(total/sp*100).toFixed(1)}% <span class="sub">(${spLabel} ${won(sp)}원)</span>`:` · <span class="sub">${spLabel}가 없어 원가율 계산 불가</span>`}`)
     : `아직 구성이 없습니다 — 아래에서 메뉴를 담아 주세요`;
   document.getElementById("main").innerHTML=`
   <div class="bar" style="margin-bottom:8px">
@@ -1274,7 +1279,9 @@ function renderRec(){
     // 값을 냈다(감사 확인). 매장가가 없으면 권장 매장가에 1.13 을 얹는다.
     const recStoreBase = it.store_price || (total?Math.ceil((food/tg+pack)/100)*100:null);
     const recDeliv = recStoreBase ? Math.round(recStoreBase*1.13/100)*100 : null;
-    const rs=it.store_price?food/it.store_price:null;      // 식자재 기준(목표와 비교)
+    const storeOn=!!it.store_active && !!it.store_price;    // 매장 꺼짐 → 배달가가 목표와 견줄 기준(2026-09-15)
+    const rs=storeOn?food/it.store_price:null;              // 식자재 기준(목표와 비교)
+    const rdv=it.delivery_price?food/it.delivery_price:null;
     html+=`<div class="sum">
       <div>식자재 원가 <b class="big">${won(food)}원</b>
         ${pack?`<span class="sub">+ 포장·소모품 ${won(pack)}원 = 합계 <b>${won(total)}원</b></span>`
@@ -1285,8 +1292,8 @@ function renderRec(){
         권장 배달가 <b class="rec">${won(recDeliv)}원</b>
         <span class="sub">(매장가 × 1.13 — 확정 규칙 · 매장가 없으면 권장 매장가 기준)</span></div>
       <div style="margin-top:6px;border-top:1px dashed var(--line);padding-top:6px">현재 <b>식자재</b> 원가율 —
-        ${it.store_price?`매장 <b style="${rs>tg?"color:var(--red)":""}">${(rs*100).toFixed(1)}%</b>`:'매장 <span class="sub">판매 안 함</span>'}
-        ${it.delivery_price?` · 배달 <b>${(food/it.delivery_price*100).toFixed(1)}%</b>
+        ${storeOn?`매장 <b style="${rs>tg?"color:var(--red)":""}">${(rs*100).toFixed(1)}%</b>`:'매장 <span class="sub">판매 안 함</span>'}
+        ${rdv!=null?` · 배달 <b style="${!storeOn&&rdv>tg?"color:var(--red)":""}">${(rdv*100).toFixed(1)}%</b>${storeOn?"":' <span class="sub">← 매장을 껐으니 이 값이 기준</span>'}
           <span class="sub">(수수료 빼면 실질 ${(food/(it.delivery_price*(1-feeRate("coupang")))*100).toFixed(1)}%)</span>`:""}
         ${pack?`<br><span class="sub">포장까지 넣으면 매장 ${it.store_price?(total/it.store_price*100).toFixed(1)+"%":"–"}
           · 배달 ${it.delivery_price?(total/it.delivery_price*100).toFixed(1)+"%":"–"} — 목표 원가율과 견줄 숫자는 위쪽(식자재)입니다.</span>`:""}
