@@ -3059,17 +3059,19 @@ def blog_post(path_key, post_id):
     except Exception:  # noqa: BLE001
         scoring = False
     after_text = ""
+    after_wish = False                     # 부탁 메모 자리에 넣는 중(코멘트를 그대로 보여 준다)
     if after not in (None, ""):
         for b in blocks:
             if str(b["i"]) == after and b.get("text"):
-                after_text = b["text"][:50]
+                after_wish = b.get("t") == "wish"
+                after_text = b["text"][:120 if after_wish else 50]
     return render_template("blog_post.html", key=path_key, post=post,
                            photos=photos, step=_blog_step(post, quality), blocks=blocks,
                            quality=quality, scoring=scoring, quality_min=BLOG_QUALITY_MIN,
                            recommend=_recommend_publish_time(),
                            publishing=("blog_publish" in (blog.busy_kinds() if True else set())),
                            picking=picking, swap=swap or "", after=after if after is not None else "",
-                           after_text=after_text, catalog=catalog,
+                           after_text=after_text, after_wish=after_wish, catalog=catalog,
                            note=(request.args.get("note") or "")[:200],
                            prev=prev, preview=preview,
                            prev_at=_updated_view((prev or {}).get('at')),

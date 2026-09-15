@@ -332,7 +332,8 @@ def build_index(force: bool = False, limit: int | None = None,
 _SCENE_HINT = {
     "메뉴컷": ("메뉴", "음식", "베이글", "샌드위치", "음료", "커피", "세트"),
     "과정컷": ("과정", "만드는", "자르", "단면", "크림", "굽", "토스팅", "바르"),
-    "매장컷": ("매장", "내부", "좌석", "인테리어", "공간", "카운터", "외관", "간판"),
+    "매장컷": ("매장", "내부", "좌석", "인테리어", "공간", "카운터", "외관", "간판",
+              "창가", "자리", "분위기", "테이블", "햇살", "뷰", "풍경"),
 }
 
 
@@ -570,7 +571,7 @@ def freeze_marks(body: str, cat: dict | None = None) -> str:
     return re.sub(r"\n{3,}", "\n\n", out)      # 지운 자리에 빈 줄이 남지 않게
 
 
-PHOTO_TARGET = 7      # 프롬프트 '7~9장(최소 6)' — 채점기가 6 미만이면 감점한다
+PHOTO_MIN = 6         # 프롬프트 '7~9곳(최소 6)' — 채점기(evaluator '사진 위치')가 6 미만이면 감점한다
 
 # 사진 부탁 메모 — 사진을 못 찾은 자리에 "어떤 사진이 있으면 좋을지"를 남긴다(사장님 2026-09-15).
 # 📸(U+1F4F8)는 사진 표시 📷(U+1F4F7)와 다른 글자라 사진으로 세지 않고, 네이버·채점 전엔 걷어낸다.
@@ -588,8 +589,8 @@ def wishes(body: str) -> list[str]:
 
 
 def _wish_for(section_text: str, heading: str) -> str:
-    """절 내용으로 '어떤 사진'이 좋을지 한 줄 짓는다(AI 없이 규칙)."""
-    t = section_text
+    """절 내용으로 '어떤 사진'이 좋을지 한 줄 짓는다(AI 없이 규칙). 소제목도 같이 본다."""
+    t = f"{heading} {section_text}"
     if any(h in t for h in _SCENE_HINT["과정컷"]):
         kind = "만드는 과정이나 단면이 보이는 컷"
     elif any(h in t for h in _SCENE_HINT["매장컷"]):
@@ -600,120 +601,78 @@ def _wish_for(section_text: str, heading: str) -> str:
     return f"[📸 부탁: 「{h[:24]}」 절에 어울리는 {kind}]"
 
 
-# fill_photos 안에서는 사진·영상 표시만 센다 — MARK 는 [매장 정보] 같은 일반 대괄호도 잡아서
+# wish_photos 안에서는 사진·영상 표시만 센다 — MARK 는 [매장 정보] 같은 일반 대괄호도 잡아서
 # 매장 정보 블록이 든 절을 "사진 있음"으로 오판했다(2026-09-15 실측).
 _MEDIA_MARK = re.compile(r"\[\s*[📷🎬][^\]]*\]")
 
 
-def fill_photos(body: str, target: int = PHOTO_TARGET,
-                except_post_id=None) -> tuple[str, int]:
-    """사진이 모자란 초안에 절(## 소제목) 내용과 어울리는 사진을 채워 넣는다. (본문, 넣은 수)
+_MEDIA_MARK_TOK = re.compile(r"\[\s*[📷🎬]\s*([^\[\]\n]{0,200}?)\s*\]")
+_HERO_WISH = "[📸 부탁: 글 첫머리 대표 사진 — 이 글의 주인공(메뉴 또는 매장)이 한눈에 들어오는 컷]"
 
-    무료 모델은 '7~9장'이라 해도 3~4장만 놓는다(2026-09-15 실측). 사진 수는 네이버
-    D.I.A. 점수의 핵심이라, 사진이 없는 절마다 그 절의 글과 가장 잘 맞는 **안 쓴**
-    사진(다른 글이 쥔 것 제외)을 첫 문단 뒤에 한 장씩 넣는다. 맞는 게 없으면 안 넣는다.
+
+def marks_to_wishes(body: str) -> tuple[str, int]:
+    """AI 가 쓴 사진·영상 표시 `[📷 …]` `[🎬 …]` 를 부탁 메모로 바꾼다. (본문, 바꾼 수)
+
+    사진은 AI 가 고르지 않고 사장님이 넣는다(사장님 2026-09-15). 그래도 모델은 버릇처럼
+    `[📷 P07]`(사진함 번호)·`[📷 잠봉뵈르 단면 컷]`(설명형)을 쓴다. 번호·파일명은 뜻이
+    없으니 지우고, 설명이 적힌 것은 그 말 그대로 부탁 메모로 살린다.
+    ⚠ 초안 생성 길에서만 부른다 — 사장님이 넣은 `[📷 경로]` 가 있는 글엔 쓰면 안 된다.
+    """
+    n = 0
+
+    def sub(m):
+        nonlocal n
+        n += 1
+        tok = m.group(1).strip()
+        if not tok or _PID.match(tok) or tok.lower().endswith(tuple(PHOTO_EXT | VIDEO_EXT)):
+            return ""
+        tok = re.sub(r"^(사진|영상|컷)\s*[:：]\s*", "", tok).strip()
+        return f"[📸 부탁: {tok[:120]}]" if tok else ""
+
+    out = _MEDIA_MARK_TOK.sub(sub, body or "")
+    return re.sub(r"\n{3,}", "\n\n", out), n
+
+
+def wish_photos(body: str) -> tuple[str, int]:
+    """사진 자리를 사장님이 채우도록 부탁 메모를 놓는다 — 사진함에서 고르지 않는다. (본문, 새로 놓은 수)
+
+    사장님 2026-09-15: "사진함에서 사진 너가 넣지 마, 내가 넣을게. 위치에 어떤 사진이
+    좋은지 코멘트랑 넣기 버튼만." 예전 fill_photos(절 내용과 맞는 안 쓴 사진을 7장까지
+    자동으로 채우던 것)는 이날 걷어냈다 — git 이력.
+    · 본문이 사진·부탁으로 시작하지 않으면 맨 앞에 대표 사진 자리.
+    · 사진도 부탁도 없는 절(`## `)마다 그 절 내용으로 지은 부탁 한 줄(첫 문단 뒤).
+    AI 가 이미 놓은 부탁은 그대로 두고 빈 곳만 메운다.
     """
     body = body or ""
-    have = [m.group(1).strip() for m in MARK.finditer(body)
-            if m.group(1).strip().lower().endswith(tuple(PHOTO_EXT | VIDEO_EXT))]
-    if len(have) >= target:
-        return body, 0
-    cat = catalog(except_post_id=except_post_id)
-    pool = {v["rel"]: v for v in cat.values() if v.get("kind") == "photo" and v["rel"] not in have}
-    if not pool:
-        return body, 0
-    # 절 나누기: 빈 줄 기준 토막, `## ` 로 시작하는 토막이 절의 머리
     chunks = [c for c in re.split(r"\n\s*\n", body.strip()) if c.strip()]
-    used = set(have)
-    added = 0
-    i = 0
-    while i < len(chunks) and len(have) + added < target:
-        if chunks[i].startswith("## "):
-            # 이 절의 범위: 다음 소제목 전까지
-            j = i + 1
-            while j < len(chunks) and not chunks[j].startswith("## "):
-                j += 1
-            section = chunks[i:j]
-            if not any(_MEDIA_MARK.search(c) for c in section):
-                want = " ".join(section)[:400]
-                best, best_s = None, 1.0             # 낱말이 하나는 겹치거나 장면이 맞아야(품질 가산 0.6 만으론 안 됨)
-                for rel, v in pool.items():
-                    if rel in used:
-                        continue
-                    s = _score(v, want)
-                    if s > best_s:
-                        best, best_s = rel, s
-                if best:
-                    # 첫 문단(소제목 다음 토막) 뒤에 넣는다. 문단이 없으면 소제목 뒤.
-                    at = i + 1 if j > i + 1 else i
-                    chunks.insert(at + 1, f"[📷 {best}]")
-                    used.add(best)
-                    added += 1
-                    j += 1
-            i = j
-        else:
-            i += 1
-    # 두 번째 돌기: 아직 모자라면 긴 절(400자 이상) 끝에 한 장씩 더 — 절당 최대 2장
-    i = 0
-    while i < len(chunks) and len(have) + added < target:
-        if chunks[i].startswith("## "):
-            j = i + 1
-            while j < len(chunks) and not chunks[j].startswith("## "):
-                j += 1
-            section = chunks[i:j]
-            n_photos = sum(1 for c in section if _MEDIA_MARK.search(c))
-            text = " ".join(c for c in section if not _MEDIA_MARK.search(c))
-            if n_photos < 2 and len(text) >= 400:
-                best, best_s = None, 1.0             # 두 번째 장도 내용이 맞을 때만
-                for rel, v in pool.items():
-                    if rel in used:
-                        continue
-                    s = _score(v, text[-400:])
-                    if s > best_s:
-                        best, best_s = rel, s
-                if best:
-                    chunks.insert(j, f"[📷 {best}]")
-                    used.add(best)
-                    added += 1
-                    j += 1
-            i = j
-        else:
-            i += 1
-    # 그래도 모자라면(절이 적으면) 맨 앞 대표컷 — 본문이 사진으로 시작하지 않을 때만
-    if len(have) + added < target and not _MEDIA_MARK.match(chunks[0] if chunks else ""):
-        best, best_s = None, 0.5
-        for rel, v in pool.items():
-            if rel in used:
-                continue
-            s = _score(v, " ".join(chunks[:2])[:300]) + (2.0 if v.get("hero") else 0)
-            if s > best_s:
-                best, best_s = rel, s
-        if best:
-            chunks.insert(0, f"[📷 {best}]")
-            used.add(best)
-            added += 1
-    # 그래도 사진이 없는 절엔 '어떤 사진이 있으면 좋을지' 부탁 메모를 남긴다(이미 있으면 안 겹침)
+    if not chunks:
+        return body, 0
     wished = 0
-    if len(have) + added < target:
-        i = 0
-        while i < len(chunks):
-            if chunks[i].startswith("## "):
-                j = i + 1
-                while j < len(chunks) and not chunks[j].startswith("## "):
-                    j += 1
-                section = chunks[i:j]
-                if not any(_MEDIA_MARK.search(c) or WISH_RE.search(c) for c in section):
-                    text = " ".join(c for c in section[1:])
-                    at = i + 1 if j > i + 1 else i
-                    chunks.insert(at + 1, _wish_for(text, chunks[i]))
-                    wished += 1
-                    j += 1
-                i = j
-            else:
-                i += 1
-    if added or wished:
-        logger.info("사진 자동 채움: %d장 → 총 %d장 · 부탁 메모 %d개", added, len(have) + added, wished)
-    return "\n\n".join(chunks) + ("\n" if body.endswith("\n") else ""), added
+    head = chunks[0].strip()
+    if not (_MEDIA_MARK.match(head) or WISH_RE.match(head)):
+        chunks.insert(0, _HERO_WISH)
+        wished += 1
+    i = 0
+    while i < len(chunks):
+        if chunks[i].startswith("## "):
+            j = i + 1
+            while j < len(chunks) and not chunks[j].startswith("## "):
+                j += 1
+            section = chunks[i:j]
+            if not any(_MEDIA_MARK.search(c) or WISH_RE.search(c) for c in section):
+                # [매장 정보] 블록은 절 내용이 아니다 — '매장' 낱말 때문에 매장컷으로 오판한다
+                text = " ".join(c for c in section[1:] if not c.lstrip().startswith("[매장 정보]"))
+                at = i + 1 if j > i + 1 else i
+                chunks.insert(at + 1, _wish_for(text, chunks[i]))
+                wished += 1
+                j += 1
+            i = j
+        else:
+            i += 1
+    out = "\n\n".join(chunks)
+    if wished:
+        logger.info("사진 자리 부탁 메모 %d개 추가 → 총 %d곳", wished, len(wishes(out)))
+    return out + ("\n" if body.endswith("\n") else ""), wished
 
 
 def dedupe_marks(body: str) -> tuple[str, int]:

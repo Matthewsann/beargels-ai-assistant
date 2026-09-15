@@ -13,7 +13,7 @@ import planner  # load_knowledge, _client_cfg 재사용
 
 def _clean_len(body: str) -> int:
     """마크다운 기호·사진자리·태그를 대충 걷어낸 본문 글자 수(공백 제외)."""
-    t = re.sub(r"\[📷[^\]]*\]", "", body)
+    t = re.sub(r"\[[📷🎬📸][^\]]*\]", "", body)      # 📸 부탁(사장님이 넣을 사진 자리)도 글이 아니다
     t = re.sub(r"[#>*`\-]", "", t)
     t = re.sub(r"#\S+", "", t)  # 해시태그
     t = re.sub(r"\s+", "", t)
@@ -71,11 +71,13 @@ def mechanical_check(body: str, title: str, main_keyword: str,
         "hint": "소제목 2~4개로 구조화(체류시간↑)",
     })
 
-    photos = len(re.findall(r"\[📷", body))
+    # 사진 자리 = 넣은 사진 `[📷 …]` + 사장님이 넣을 자리 `[📸 부탁: …]`(2026-09-15 — AI 는 사진을
+    # 고르지 않고 자리만 잡는다). 자리를 잡아 두는 게 곧 사진 배치다.
+    photos = len(re.findall(r"\[\s*(?:📷|📸\s*부탁)", body))
     checks.append({
         "label": "사진 위치", "value": f"{photos}곳",
-        "status": "ok" if photos >= 6 else "warn",      # 프롬프트 '7~9장(최소 6)' 과 같은 기준(2026-09-15)
-        "hint": "실물 사진 7~9장, 최소 6장(D.I.A. 점수 핵심)",
+        "status": "ok" if photos >= 6 else "warn",      # 프롬프트 '7~9곳(최소 6)' 과 같은 기준(2026-09-15)
+        "hint": "사진 자리 7~9곳(넣을 자리 📸 포함), 최소 6곳(D.I.A. 점수 핵심)",
     })
 
     has_info = bool(re.search(r"(주소|영업시간|인천|연수구|☎|전화)", body))

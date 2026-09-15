@@ -10,7 +10,8 @@
     blog_rank       타겟 키워드 네이버 순위 확인        (브라우저)
     blog_media      사진함에 새로 올린 사진 살펴보기     (AI)
 
-사진은 드라이브 '베어글스_블로그_사진함' 에서 가져온다(blog_media.py).
+사진은 AI 가 고르지 않는다(사장님 2026-09-15) — 자리마다 `[📸 부탁: …]` 코멘트만 놓고,
+사장님이 글 화면에서 사진함·폰 사진을 넣는다. 사진함 자체는 blog_media.py 가 관리한다.
 초안을 쓸 때 이미 사진을 골라 본문에 박아 두고, 네이버 초안 넣기에서
 그 사진들을 실제로 올린다 — 사장님이 에디터에서 사진을 찾아 넣을 일이 없다.
 
@@ -232,9 +233,10 @@ def store_facts_text() -> str:
 def do_draft(payload: dict) -> tuple[int, str]:
     """기획 주제로 초안 작성 → blog_posts 에 저장.
 
-    AI 에게 사진함 목록을 먼저 보여주고 그 사진으로 글을 짜게 한 다음,
-    본문의 사진 번호([📷 P07])를 **파일 경로로 굳혀서** 저장한다.
-    사진함이 나중에 바뀌어도 이 글이 쓰던 사진은 그대로 남는다.
+    사진은 넣지 않는다(사장님 2026-09-15: "사진함에서 사진 너가 넣지 마, 내가 넣을게").
+    AI 는 사진 자리마다 `[📸 부탁: 어떤 사진]` 코멘트를 쓰고, 빈 절은 규칙(wish_photos)이
+    메운다. 사장님이 글 화면의 [📷 사진 넣기]로 그 자리에 넣는다. 발행본엔 메모가 안 나간다.
+    (옛 방식 — 사진함 목록을 AI 에 보여주고 `[📷 P07]` 을 경로로 굳혀 자동 채움 — 은 git 이력.)
     """
     import planner
     # post_id 가 있으면 '다시 뽑기' — 새 글을 만들지 않고 그 글을 새로 쓴다.
@@ -278,14 +280,11 @@ def do_draft(payload: dict) -> tuple[int, str]:
     photo_note = ""
     try:
         import blog_media
-        # 번호 표시([📷 P07])를 경로로 굳혀 품질 게이트가 깨끗한 표시를 보게 한다.
-        # 개수 세기·미리보기는 게이트 **뒤에** 한 번만 한다(아래) — 퇴고가 표시를
-        # 복제하거나 지어낼 수 있어서(2026-09-15 실측: 같은 사진이 두 번, 메시지는
-        # '0장'이라고 거짓말 — 예전 코드의 try/else 가 꼬여 있었다).
-        body = blog_media.freeze_marks(body)
-        body, _ = blog_media.dedupe_marks(body)
-    except Exception as e:  # noqa: BLE001 — 사진을 못 붙여도 글은 저장한다
-        logger.warning("사진 붙이기 실패: %s", str(e)[:120])
+        # 사진은 AI 가 고르지 않는다 — 모델이 버릇처럼 쓴 `[📷 P07]`·`[📷 설명]` 은 부탁 메모로
+        # 바꿔 품질 게이트가 '사진 자리'로 보게 한다. 개수 세기는 게이트 **뒤에** 한 번만.
+        body, _ = blog_media.marks_to_wishes(body)
+    except Exception as e:  # noqa: BLE001 — 표시 정리를 못 해도 글은 저장한다
+        logger.warning("사진 표시 정리 실패: %s", str(e)[:120])
 
     # ★ 품질 게이트 — 점수를 매기고, 기준 미달이면 개선점을 먹여 1회 자동 퇴고.
     #   낮아도 저장은 한다(점수가 메시지에 붙어 사장님이 걸러 볼 수 있게).
@@ -305,8 +304,8 @@ def do_draft(payload: dict) -> tuple[int, str]:
         logger.warning("품질 평가 실패: %s", str(e)[:120])
 
     # 퇴고가 사진 표시를 새로 지어내는 일이 있다(2026-09-14 글#3 실측: `[📷 사진:
-    # 이른 아침 햇살이…]` 같은 설명형 표시 6개). 표시 굳히기를 퇴고 **뒤에** 한 번
-    # 더 돌려 사진함에 없는 표시는 지우고, 파일명만 적힌 것은 경로로 굳힌다.
+    # 이른 아침 햇살이…]` 같은 설명형 표시 6개). 퇴고 **뒤에** 한 번 더 부탁 메모로 바꾸고,
+    # 사진도 부탁도 없는 절엔 규칙으로 부탁 한 줄을 놓는다.
     # AI 가 제목을 본문 첫 줄에 한 번 더 쓴다(2026-09-15 글#20 실측) — 네이버는 제목 칸이
     # 따로 있어 그대로 두면 제목이 두 번 보인다. 맨 앞(사진 표시 뒤)의 제목 줄을 걷어낸다.
     _title = (data.get("title") or topic or "").strip()
@@ -320,31 +319,16 @@ def do_draft(payload: dict) -> tuple[int, str]:
                 break
     try:
         import blog_media
-        body = blog_media.freeze_marks(body)
-        body, dropped = blog_media.dedupe_marks(body)      # 퇴고가 복제한 표시도 여기서 잡는다
-        # 무료 모델은 사진을 3~4장만 놓는다 — 절 내용에 맞는 안 쓴 사진으로 7장까지 채운다
-        body, filled = blog_media.fill_photos(body, except_post_id=post_id if old else None)
-        media = blog_media.used_media(body)
-        # ⚠ 아래 if/else 는 한 덩어리다 — 두 번이나(9-14, 9-15) 사이에 줄을 끼워 넣다가
-        #   else 가 엉뚱한 if 에 붙어 "사진 0장" 거짓 메시지가 났다. 사이에 아무것도 넣지 말 것.
-        if media:
-            photo_note = (f" · 사진 {len(media)}장"
-                          + (f"(자동 채움 {filled})" if filled else "")
-                          + (f"(겹친 {dropped}장 뺌)" if dropped else ""))
-            blog_media.ensure_thumbs(media)                # 웹 미리보기
-        else:
-            photo_note = " · ⚠ 사진 0장 — 사진함을 확인해 주세요"
+        body, _ = blog_media.marks_to_wishes(body)      # 퇴고가 지어낸 [📷 …] 도 부탁 메모로
+        body, wished = blog_media.wish_photos(body)      # 사진 없는 절엔 규칙으로 부탁 한 줄
         nw = len(blog_media.wishes(body))
-        if nw:
-            photo_note += f" · 📸 사진 부탁 {nw}개(글 화면에서 확인)"
-        try:
-            pool = len(blog_media.catalog(except_post_id=post_id if old else None))
-            if pool < blog_media.THIN_POOL:
-                photo_note += f" · ⚠ 아직 안 쓴 사진이 {pool}장뿐 — 소재함에 사진을 더 올려주세요"
-        except Exception:  # noqa: BLE001
-            pass
+        photo_note = f" · 📸 사진 자리 {nw}곳(글 화면에서 넣어 주세요)"
+        if wished:
+            photo_note += f"(규칙으로 보탬 {wished})"
+        if nw < blog_media.PHOTO_MIN:
+            photo_note += f" ⚠ {blog_media.PHOTO_MIN}곳 미만"
     except Exception as e:  # noqa: BLE001
-        logger.warning("퇴고 뒤 사진 표시 정리 실패: %s", str(e)[:100])
+        logger.warning("퇴고 뒤 사진 자리 정리 실패: %s", str(e)[:100])
 
     # ★ 해시태그를 본문 맨 끝에 문단으로 넣는다(사장님 지적 2026-08-28 —
     #   태그가 DB에만 있고 네이버엔 안 들어가고 있었다). 네이버 공식 태그칸은
@@ -479,8 +463,8 @@ def do_score(payload: dict) -> tuple[int, str]:
         better = blog_quality.improve(body, title, kw, imps[:6]) if imps else None
         if better:
             better = blog_media.freeze_marks(better)     # 사진 표시가 깨졌으면 안 쓴다
-            if not blog_media.used_media(better):
-                better = None
+            if blog_media.used_media(body) and not blog_media.used_media(better):
+                better = None                            # 사장님이 넣은 사진을 잃은 퇴고는 안 쓴다
         # 대표 키워드는 다듬기 뒤에도 **반드시** 3~5회·첫 문단(사장님 2026-09-15: "왜 계속
         # 1회냐"). 퇴고 프롬프트에 부탁만 해서는 무료 모델이 흘린다 — 키워드만 끼워 넣는
         # 짧은 호출(ensure_keyword)을 한 번 더 돌린다. 오늘 이전에 만든 초안도 이걸로 고쳐진다.

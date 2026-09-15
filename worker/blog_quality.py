@@ -56,6 +56,11 @@ def _save(d: dict) -> None:
     STORE.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
+# 사진·영상 자리표시. 📸 부탁(사장님이 사진을 넣을 자리, 2026-09-15)도 자리표시다 — 퇴고가
+# 잃어버리면 되돌려 넣고, 글자 수엔 안 센다.
+MARK_RE = re.compile(r"\[[📷🎬📸][^\]]*\]")
+
+
 def score(body: str, title: str, main_keyword: str) -> dict:
     """기계 점검 + AI 전문가 평가 → 종합 점수와 개선점.
 
@@ -65,7 +70,9 @@ def score(body: str, title: str, main_keyword: str) -> dict:
     import evaluator
     try:
         import blog_media
-        body = blog_media.strip_wishes(body)      # 사진 부탁 메모는 글이 아니다
+        # 사진 부탁 메모 `[📸 부탁: …]` 는 사장님이 사진을 넣을 자리다(2026-09-15) — 채점기엔
+        # 자리표시 `[📷 …]` 로 보여 '사진 위치'로 세게 한다(글자로는 안 센다).
+        body = blog_media.WISH_RE.sub(lambda m: f"[📷 {m.group(1)}]", body)
     except Exception:  # noqa: BLE001
         pass
     checks = evaluator.mechanical_check(body, title, main_keyword)
@@ -105,7 +112,7 @@ REVISE_PROMPT = """너는 베어글스 송도점의 네이버 블로그 전문�
 {improvements}
 
 [규칙]
-- 사진/영상 표시 `[📷 …]` `[🎬 …]` 는 **한 글자도 바꾸지 말고 그 위치 그대로** 둔다.
+- 사진 자리 표시 `[📷 …]` `[🎬 …]` `[📸 부탁: …]` 는 **한 글자도 바꾸지 말고 그 위치 그대로** 둔다.
   (표시 속 파일 경로가 실제 업로드에 쓰인다 — 지어내거나 옮기면 사진이 깨진다)
 - 사실(메뉴·주소·재료)은 초안에 있는 것만 쓴다. 새 사실을 지어내지 않는다.
 - 따뜻하고 담백한 해요체. 과장 금지(역대급/미쳤다/인생맛집/대박/혜자 금지).
@@ -138,7 +145,7 @@ def _restore_marks(original: str, revised: str) -> str:
     그 퇴고를 통째로 버려 짧고 낮은 초안이 그대로 저장됐다. 표시만 되살리면 퇴고는 살릴 수 있다.
     """
     import difflib
-    mark_re = re.compile(r"\[[📷🎬][^\]]*\]")
+    mark_re = re.compile(MARK_RE)
     o_chunks = [c for c in re.split(r"\n\s*\n", original.strip()) if c.strip()]
     r_chunks = [c for c in re.split(r"\n\s*\n", revised.strip()) if c.strip()]
     present = set(mark_re.findall(revised))
@@ -183,7 +190,7 @@ def improve(body: str, title: str, main_keyword: str,
     raw = re.sub(r"^```.*?\n|\n```$", "", raw, flags=re.DOTALL)
     raw = strip_meta_head(raw)
     # 퇴고가 사진 표시를 잃어버렸으면 원본이 낫다
-    marks = re.findall(r"\[[📷🎬][^\]]*\]", body)
+    marks = re.findall(MARK_RE, body)
     kept = sum(1 for m in marks if m in raw)
     if marks and kept < len(marks):
         raw = _restore_marks(body, raw)              # 잃은 표시를 되돌려 넣고 다시 센다
@@ -198,7 +205,7 @@ def improve(body: str, title: str, main_keyword: str,
 KW_PROMPT = """아래 블로그 본문에 대표 키워드 「{kw}」를 **이 글자 그대로** {need}번 더 넣어라.
 자리: **본문 시작 200자 안(첫 문장)에 없으면 거기에 반드시 1번**, 소제목(`## ` 줄) 하나에 1번,
 마무리 문단에 1번 — 자연스러운 문장 안에.
-규칙: 다른 문장은 한 글자도 바꾸지 마라. `[📷 …]` `[🎬 …]` `[매장 정보]` 블록·해시태그는 그대로.
+규칙: 다른 문장은 한 글자도 바꾸지 마라. `[📷 …]` `[🎬 …]` `[📸 부탁: …]` `[매장 정보]` 블록·해시태그는 그대로.
 키워드를 줄이거나 바꿔 쓰면(예: 앞 단어 떼기) 안 센다. 설명 없이 고친 본문 전체만 출력.
 
 [본문]
@@ -225,7 +232,7 @@ def ensure_keyword(body: str, main_keyword: str) -> tuple[str, int]:
         return body, n
     raw = re.sub(r"^```.*?\n|\n```$", "", raw, flags=re.DOTALL)
     raw = strip_meta_head(raw)
-    marks = re.findall(r"\[[📷🎬][^\]]*\]", body)
+    marks = re.findall(MARK_RE, body)
     if any(m not in raw for m in marks):
         logger.warning("키워드 보강본이 사진 표시를 잃음 — 원본 유지")
         return body, n
@@ -252,7 +259,7 @@ def _unconfirmed_times(body: str) -> list[str]:
     except Exception:  # noqa: BLE001
         hours = ""
     text = re.sub(r"\[매장 정보\][^\n]*(?:\n(?![ \t]*\n)[^\n]*)*", "", body or "")
-    text = re.sub(r"\[[📷🎬][^\]]*\]", "", text)
+    text = re.sub(MARK_RE, "", text)
     ok_nums = set(re.findall(r"\d{1,2}", hours))
     out = []
     for m in _TIME_RE.finditer(text):
@@ -267,7 +274,7 @@ def _unconfirmed_times(body: str) -> list[str]:
 
 def _plain_len(body: str) -> int:
     """사진 표시를 뺀 본문 글자 수."""
-    return len(re.sub(r"\[[📷🎬][^\]]*\]", "", body).strip())
+    return len(re.sub(MARK_RE, "", body).strip())
 
 
 def gate(body: str, title: str, main_keyword: str) -> tuple[str, dict]:

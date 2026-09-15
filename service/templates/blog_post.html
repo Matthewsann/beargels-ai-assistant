@@ -57,6 +57,7 @@
   <div class="panel" id="pick" style="border-color:var(--accent);">
     <div style="font-size:13px; font-weight:600; margin-bottom:4px;">
       {% if swap %}🔁 <b>{{ swap.rpartition('/')[2] }}</b> 대신 넣을 사진을 고르세요
+      {% elif after_wish %}📸 <b>“{{ after_text }}”</b> 자리에 넣을 사진을 고르세요
       {% elif after != '' %}➕ “{{ after_text }}…” 문단 <b>바로 뒤</b>에 넣을 사진을 고르세요
       {% else %}➕ 글 끝(매장정보 앞)에 넣을 사진을 고르세요{% endif %}
     </div>
@@ -64,6 +65,16 @@
       사진함에서 아직 이 글에 안 쓴 것만 보여요. 이미 다른 글에 나간 사진은 빠져 있습니다.
       · <a href="{{ url_for('blog_post', path_key=key, post_id=post.id) }}#article" style="color:var(--accent);">그만두기</a>
     </div>
+    {% if after != '' and not swap %}
+    {# 사진함에 없으면 폰에서 바로 — 같은 자리에 들어간다 #}
+    <form method="post" enctype="multipart/form-data" class="up" style="margin:0 0 10px;"
+          action="{{ url_for('blog_post_photo', path_key=key, post_id=post.id) }}">
+      <input type="hidden" name="action" value="upload_after">
+      <input type="hidden" name="after" value="{{ after }}">
+      <label class="btn sm" style="cursor:pointer;">📱 폰에서 찍은 사진 올리기
+        <input type="file" name="photo" accept="image/*" hidden onchange="upGo(this)"></label>
+    </form>
+    {% endif %}
     {% if catalog %}
     <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(104px, 1fr)); gap:8px;">
       {% for c in catalog %}
@@ -133,29 +144,18 @@
         {% endif %}
       </figure>
       {% elif b.t == 'wish' %}
-      {# 사진 부탁 — AI 가 못 찾은 자리. 네이버·채점엔 안 들어간다. 여기서 바로 올리면 이 자리에 들어간다. #}
+      {# 사진 자리 — AI 는 '어떤 사진이 좋은지' 코멘트만 놓고, 사진은 사장님이 넣는다(2026-09-15).
+         카드엔 코멘트와 [사진 넣기] 하나만. 누르면 위 사진 고르기 패널(사진함 + 폰 업로드)이 열리고,
+         고른 사진이 이 메모 자리에 들어간다. 네이버·채점엔 이 메모가 안 들어간다. #}
       <div style="margin:8px auto 14px; max-width:440px; border:1.5px dashed var(--warn); border-radius:10px;
                   padding:12px 14px; background:var(--warn-bg); color:var(--warn); text-align:left;">
-        <div style="font-size:13px; font-weight:600;">📸 이런 사진이 있으면 좋아요</div>
+        <div style="font-size:13px; font-weight:600;">📸 여기엔 이런 사진</div>
         <div style="font-size:13px; margin-top:3px;">{{ b.text }}</div>
         {% if not preview %}
-        <div style="display:flex; gap:8px; align-items:center; margin-top:9px; flex-wrap:wrap;">
-          <form method="post" enctype="multipart/form-data" class="up"
-                action="{{ url_for('blog_post_photo', path_key=key, post_id=post.id) }}" style="margin:0;">
-            <input type="hidden" name="action" value="upload_after">
-            <input type="hidden" name="after" value="{{ b.i }}">
-            <label class="btn sm" style="padding:4px 9px; font-size:12px; cursor:pointer;">📱 찍은 사진 올리기
-              <input type="file" name="photo" accept="image/*" hidden onchange="upGo(this)"></label>
-          </form>
-          <a href="{{ url_for('blog_post', path_key=key, post_id=post.id, after=b.i) }}#pick"
-             style="font-size:12px; color:var(--accent);">사진함에서</a>
-          <form method="post" action="{{ url_for('blog_post_photo', path_key=key, post_id=post.id) }}" style="margin:0 0 0 auto;">
-            <input type="hidden" name="action" value="remove_wish">
-            <input type="hidden" name="after" value="{{ b.i }}">
-            <button class="btn sm" type="submit" style="padding:4px 9px; font-size:12px;">✕ 메모 지우기</button>
-          </form>
+        <div style="margin-top:9px;">
+          <a class="btn sm primary" href="{{ url_for('blog_post', path_key=key, post_id=post.id, after=b.i) }}#pick"
+             style="display:inline-block; text-decoration:none;">📷 사진 넣기</a>
         </div>
-        <div style="font-size:11px; margin-top:6px; opacity:.8;">발행본에는 이 메모가 들어가지 않아요 — 사진 없이 발행해도 됩니다.</div>
         {% endif %}
       </div>
       {% elif b.t == 'h' %}
