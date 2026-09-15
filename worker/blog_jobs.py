@@ -325,14 +325,18 @@ def do_draft(payload: dict) -> tuple[int, str]:
         # 무료 모델은 사진을 3~4장만 놓는다 — 절 내용에 맞는 안 쓴 사진으로 7장까지 채운다
         body, filled = blog_media.fill_photos(body, except_post_id=post_id if old else None)
         media = blog_media.used_media(body)
+        # ⚠ 아래 if/else 는 한 덩어리다 — 두 번이나(9-14, 9-15) 사이에 줄을 끼워 넣다가
+        #   else 가 엉뚱한 if 에 붙어 "사진 0장" 거짓 메시지가 났다. 사이에 아무것도 넣지 말 것.
         if media:
-            photo_note = f" · 사진 {len(media)}장" + (f"(자동 채움 {filled})" if filled else "") + (f"(겹친 {dropped}장 뺌)" if dropped else "")
-        nw = len(blog_media.wishes(body))
-        if nw:
-            photo_note += f" · 📸 사진 부탁 {nw}개(글 화면에서 확인)"
+            photo_note = (f" · 사진 {len(media)}장"
+                          + (f"(자동 채움 {filled})" if filled else "")
+                          + (f"(겹친 {dropped}장 뺌)" if dropped else ""))
             blog_media.ensure_thumbs(media)                # 웹 미리보기
         else:
             photo_note = " · ⚠ 사진 0장 — 사진함을 확인해 주세요"
+        nw = len(blog_media.wishes(body))
+        if nw:
+            photo_note += f" · 📸 사진 부탁 {nw}개(글 화면에서 확인)"
         try:
             pool = len(blog_media.catalog(except_post_id=post_id if old else None))
             if pool < blog_media.THIN_POOL:
