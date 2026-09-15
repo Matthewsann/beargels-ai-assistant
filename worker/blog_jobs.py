@@ -479,11 +479,18 @@ def do_score(payload: dict) -> tuple[int, str]:
         better = blog_quality.improve(body, title, kw, imps[:6]) if imps else None
         if better:
             better = blog_media.freeze_marks(better)     # 사진 표시가 깨졌으면 안 쓴다
-            if blog_media.used_media(better) and better.strip() != body.strip():
-                keep_version(post_id, post)               # 되돌릴 수 있게
-                store.update_post(post_id, body=better, prepared_at=None)
-                body = better
-                polished = True
+            if not blog_media.used_media(better):
+                better = None
+        # 대표 키워드는 다듬기 뒤에도 **반드시** 3~5회·첫 문단(사장님 2026-09-15: "왜 계속
+        # 1회냐"). 퇴고 프롬프트에 부탁만 해서는 무료 모델이 흘린다 — 키워드만 끼워 넣는
+        # 짧은 호출(ensure_keyword)을 한 번 더 돌린다. 오늘 이전에 만든 초안도 이걸로 고쳐진다.
+        cand = better or body
+        cand, _kw_n = blog_quality.ensure_keyword(cand, kw)
+        if cand.strip() != body.strip():
+            keep_version(post_id, post)                   # 되돌릴 수 있게
+            store.update_post(post_id, body=cand, prepared_at=None)
+            body = cand
+            polished = True
 
     q = blog_quality.score(body, title, kw)
     checks = evaluator.mechanical_check(body, title, kw)
