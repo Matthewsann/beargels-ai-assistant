@@ -206,3 +206,25 @@ def test_요일_프로필():
              "2026-08-17": {"total": 0, "partial": False}, "2026-08-05": {"total": 500, "partial": True}}
     d = dp.dow_profile(daily, date(2026, 8, 1), date(2026, 8, 31))
     assert d[0] == 200 and d[2] == 0
+
+
+def test_비용_항목_4칸은_원단위_금액과_출처를_준다():
+    """사장님 2026-09-15: 매출액·인건비·임대료·기타고정비를 정확히(원 단위) 보여준다."""
+    L = _month()
+    P = _month(sales_total=30_000_000, labor_cost=6_000_000)
+    items = {x["name"]: x for x in dp.cost_items(L, P)}
+    assert list(dp.cost_items(L, P)[i]["name"] for i in range(4)) == ["매출액", "인건비", "임대료", "기타 고정비"]
+    assert items["매출액"]["won"] == 33_399_713 and items["매출액"]["src"] == "시트 '매출총액'"
+    assert items["인건비"]["won"] == 6_726_790 and items["인건비"]["rate"] == 20.1
+    assert items["임대료"]["won"] == round(0.1153 * 33_399_713)
+    assert items["임대료"]["src"] == "시트 임대료율 × 매출총액"
+    assert items["기타 고정비"]["won"] == 11_903_489 - 6_726_790 - round(0.1153 * 33_399_713)
+    assert items["기타 고정비"]["src"] == "고정비 총액 − 인건비 − 임대료"
+    assert items["인건비"]["prev"] == 6_000_000 and items["인건비"]["chg"] == 12.1
+
+
+def test_인건비가_비율로만_적힌_달은_비율에서_계산한다():
+    L = _month(labor_cost=None, labor_rate=0.20)
+    it = {x["name"]: x for x in dp.cost_items(L, None)}["인건비"]
+    assert it["won"] == round(0.20 * 33_399_713) and "인건비율" in it["src"]
+    assert it["prev"] is None and it["chg"] is None

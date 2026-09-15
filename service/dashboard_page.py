@@ -275,6 +275,38 @@ def cost_verdict(L: dict) -> dict:
     return {"tone": tone, "title": f"변동비 {var_p}%,<br>고정비 {fix_p}%.", "body": body}
 
 
+def cost_items(L: dict, P: dict | None) -> list:
+    """비용 탭 맨 위 4칸 — 매출액·인건비·임대료·기타 고정비를 **원 단위 그대로**
+    (사장님 2026-09-15 "각 항목을 정확히 보여줘"). 워터폴은 1만원 비율뿐이라
+    실제 금액이 안 보였다.
+
+    출처를 함께 적는다 — 시트에 그대로 있는 값과 계산한 값을 섞어 보이면 안 되니까:
+      · 매출액   = 시트 '매출총액'
+      · 인건비   = 시트 '인건비' 금액 (그 달이 %로만 적혀 있으면 인건비율 × 매출)
+      · 임대료   = 시트엔 '임대료율'(%)만 있다 → 임대료율 × 매출총액
+      · 기타 고정비 = 시트 '기타 고정비' 달별 칸이 비어 있다 → 고정비_총액 − 인건비 − 임대료
+    """
+    P = P or {}
+    sales = L.get("sales_total")
+
+    def item(name, key, rate_key, src):
+        cur, prev = L.get(key), P.get(key)
+        rate = L.get(rate_key) if rate_key else None
+        if rate is None and cur is not None and sales:
+            rate = cur / sales
+        return {"name": name, "won": cur, "prev": prev, "src": src,
+                "rate": _pct(rate), "chg": _pct(_chg(cur, prev))}
+
+    labor_src = ("시트 '인건비' 금액" if L.get("labor_cost") is not None
+                 else "시트 인건비율 × 매출총액")
+    return [
+        item("매출액", "sales_total", None, "시트 '매출총액'"),
+        item("인건비", "labor", "labor_rate", labor_src),
+        item("임대료", "rent", "rent_rate", "시트 임대료율 × 매출총액"),
+        item("기타 고정비", "other_fixed", None, "고정비 총액 − 인건비 − 임대료"),
+    ]
+
+
 def fee_split(L: dict, platform_sales: dict, platform_orders: dict) -> list:
     """플랫폼별 수수료 분해 — 기본(11.88%)은 매출 비례, 광고·배달비는 나머지를 매출 비중으로."""
     dfees, dsales = L.get("delivery_fees"), L.get("delivery_sales") or 0
@@ -669,7 +701,8 @@ def build_dashboard(y: int, m: int, today: date | None = None, explicit: bool = 
                 "estimate": ({"month": est["label"], "sales": man(est.get("sales_total")),
                               "op": man(est.get("op_profit")) if est.get("op_profit") is not None else None}
                              if est else None)}
-        cost = {"verdict": cost_verdict(L),
+        cost = {"verdict": cost_verdict(L), "lines": cost_items(L, P),
+                "fixed_total": L.get("fixed_cost"),
                 "fee_split": fee_split(L, plat_amt.get(L["ym"], {}), plat_cnt.get(L["ym"], {})),
                 "fee_rate": _pct(L.get("delivery_fee_rate")),
                 "base_rate": round(BASE_FEE_RATE * 100, 1),

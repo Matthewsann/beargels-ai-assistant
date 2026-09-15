@@ -518,6 +518,24 @@
       <h2>{{ v.cost.verdict.title|safe }}</h2>
       <p>{{ v.cost.verdict.body|safe }}</p>
     </div>
+    <div class="sec">{{ v.cost.month }} 비용 항목 <small>장부 시트 · 원 단위{% if v.cost.fixed_total is not none %} · 고정비 총액 {{ '{:,}'.format(v.cost.fixed_total) }}원{% endif %}</small></div>
+    <div class="kpis">
+      {% for c in v.cost.lines %}
+      <div class="kpi">
+        <div class="lb">{{ c.name }}</div>
+        {% if c.won is not none %}
+        <div class="n">{{ '{:,}'.format(c.won) }}<small>원</small></div>
+        <div class="cmp">
+          {% if c.name != '매출액' %}<div><span>매출 대비</span><b>{{ c.rate if c.rate is not none else '—' }}%</b></div>{% endif %}
+          <div><span>지난달</span><b>{{ '{:,}'.format(c.prev) ~ '원' if c.prev is not none else '—' }}</b></div>
+          <div><span>지난달 대비</span>{{ pctv(c.chg / 100 if c.chg is not none else none, '지난달 없음') }}</div>
+          <div><span>출처</span><b style="font-weight:500;color:var(--muted)">{{ c.src }}</b></div>
+        </div>
+        {% else %}<div class="n nd" style="font-size:15px">시트에 없음</div>
+        <div class="cmp"><div><span>{{ c.src }}</span></div></div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
     <div class="card">
       <h4>핵심 비율 추이 <small>점선 = 목표선</small></h4>
       <div class="legend"><span><span class="sw" style="background:var(--rd)"></span>변동비율</span><span><span class="sw" style="background:var(--yl)"></span>고정비율</span><span><span class="sw" style="background:var(--pu)"></span>공헌이익률</span><span><span class="sw" style="background:var(--gr)"></span>영업이익률</span></div>
