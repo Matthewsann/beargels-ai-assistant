@@ -572,6 +572,38 @@ def freeze_marks(body: str, cat: dict | None = None) -> str:
 
 PHOTO_TARGET = 7      # 프롬프트 '7~9장(최소 6)' — 채점기가 6 미만이면 감점한다
 
+# 사진 부탁 메모 — 사진을 못 찾은 자리에 "어떤 사진이 있으면 좋을지"를 남긴다(사장님 2026-09-15).
+# 📸(U+1F4F8)는 사진 표시 📷(U+1F4F7)와 다른 글자라 사진으로 세지 않고, 네이버·채점 전엔 걷어낸다.
+WISH_RE = re.compile(r"\[\s*📸\s*부탁\s*[:：]\s*([^\]\n]{1,120}?)\s*\]")
+
+
+def strip_wishes(body: str) -> str:
+    """부탁 메모를 뺀 본문(네이버에 넣을 때·채점할 때). 빈 줄은 정리한다."""
+    out = WISH_RE.sub("", body or "")
+    return re.sub(r"\n{3,}", "\n\n", out)
+
+
+def wishes(body: str) -> list[str]:
+    return [m.group(1).strip() for m in WISH_RE.finditer(body or "")]
+
+
+def _wish_for(section_text: str, heading: str) -> str:
+    """절 내용으로 '어떤 사진'이 좋을지 한 줄 짓는다(AI 없이 규칙)."""
+    t = section_text
+    if any(h in t for h in _SCENE_HINT["과정컷"]):
+        kind = "만드는 과정이나 단면이 보이는 컷"
+    elif any(h in t for h in _SCENE_HINT["매장컷"]):
+        kind = "매장 안 장면(좌석·창가·카운터)"
+    else:
+        kind = "이 절에서 말한 메뉴의 실물 컷(위에서 내려찍은 것)"
+    h = re.sub(r"^#{1,4}\s*", "", heading).strip()
+    return f"[📸 부탁: 「{h[:24]}」 절에 어울리는 {kind}]"
+
+
+# fill_photos 안에서는 사진·영상 표시만 센다 — MARK 는 [매장 정보] 같은 일반 대괄호도 잡아서
+# 매장 정보 블록이 든 절을 "사진 있음"으로 오판했다(2026-09-15 실측).
+_MEDIA_MARK = re.compile(r"\[\s*[📷🎬][^\]]*\]")
+
 
 def fill_photos(body: str, target: int = PHOTO_TARGET,
                 except_post_id=None) -> tuple[str, int]:
@@ -602,9 +634,9 @@ def fill_photos(body: str, target: int = PHOTO_TARGET,
             while j < len(chunks) and not chunks[j].startswith("## "):
                 j += 1
             section = chunks[i:j]
-            if not any(MARK.search(c) for c in section):
+            if not any(_MEDIA_MARK.search(c) for c in section):
                 want = " ".join(section)[:400]
-                best, best_s = None, 0.5             # 이 점수도 못 넘으면 엉뚱한 사진
+                best, best_s = None, 1.0             # 낱말이 하나는 겹치거나 장면이 맞아야(품질 가산 0.6 만으론 안 됨)
                 for rel, v in pool.items():
                     if rel in used:
                         continue
@@ -629,10 +661,10 @@ def fill_photos(body: str, target: int = PHOTO_TARGET,
             while j < len(chunks) and not chunks[j].startswith("## "):
                 j += 1
             section = chunks[i:j]
-            n_photos = sum(1 for c in section if MARK.search(c))
-            text = " ".join(c for c in section if not MARK.search(c))
+            n_photos = sum(1 for c in section if _MEDIA_MARK.search(c))
+            text = " ".join(c for c in section if not _MEDIA_MARK.search(c))
             if n_photos < 2 and len(text) >= 400:
-                best, best_s = None, 0.5
+                best, best_s = None, 1.0             # 두 번째 장도 내용이 맞을 때만
                 for rel, v in pool.items():
                     if rel in used:
                         continue
@@ -648,7 +680,7 @@ def fill_photos(body: str, target: int = PHOTO_TARGET,
         else:
             i += 1
     # 그래도 모자라면(절이 적으면) 맨 앞 대표컷 — 본문이 사진으로 시작하지 않을 때만
-    if len(have) + added < target and not MARK.match(chunks[0] if chunks else ""):
+    if len(have) + added < target and not _MEDIA_MARK.match(chunks[0] if chunks else ""):
         best, best_s = None, 0.5
         for rel, v in pool.items():
             if rel in used:
@@ -660,8 +692,27 @@ def fill_photos(body: str, target: int = PHOTO_TARGET,
             chunks.insert(0, f"[📷 {best}]")
             used.add(best)
             added += 1
-    if added:
-        logger.info("사진 자동 채움: %d장 → 총 %d장", added, len(have) + added)
+    # 그래도 사진이 없는 절엔 '어떤 사진이 있으면 좋을지' 부탁 메모를 남긴다(이미 있으면 안 겹침)
+    wished = 0
+    if len(have) + added < target:
+        i = 0
+        while i < len(chunks):
+            if chunks[i].startswith("## "):
+                j = i + 1
+                while j < len(chunks) and not chunks[j].startswith("## "):
+                    j += 1
+                section = chunks[i:j]
+                if not any(_MEDIA_MARK.search(c) or WISH_RE.search(c) for c in section):
+                    text = " ".join(c for c in section[1:])
+                    at = i + 1 if j > i + 1 else i
+                    chunks.insert(at + 1, _wish_for(text, chunks[i]))
+                    wished += 1
+                    j += 1
+                i = j
+            else:
+                i += 1
+    if added or wished:
+        logger.info("사진 자동 채움: %d장 → 총 %d장 · 부탁 메모 %d개", added, len(have) + added, wished)
     return "\n\n".join(chunks) + ("\n" if body.endswith("\n") else ""), added
 
 

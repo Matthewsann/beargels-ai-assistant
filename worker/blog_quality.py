@@ -63,6 +63,11 @@ def score(body: str, title: str, main_keyword: str) -> dict:
     객관 결함은 AI 총평과 별개로 반드시 점수에 반영돼야 한다).
     """
     import evaluator
+    try:
+        import blog_media
+        body = blog_media.strip_wishes(body)      # 사진 부탁 메모는 글이 아니다
+    except Exception:  # noqa: BLE001
+        pass
     checks = evaluator.mechanical_check(body, title, main_keyword)
     warns = [c for c in checks if c.get("status") == "warn"]
     review = {}

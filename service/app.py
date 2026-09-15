@@ -2781,6 +2781,9 @@ def _blog_render(body: str) -> list[dict]:
                            "name": rel.rpartition("/")[2],
                            "video": rel.lower().endswith((".mp4", ".mov", ".m4v")),
                            "thumb": f"{_THUMB_BASE}/{key}" if _THUMB_BASE else ""})
+        elif re.fullmatch(r"\[\s*📸\s*부탁\s*[:：][^\]]*\]", c.strip()):
+            blocks.append({"t": "wish", "i": i,
+                           "text": re.sub(r"^\[\s*📸\s*부탁\s*[:：]\s*|\s*\]$", "", c.strip())})
         elif re.match(r"^#{1,4}\s+", c):
             blocks.append({"t": "h", "i": i, "text": re.sub(r"^#{1,4}\s+", "", c).strip()})
         elif re.fullmatch(r"-{3,}\s*", c):
@@ -3118,11 +3121,26 @@ def blog_post_photo(path_key, post_id):
             except ValueError:
                 at = -1
             if 0 <= at < len(chunks):
-                chunks.insert(at + 1, _mark_for(new))
+                if re.match(r"^\[\s*📸\s*부탁", chunks[at].strip()):
+                    chunks[at] = _mark_for(new)          # 부탁 자리에 바로 사진이 들어간다
+                else:
+                    chunks.insert(at + 1, _mark_for(new))
                 body = "\n\n".join(chunks)
                 note = "그 자리에 사진을 넣었어요."
             else:
                 note = "넣을 자리를 못 찾았어요 — 화면을 새로고침한 뒤 다시 해주세요."
+        elif act == "remove_wish":
+            chunks = _blog_chunks(body)
+            try:
+                at = int(request.form.get("after") or -1)
+            except ValueError:
+                at = -1
+            if 0 <= at < len(chunks) and re.match(r"^\[\s*📸\s*부탁", chunks[at].strip()):
+                del chunks[at]
+                body = "\n\n".join(chunks)
+                note = "사진 부탁 메모를 지웠어요."
+            else:
+                note = "지울 메모를 못 찾았어요 — 새로고침 뒤 다시."
         elif act == "add" and new:
             mark = _mark_for(new)
             # 매장정보 블록이나 맨 끝 해시태그 문단 **앞**에 넣는다 — 글의 흐름 끝, 정보 블록 전.

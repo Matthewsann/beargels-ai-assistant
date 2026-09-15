@@ -327,6 +327,9 @@ def do_draft(payload: dict) -> tuple[int, str]:
         media = blog_media.used_media(body)
         if media:
             photo_note = f" · 사진 {len(media)}장" + (f"(자동 채움 {filled})" if filled else "") + (f"(겹친 {dropped}장 뺌)" if dropped else "")
+        nw = len(blog_media.wishes(body))
+        if nw:
+            photo_note += f" · 📸 사진 부탁 {nw}개(글 화면에서 확인)"
             blog_media.ensure_thumbs(media)                # 웹 미리보기
         else:
             photo_note = " · ⚠ 사진 0장 — 사진함을 확인해 주세요"
@@ -523,11 +526,14 @@ def do_publish(payload: dict) -> tuple[int, str]:
         blog_media.pull_uploads()           # 폰에서 올린 사진이 있으면 먼저 가져온다
     except Exception as e:  # noqa: BLE001
         logger.warning("업로드 사진 가져오기 실패: %s", str(e)[:100])
+    # 사진 부탁 메모는 사장님용 — 네이버에는 절대 안 나간다(본문엔 남겨 둔다)
+    body = blog_media.strip_wishes(body)
     # 매장 정보는 넣는 순간의 최신값으로 — 영업시간이 바뀌었으면 옛 초안도 새 값으로 나간다
     stamped = stamp_store_block(body)
     if stamped != body:
         body = stamped
-        store.update_post(post_id, body=body)   # 웹 화면과 네이버가 같은 글이어야 한다
+        # 웹에는 부탁 메모를 남긴 채 매장 정보만 갱신해 둔다
+        store.update_post(post_id, body=stamp_store_block(post.get("body") or ""))
     blocks, _prepared = build_blocks(body)
 
     # 예약 발행(사장님 2026-09-15 — 8/29 의 '임시저장까지만'을 번복). 글마다 사람이
