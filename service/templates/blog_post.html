@@ -26,6 +26,54 @@
     {% endif %}
   </div>
 
+  {# ══ 이 글의 목적 — 주제·강조 키워드·찍을 사진 (사장님 2026-09-16: "무엇을 강조할 계획인지
+     알려주면 그에 맞춰 사진을 찍어 올리기 편하다"). 키워드 자리는 계획이 아니라 본문 측정값. #}
+  {% if purpose %}
+  <div class="panel" style="padding:12px 14px; margin-bottom:10px; border-color:var(--accent);">
+    <div style="font-size:13px; font-weight:700; margin-bottom:6px;">🎯 이 글의 목적</div>
+    <div style="font-size:13px; line-height:1.6;">
+      <div><span style="color:var(--muted);">주제</span> · <b>{{ shown_title or post.title or '(제목 없음)' }}</b>
+        {% if post.post_type %}<span style="color:var(--muted);">({{ post.post_type }})</span>{% endif %}</div>
+      {% if purpose.angle %}<div><span style="color:var(--muted);">각도</span> · {{ purpose.angle }}</div>{% endif %}
+      {% if purpose.why %}<div><span style="color:var(--muted);">왜 이 글</span> · {{ purpose.why }}</div>{% endif %}
+      {% if purpose.intent or purpose.competition or purpose.tier_ko %}
+      <div style="font-size:12px; color:var(--muted);">
+        {% if purpose.intent %}검색 의도 {{ purpose.intent }}{% endif %}
+        {% if purpose.competition %} · 경쟁 {{ purpose.competition }}{% endif %}
+        {% if purpose.tier_ko %} · {{ purpose.tier_ko }}{% endif %}</div>
+      {% endif %}
+    </div>
+
+    <div style="margin-top:9px; font-size:13px; line-height:1.6;">
+      <div style="font-weight:600;">🔑 강조 노출할 키워드</div>
+      {% if purpose.kw %}
+      {% set k = purpose.kw %}
+      <div>대표 <b>「{{ k.kw }}」</b> — 본문 {{ k.count }}회
+        <span style="font-size:12px; color:var(--muted);">(목표 3~5회 · 제목 {{ '✓' if k.title else '✗' }} · 첫 문단 {{ '✓' if k.intro else '✗' }} · 소제목 {{ '✓' if k.head else '✗' }} · 마무리 {{ '✓' if k.tail else '✗' }})</span></div>
+      {% else %}<div style="color:var(--muted);">대표 키워드가 아직 없어요.</div>{% endif %}
+      {% if purpose.subs %}
+      <div style="font-size:12px;">세부 ·
+        {% for s in purpose.subs %}<span style="white-space:nowrap;">{{ s.kw }} <span style="color:var(--muted);">{{ s.count }}회{{ '·소제목' if s.head else '' }}</span></span>{{ ' / ' if not loop.last }}{% endfor %}</div>
+      {% endif %}
+      <div style="font-size:12px; color:var(--muted); margin-top:2px;">이 낱말이 사진 속·사진 앞 문장에도 보이면 네이버가 글과 사진을 한 주제로 봅니다.</div>
+    </div>
+
+    <div style="margin-top:9px; font-size:13px; line-height:1.6;">
+      <div style="font-weight:600;">📸 찍어 올릴 사진 {{ purpose.wishes|length }}장
+        <span style="font-weight:400; font-size:12px; color:var(--muted);">{% if purpose.photos %}· 이미 넣은 사진 {{ purpose.photos }}장{% endif %}</span></div>
+      {% if purpose.wishes %}
+      <ol style="margin:4px 0 0; padding-left:20px;">
+        {% for w in purpose.wishes %}
+        <li style="margin:2px 0;">{{ w.text }}
+          {% if not preview %}<a href="#w{{ w.i }}" style="font-size:12px; color:var(--accent); white-space:nowrap;">자리 보기 ↓</a>{% endif %}</li>
+        {% endfor %}
+      </ol>
+      <div style="font-size:12px; color:var(--muted); margin-top:4px;">이 순서대로 한 번에 찍어 두고, 아래 각 자리의 [📷 사진 넣기]로 넣으면 됩니다.</div>
+      {% else %}<div style="color:var(--muted);">사진 자리가 다 찼어요.</div>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   {% if prev %}
   {# 다시 뽑은 글은 초안이 둘 — 화살표로 넘겨 견주고 하나를 고른다. 넘겨보기는 아무것도 안 바꾼다. #}
   <div class="panel" style="padding:9px 12px; margin-bottom:10px;">
@@ -147,8 +195,8 @@
       {# 사진 자리 — AI 는 '어떤 사진이 좋은지' 코멘트만 놓고, 사진은 사장님이 넣는다(2026-09-15).
          카드엔 코멘트와 [사진 넣기] 하나만. 누르면 위 사진 고르기 패널(사진함 + 폰 업로드)이 열리고,
          고른 사진이 이 메모 자리에 들어간다. 네이버·채점엔 이 메모가 안 들어간다. #}
-      <div style="margin:8px auto 14px; max-width:440px; border:1.5px dashed var(--warn); border-radius:10px;
-                  padding:12px 14px; background:var(--warn-bg); color:var(--warn); text-align:left;">
+      <div id="w{{ b.i }}" style="margin:8px auto 14px; max-width:440px; border:1.5px dashed var(--warn); border-radius:10px;
+                  padding:12px 14px; background:var(--warn-bg); color:var(--warn); text-align:left; scroll-margin-top:12px;">
         <div style="font-size:13px; font-weight:600;">📸 여기엔 이런 사진</div>
         <div style="font-size:13px; margin-top:3px;">{{ b.text }}</div>
         {% if not preview %}

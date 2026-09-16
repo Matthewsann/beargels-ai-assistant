@@ -2782,8 +2782,10 @@ def _blog_render(body: str) -> list[dict]:
                            "video": rel.lower().endswith((".mp4", ".mov", ".m4v")),
                            "thumb": f"{_THUMB_BASE}/{key}" if _THUMB_BASE else ""})
         elif re.fullmatch(r"\[\s*📸\s*부탁\s*[:：][^\]]*\]", c.strip()):
+            # 옛 초안엔 `[🎬 부탁: …]` 가 `[📸 부탁: 부탁: …]` 로 바뀐 것이 있다 — 겹친 머리말은 걷어낸다
+            txt = re.sub(r"^\[\s*📸\s*부탁\s*[:：]\s*|\s*\]$", "", c.strip())
             blocks.append({"t": "wish", "i": i,
-                           "text": re.sub(r"^\[\s*📸\s*부탁\s*[:：]\s*|\s*\]$", "", c.strip())})
+                           "text": re.sub(r"^(?:\s*(?:부탁|사진|영상)\s*[:：]\s*)+", "", txt)})
         elif re.match(r"^#{1,4}\s+", c):
             blocks.append({"t": "h", "i": i, "text": re.sub(r"^#{1,4}\s+", "", c).strip()})
         elif re.fullmatch(r"-{3,}\s*", c):
@@ -3026,6 +3028,65 @@ def _blog_stats(body: str) -> dict:
     }
 
 
+_TIER_KO = {"green": "지금 쓰면 이길 수 있는 키워드", "yellow": "각도를 좁혀야 이기는 키워드",
+            "mine": "우리 글이 이미 상위 — 보강", "tiny": "검색량이 적은 키워드", "red": "경쟁이 센 키워드"}
+
+
+def _blog_purpose(post: dict, body: str, blocks: list[dict]) -> dict:
+    """글 화면 맨 위 '이 글의 목적' 카드(사장님 2026-09-16: "주제가 무엇이고 어떤 키워드를
+    강조 노출할 계획인지 알려줘 — 그에 맞춰 사진을 찍어 올리게").
+
+    · 주제·왜 이 글인가: 글이 나온 브리프(버킷 사본, post_id 로 찾음)나 추천 글감(대표
+      키워드·제목으로 찾음)의 why·검색 의도·경쟁·등급을 그대로 보여 준다. 없으면 제목만.
+    · 강조 키워드: 대표 키워드가 **실제 본문에서** 어디에 몇 번 들어갔는지(첫 문단·소제목·
+      마무리 — 프롬프트와 채점기가 요구하는 자리). 계획이 아니라 측정값이다.
+    · 찍을 사진: 본문의 📸 부탁 메모를 한 목록으로(각 자리로 가는 링크) — 한 번에 찍어 올리게.
+    """
+    body = body or ""
+    kw = (post.get("main_keyword") or "").strip()
+    subs = post.get("sub_keywords") or []
+    if isinstance(subs, str):
+        subs = [s.strip() for s in subs.split(",") if s.strip()]
+    plain = re.sub(r"\[[^\]]*\]", "", body)
+    paras = [c for c in re.split(r"\n\s*\n", plain.strip()) if c.strip()]
+    heads = [c for c in paras if c.lstrip().startswith("#")]
+    tail = next((c for c in reversed(paras)
+                 if not c.lstrip().startswith("#") and not c.lstrip().startswith("[매장 정보]")), "")
+    kwinfo = None
+    if kw:
+        kwinfo = {
+            "kw": kw, "count": body.count(kw),
+            "intro": kw in plain.lstrip()[:200],
+            "head": any(kw in h for h in heads),
+            "tail": kw in tail,
+            "title": kw in (post.get("title") or ""),
+        }
+    sub_rows = [{"kw": s, "count": body.count(s), "head": any(s in h for h in heads)} for s in subs if s]
+    why, intent, competition, tier, angle = "", "", "", "", ""
+    try:
+        for b in _briefs_cached():
+            if b.get("post_id") == post.get("id"):
+                why, tier, angle = b.get("why") or "", b.get("keyword_tier") or "", b.get("blog_angle") or ""
+                break
+    except Exception:  # noqa: BLE001
+        pass
+    if not why:
+        try:
+            for r in blog.list_recommendations():
+                if (kw and (r.get("main_keyword") or "") == kw) or \
+                   ((r.get("title") or "") and (r.get("title") or "") == (post.get("title") or "")):
+                    why, intent = r.get("why") or "", r.get("search_intent") or ""
+                    competition, tier = r.get("competition") or "", tier or (r.get("tier") or "")
+                    break
+        except Exception:  # noqa: BLE001
+            pass
+    wishes = [{"i": b["i"], "text": b.get("text") or ""} for b in blocks if b.get("t") == "wish"]
+    photos = sum(1 for b in blocks if b.get("t") in ("photo", "video"))
+    return {"kw": kwinfo, "subs": sub_rows, "why": why, "intent": intent,
+            "competition": competition, "tier": tier, "tier_ko": _TIER_KO.get(tier, ""),
+            "angle": angle, "wishes": wishes, "photos": photos}
+
+
 @app.route("/<path_key>/blog/post/<int:post_id>")
 def blog_post(path_key, post_id):
     check(path_key)
@@ -3072,6 +3133,7 @@ def blog_post(path_key, post_id):
                            publishing=("blog_publish" in (blog.busy_kinds() if True else set())),
                            picking=picking, swap=swap or "", after=after if after is not None else "",
                            after_text=after_text, after_wish=after_wish, catalog=catalog,
+                           purpose=_blog_purpose(post, (shown or {}).get("body", ""), blocks),
                            note=(request.args.get("note") or "")[:200],
                            prev=prev, preview=preview,
                            prev_at=_updated_view((prev or {}).get('at')),

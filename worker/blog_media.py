@@ -626,7 +626,8 @@ def marks_to_wishes(body: str) -> tuple[str, int]:
         tok = m.group(1).strip()
         if not tok or _PID.match(tok) or tok.lower().endswith(tuple(PHOTO_EXT | VIDEO_EXT)):
             return ""
-        tok = re.sub(r"^(사진|영상|컷)\s*[:：]\s*", "", tok).strip()
+        # `[🎬 부탁: …]` 처럼 모델이 머리말을 겹쳐 쓴다 — 부탁이 "부탁: 부탁: …" 로 보이지 않게
+        tok = re.sub(r"^(?:(?:사진|영상|컷|부탁)\s*[:：]\s*)+", "", tok).strip()
         return f"[📸 부탁: {tok[:120]}]" if tok else ""
 
     out = _MEDIA_MARK_TOK.sub(sub, body or "")
