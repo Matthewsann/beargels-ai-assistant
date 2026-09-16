@@ -457,6 +457,8 @@ def research(seeds: tuple[str, ...] | list[str] | None = None, *,
     }
     if rows:
         save(data)
+    # ⚠ 여기서 publish_summary 를 부르지 않는다 — 테스트가 이 함수를 모의 실행하며 실제
+    #   menu_settings 를 0건으로 덮어썼다(2026-09-16 실측). 발행은 부르는 쪽(일꾼)이 한다.
     return data
 
 
@@ -530,6 +532,37 @@ def as_prompt_context(data: dict | None = None) -> str:
         lines.append("월 N회는 네이버 검색광고 키워드도구의 최근 30일 검색수다. "
                      "경쟁이 적어도 검색량이 작으면 쓰지 않는다.")
     return "\n".join(lines)
+
+
+WEB_KEY = "blog_keyword_research"      # menu_settings — 직원 웹 '💡 추천 키워드' 칸이 읽는다(2026-09-16)
+
+
+def web_summary(data: dict | None = None, limit: int = 30) -> dict:
+    """직원 웹에 보여 줄 만큼만 추린 실측 요약(기회 점수 순). 로컬 파일은 PA 가 못 읽는다."""
+    data = data or load()
+    rows = []
+    for r in data.get("rows") or []:
+        v = r.get("verdict") or {}
+        if v.get("tier") in (None, "unknown"):
+            continue
+        rows.append({"keyword": r.get("keyword"), "tier": v.get("tier"), "why": v.get("why", ""),
+                     "volume": r.get("volume") if isinstance(r.get("volume"), int) else None,
+                     "our_rank": r.get("our_rank"), "known_demand": bool(r.get("known_demand")),
+                     "opportunity": round(opportunity(r), 1)})
+    rows.sort(key=lambda x: -x["opportunity"])
+    return {"scanned_at": data.get("scanned_at"), "has_volume": bool(data.get("has_volume")),
+            "rows": rows[:limit]}
+
+
+def publish_summary(data: dict | None = None) -> bool:
+    """실측 요약을 menu_settings 에 올린다 — 웹의 '추천 키워드'가 본다. 실패해도 조사는 산다."""
+    try:
+        from database import supabase_client as db
+        db.menu_set_setting(WEB_KEY, web_summary(data))
+        return True
+    except Exception as e:  # noqa: BLE001
+        logger.warning("키워드 실측 요약 발행 실패: %s", str(e)[:120])
+        return False
 
 
 def main() -> int:

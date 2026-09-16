@@ -24,6 +24,7 @@ on:
       # 조용히 안 돌았다(2026-09-04 발견). 업로드 목록에 파일을 추가하면
       # 여기에도 추가할 것.
       - 'sns_automation/briefs.py'
+      - 'sns_automation/first_party.py'
       - 'sns_automation/cloud_sync.py'
       - 'sns_automation/__init__.py'
       - 'assistant/beargels.py'
@@ -129,6 +130,7 @@ jobs:
           upload sns_automation/__init__.py
           upload sns_automation/cloud_sync.py
           upload sns_automation/briefs.py
+          upload sns_automation/first_party.py
           upload service/mkt_page.py
           upload service/sales_page.py
           upload service/dashboard_page.py

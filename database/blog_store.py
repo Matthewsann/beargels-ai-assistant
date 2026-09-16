@@ -26,7 +26,8 @@ JOBS = "jobs"
 # 웹이 일꾼에게 시킬 수 있는 일
 JOB_KINDS = ("blog_recommend", "blog_draft", "blog_publish", "blog_rank",
              "blog_media", "blog_learn", "blog_react", "blog_plan",
-             "blog_score")   # ④ 품질 확인(채점·다듬기, 2026-09-15)
+             "blog_score",   # ④ 품질 확인(채점·다듬기, 2026-09-15)
+             "blog_research")  # 사장님 타겟 키워드 경쟁·검색량 실측(2026-09-16)
 
 
 def _now():

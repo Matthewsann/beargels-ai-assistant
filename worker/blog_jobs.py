@@ -8,6 +8,7 @@
     blog_draft      기획 주제로 초안 작성 → 창고 저장   (AI)
     blog_publish    글을 네이버에 임시저장(초안) 넣기    (브라우저)
     blog_rank       타겟 키워드 네이버 순위 확인        (브라우저)
+    blog_research   사장님 타겟 키워드 경쟁·검색량 실측  (공개 페이지, 2026-09-16)
 
 사진은 AI 가 고르지 않는다(사장님 2026-09-15) — 자리마다 `[📸 부탁: …]` 코멘트만 놓고,
 사장님이 글 화면에서 폰 사진·영상을 바로 올린다(사진함 고르기·`blog_media` 잡은 2026-09-16 에
@@ -35,7 +36,7 @@ from database import blog_store as store  # noqa: E402
 logger = logging.getLogger(__name__)
 
 BLOG_KINDS = ("blog_recommend", "blog_draft", "blog_publish", "blog_rank",
-              "blog_learn", "blog_react", "blog_plan", "blog_score")
+              "blog_learn", "blog_react", "blog_plan", "blog_score", "blog_research")
 
 # 순위 추적 기본 키워드(창고 글의 대표 키워드에 더해 항상 확인)
 DEFAULT_KEYWORDS = ("송도 베이글", "송도 카페")
@@ -72,12 +73,51 @@ def _brief_link(brief_id: str, post_id: int, title: str) -> None:
         logger.warning("브리프 연결 실패(%s): %s", brief_id, str(e)[:120])
 
 
-def do_recommend() -> tuple[int, str]:
-    """금고 기반 글감 추천 → blog_recommendations 테이블 교체."""
+def do_recommend(payload: dict | None = None) -> tuple[int, str]:
+    """금고 + 네이버 실측 + 유입 검색어 기반 글감 추천 → blog_recommendations 테이블 교체.
+
+    payload["keywords"] — 사장님이 체크한 타겟 키워드(2026-09-16). 있으면 그 키워드를
+    대표 키워드로 하는 글감을 먼저 짜게 한다.
+    """
     import planner
-    items = planner.make_recommendations()
+    focus = [k.strip() for k in ((payload or {}).get("keywords") or []) if k and k.strip()]
+    items = planner.make_recommendations(focus=focus)
     store.replace_recommendations(items)
-    return len(items), f"글감 {len(items)}개 추천"
+    tail = f" — 타겟 키워드 {len(focus)}개 중심" if focus else ""
+    return len(items), f"글감 {len(items)}개 추천{tail}"
+
+
+def do_research(payload: dict | None = None) -> tuple[int, str]:
+    """사장님 타겟 키워드를 네이버에서 실측(자동완성·경쟁·검색량)해 등급을 매긴다(2026-09-16).
+
+    주 1회 자동 조사(agent.maybe_naver_research)와 같은 자를 쓰되, 씨앗을 **사장님 키워드
+    그대로**(가지 안 뻗음) 잰다. 결과는 주간 조사 파일에 합쳐 두고(같은 키워드는 새 값으로),
+    웹용 요약(menu_settings blog_keyword_research)을 다시 올린다.
+    """
+    import sys as _sys
+    _sys.path.insert(0, str(ROOT))
+    from sns_automation import naver_search as ns
+    kws = [k.strip() for k in ((payload or {}).get("keywords") or []) if k and k.strip()]
+    if not kws:
+        raise ValueError("실측할 타겟 키워드가 없습니다 — 먼저 키워드를 체크해 주세요.")
+    old = ns.load()
+    data = ns.research(seeds=tuple(kws), per_seed=0, max_keywords=max(ns.MAX_KEYWORDS, len(kws)))
+    merged = {ns.norm(r["keyword"]): r for r in (old.get("rows") or [])}
+    for r in data.get("rows") or []:
+        merged[ns.norm(r["keyword"])] = r
+    data["rows"] = list(merged.values())
+    data["seeds"] = list(old.get("seeds") or []) + [k for k in kws if k not in (old.get("seeds") or [])]
+    data["has_volume"] = bool(data.get("has_volume") or old.get("has_volume"))
+    data["winnable"] = [r["keyword"] for r in ns.pick_winnable(data["rows"])]
+    ns.save(data)
+    ns.publish_summary(data)
+    tiers = {}
+    for r in data.get("rows") or []:
+        if ns.norm(r["keyword"]) in {ns.norm(k) for k in kws}:
+            tiers[r["keyword"]] = (r.get("verdict") or {}).get("tier", "?")
+    ko = {"green": "🟢", "yellow": "🟡", "mine": "🅾", "tiny": "▫", "red": "🔴"}
+    summary = " · ".join(f"{ko.get(t, '?')} {k}" for k, t in tiers.items())
+    return len(tiers), f"키워드 {len(tiers)}개 실측 — {summary}"
 
 
 
@@ -806,7 +846,8 @@ def do_rank(payload: dict) -> tuple[int, str]:
 # ---------------------------------------------------------------------------
 
 _HANDLERS = {
-    "blog_recommend": lambda p: do_recommend(),
+    "blog_recommend": lambda p: do_recommend(p),
+    "blog_research": lambda p: do_research(p),
     "blog_draft": do_draft,
     "blog_score": do_score,
     "blog_publish": do_publish,

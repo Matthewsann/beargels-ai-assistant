@@ -2826,7 +2826,7 @@ def _blog_job_view(job) -> dict | None:
         "blog_publish": "네이버 초안 넣기", "blog_rank": "순위 확인",
         "blog_media": "사진함 살펴보기", "blog_learn": "수정에서 배우기",
         "blog_react": "반응 수집", "blog_plan": "채널 배분안",
-        "blog_score": "품질 확인",
+        "blog_score": "품질 확인", "blog_research": "키워드 실측",
     }.get(job.get("kind"), job.get("kind") or "")
     msg = job.get("message") or ""
     # 흔한 실패 원문을 사장님이 읽을 수 있는 말로 (리뷰 화면과 같은 배려)
@@ -2877,7 +2877,7 @@ def blog_home(path_key):
     for p in posts:
         p["step"] = _blog_step(p, _blog_quality(p["id"], p.get("body", "")) if str(p["id"]) in _all_q else None)
     return render_template("blog.html", key=path_key, posts=posts, recs=recs,
-                           plans=plans, note=(request.args.get("note") or "")[:200],
+                           kw=_blog_keywords(), plans=plans, note=(request.args.get("note") or "")[:200],
                            drafting=("blog_draft" in busy),
                            store=_store_info(), store_fields=STORE_FIELDS,
                            ranks=ranks, job=job, worker=_worker_view(), error=error)
@@ -2903,10 +2903,116 @@ def _ask_worker(path_key, kind, payload=None):
     return redirect(url_for("blog_home", path_key=path_key, note=note))
 
 
+# ── 🔑 타겟 키워드(사장님 2026-09-16: "내가 처음에 타겟 키워드를 정하고, 추천 키워드는 따로
+#    보고, 내가 고른 키워드로 주제·초안을 잡는다") ─────────────────────────────
+BLOG_TARGET_KEY = "blog_target_keywords"       # menu_settings — 사장님이 정한 타겟 [{kw, at, src}]
+BLOG_RESEARCH_KEY = "blog_keyword_research"    # 집 PC 가 올린 네이버 실측 요약(naver_search.publish_summary)
+_TIER_EMOJI = {"green": "🟢", "yellow": "🟡", "mine": "🅾", "tiny": "▫", "red": "🔴"}
+
+
+def _kw_norm(s) -> str:
+    return re.sub(r"\s+", "", (s or "")).casefold()
+
+
+def _form_keywords() -> list[str]:
+    """체크박스(kw)나 쉼표 문자열(keywords)로 온 키워드 목록."""
+    out = list(request.form.getlist("kw"))
+    out += [w for w in re.split(r"[,\n]+", request.form.get("keywords") or "")]
+    seen, res = set(), []
+    for w in out:
+        w = (w or "").strip()
+        if w and _kw_norm(w) not in seen:
+            seen.add(_kw_norm(w)); res.append(w)
+    return res[:20]
+
+
+def _blog_keywords() -> dict:
+    """블로그 홈 맨 위 키워드 판 — 사장님 타겟(실측 등급 붙임) · 추천(실측 이길 수 있는 순) ·
+    우리 유입 검색어 · 피할 키워드. 실측이 아직 없으면 그 칸만 빈다."""
+    try:
+        targets = list((db.get_setting(BLOG_TARGET_KEY) or {}).get("items") or [])
+    except Exception:  # noqa: BLE001
+        targets = []
+    try:
+        research = db.get_setting(BLOG_RESEARCH_KEY) or {}
+    except Exception:  # noqa: BLE001
+        research = {}
+    rrows = [r for r in (research.get("rows") or []) if r.get("keyword")]
+    by_norm = {_kw_norm(r["keyword"]): r for r in rrows}
+    for t in targets:
+        r = by_norm.get(_kw_norm(t.get("kw"))) or {}
+        t["tier"] = r.get("tier") or ""
+        t["emoji"] = _TIER_EMOJI.get(t["tier"], "")
+        t["tier_ko"] = _TIER_KO.get(t["tier"], "")
+        t["why"] = r.get("why") or ""
+        t["volume"] = r.get("volume")
+    have = {_kw_norm(t.get("kw")) for t in targets}
+
+    def _view(r):
+        return dict(r, emoji=_TIER_EMOJI.get(r.get("tier"), ""), tier_ko=_TIER_KO.get(r.get("tier"), ""))
+    suggested = [_view(r) for r in rrows
+                 if _kw_norm(r["keyword"]) not in have and r.get("tier") in ("green", "yellow", "mine")][:12]
+    avoid = [_view(r) for r in rrows
+             if _kw_norm(r["keyword"]) not in have and r.get("tier") in ("tiny", "red")][:8]
+    inflow = []
+    try:
+        from sns_automation import first_party
+        inflow = [r for r in first_party.inflow_keywords() if _kw_norm(r.get("name")) not in have][:10]
+    except Exception:  # noqa: BLE001 — 유입 데이터가 없어도 판은 뜬다
+        inflow = []
+    return {"targets": targets, "suggested": suggested, "avoid": avoid, "inflow": inflow,
+            "scanned_at": (research.get("scanned_at") or "")[:10], "has_volume": bool(research.get("has_volume"))}
+
+
+@app.route("/<path_key>/blog/keywords", methods=["POST"])
+def blog_keywords(path_key):
+    """타겟 키워드 넣기·빼기 — 웹이 menu_settings 에 바로 쓴다(집 PC 불필요)."""
+    check(path_key)
+    act = request.form.get("action") or "add"
+    note = ""
+    try:
+        items = list((db.get_setting(BLOG_TARGET_KEY) or {}).get("items") or [])
+        have = {_kw_norm(t.get("kw")) for t in items}
+        if act == "add":
+            words = [w.strip() for w in re.split(r"[,\n/·]+", request.form.get("kw") or "") if w.strip()]
+            added = []
+            for w in words[:20]:
+                if _kw_norm(w) not in have:
+                    items.append({"kw": w, "at": datetime.now(KST).isoformat(timespec="minutes"),
+                                  "src": (request.form.get("src") or "owner")[:20]})
+                    have.add(_kw_norm(w)); added.append(w)
+            note = ("타겟 키워드에 넣었어요: " + ", ".join(added)) if added else "이미 있는 키워드예요."
+        elif act == "remove":
+            kw = (request.form.get("kw") or "").strip()
+            items = [t for t in items if _kw_norm(t.get("kw")) != _kw_norm(kw)]
+            note = f"「{kw}」 를 타겟에서 뺐어요."
+        else:
+            note = "무엇을 할지 알 수 없어요."
+        db.menu_set_setting(BLOG_TARGET_KEY, {"items": items})
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"타겟 키워드 저장 실패({act}): {e}",
+                     kind=type(e).__name__, path=request.path, detail=traceback.format_exc())
+        note = f"저장하지 못했어요: {str(e)[:100]}"
+    return redirect(url_for("blog_home", path_key=path_key, note=note) + "#keywords")
+
+
 @app.route("/<path_key>/blog/recommend", methods=["POST"])
 def blog_recommend(path_key):
+    """글감 추천 — 체크한 타겟 키워드(kw)가 있으면 그 키워드 중심으로."""
     check(path_key)
-    return _ask_worker(path_key, "blog_recommend")
+    kws = _form_keywords()
+    return _ask_worker(path_key, "blog_recommend", {"keywords": kws} if kws else {})
+
+
+@app.route("/<path_key>/blog/research", methods=["POST"])
+def blog_research(path_key):
+    """체크한 타겟 키워드를 집 PC 가 네이버에서 실측(경쟁·검색량·등급)한다."""
+    check(path_key)
+    kws = _form_keywords()
+    if not kws:
+        return redirect(url_for("blog_home", path_key=path_key,
+                                note="실측할 키워드를 먼저 체크해 주세요.") + "#keywords")
+    return _ask_worker(path_key, "blog_research", {"keywords": kws})
 
 
 @app.route("/<path_key>/blog/plan", methods=["POST"])
@@ -2970,15 +3076,28 @@ def blog_draft_from_plan(path_key, plan_id):
 
 @app.route("/<path_key>/blog/draft", methods=["POST"])
 def blog_draft(path_key):
+    """초안 요청 — 글감 카드(title/main_keyword/sub_keywords)로도, 타겟 키워드 체크(kw)로도 온다.
+
+    체크한 키워드로 오면 첫 번째가 대표 키워드, 나머지가 세부 키워드(사장님 2026-09-16).
+    주제(title)를 비우면 대표 키워드가 곧 주제다 — 일꾼은 주제가 비면 초안을 안 쓴다.
+    """
     check(path_key)
     subs = [s.strip() for s in (request.form.get("sub_keywords") or "").split(",") if s.strip()]
+    main = (request.form.get("main_keyword") or "").strip()
+    kws = _form_keywords()
+    if kws and not main:
+        main, subs = kws[0], subs + [k for k in kws[1:] if k != kws[0]]
+    title = (request.form.get("title") or "").strip() or main
     payload = {
-        "topic": request.form.get("title") or "",
-        "title": request.form.get("title") or "",
+        "topic": title,
+        "title": title,
         "post_type": request.form.get("post_type") or "정보성",
-        "main_keyword": request.form.get("main_keyword") or "",
+        "main_keyword": main,
         "sub_keywords": subs,
     }
+    if not title:
+        return redirect(url_for("blog_home", path_key=path_key,
+                                note="주제나 키워드가 없어요 — 키워드를 체크하거나 주제를 적어 주세요.") + "#keywords")
     return _ask_worker(path_key, "blog_draft", payload)
 
 

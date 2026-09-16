@@ -218,6 +218,12 @@ REC_PROMPT = """너는 베어글스 송도점의 네이버 블로그 마케팅 �
 {knowledge}
 ===== SEO 지식 =====
 {seo}
+===== 사장님이 정한 타겟 키워드 =====
+{focus}
+===== 네이버 검색 실측 (이길 수 있는 키워드 — 주제는 이 위에서 고른다) =====
+{research}
+===== 우리 가게로 실제 손님이 들어온 검색어 (많이 들어온 순) =====
+{inflow}
 ===== 발행 글 성과 (반응 피드백) =====
 {performance}
 =====================
@@ -253,11 +259,44 @@ def _extract_json_array(text: str) -> list:
     return json.loads(text)
 
 
-def make_recommendations() -> list[dict]:
-    """금고 전체를 읽고 베어글스 맞춤 글감 10개를 추천(JSON 배열)."""
+def _research_context() -> str:
+    """네이버 실측 요약(sns_automation.naver_search) — 없으면 빈 문자열."""
+    try:
+        from sns_automation import naver_search
+        return naver_search.as_prompt_context()
+    except Exception:  # noqa: BLE001 — 실측이 없어도 추천은 돌아야 한다
+        return ""
+
+
+def _inflow_context(limit: int = 15) -> str:
+    """스마트플레이스 유입 검색어(first_party) — 없으면 빈 문자열."""
+    try:
+        from sns_automation import first_party
+        rows = first_party.inflow_keywords()[:limit]
+        return "\n".join(f"- {r['name']} ({r['count']}회)" for r in rows)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def make_recommendations(focus: list[str] | None = None) -> list[dict]:
+    """금고 + 네이버 실측 + 유입 검색어를 읽고 베어글스 맞춤 글감 10개를 추천(JSON 배열).
+
+    focus: 사장님이 정한 타겟 키워드(2026-09-16). 있으면 각 키워드를 main_keyword 로 하는
+    글감을 최소 1개씩 앞 번호에 넣게 한다 — 사장님이 먼저 정하고 AI 는 그 위에서 고른다.
+    """
     client, cfg, gp = _client_cfg()
     knowledge, seo = load_knowledge()
-    prompt = REC_PROMPT.format(knowledge=knowledge, seo=seo,
+    focus = [f.strip() for f in (focus or []) if f and f.strip()]
+    if focus:
+        focus_txt = ("★★ 최우선 — 사장님이 직접 정한 타겟 키워드: " + ", ".join(focus) + "\n"
+                     "   각 키워드를 main_keyword 로 하는 글감을 **최소 1개씩, 앞 번호(priority)**에 넣어라 — "
+                     "키워드는 그 글자 그대로. 나머지 자리는 아래 실측·유입 근거로 채운다. "
+                     "타겟 키워드가 실측에서 🔴/▫ 이면 why 에 그 사실을 한 줄 적되 글감은 만든다(사장님이 판단한다).")
+    else:
+        focus_txt = "(사장님이 정한 타겟 키워드 없음 — 아래 실측·유입 근거로 고른다)"
+    prompt = REC_PROMPT.format(knowledge=knowledge, seo=seo, focus=focus_txt,
+                               research=_research_context() or "(아직 실측 없음 — 경쟁·검색량을 모른다. 추측으로 채우지 말고 유입·금고 근거로)",
+                               inflow=_inflow_context() or "(아직 유입 데이터 없음)",
                                performance=load_performance() or "(아직 성과 데이터 없음)")
     raw = llm.complete(user=prompt, max_tokens=2500, prefer="gemini")
     return _extract_json_array(raw)

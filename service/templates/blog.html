@@ -33,15 +33,133 @@
 
   {% with cur=1 %}{% include "_blog_steps.html" %}{% endwith %}
 
+  {# ── 🔑 타겟 키워드 — 사장님이 먼저 정한다(2026-09-16). 체크한 키워드로 글감 추천·실측·초안 ── #}
+  <div class="sec" id="keywords">🔑 타겟 키워드
+    <span style="font-weight:400; color:var(--muted); font-size:12px;">— 내가 밀 키워드를 먼저 정하고, 그 위에서 주제를 뽑아요</span>
+  </div>
+  <div class="panel">
+    <form method="post" action="{{ url_for('blog_keywords', path_key=key) }}" style="display:flex; gap:8px; margin:0;">
+      <input type="hidden" name="action" value="add">
+      <input name="kw" placeholder="예: 송도 베이글 맛집, 송도 브런치" required
+             style="flex:1; min-width:0; font-size:14px; padding:9px 10px; border:1px solid var(--line); border-radius:9px; background:var(--card); color:var(--ink);">
+      <button class="btn sm" type="submit">＋ 추가</button>
+    </form>
+    <div style="font-size:12px; color:var(--muted); margin-top:5px;">쉼표로 여러 개. 아래에서 <b>체크한 키워드</b>로 글감을 뽑거나 바로 초안을 씁니다.</div>
+
+    {% if kw.targets %}
+    <div id="kwlist" style="margin-top:6px;">
+      {% for t in kw.targets %}
+      <div style="display:flex; align-items:flex-start; gap:9px; padding:8px 0; border-top:1px solid var(--line); font-size:13px;">
+        <input type="checkbox" class="kwbox" value="{{ t.kw }}" checked style="margin-top:3px; width:18px; height:18px;">
+        <div style="flex:1; min-width:0;">
+          <b>{{ t.kw }}</b>
+          {% if t.emoji %}<span style="font-size:12px; color:var(--muted);"> {{ t.emoji }} {{ t.tier_ko }}{% if t.volume %} · 월 {{ '{:,}'.format(t.volume) }}회{% endif %}</span>{% endif %}
+          {% if t.why %}<div style="font-size:12px; color:var(--muted);">{{ t.why }}</div>
+          {% elif not t.tier %}<div style="font-size:12px; color:var(--muted);">아직 실측 전 — 아래 [🔎 실측]을 누르면 경쟁·검색량이 붙어요</div>{% endif %}
+        </div>
+        <form method="post" action="{{ url_for('blog_keywords', path_key=key) }}" style="margin:0;">
+          <input type="hidden" name="action" value="remove">
+          <input type="hidden" name="kw" value="{{ t.kw }}">
+          <button class="btn sm" type="submit" title="타겟에서 빼기" style="padding:3px 8px; font-size:12px;">✕</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <form method="post" action="{{ url_for('blog_recommend', path_key=key) }}" class="kwform" style="flex:1;">
+        <button class="btn wide primary" type="submit" {{ 'disabled' if not worker.alive else '' }}>🎯 체크한 키워드로 글감 추천</button>
+      </form>
+      <form method="post" action="{{ url_for('blog_research', path_key=key) }}" class="kwform" style="flex:1;">
+        <button class="btn wide" type="submit" {{ 'disabled' if not worker.alive else '' }}>🔎 경쟁·검색량 실측</button>
+      </form>
+    </div>
+    <details style="margin-top:8px;">
+      <summary style="cursor:pointer; font-size:13px; color:var(--accent);">✍️ 추천을 거치지 않고 체크한 키워드로 바로 초안 쓰기</summary>
+      <form method="post" action="{{ url_for('blog_draft', path_key=key) }}" class="kwform" style="margin-top:8px;">
+        <input name="title" placeholder="주제 한 줄 (비우면 첫 번째 키워드가 주제)"
+               style="width:100%; box-sizing:border-box; font-size:14px; padding:9px 10px; border:1px solid var(--line); border-radius:9px; background:var(--card); color:var(--ink); margin-bottom:6px;">
+        <div style="display:flex; gap:8px; align-items:center;">
+          <select name="post_type" style="font-size:13px; padding:8px; border:1px solid var(--line); border-radius:9px; background:var(--card); color:var(--ink);">
+            {% for pt in ['정보성', '후기', '신메뉴', '일상', '이벤트'] %}<option value="{{ pt }}">{{ pt }}</option>{% endfor %}
+          </select>
+          <button class="btn sm" type="submit" style="flex:1;" {{ 'disabled' if not worker.alive else '' }}>② 초안 쓰기</button>
+        </div>
+        <div style="font-size:12px; color:var(--muted); margin-top:5px;">첫 번째 체크 = 대표 키워드(제목·첫 문단·소제목에 3~5회), 나머지 = 세부 키워드.</div>
+      </form>
+    </details>
+    {% else %}
+    <div class="empty" style="margin-top:8px;">아직 타겟 키워드가 없어요. 위에 적어 넣거나, 아래 <b>💡 추천 키워드</b>에서 [＋]를 눌러 담아요.</div>
+    {% endif %}
+  </div>
+
+  {# ── 💡 추천 키워드 — 시스템이 고른 것은 따로 본다: 네이버 실측(기회 순) · 우리 유입 검색어 ── #}
+  <details class="panel" style="margin-top:10px;" {{ 'open' if not kw.targets else '' }}>
+    <summary style="cursor:pointer; font-size:14px; font-weight:600;">💡 추천 키워드
+      <span style="font-weight:400; color:var(--muted); font-size:12px;">— 네이버 실측{% if kw.scanned_at %} ({{ kw.scanned_at }}){% endif %} · 우리 유입 검색어</span>
+    </summary>
+    {% if kw.suggested %}
+    <div style="font-size:12px; color:var(--muted); margin-top:8px;">이길 수 있는 순(검색량 × 빈자리). [＋]를 누르면 타겟에 들어갑니다.</div>
+    {% for r in kw.suggested %}
+    <div style="display:flex; align-items:flex-start; gap:9px; padding:7px 0; border-top:1px solid var(--line); font-size:13px;">
+      <div style="flex:1; min-width:0;">
+        <b>{{ r.emoji }} {{ r.keyword }}</b>
+        {% if r.volume %}<span style="font-size:12px; color:var(--muted);"> · 월 {{ '{:,}'.format(r.volume) }}회</span>{% endif %}
+        <div style="font-size:12px; color:var(--muted);">{{ r.why }}</div>
+      </div>
+      <form method="post" action="{{ url_for('blog_keywords', path_key=key) }}" style="margin:0;">
+        <input type="hidden" name="action" value="add"><input type="hidden" name="src" value="research">
+        <input type="hidden" name="kw" value="{{ r.keyword }}">
+        <button class="btn sm" type="submit" style="padding:3px 9px; font-size:12px;">＋</button>
+      </form>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="empty" style="margin-top:8px;">아직 네이버 실측 결과가 없어요. 집 PC 가 주 1회 조사하고, 타겟을 체크한 뒤 [🔎 실측]으로 바로 돌릴 수도 있어요.</div>
+    {% endif %}
+    {% if kw.inflow %}
+    <div style="font-size:13px; font-weight:600; margin-top:12px;">📍 우리 가게로 실제 손님이 들어온 검색어</div>
+    <div style="font-size:12px; color:var(--muted);">스마트플레이스 유입(주간). 실측 등급보다 이게 먼저예요 — 이미 손님을 데려온 말이니까.</div>
+    {% for r in kw.inflow %}
+    <div style="display:flex; align-items:center; gap:9px; padding:6px 0; border-top:1px solid var(--line); font-size:13px;">
+      <div style="flex:1;"><b>{{ r.name }}</b> <span style="font-size:12px; color:var(--muted);">{{ r.count }}회</span></div>
+      <form method="post" action="{{ url_for('blog_keywords', path_key=key) }}" style="margin:0;">
+        <input type="hidden" name="action" value="add"><input type="hidden" name="src" value="inflow">
+        <input type="hidden" name="kw" value="{{ r.name }}">
+        <button class="btn sm" type="submit" style="padding:3px 9px; font-size:12px;">＋</button>
+      </form>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% if kw.avoid %}
+    <details style="margin-top:10px;">
+      <summary style="cursor:pointer; font-size:12px; color:var(--muted);">피하는 게 나은 키워드 {{ kw.avoid|length }}개 (검색량 적음·경쟁 굳음)</summary>
+      {% for r in kw.avoid %}
+      <div style="font-size:12px; color:var(--muted); padding:4px 0;">{{ r.emoji }} <b>{{ r.keyword }}</b> — {{ r.why }}</div>
+      {% endfor %}
+    </details>
+    {% endif %}
+  </details>
+  <script>
+    // 체크한 타겟 키워드를 실행 폼(추천·실측·바로 초안)에 kw 로 실어 보낸다
+    document.querySelectorAll('form.kwform').forEach(function (f) {
+      f.addEventListener('submit', function () {
+        f.querySelectorAll('input[name=kw]').forEach(function (h) { h.remove(); });
+        document.querySelectorAll('.kwbox:checked').forEach(function (c) {
+          var h = document.createElement('input'); h.type = 'hidden'; h.name = 'kw'; h.value = c.value; f.appendChild(h);
+        });
+      });
+    });
+  </script>
+
   {# ── ① 주제 뽑기 ─────────────────────────────────────────────── #}
   <div class="sec">① 주제 뽑기</div>
   <div class="row">
     <form method="post" action="{{ url_for('blog_recommend', path_key=key) }}" style="flex:1;">
-      <button class="btn wide" type="submit" {{ 'disabled' if not worker.alive else '' }}>🎯 글감 추천</button>
+      <button class="btn wide" type="submit" {{ 'disabled' if not worker.alive else '' }}>🎯 글감 추천 (타겟 없이 전체 근거로)</button>
     </form>
   </div>
   <div style="font-size:12px; color:var(--muted); margin:6px 0 10px;">
-    글감은 네이버 실측(수요·경쟁·검색량)과 우리 유입 검색어로 고른 순서예요.
+    글감은 타겟 키워드 → 네이버 실측(수요·경쟁·검색량) → 우리 유입 검색어 순서의 근거로 고릅니다.
     사진은 초안이 나온 뒤 글 화면의 📸 자리마다 폰에서 바로 올립니다.
   </div>
 

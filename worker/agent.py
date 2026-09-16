@@ -2010,6 +2010,7 @@ def maybe_naver_research() -> None:
         sys.path.insert(0, str(ROOT))
         from sns_automation import naver_search
         data = naver_search.research()
+        naver_search.publish_summary(data)      # 직원 웹 '💡 추천 키워드' 칸이 본다(2026-09-16)
         logger.info("네이버 실측: %d개 조사, 쓸 만한 키워드 %s",
                     len(data.get("rows") or []),
                     ", ".join(data.get("winnable") or []) or "없음")
