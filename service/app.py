@@ -2635,19 +2635,51 @@ def _blog_quality(post_id, body: str) -> dict | None:
     return q
 
 
-def _blog_step(post: dict, quality: dict | None = None) -> int:
-    """5단계(주제→초안→사진→품질→임시저장) 중 이 글이 지금 서 있는 칸.
+_WISH_RE = re.compile(r"\[\s*📸\s*부탁\s*[:：]")
+_MEDIA_RE = re.compile(r"\[\s*[📷🎬]\s*[^\]]+\]")
 
-    초안이 있으면 ③, 지금 본문 그대로 채점돼 있으면 ⑤ 임시저장 차례,
-    네이버에 넣었으면 전부 끝(6). 글을 고치면 채점이 낡아 다시 ③으로.
+
+def _blog_media_counts(body: str) -> tuple[int, int]:
+    """(넣은 사진·영상 수, 아직 빈 사진 자리 수)."""
+    body = body or ""
+    return len(_MEDIA_RE.findall(body)), len(_WISH_RE.findall(body))
+
+
+def _blog_step(post: dict, quality: dict | None = None) -> int:
+    """5단계(주제→초안→사진·영상→품질→예약 발행) 중 이 글이 지금 서 있는 칸.
+
+    ③ 사진 자리(📸 부탁)가 남아 있거나 사진이 0장 → ④ 자리를 다 채웠는데 지금 글로 채점이 안
+    됐다 → ⑤ 채점이 최신이다(예약 차례) → 6 네이버에 넣었다/예약됐다(끝).
+    사진 여부를 안 보던 옛 판정(③→⑤ 점프)은 초보자에게 "사진 안 올렸는데 왜 예약 차례?"가 됐다
+    (UX 정리 2026-09-17).
     """
     if not post:
         return 1
-    if post.get("prepared_at"):
+    if post.get("prepared_at") or post.get("status") in ("scheduled", "published"):
         return 6
     if quality and quality.get("fresh"):
         return 5
+    media, wishes = _blog_media_counts(post.get("body", ""))
+    if media and not wishes:
+        return 4
     return 3
+
+
+def _blog_next(post: dict) -> dict:
+    """진행 중인 글 카드에 붙는 '다음 할 일' 한 줄 — 초보자가 무엇을 누를지 바로 알게."""
+    step = post.get("step") or 3
+    media, wishes = _blog_media_counts(post.get("body", ""))
+    if post.get("status") == "scheduled":
+        return {"n": 5, "icon": "📅", "text": "예약됨 " + ((post.get("scheduled_at") or "")[5:16].replace("T", " ")), "done": True}
+    if step >= 6:
+        return {"n": 5, "icon": "📅", "text": "임시저장만 됨 — 시각을 정해 예약 발행", "done": False}
+    if step == 5:
+        return {"n": 5, "icon": "📅", "text": "품질 확인 끝 — 예약 발행만 남았어요", "done": False}
+    if step == 4:
+        return {"n": 4, "icon": "🔍", "text": f"사진 {media}장 다 넣음 — 품질 확인 누르기", "done": False}
+    if wishes:
+        return {"n": 3, "icon": "📷", "text": f"사진·영상 올릴 자리 {wishes}곳" + (f" (넣은 것 {media})" if media else ""), "done": False}
+    return {"n": 3, "icon": "📷", "text": "사진·영상을 올려 주세요", "done": False}
 
 
 BLOG_UPLOAD_MAX = 15 * 1024 * 1024        # 폰 원본 사진도 넉넉한 15MB
@@ -2822,7 +2854,7 @@ def _blog_job_view(job) -> dict | None:
     if not job:
         return None
     label = {
-        "blog_recommend": "글감 추천", "blog_draft": "초안 작성",
+        "blog_recommend": "주제 뽑기", "blog_draft": "초안 작성",
         "blog_publish": "네이버 초안 넣기", "blog_rank": "순위 확인",
         "blog_media": "사진함 살펴보기", "blog_learn": "수정에서 배우기",
         "blog_react": "반응 수집", "blog_plan": "채널 배분안",
@@ -2876,6 +2908,7 @@ def blog_home(path_key):
         _all_q = {}
     for p in posts:
         p["step"] = _blog_step(p, _blog_quality(p["id"], p.get("body", "")) if str(p["id"]) in _all_q else None)
+        p["next"] = _blog_next(p)
     # ✅ 발행 완료는 진행 중인 글과 따로 관리한다(사장님 2026-09-17) — 발행일 순, 반응·순위를 붙여서.
     published = [p for p in posts if p.get("status") == "published"]
     posts = [p for p in posts if p.get("status") != "published"]
@@ -2890,8 +2923,24 @@ def blog_home(path_key):
         p["perf"] = perf.get(m.group(1)) if m else None
         p["rank"] = rank_by_kw.get(p.get("main_keyword") or "")
         p["pub_day"] = (p.get("published_at") or "")[:10]
+    kwd = _blog_keywords()
+    # '지금 할 일' 하나 — 초보자는 화면에서 다음에 누를 버튼 하나만 알면 된다(UX 정리 2026-09-17).
+    # 하던 글이 있으면 그것부터(시작한 걸 끝내기) → 주제가 있으면 고르기 → 키워드가 있으면 주제 뽑기 → 키워드 넣기.
+    waiting = [p for p in posts if p.get("status") != "scheduled"]
+    if "blog_draft" in busy:
+        todo = {"n": 2, "text": "AI 가 초안을 쓰는 중이에요 (1~3분). 끝나면 아래 '진행 중인 글'에 나타나요.", "cta": "", "href": ""}
+    elif waiting:
+        p0 = sorted(waiting, key=lambda p: -(p.get("step") or 0))[0]
+        todo = {"n": p0["next"]["n"], "text": f"「{(p0.get('title') or '(제목 없음)')[:28]}」 — {p0['next']['icon']} {p0['next']['text']}",
+                "cta": "글 열기 →", "href": url_for("blog_post", path_key=path_key, post_id=p0["id"])}
+    elif recs:
+        todo = {"n": 3, "text": "주제가 준비됐어요. 마음에 드는 주제의 [✍️ 이 주제로 초안 만들기]를 누르세요.", "cta": "주제 보기 ↓", "href": "#topics"}
+    elif kwd["targets"]:
+        todo = {"n": 2, "text": "키워드가 있어요. [🎯 주제 뽑기]를 누르면 AI 가 주제 10개를 만들어요.", "cta": "주제 뽑기 ↓", "href": "#keywords"}
+    else:
+        todo = {"n": 1, "text": "먼저 밀고 싶은 키워드를 1~3개 넣어 주세요. 뭘 넣을지 모르면 💡 추천에서 [＋]를 누르세요.", "cta": "키워드 넣기 ↓", "href": "#keywords"}
     return render_template("blog.html", key=path_key, posts=posts, recs=recs, published=published,
-                           kw=_blog_keywords(), plans=plans, note=(request.args.get("note") or "")[:200],
+                           kw=kwd, todo=todo, plans=plans, note=(request.args.get("note") or "")[:200],
                            drafting=("blog_draft" in busy),
                            store=_store_info(), store_fields=STORE_FIELDS,
                            ranks=ranks, job=job, worker=_worker_view(), error=error)
