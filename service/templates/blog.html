@@ -40,6 +40,19 @@
 
   {% with cur=todo.n %}{% include "_blog_steps.html" %}{% endwith %}
 
+  {# 처음 사용자 안내 — 접혀 있고, 한 번 읽으면 됨. 다섯 줄로 전체 흐름(UX 정리 2026-09-17). #}
+  <details class="panel" style="padding:10px 14px; margin-bottom:12px;">
+    <summary style="cursor:pointer; font-size:13px; font-weight:600;">❓ 처음이세요? 이 화면은 이렇게 써요</summary>
+    <ol style="margin:8px 0 0; padding-left:20px; font-size:13px; line-height:1.7;">
+      <li><b>키워드</b> — 손님이 네이버에 칠 말을 1~3개 넣어요. 모르겠으면 💡 추천에서 [＋].</li>
+      <li><b>주제 뽑기</b> — [🎯 주제 뽑기]를 누르면 AI 가 그 키워드로 글 주제 10개를 만들어요 (1~3분).</li>
+      <li><b>주제 고르기</b> — 마음에 드는 주제의 [✍️ 이 주제로 초안 만들기]. 글이 생기면 '진행 중인 글'에 나타나요.</li>
+      <li><b>글 열기</b> — 사진 자리마다 [📷 사진·영상 올리기]로 폰에서 올리고, [🔍 품질 채점]으로 점수를 봐요.</li>
+      <li><b>예약 발행</b> — 시각을 확인하고 [📅 이 시각에 예약 발행]. 나머지는 집 PC 가 네이버에 넣어요.</li>
+    </ol>
+    <div style="font-size:12px; color:var(--muted); margin-top:6px;">맨 위 <b>👉 지금 할 일</b>이 다음에 누를 버튼을 알려줘요. 그것만 따라가면 됩니다.</div>
+  </details>
+
   {# ══ 1단계 키워드 — 사장님이 먼저 정한다(2026-09-16). 체크한 키워드로 주제 뽑기·실측·초안 ══ #}
   <div class="sec" id="keywords">1단계 · 🔑 키워드 정하기
     <span style="font-weight:400; color:var(--muted); font-size:12px;">— 손님이 네이버에 칠 말. 1~3개면 충분해요</span>

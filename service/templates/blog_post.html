@@ -8,6 +8,30 @@
 
   <div style="margin-top:10px;">{% with cur=step %}{% include "_blog_steps.html" %}{% endwith %}</div>
 
+  {# ══ 지금 할 일 — 글 화면에서도 한 줄(UX 정리 2026-09-17). 사진 자리 → 품질 → 예약 순서로 안내. ══ #}
+  {% if not preview %}
+  {% set nw = purpose.wishes|length if purpose else 0 %}
+  <div class="panel" style="border-color:var(--accent); background:var(--accent-bg); padding:12px 14px;">
+    <div style="font-size:12px; color:var(--accent); font-weight:700;">👉 지금 할 일 · {{ 5 if step > 5 else step }}단계</div>
+    <div style="font-size:14px; margin-top:3px; line-height:1.5;">
+      {% if post.status == 'published' %}✅ 발행이 끝난 글이에요. 홈의 '발행 완료'에서 반응을 볼 수 있어요.
+      {% elif post.status == 'scheduled' %}📅 {{ post.scheduled_at[:16].replace('T',' ') if post.scheduled_at else '' }} 에 예약돼 있어요. 더 할 일은 없어요.
+      {% elif publishing %}⏳ 집 PC 가 네이버에 글·사진을 넣는 중이에요 (2~4분). 이 화면은 스스로 새로 그려져요.
+      {% elif scoring %}⏳ 품질을 채점하는 중이에요 (30초~2분). 기다리면 돼요.
+      {% elif step >= 6 %}💾 네이버에 임시저장만 됐어요. 아래 ⑤에서 시각을 보고 <b>[📅 이 시각에 예약 발행]</b>을 누르세요.
+      {% elif step == 5 %}🔍 품질 확인 끝({{ quality.score }}점). 아래 ⑤에서 시각을 보고 <b>[📅 이 시각에 예약 발행]</b>을 누르세요.
+      {% elif step == 4 %}📷 사진·영상을 다 넣었어요. 아래 ④의 <b>[🔍 품질 채점]</b>을 누르세요.
+      {% elif nw %}📷 사진·영상 올릴 자리가 <b>{{ nw }}곳</b> 남았어요. 자리마다 어떤 사진이 좋은지 적혀 있어요 — <b>[📷 사진·영상 올리기]</b>를 누르고 폰에서 고르면 끝.
+      {% else %}📷 사진·영상을 올려 주세요. 문단 아래 <b>[＋ 여기 뒤에 사진·영상]</b>을 누르면 그 자리에 들어가요.{% endif %}
+    </div>
+    {% if post.status in ('published', 'scheduled') or publishing or scoring %}
+    {% elif step >= 5 %}<a class="btn sm primary" href="#reserve" style="margin-top:8px; text-decoration:none;">⑤ 예약 발행으로 ↓</a>
+    {% elif step == 4 %}<a class="btn sm primary" href="#quality" style="margin-top:8px; text-decoration:none;">④ 품질 확인으로 ↓</a>
+    {% elif nw %}<a class="btn sm primary" href="#w{{ purpose.wishes[0].i }}" style="margin-top:8px; text-decoration:none;">첫 번째 사진 자리로 ↓</a>
+    {% else %}<a class="btn sm primary" href="#article" style="margin-top:8px; text-decoration:none;">글로 ↓</a>{% endif %}
+  </div>
+  {% endif %}
+
   {% if note %}<div class="note">📨 {{ note }}</div>{% endif %}
 
   <div class="card">
@@ -248,7 +272,7 @@
   </details>
 
   {# ══ ④ 품질 확인 — 임시저장 전에 지금 글 그대로를 채점한다(사장님 2026-09-15) ══ #}
-  <div class="sec" id="quality">④ 품질 확인
+  <div class="sec" id="quality" style="scroll-margin-top:12px;">④ 품질 확인
     <span style="font-weight:400; color:var(--muted); font-size:12px;">— 사진·수정을 반영한 지금 글 기준 · 기준 {{ quality_min }}점</span>
   </div>
     {% if scoring %}<div class="note">⏳ 채점 중이에요 (30초~2분) — 끝나면 이 화면이 스스로 새로 그려집니다.</div>{% endif %}
@@ -309,7 +333,7 @@
 
   {# ══ ⑤ 예약 발행 — 사장님 2026-09-15: 임시저장까지가 아니라 예약 발행까지.
      글마다 사람이 시각을 보고 누른다. 추천 시각은 규칙(아침 08:00)으로 미리 채운다. ══ #}
-  <div class="sec">⑤ 예약 발행</div>
+  <div class="sec" id="reserve" style="scroll-margin-top:12px;">⑤ 예약 발행</div>
   {% if publishing %}<div class="note">⏳ 집 PC가 네이버에 넣는 중이에요 (2~4분). 끝나면 이 화면이 새로 그려집니다.</div>{% endif %}
   {% if post.status == 'scheduled' and post.scheduled_at %}
   <div class="note" style="margin-bottom:8px;">📅 <b>{{ post.scheduled_at[:16].replace('T',' ') }}</b> 에 예약 발행이 걸려 있어요.
