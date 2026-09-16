@@ -2793,6 +2793,13 @@ def _blog_chunks(body: str) -> list[str]:
     return [c for c in out if c.strip()]
 
 
+@app.template_filter("emph")
+def _emph(text: str):
+    """`**굵게**` 를 <b> 로 — 글 화면이 네이버에 들어갈 모습(굵게)을 그대로 보여 준다(2026-09-17)."""
+    from markupsafe import Markup, escape
+    return Markup(re.sub(r"\*\*([^*\n]+?)\*\*", r"<b>\1</b>", str(escape(text or ""))))
+
+
 def _blog_render(body: str) -> list[dict]:
     """본문 → 네이버에 들어갈 모습 그대로의 블록 목록(문단·소제목·구분선·사진·정보·태그)."""
     import hashlib

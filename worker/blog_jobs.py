@@ -349,10 +349,10 @@ def do_draft(payload: dict) -> tuple[int, str]:
     #   태그가 DB에만 있고 네이버엔 안 들어가고 있었다). 네이버 공식 태그칸은
     #   발행(예약) 레이어에만 있는데 그건 이제 사람이 직접 다루므로, 태그
     #   노출은 본문 해시태그로 잡는다. 태그칸은 사람이 발행할 때 직접 채운다.
-    # AI 가 프롬프트의 강조를 흉내 내 본문에 **굵게** 를 쓴다(2026-09-15 실측) — 네이버는
-    # 별표를 그대로 찍는다. 저장 전에 걷어낸다(퇴고·키워드 보강 뒤라 여기서 한 번).
-    body = re.sub(r"\*\*(.+?)\*\*", r"\1", body)
-    body = re.sub(r"(?<![*\w])\*(?!\*)([^*\n]+?)\*(?![*\w])", r"\1", body)
+    # `**굵게**` 는 살린다(사장님 2026-09-17 가독성) — 네이버에 넣을 때 굵게로 바뀌고(naver_autodraft
+    # _type_rich), 웹 글 화면도 굵게로 그린다(app emph 필터). 절마다 하나로 제한 — 너무 많으면 강조가 아니다.
+    body = _cap_bold(body)
+    body = re.sub(r"(?<![*\w])\*(?!\*)([^*\n]+?)\*(?![*\w])", r"\1", body)   # 기울임(*x*)은 걷어낸다
     body = stamp_store_block(body)      # AI 가 뭐라고 썼든 [매장 정보]는 확정값으로
 
     tags = [t.strip().lstrip("#").replace(" ", "") for t in (data.get("tags") or [])]
@@ -388,18 +388,63 @@ def do_draft(payload: dict) -> tuple[int, str]:
                f" — {data.get('title', '')[:40]}")
 
 
-def build_blocks(body: str) -> tuple[list[dict], int]:
+def _cap_bold(body: str, per_section: int = 1) -> str:
+    """절(`## `)마다 `**굵게**` 를 앞에서 per_section 개만 남기고 나머지는 평문으로.
+    3줄 넘게 굵으면 강조가 아니라 소음이다(가독성 원칙 2026-09-17)."""
+    out, kept = [], 0
+    for line in (body or "").split("\n"):
+        if line.startswith("## "):
+            kept = 0
+        def sub(m):
+            nonlocal kept
+            kept += 1
+            return m.group(0) if kept <= per_section else m.group(1)
+        out.append(re.sub(r"\*\*([^*\n]+?)\*\*", sub, line))
+    return "\n".join(out)
+
+
+def _last_sentence(text: str, limit: int = 60) -> str:
+    """토막의 마지막 문장 — 사진 바로 앞 문장이 곧 그 사진의 설명이다(프롬프트 규칙)."""
+    t = re.sub(r"\*\*|^#{1,4}\s*", "", text or "", flags=re.M).strip()
+    parts = [p.strip() for p in re.split(r"(?<=[.!?。])\s+|\n", t) if p.strip()]
+    return (parts[-1] if parts else "")[:limit]
+
+
+def _seo_name(kw: str, n: int, ext: str) -> str:
+    """업로드 파일 이름 — 키워드가 들어간 이름(예: 송도-베이글-샌드위치-03.jpg).
+    네이버는 올린 파일 이름을 이미지 정보에 남긴다 — 'IMG_0123.jpg' 보다 낫다(사장님 2026-09-17)."""
+    base = re.sub(r"[^\w가-힣]+", "-", (kw or "베어글스-송도").strip()).strip("-") or "베어글스-송도"
+    return f"{base}-{n:02d}{ext.lower()}"
+
+
+def build_blocks(body: str, *, main_keyword: str = "", sub_keywords=None,
+                 title: str = "") -> tuple[list[dict], int]:
     """본문을 '글 토막 + 올릴 사진 파일' 순서로 바꾼다.
 
     사진은 여기서 미리 업로드용으로 손질한다(세로사진 회전·HEIC 변환·1600px 축소).
     사진함을 못 읽으면 글자만 넣는 예전 방식으로 조용히 되돌아간다.
+
+    사장님 2026-09-17: 올리는 사진·영상에도 제목·내용·키워드를 붙인다.
+      · 파일 이름 → 대표 키워드 + 번호(_seo_name)
+      · caption(사진 설명·영상 내용) → 바로 앞 문장(프롬프트가 '사진 앞 문장은 사진 설명'으로 쓰게 한다)
+      · 영상 제목 → 「대표 키워드 | 앞 문장」 40자, 영상 태그 → 대표·세부 키워드(공백 뺌, 최대 5개)
+    에디터 쪽(naver_autodraft)이 칸을 못 찾으면 그냥 건너뛴다 — 글은 계속.
     """
+    import shutil
     try:
         import blog_media
     except Exception:  # noqa: BLE001
         return [], 0
     raw, _media = blog_media.resolve_body(body)
+    subs = [k.strip() for k in (sub_keywords or []) if k and k.strip()]
+    tags = []
+    for k in [main_keyword] + subs:
+        k2 = re.sub(r"\s+", "", k or "")
+        if k2 and k2 not in tags:
+            tags.append(k2)
+    tags = tags[:5]
     blocks, n = [], 0
+    last_text = ""
     for b in raw:
         if b.get("type") == "text":
             # 마크다운을 베어글스 서식 블록으로 푼다:
@@ -426,12 +471,29 @@ def build_blocks(body: str) -> tuple[list[dict], int]:
                         blocks.append({"type": "text", "text": rest})
                     continue
                 blocks.append({"type": "text", "text": chunk})
+            last_text = b.get("text", "") or last_text
             continue
         try:
             path = blog_media.prepare(b["rel"]) if b["type"] == "photo" \
                 else blog_media.full_path(b["rel"])
-            blocks.append({"type": b["type"], "path": str(path),
-                           "rel": b["rel"], "caption": b.get("caption", "")})
+            path = pathlib.Path(path)
+            # 키워드가 든 이름으로 사본을 만들어 그걸 올린다(원본은 그대로)
+            try:
+                named = blog_media.CACHE_DIR / "named" / _seo_name(main_keyword, n + 1, path.suffix)
+                if not named.exists() or named.stat().st_size != path.stat().st_size:
+                    named.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(path, named)
+                path = named
+            except Exception as e:  # noqa: BLE001 — 이름 바꾸기 실패는 원래 파일로
+                logger.warning("업로드 이름 바꾸기 실패(%s): %s", b.get("rel"), str(e)[:80])
+            caption = _last_sentence(last_text) or (b.get("caption") or "")
+            kw = (main_keyword or "").strip()
+            vtitle = (f"{kw} | {caption}" if kw and caption else (caption or kw or title or "베어글스 송도"))[:40]
+            blocks.append({"type": b["type"], "path": str(path), "rel": b["rel"],
+                           "caption": caption,
+                           "title": vtitle,
+                           "desc": (caption + (" | 베어글스 송도타임스페이스점" if caption else "베어글스 송도타임스페이스점"))[:200],
+                           "tags": tags})
             n += 1
         except Exception as e:  # noqa: BLE001 — 사진 한 장 때문에 글 전체를 막지 않는다
             logger.warning("사진 준비 실패(%s): %s", b.get("rel"), str(e)[:100])
@@ -540,7 +602,9 @@ def do_publish(payload: dict) -> tuple[int, str]:
         body = stamped
         # 웹에는 부탁 메모를 남긴 채 매장 정보만 갱신해 둔다
         store.update_post(post_id, body=stamp_store_block(post.get("body") or ""))
-    blocks, _prepared = build_blocks(body)
+    blocks, _prepared = build_blocks(body, main_keyword=post.get("main_keyword") or "",
+                                     sub_keywords=post.get("sub_keywords") or [],
+                                     title=post.get("title") or "")
 
     # 예약 발행(사장님 2026-09-15 — 8/29 의 '임시저장까지만'을 번복). 글마다 사람이
     # 시각을 보고 [예약 발행]을 눌러야만 온다. 초안 생성이 스스로 예약을 걸진 않는다.

@@ -319,8 +319,51 @@ def _dim_gone(frame: Frame) -> bool:
         return True
 
 
+def _fill_video_meta(page: Page, frame: Frame, desc: str, tags) -> None:
+    """영상 첨부 레이어의 내용(설명)·태그 칸 — 있으면 채우고, 못 찾으면 건너뛴다(사장님 2026-09-17).
+
+    nvu(네이버 동영상 업로더)의 제목 칸(input.nvu_inp)만 DOM 으로 확인돼 있다. 설명·태그 칸은
+    후보 선택자로 더듬는다 — 실제 이름은 다음 발행 때 posts/_debug/video_layer.html 로 확인.
+    """
+    found = []
+    if desc:
+        for sel in ("textarea.nvu_txt", "textarea[class*='nvu']", ".nvu_desc textarea",
+                    "textarea[placeholder*='설명']", "textarea[placeholder*='내용']", "textarea"):
+            try:
+                loc = frame.locator(sel).first
+                if loc.count() and loc.is_visible():
+                    loc.click(timeout=2000)
+                    loc.fill(desc[:200])
+                    found.append("내용")
+                    break
+            except Exception:  # noqa: BLE001
+                continue
+    if tags:
+        for sel in ("input.nvu_inp_tag", "input[placeholder*='태그']", "input[class*='tag']",
+                    "[class*='tag'] input[type='text']"):
+            try:
+                loc = frame.locator(sel).first
+                if loc.count() and loc.is_visible():
+                    for tg in list(tags)[:5]:
+                        loc.click(timeout=2000)
+                        loc.fill(str(tg)[:20])
+                        page.keyboard.press("Enter")
+                        page.wait_for_timeout(200)
+                    found.append(f"태그 {min(len(tags), 5)}개")
+                    break
+            except Exception:  # noqa: BLE001
+                continue
+    try:
+        DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        (DEBUG_DIR / "video_layer.html").write_text(frame.content(), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+    print("    · 영상 정보 입력: " + (", ".join(found) if found else "설명·태그 칸을 못 찾음(제목만)"))
+
+
 def insert_video(page: Page, frame: Frame, selectors: dict, path: str,
-                 timeout_ms: int = 180000, title: str = "베어글스 송도") -> bool:
+                 timeout_ms: int = 180000, title: str = "베어글스 송도",
+                 desc: str = "", tags=None) -> bool:
     """'동영상' 버튼 흐름으로 영상 하나를 넣는다. 실패하면 False(글은 계속).
 
     실측한 실제 흐름(2026-08-28, 셀렉터까지 DOM 검증):
@@ -401,6 +444,8 @@ def insert_video(page: Page, frame: Frame, selectors: dict, path: str,
             title_box.click(timeout=3000)
             title_box.fill(title[:40])
             page.wait_for_timeout(300)
+            print(f"    · 영상 제목: {title[:40]}")
+        _fill_video_meta(page, frame, desc, tags)
         # 삽입 성공 판정은 클래스 이름에 걸지 않는다(SE 내부 클래스는 자주
         # 바뀐다). 대신 ①본문 컴포넌트 수가 늘었거나 ②업로더 레이어가 스스로
         # 닫혔으면 성공. 완료 클릭이 간혹 무시되면(실측) 한 번 더 누른다.
@@ -445,8 +490,31 @@ def insert_video(page: Page, frame: Frame, selectors: dict, path: str,
     return inserted
 
 
+def _fill_image_caption(page: Page, frame: Frame, caption: str) -> bool:
+    """방금 넣은 사진의 '사진 설명' 칸에 설명을 적는다(사장님 2026-09-17: 사진에도 제목).
+    네이버는 이 설명을 이미지 정보로 같이 노출한다. 칸을 못 찾으면 건너뛴다."""
+    if not caption:
+        return False
+    try:
+        comp = frame.locator(".se-component.se-image").last
+        for sel in (".se-caption .se-text-paragraph", ".se-module-caption .se-text-paragraph",
+                    "[class*='caption'] .se-text-paragraph", "[class*='caption']"):
+            cap = comp.locator(sel).first
+            if cap.count() and cap.is_visible():
+                cap.click(timeout=2000)
+                page.wait_for_timeout(150)
+                page.keyboard.type(caption[:60], delay=8)
+                page.wait_for_timeout(200)
+                print(f"    · 사진 설명: {caption[:30]}")
+                return True
+        print("    · 사진 설명 칸을 못 찾음(건너뜀)")
+    except Exception as e:  # noqa: BLE001
+        print(f"    · 사진 설명 입력 실패({str(e)[:50]})")
+    return False
+
+
 def insert_media(page: Page, frame: Frame, selectors: dict, path: str,
-                 timeout_ms: int = 60000) -> bool:
+                 timeout_ms: int = 60000, caption: str = "") -> bool:
     """본문 커서 위치에 사진(또는 영상) 파일 하나를 넣는다.
 
     네이버 에디터의 '사진' 버튼은 눌리면 파일 선택창(file chooser)을 연다.
@@ -499,6 +567,8 @@ def insert_media(page: Page, frame: Frame, selectors: dict, path: str,
     # 업로드 오류 팝업이 남아 있으면 닫는다(안 닫으면 이후 클릭 전부 막힘)
     if clear_popups(page, frame, selectors):
         print("    · 업로드 안내/오류 팝업을 닫았습니다.")
+    if inserted:
+        _fill_image_caption(page, frame, caption)
     # 사진을 넣으면 커서가 '사진 설명' 칸에 가 있을 수 있다. 그대로 두면
     # 다음 문단이 사진 설명으로 들어가 버린다 → 본문 맨 끝으로 커서를 되돌린다.
     _refocus_body(page, frame)
@@ -594,6 +664,27 @@ def insert_divider(page: Page, frame: Frame, selectors: dict) -> bool:
         return False
 
 
+# 가독성(사장님 2026-09-17): 본문 16(네이버 기본 15 — 폰에서 16이 편하다), 소제목 19 굵게 + 앞에
+# 빈 줄 하나, 절마다 핵심 문장 하나 `**굵게**`. 글자 색·글꼴은 다음 발행 때 툴바 DOM 을 받아 본
+# 뒤에 넣는다(posts/_debug/toolbar.json) — 못 찾는 선택자로 색을 걸면 다음 문단까지 물든다.
+BODY_SIZE = 16
+HEAD_SIZE = 19
+_BOLD_RE = re.compile(r"(\*\*[^*\n]+?\*\*)")
+
+
+def _type_rich(page: Page, frame: Frame, line: str) -> None:
+    """`**굵게**` 구간은 굵게를 켜고 친다. 별표는 안 찍는다."""
+    for part in _BOLD_RE.split(line):
+        if not part:
+            continue
+        if len(part) > 4 and part.startswith("**") and part.endswith("**"):
+            set_bold(page, frame, True)
+            page.keyboard.type(part[2:-2], delay=8)
+            set_bold(page, frame, False)
+        else:
+            page.keyboard.type(part, delay=8)
+
+
 def type_blocks(page: Page, frame: Frame, selectors: dict, body_loc,
                 blocks: list) -> None:
     """글 토막과 사진을 순서대로 넣는다.
@@ -605,6 +696,8 @@ def type_blocks(page: Page, frame: Frame, selectors: dict, body_loc,
     frame.wait_for_timeout(300)
     # 이전 문서에서 넘어온 굵게/취소선 등이 켜져 있으면 끈다(실제로 당한 문제)
     clear_text_toggles(page, frame)
+    if set_font_size(page, frame, selectors, BODY_SIZE):
+        print(f"    · 본문 글자 크기 {BODY_SIZE}")
     first_text = True
     for i, b in enumerate(blocks):
         btype = b.get("type")
@@ -625,10 +718,13 @@ def type_blocks(page: Page, frame: Frame, selectors: dict, body_loc,
                 page.keyboard.press("Enter")
                 page.wait_for_timeout(150)
             heading = b.get("style") == "heading"
+            if heading and not first_text:
+                page.keyboard.press("Enter")          # 소제목 앞 빈 줄 — 절이 눈에 나뉜다
+                page.wait_for_timeout(100)
             lines = text.replace("\r\n", "\n").split("\n")
             for j, line in enumerate(lines):
                 if line:
-                    page.keyboard.type(line, delay=8)
+                    _type_rich(page, frame, line)
                 if j < len(lines) - 1:
                     page.keyboard.press("Enter")
             if heading:
@@ -637,7 +733,7 @@ def type_blocks(page: Page, frame: Frame, selectors: dict, body_loc,
                 page.keyboard.press("Home")
                 page.keyboard.press("Shift+End")
                 page.wait_for_timeout(200)
-                set_font_size(page, frame, selectors, 19)
+                set_font_size(page, frame, selectors, HEAD_SIZE)
                 set_bold(page, frame, True)
                 page.keyboard.press("End")
                 page.wait_for_timeout(150)
@@ -645,7 +741,7 @@ def type_blocks(page: Page, frame: Frame, selectors: dict, body_loc,
                 page.wait_for_timeout(150)
                 # 다음 문단이 19·굵게를 물려받지 않게 되돌린다
                 set_bold(page, frame, False)
-                set_font_size(page, frame, selectors, 15)
+                set_font_size(page, frame, selectors, BODY_SIZE)
                 first_text = True
                 continue
             first_text = False
@@ -658,10 +754,12 @@ def type_blocks(page: Page, frame: Frame, selectors: dict, body_loc,
             name = pathlib.Path(path).name
             if b.get("type") == "video":
                 print(f"    · 동영상 넣는 중 ({i + 1}/{len(blocks)}) {name}")
-                ok = insert_video(page, frame, selectors, path)
+                ok = insert_video(page, frame, selectors, path,
+                                  title=b.get("title") or "베어글스 송도",
+                                  desc=b.get("desc") or "", tags=b.get("tags") or [])
             else:
                 print(f"    · 사진 넣는 중 ({i + 1}/{len(blocks)}) {name}")
-                ok = insert_media(page, frame, selectors, path)
+                ok = insert_media(page, frame, selectors, path, caption=b.get("caption") or "")
             b["inserted"] = ok           # 호출자(worker)가 사용완료 판단에 쓴다
             if ok:
                 page.wait_for_timeout(400)
@@ -723,6 +821,13 @@ def fill_editor(page: Page, cfg: dict, post: dict) -> Frame | None:
         return None
 
     dismiss_popup(frame, selectors)
+    try:   # 툴바 버튼 이름을 한 번 기록 — 글자 색·글꼴 선택자를 실측하려고(가독성 다음 단계)
+        DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        names = frame.locator("button[data-name]").evaluate_all(
+            "els => els.map(e => [e.getAttribute('data-name'), e.getAttribute('title') || e.textContent.trim().slice(0, 20)])")
+        (DEBUG_DIR / "toolbar.json").write_text(json.dumps(names, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
 
     title_loc = first_working(frame, selectors["title"])
     if not title_loc:
