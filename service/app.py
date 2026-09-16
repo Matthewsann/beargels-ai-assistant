@@ -2616,34 +2616,6 @@ _THUMB_BASE = (os.getenv("SUPABASE_URL", "").rstrip("/")
                if os.getenv("SUPABASE_URL") else "")
 
 
-# 집 PC 가 올려둔 '지금 블로그가 쓸 수 있는 사진' 목록(worker/blog_media.publish_catalog).
-BLOG_CATALOG_KEY = "state/blog_catalog.json"
-_blog_catalog_cache = {"at": 0.0, "items": []}
-
-
-def _blog_catalog() -> list[dict]:
-    """③ 사진 선택이 고를 수 있는 사진들. 60초 캐시 — 버킷을 매번 두드리지 않는다."""
-    import hashlib
-    now = time.time()
-    if now - _blog_catalog_cache["at"] < 60:
-        return _blog_catalog_cache["items"]
-    items = _blog_catalog_cache["items"]
-    try:
-        from sns_automation import cloud_sync
-        raw = cloud_sync._bucket().download(BLOG_CATALOG_KEY)
-        items = json.loads(raw.decode("utf-8")).get("items") or []
-        for it in items:
-            key = it.get("key") or (hashlib.sha1(it["rel"].encode("utf-8")).hexdigest()[:16] + ".jpg")
-            it["thumb"] = f"{_THUMB_BASE}/{key}" if _THUMB_BASE else ""
-            it["name"] = it["rel"].rpartition("/")[2]
-            it["video"] = it.get("kind") == "video"
-    except Exception as e:  # noqa: BLE001 — 목록이 없으면 빈 채로(고르기만 안 될 뿐)
-        db.log_error("service", f"블로그 사진 목록 읽기 실패: {e}",
-                     kind=type(e).__name__, path="_blog_catalog")
-    _blog_catalog_cache.update(at=now, items=items)
-    return items
-
-
 BLOG_SCORES_KEY = "blog_quality_scores"
 BLOG_QUALITY_MIN = 80
 
@@ -2679,21 +2651,44 @@ def _blog_step(post: dict, quality: dict | None = None) -> int:
 
 
 BLOG_UPLOAD_MAX = 15 * 1024 * 1024        # 폰 원본 사진도 넉넉한 15MB
+BLOG_VIDEO_MAX = 50 * 1024 * 1024         # 영상 — Supabase 버킷의 한 파일 상한(무료 플랜 50MB)
+_VIDEO_TYPES = {".mp4": "video/mp4", ".mov": "video/quicktime", ".m4v": "video/x-m4v"}
 
 
-def _blog_upload_photo(post_id: int, fs) -> str:
-    """폰에서 올린 사진을 버킷에 두고, 본문에 적을 경로(rel)를 돌려준다.
+def _blog_upload_media(post_id: int, fs) -> str:
+    """폰에서 올린 사진·영상을 버킷에 두고, 본문에 적을 경로(rel)를 돌려준다.
 
-    · 긴 변 1600px JPEG 로 줄여 `blogup/<글번호>/<이름>.jpg` (집 PC 가 가져간다)
-    · 640px 미리보기를 `blogthumbs/<해시>.jpg` — 글 화면에 바로 보이게
-    · rel = 업로드/글<번호>/<이름>.jpg — 집 PC 가 내려받을 자리와 같은 규칙
+    사진함 고르기는 없앴다(사장님 2026-09-16: "그냥 바로 업로드하는 게 편해") — 글에 들어가는
+    사진·영상은 전부 이 길로 들어온다.
+    · 사진: 긴 변 1600px JPEG 로 줄여 `blogup/<글번호>/<이름>.jpg` (집 PC 가 가져간다),
+      640px 미리보기를 `blogthumbs/<해시>.jpg` — 글 화면에 바로 보이게.
+    · 영상(mp4·mov·m4v, 2026-09-16): 손대지 않고 `blogup/<글번호>/<이름>.<ext>`. 미리보기는
+      집 PC(ffmpeg)가 뒤에 만든다 — 그전엔 🎬 칸으로 보인다. 네이버엔 툴바 [동영상]으로 들어간다
+      (automation/src/naver_autodraft.insert_video).
+    · rel = 업로드/글<번호>/<이름> — 집 PC 가 내려받을 자리와 같은 규칙(blog_media.pull_uploads)
     """
     import hashlib
     import io as _io
     import secrets
-    from PIL import Image, ImageOps
     from sns_automation import cloud_sync
 
+    ext = os.path.splitext(fs.filename or "")[1].lower()
+    ctype = (fs.mimetype or "").lower()
+    stamp = f"u{datetime.now(KST).strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}"
+
+    if ext in _VIDEO_TYPES or ctype.startswith("video/"):
+        raw = fs.read(BLOG_VIDEO_MAX + 1)
+        if not raw:
+            raise ValueError("영상이 비어 있어요.")
+        if len(raw) > BLOG_VIDEO_MAX:
+            raise ValueError("영상이 50MB 를 넘어요 — 폰에서 짧게 자르거나 화질을 낮춰 보내주세요.")
+        ext = ext if ext in _VIDEO_TYPES else ".mp4"
+        name = f"{stamp}{ext}"
+        cloud_sync._bucket().upload(f"blogup/{post_id}/{name}", raw,
+                                    {"content-type": _VIDEO_TYPES[ext], "upsert": "true"})
+        return f"업로드/글{post_id}/{name}"
+
+    from PIL import Image, ImageOps
     raw = fs.read(BLOG_UPLOAD_MAX + 1)
     if not raw:
         raise ValueError("사진이 비어 있어요.")
@@ -2708,7 +2703,7 @@ def _blog_upload_photo(post_id: int, fs) -> str:
     img = ImageOps.exif_transpose(img)
     if img.mode not in ("RGB", "L"):
         img = img.convert("RGB")
-    name = f"u{datetime.now(KST).strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}.jpg"
+    name = f"{stamp}.jpg"
     rel = f"업로드/글{post_id}/{name}"
 
     big = img.copy()
@@ -2914,12 +2909,6 @@ def blog_recommend(path_key):
     return _ask_worker(path_key, "blog_recommend")
 
 
-@app.route("/<path_key>/blog/media", methods=["POST"])
-def blog_media_scan(path_key):
-    """사진함에 새로 올린 사진을 집 PC가 살펴보게 한다."""
-    return _ask_worker(path_key, "blog_media")
-
-
 @app.route("/<path_key>/blog/plan", methods=["POST"])
 def blog_plan(path_key):
     """주제 소재를 채널별로 배분하는 안을 집 PC에 요청."""
@@ -3105,34 +3094,18 @@ def blog_post(path_key, post_id):
     preview = bool(prev) and request.args.get("v") == "prev"
     shown = prev if preview else post
     photos = _blog_photos((shown or {}).get("body", ""))
-    # ③ 사진 선택 — ?swap=<rel> 은 그 사진을 바꾸는 중, ?swap= (빈값)은 추가하는 중.
-    swap = request.args.get("swap")           # 이 사진을 바꾸는 중
-    after = request.args.get("after")         # 이 토막 뒤에 넣는 중
-    picking = swap is not None or after is not None
-    catalog = []
-    if picking:
-        used = {p["rel"] for p in photos}
-        catalog = [c for c in _blog_catalog() if c["rel"] not in used]
+    # ③ 사진·영상은 각 자리의 [올리기]로 바로 첨부한다 — 사진함 고르기 패널은 없앴다(사장님 2026-09-16).
     blocks = _blog_render((shown or {}).get("body", ""))
     quality = _blog_quality(post_id, post.get("body", ""))
     try:
         scoring = "blog_score" in blog.busy_kinds()
     except Exception:  # noqa: BLE001
         scoring = False
-    after_text = ""
-    after_wish = False                     # 부탁 메모 자리에 넣는 중(코멘트를 그대로 보여 준다)
-    if after not in (None, ""):
-        for b in blocks:
-            if str(b["i"]) == after and b.get("text"):
-                after_wish = b.get("t") == "wish"
-                after_text = b["text"][:120 if after_wish else 50]
     return render_template("blog_post.html", key=path_key, post=post,
                            photos=photos, step=_blog_step(post, quality), blocks=blocks,
                            quality=quality, scoring=scoring, quality_min=BLOG_QUALITY_MIN,
                            recommend=_recommend_publish_time(),
                            publishing=("blog_publish" in (blog.busy_kinds() if True else set())),
-                           picking=picking, swap=swap or "", after=after if after is not None else "",
-                           after_text=after_text, after_wish=after_wish, catalog=catalog,
                            purpose=_blog_purpose(post, (shown or {}).get("body", ""), blocks),
                            note=(request.args.get("note") or "")[:200],
                            prev=prev, preview=preview,
@@ -3147,11 +3120,12 @@ def blog_post(path_key, post_id):
 
 @app.route("/<path_key>/blog/post/<int:post_id>/photo", methods=["POST"])
 def blog_post_photo(path_key, post_id):
-    """③ 사진 선택 — 본문의 사진 표시를 빼고·바꾸고·더한다(집 PC 안 거침).
+    """③ 사진·영상 — 본문의 사진 표시를 빼고·바꾸고·더한다(집 PC 안 거침).
 
-    사진은 본문 안의 `[📷 경로]` 한 줄이 전부라, 그 줄만 고치면 된다. 자리는
-    AI 가 문맥에 맞춰 잡아둔 것이니 '바꾸기'는 같은 자리에 넣는다. 네이버에
-    넣어둔 임시저장본과는 달라지므로 prepared_at 을 지워 ④를 다시 하게 한다.
+    사진은 본문 안의 `[📷 경로]`/`[🎬 경로]` 한 줄이 전부라, 그 줄만 고치면 된다.
+    들어오는 길은 폰 업로드(upload_replace / upload_after)뿐이다 — 사진함 고르기는
+    2026-09-16 에 없앴다. 부탁 메모 자리에 올리면 메모가 그 사진으로 바뀐다.
+    네이버에 넣어둔 임시저장본과는 달라지므로 prepared_at 을 지워 ④를 다시 하게 한다.
     """
     check(path_key)
     act = request.form.get("action") or ""
@@ -3167,8 +3141,8 @@ def blog_post_photo(path_key, post_id):
         if act in ("upload_replace", "upload_after"):
             fs = request.files.get("photo")
             if not fs or not fs.filename:
-                raise ValueError("사진을 고르지 않았어요.")
-            new = _blog_upload_photo(post_id, fs)
+                raise ValueError("사진이나 영상을 고르지 않았어요.")
+            new = _blog_upload_media(post_id, fs)
             act = "replace" if act == "upload_replace" else "insert_after"
         if act == "remove" and rel:
             pat = re.compile(r"[ \t]*\[\s*[📷🎬]\s*" + re.escape(rel) + r"\s*\][ \t]*\n?")

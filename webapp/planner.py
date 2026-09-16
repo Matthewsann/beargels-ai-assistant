@@ -68,29 +68,6 @@ def load_knowledge() -> tuple[str, str]:
     return "\n\n".join(parts), seo
 
 
-def load_photos(only_rels: list[str] | None = None,
-                except_post_id=None) -> tuple[str, dict]:
-    """사진함에 **지금 실제로 있는** 사진 목록을 읽어온다.
-
-    글을 먼저 쓰고 사진을 나중에 끼워 넣으면 글과 사진이 따로 논다. 그래서
-    초안을 쓰기 전에 이 목록을 프롬프트에 넣어, 있는 사진으로 글을 짜게 한다.
-    사진함이 비었거나 인덱스가 아직 없으면 빈 값 — 예전처럼 글만 나온다.
-    """
-    try:
-        import blog_media
-        cat = blog_media.catalog(except_post_id=except_post_id)
-        if only_rels:
-            # 승인된 배분안의 '블로그 몫'만 남긴다(+ 상시 소재는 보조로 허용)
-            keep = set(only_rels)
-            cat = {k: v for k, v in cat.items()
-                   if v.get("rel") in keep or (v.get("slot") or "").startswith("_")}
-        return (blog_media.catalog_text(cat) if cat else ""), cat
-    except Exception as e:  # noqa: BLE001 — 사진이 없다고 글쓰기가 멈추면 안 된다
-        import logging
-        logging.getLogger(__name__).warning("사진함을 읽지 못했습니다: %s", str(e)[:120])
-        return "", {}
-
-
 def load_performance() -> str:
     """발행 글들의 품질·반응·순위 요약(성과 피드백). 없으면 빈 문자열."""
     try:
@@ -241,16 +218,12 @@ REC_PROMPT = """너는 베어글스 송도점의 네이버 블로그 마케팅 �
 {knowledge}
 ===== SEO 지식 =====
 {seo}
-===== 지금 사진함에 있는 사진 =====
-{photos}
 ===== 발행 글 성과 (반응 피드백) =====
 {performance}
 =====================
 
-★ 사진이 이미 있는 주제를 먼저 추천하라. 사진 없이 글만 있는 글은 상위노출도 안 되고
-   사장님이 다시 촬영해야 해서 결국 안 올라간다. 위 사진 목록으로 **바로 쓸 수 있는**
-   주제를 앞 번호(priority)에 두고, 촬영이 더 필요한 주제는 뒤로 미뤄라.
-   각 글감의 "why" 끝에 쓸 사진 번호를 적어라(예: "… / 사진 P03,P11 있음").
+★ 사진은 글감이 정해진 뒤 사장님이 그 글에 맞춰 찍는다(2026-09-16) — 사진 유무로 순서를
+   정하지 말고, 각 글감의 "why" 에 어떤 장면을 찍으면 좋을지 한 구절을 덧붙여라.
 
 베어글스답고(루틴·Basecamp·따뜻함) SEO 상위노출에 유리하며, 실제 인기메뉴·타겟(단골·직장인·건강지향)을
 노리는 블로그 글감 10개를 추천하라. 유형(정보성·신메뉴·일상·후기·이벤트)을 다양하게 섞어라.
@@ -284,9 +257,7 @@ def make_recommendations() -> list[dict]:
     """금고 전체를 읽고 베어글스 맞춤 글감 10개를 추천(JSON 배열)."""
     client, cfg, gp = _client_cfg()
     knowledge, seo = load_knowledge()
-    photos, _cat = load_photos()
     prompt = REC_PROMPT.format(knowledge=knowledge, seo=seo,
-                               photos=photos or "(사진함이 비어 있음 — 촬영부터 필요)",
                                performance=load_performance() or "(아직 성과 데이터 없음)")
     raw = llm.complete(user=prompt, max_tokens=2500, prefer="gemini")
     return _extract_json_array(raw)

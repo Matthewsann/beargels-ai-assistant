@@ -36,16 +36,13 @@
   {# ── ① 주제 뽑기 ─────────────────────────────────────────────── #}
   <div class="sec">① 주제 뽑기</div>
   <div class="row">
-    <form method="post" action="{{ url_for('blog_media_scan', path_key=key) }}" style="flex:1;">
-      <button class="btn wide" type="submit" {{ 'disabled' if not worker.alive else '' }}>📸 사진함 다시 보기</button>
-    </form>
     <form method="post" action="{{ url_for('blog_recommend', path_key=key) }}" style="flex:1;">
       <button class="btn wide" type="submit" {{ 'disabled' if not worker.alive else '' }}>🎯 글감 추천</button>
     </form>
   </div>
   <div style="font-size:12px; color:var(--muted); margin:6px 0 10px;">
-    새로 찍은 게 있으면 <b>사진함 다시 보기</b>부터 — 있는 사진에 맞춰 글감을 고릅니다.
     글감은 네이버 실측(수요·경쟁·검색량)과 우리 유입 검색어로 고른 순서예요.
+    사진은 초안이 나온 뒤 글 화면의 📸 자리마다 폰에서 바로 올립니다.
   </div>
 
   {% if recs %}

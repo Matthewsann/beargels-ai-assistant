@@ -8,12 +8,11 @@
     blog_draft      기획 주제로 초안 작성 → 창고 저장   (AI)
     blog_publish    글을 네이버에 임시저장(초안) 넣기    (브라우저)
     blog_rank       타겟 키워드 네이버 순위 확인        (브라우저)
-    blog_media      사진함에 새로 올린 사진 살펴보기     (AI)
 
 사진은 AI 가 고르지 않는다(사장님 2026-09-15) — 자리마다 `[📸 부탁: …]` 코멘트만 놓고,
-사장님이 글 화면에서 사진함·폰 사진을 넣는다. 사진함 자체는 blog_media.py 가 관리한다.
-초안을 쓸 때 이미 사진을 골라 본문에 박아 두고, 네이버 초안 넣기에서
-그 사진들을 실제로 올린다 — 사장님이 에디터에서 사진을 찾아 넣을 일이 없다.
+사장님이 글 화면에서 폰 사진·영상을 바로 올린다(사진함 고르기·`blog_media` 잡은 2026-09-16 에
+없앰). 올린 파일은 버킷 blogup/ → 집 PC 소재함 업로드/ 로 내려와(blog_media.pull_uploads)
+네이버 초안 넣기에서 실제로 올라간다 — 사장님이 에디터에서 사진을 찾아 넣을 일이 없다.
 
 무거운 일(AI 호출·크롬 조작)은 전부 여기서만 한다. 클라우드 웹은 버튼과 결과 표시만.
 실제 '발행' 버튼은 사장님이 네이버에서 직접 누른다(자동 발행하지 않는다).
@@ -36,7 +35,7 @@ from database import blog_store as store  # noqa: E402
 logger = logging.getLogger(__name__)
 
 BLOG_KINDS = ("blog_recommend", "blog_draft", "blog_publish", "blog_rank",
-              "blog_media", "blog_learn", "blog_react", "blog_plan", "blog_score")
+              "blog_learn", "blog_react", "blog_plan", "blog_score")
 
 # 순위 추적 기본 키워드(창고 글의 대표 키워드에 더해 항상 확인)
 DEFAULT_KEYWORDS = ("송도 베이글", "송도 카페")
@@ -80,30 +79,6 @@ def do_recommend() -> tuple[int, str]:
     store.replace_recommendations(items)
     return len(items), f"글감 {len(items)}개 추천"
 
-
-def do_media() -> tuple[int, str]:
-    """사진함을 다시 훑어 새로 올라온 사진을 AI 가 살펴본다."""
-    import blog_media
-    blog_media.pull_uploads()               # 폰에서 올린 사진부터 소재함에
-    before = len(blog_media.load_index())
-    idx = blog_media.build_index()
-    photos = sum(1 for v in idx.values() if v.get("kind") == "photo")
-    videos = len(idx) - photos
-    added = len(idx) - before
-    grew = f"새 사진 {added}장 · " if added > 0 else ""
-    try:
-        blog_media.publish_catalog()      # 웹의 '사진 선택'이 새 사진을 보게
-    except Exception as e:  # noqa: BLE001
-        logger.warning("사진 목록 발행 실패: %s", str(e)[:100])
-    return len(idx), f"{grew}사진함 사진 {photos}장 · 영상 {videos}개"
-
-
-# 다시 뽑기 전의 본문을 어디에 두나 — 새 표(마이그레이션)는 사장님 블로커라
-# 만들지 않는다. 이미 범용 key-value 창고로 쓰고 있는 menu_settings 를 쓴다
-# (place_keywords·sales_goals 와 같은 방식). 글 하나당 **직전 1개**만, 최근
-# 글 10개까지만 남긴다 — 되돌리기는 "방금 것과 그 전 것" 사이를 오가는 기능이지
-# 판본 보관함이 아니다.
-VERSIONS_KEY = "blog_draft_versions"
 
 
 def keep_version(post_id, post: dict) -> None:
@@ -368,10 +343,6 @@ def do_draft(payload: dict) -> tuple[int, str]:
             pass
     if brief and not old:
         _brief_link(brief["id"], post_id, data.get("title") or topic)
-    try:
-        blog_media.publish_catalog()        # 이 글이 쥔 사진은 ③ 고르기 목록에서 빠진다
-    except Exception as e:  # noqa: BLE001
-        logger.warning("사진 목록 발행 실패: %s", str(e)[:100])
     head = "초안 다시 뽑기 완료" if old else "초안 저장 완료"
     return 1, (f"{head} (#{post_id}){q_note}{photo_note}"
                f" — {data.get('title', '')[:40]}")
@@ -586,7 +557,6 @@ def do_publish(payload: dict) -> tuple[int, str]:
     try:
         import blog_media
         moved = blog_media.mark_used(inserted, label=f"글 #{post_id}")
-        blog_media.publish_catalog()      # 방금 쓴 사진은 고르기 목록에서 빠진다
     except Exception as e:  # noqa: BLE001 — 기록 실패가 발행 성공을 덮으면 안 된다
         logger.warning("원장 기록 실패: %s", str(e)[:120])
 
@@ -841,7 +811,6 @@ _HANDLERS = {
     "blog_score": do_score,
     "blog_publish": do_publish,
     "blog_rank": do_rank,
-    "blog_media": lambda p: do_media(),
     "blog_learn": do_learn,
     "blog_react": lambda p: do_react(),
     "blog_plan": do_plan,
