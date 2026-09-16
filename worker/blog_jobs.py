@@ -783,6 +783,7 @@ def do_react() -> tuple[int, str]:
         logger.info("휴지통 글의 소재 %d건을 원장에서 해제", freed)
     linked = blog_perf.sync_published()
     n, likes, comments = blog_perf.collect()
+    blog_perf.publish_summary()               # 웹 '✅ 발행 완료' 칸의 ♥·💬 (2026-09-17)
     learned = 0
     try:
         learned = blog_perf.learn_from_published()

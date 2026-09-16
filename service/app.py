@@ -2876,7 +2876,21 @@ def blog_home(path_key):
         _all_q = {}
     for p in posts:
         p["step"] = _blog_step(p, _blog_quality(p["id"], p.get("body", "")) if str(p["id"]) in _all_q else None)
-    return render_template("blog.html", key=path_key, posts=posts, recs=recs,
+    # ✅ 발행 완료는 진행 중인 글과 따로 관리한다(사장님 2026-09-17) — 발행일 순, 반응·순위를 붙여서.
+    published = [p for p in posts if p.get("status") == "published"]
+    posts = [p for p in posts if p.get("status") != "published"]
+    published.sort(key=lambda p: p.get("published_at") or p.get("updated_at") or "", reverse=True)
+    try:
+        perf = db.get_setting(BLOG_PUBLISHED_PERF_KEY) or {}
+    except Exception:  # noqa: BLE001
+        perf = {}
+    rank_by_kw = {(r.get("keyword") or ""): r for r in ranks}
+    for p in published:
+        m = re.search(r"/(\d+)/?$", p.get("naver_url") or "")
+        p["perf"] = perf.get(m.group(1)) if m else None
+        p["rank"] = rank_by_kw.get(p.get("main_keyword") or "")
+        p["pub_day"] = (p.get("published_at") or "")[:10]
+    return render_template("blog.html", key=path_key, posts=posts, recs=recs, published=published,
                            kw=_blog_keywords(), plans=plans, note=(request.args.get("note") or "")[:200],
                            drafting=("blog_draft" in busy),
                            store=_store_info(), store_fields=STORE_FIELDS,
@@ -2906,6 +2920,7 @@ def _ask_worker(path_key, kind, payload=None):
 # ── 🔑 타겟 키워드(사장님 2026-09-16: "내가 처음에 타겟 키워드를 정하고, 추천 키워드는 따로
 #    보고, 내가 고른 키워드로 주제·초안을 잡는다") ─────────────────────────────
 BLOG_TARGET_KEY = "blog_target_keywords"       # menu_settings — 사장님이 정한 타겟 [{kw, at, src}]
+BLOG_PUBLISHED_PERF_KEY = "blog_published_perf"  # 집 PC 가 올린 발행 글 반응 요약(blog_perf.publish_summary)
 BLOG_RESEARCH_KEY = "blog_keyword_research"    # 집 PC 가 올린 네이버 실측 요약(naver_search.publish_summary)
 _TIER_EMOJI = {"green": "🟢", "yellow": "🟡", "mine": "🅾", "tiny": "▫", "red": "🔴"}
 

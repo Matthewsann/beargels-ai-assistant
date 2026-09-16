@@ -217,6 +217,37 @@ def collect() -> tuple[int, int, int]:
     return n, tl, tc
 
 
+WEB_KEY = "blog_published_perf"    # menu_settings — 직원 웹 '✅ 발행 완료' 칸이 읽는다(2026-09-17)
+
+
+def web_summary() -> dict:
+    """발행 글별 최신 반응 {log_no: {title, url, pub, date, likes, comments, days}}.
+
+    반응 원본(data/blog_reactions.json)은 집 PC 에만 있어 PA 가 못 읽는다 — 마지막 스냅샷만
+    추려 올린다. 글 창고와의 연결은 웹이 naver_url 끝의 log_no 로 한다.
+    """
+    out = {}
+    for log_no, rec in _load().items():
+        hist = rec.get("history") or []
+        last = hist[-1] if hist else {}
+        out[str(log_no)] = {"title": rec.get("title"), "url": rec.get("url"), "pub": rec.get("pub"),
+                            "date": last.get("date"), "likes": last.get("likes"),
+                            "comments": last.get("comments"), "days": len(hist)}
+    return out
+
+
+def publish_summary() -> bool:
+    """웹용 반응 요약을 menu_settings 에 올린다. 부르는 곳은 일꾼 잡(do_react)뿐 —
+    collect() 안에서 부르지 않는다(테스트가 실제 설정을 덮는 사고를 naver_search 에서 겪었다)."""
+    try:
+        from database import supabase_client as db
+        db.menu_set_setting(WEB_KEY, web_summary())
+        return True
+    except Exception as e:  # noqa: BLE001
+        logger.warning("발행 글 반응 요약 발행 실패: %s", str(e)[:120])
+        return False
+
+
 # ---------------------------------------------------------------------------
 # 성과 요약 → 다음 글 기획에 주입
 # ---------------------------------------------------------------------------

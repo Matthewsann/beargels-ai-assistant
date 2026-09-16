@@ -188,7 +188,7 @@
   {% endif %}
 
   {# ── 글 창고: 각 글이 몇 단계까지 왔는지 ───────────────────────── #}
-  <div class="sec">📚 글 창고 <span style="font-weight:400; color:var(--muted); font-size:12px;">{{ posts|length }}편 · 눌러서 ②~⑤ 이어가기</span></div>
+  <div class="sec">📚 글 창고 <span style="font-weight:400; color:var(--muted); font-size:12px;">진행 중 {{ posts|length }}편 · 눌러서 ②~⑤ 이어가기 · 발행한 글은 아래 ✅</span></div>
   {% if posts %}
     {% for p in posts %}
     <a class="plain card" href="{{ url_for('blog_post', path_key=key, post_id=p.id) }}">
@@ -205,7 +205,51 @@
     </a>
     {% endfor %}
   {% else %}
-    <div class="panel"><div class="empty">아직 글이 없어요.<br>위 글감에서 <b>② 이 주제로 초안 쓰기</b>를 누르면 여기 생겨요.</div></div>
+    <div class="panel"><div class="empty">진행 중인 글이 없어요.<br>위 글감에서 <b>② 이 주제로 초안 쓰기</b>를 누르면 여기 생겨요.</div></div>
+  {% endif %}
+
+  {# ── ✅ 발행 완료 — 진행 중인 글과 따로(사장님 2026-09-17). 발행일·키워드·순위·반응을 한 줄씩. ── #}
+  <div class="sec" id="published">✅ 발행 완료
+    <span style="font-weight:400; color:var(--muted); font-size:12px;">{{ published|length }}편 · 반응·순위는 매일 아침 자동, 지금 보려면 아래 버튼</span>
+  </div>
+  {% if published %}
+  <div class="panel" style="padding:10px 12px;">
+    <div class="row">
+      <form method="post" action="{{ url_for('blog_react', path_key=key) }}" style="flex:1;">
+        <button class="btn sm wide" type="submit" {{ 'disabled' if not worker.alive else '' }}>📈 반응 수집</button>
+      </form>
+      <form method="post" action="{{ url_for('blog_rank', path_key=key) }}" style="flex:1;">
+        <button class="btn sm wide" type="submit" {{ 'disabled' if not worker.alive else '' }}>📊 순위 확인</button>
+      </form>
+    </div>
+    {% for p in published %}
+    <div style="display:flex; gap:10px; align-items:flex-start; padding:9px 0; border-top:1px solid var(--line);">
+      <div style="flex:1; min-width:0;">
+        <a href="{{ url_for('blog_post', path_key=key, post_id=p.id) }}" style="text-decoration:none; color:inherit;">
+          <b style="font-size:13.5px;">{{ p.title or '(제목 없음)' }}</b>
+        </a>
+        <div style="font-size:12px; color:var(--muted); margin-top:2px;">
+          {{ p.pub_day or '발행일 미상' }}{% if p.main_keyword %} · {{ p.main_keyword }}{% endif %}
+          {% if p.rank %} ·
+            {% if p.rank.found %}<b style="color:{{ 'var(--ok)' if p.rank.page == 1 else 'var(--warn)' }};">{{ p.rank.page }}페이지 {{ p.rank.pos_in_page }}위</b>
+            {% else %}<span>{{ p.rank.scanned or 30 }}위 밖</span>{% endif %}
+          {% endif %}
+        </div>
+        <div style="font-size:12px; margin-top:2px;">
+          {% if p.perf %}
+            ♥ {{ p.perf.likes if p.perf.likes is not none else '–' }} · 💬 {{ p.perf.comments if p.perf.comments is not none else '–' }}
+            <span style="color:var(--muted);">({{ p.perf.date }} 기준{% if p.perf.days and p.perf.days > 1 %} · {{ p.perf.days }}일째 기록{% endif %})</span>
+          {% else %}<span style="color:var(--muted);">반응 아직 수집 전 — 네이버 글 주소가 연결되면 자동으로 붙어요</span>{% endif %}
+        </div>
+      </div>
+      {% if p.naver_url %}
+      <a class="btn sm" href="{{ p.naver_url }}" target="_blank" rel="noopener" title="네이버에서 보기" style="text-decoration:none;">🔗</a>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="panel"><div class="empty">아직 발행 완료한 글이 없어요.<br>글 화면 ⑤에서 발행하면 여기로 옮겨져요.</div></div>
   {% endif %}
 
   {# ── 매장 정보: 글 끝 [매장 정보] 블록의 원천. AI 가 지어내지 않게 여기 값만 쓴다 ── #}
