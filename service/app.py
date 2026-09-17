@@ -2642,7 +2642,9 @@ _MEDIA_RE = re.compile(r"\[\s*[📷🎬]\s*[^\]]+\]")
 def _blog_media_counts(body: str) -> tuple[int, int]:
     """(넣은 사진·영상 수, 아직 빈 사진 자리 수)."""
     body = body or ""
-    return len(_MEDIA_RE.findall(body)), len(_WISH_RE.findall(body))
+    # 빈 자리는 화면·촬영 목록과 같은 기준(제 토막인 부탁)으로 센다 — 숫자가 서로 다르면 헷갈린다
+    return (len(_MEDIA_RE.findall(body)),
+            sum(1 for c in _blog_chunks(body) if _wish_text_of(c) is not None))
 
 
 def _blog_step(post: dict, quality: dict | None = None) -> int:
@@ -2781,11 +2783,17 @@ def _blog_chunks(body: str) -> list[str]:
     for raw_chunk in re.split(r"\n\s*\n", (body or "").strip()):
         buf = []
         for ln in raw_chunk.split("\n"):
-            if _MARK_LINE.fullmatch(ln.strip()):
+            s_ln = ln.strip()
+            wm = _WISH_LINE.match(s_ln)
+            if _MARK_LINE.fullmatch(s_ln) or wm:
+                # 사진 표시 줄, 그리고 `[📸 부탁: …] (팁: …)` 줄은 앞뒤에 빈 줄이 없어도 제 토막이다
+                # (리뷰 2026-09-17: 문단에 붙은 부탁은 화면에서 자리로 안 보여 홈 숫자와 목록 숫자가 달랐다).
                 if buf:
                     out.append("\n".join(buf))
                     buf = []
-                out.append(ln.strip())
+                out.append(wm.group("wish").strip() if wm else s_ln)
+                if wm and wm.group("rest").strip():
+                    buf.append(wm.group("rest").strip())      # 부탁 뒤에 이어 쓴 글은 다음 문단으로
             else:
                 buf.append(ln)
         if buf:
@@ -2793,11 +2801,42 @@ def _blog_chunks(body: str) -> list[str]:
     return [c for c in out if c.strip()]
 
 
+def _wish_text_of(chunk: str):
+    """토막이 사진 부탁 자리면 화면에 보이는 설명(머리말 걷어낸 것), 아니면 None."""
+    m = _WISH_BLOCK.fullmatch((chunk or "").strip())
+    if not m:
+        return None
+    return re.sub(r"^(?:\s*(?:부탁|사진|영상)\s*[:：]\s*)+", "", m.group(1).strip())
+
+
+def _wish_slot(chunks: list[str], at: int, wish_text: str) -> int:
+    """📸 촬영 목록에서 온 업로드가 들어갈 부탁 자리 번호(-1 = 없음).
+
+    화면이 낡아 번호가 어긋났을 수 있다 — 번호 자리가 같은 설명의 부탁이면 거기, 아니면 **같은 설명**의
+    부탁 자리를 찾는다(부분 일치가 아니라 같음 — 앞머리가 같은 두 자리를 헷갈리지 않게). 설명이 비어
+    왔으면 번호 자리가 부탁일 때만 넣는다. 부탁 자리가 아닌 곳에는 절대 넣지 않는다.
+    """
+    want = _kw_norm(wish_text)
+    here = _wish_text_of(chunks[at]) if 0 <= at < len(chunks) else None
+    if here is not None and (not want or _kw_norm(here) == want):
+        return at
+    if not want:
+        return -1
+    return next((k for k, c in enumerate(chunks)
+                 if (t := _wish_text_of(c)) is not None and _kw_norm(t) == want), -1)
+
+
 @app.template_filter("emph")
 def _emph(text: str):
     """`**굵게**` 를 <b> 로 — 글 화면이 네이버에 들어갈 모습(굵게)을 그대로 보여 준다(2026-09-17)."""
     from markupsafe import Markup, escape
     return Markup(re.sub(r"\*\*([^*\n]+?)\*\*", r"<b>\1</b>", str(escape(text or ""))))
+
+
+_WISH_LINE = re.compile(r"(?P<wish>\[\s*📸\s*부탁\s*[:：][^\]]*\]"
+                        r"(?:\s*\(\s*(?:팁|TIP|Tip|tip)\s*[:：][^)]*\))?)\s*(?P<rest>.*)$")
+_WISH_BLOCK = re.compile(r"\[\s*📸\s*부탁\s*[:：]\s*([^\]]*?)\s*\]"
+                         r"(?:\s*\(\s*(?:팁|TIP|Tip|tip)\s*[:：]\s*([^)]*)\))?")
 
 
 def _blog_render(body: str) -> list[dict]:
@@ -2815,11 +2854,12 @@ def _blog_render(body: str) -> list[dict]:
                            "name": rel.rpartition("/")[2],
                            "video": rel.lower().endswith((".mp4", ".mov", ".m4v")),
                            "thumb": f"{_THUMB_BASE}/{key}" if _THUMB_BASE else ""})
-        elif re.fullmatch(r"\[\s*📸\s*부탁\s*[:：][^\]]*\]", c.strip()):
-            # 옛 초안엔 `[🎬 부탁: …]` 가 `[📸 부탁: 부탁: …]` 로 바뀐 것이 있다 — 겹친 머리말은 걷어낸다
-            txt = re.sub(r"^\[\s*📸\s*부탁\s*[:：]\s*|\s*\]$", "", c.strip())
+        elif (_wm := _WISH_BLOCK.fullmatch(c.strip())):
+            # 컷 메모 — 뒤에 `(팁: 찍는 요령)` 이 붙을 수 있다(2026-09-17: 이걸 못 알아봐 글#30 의 7자리가 화면에서
+            # 사라졌다). 옛 초안엔 `[🎬 부탁: …]` 가 `[📸 부탁: 부탁: …]` 로 바뀐 것이 있어 겹친 머리말은 걷어낸다.
             blocks.append({"t": "wish", "i": i,
-                           "text": re.sub(r"^(?:\s*(?:부탁|사진|영상)\s*[:：]\s*)+", "", txt)})
+                           "text": re.sub(r"^(?:\s*(?:부탁|사진|영상)\s*[:：]\s*)+", "", _wm.group(1).strip()),
+                           "tip": (_wm.group(2) or "").strip()})
         elif re.match(r"^#{1,4}\s+", c):
             blocks.append({"t": "h", "i": i, "text": re.sub(r"^#{1,4}\s+", "", c).strip()})
         elif re.fullmatch(r"-{3,}\s*", c):
@@ -2931,6 +2971,8 @@ def blog_home(path_key):
         p["rank"] = rank_by_kw.get(p.get("main_keyword") or "")
         p["pub_day"] = (p.get("published_at") or "")[:10]
     kwd = _blog_keywords()
+    # 📸 촬영 목록 버튼에 붙일 '찍을 컷' 합계(예약된 글 제외)
+    shots_total = sum(_blog_media_counts(p.get("body", ""))[1] for p in posts if p.get("status") != "scheduled")
     # '지금 할 일' 하나 — 초보자는 화면에서 다음에 누를 버튼 하나만 알면 된다(UX 정리 2026-09-17).
     # 하던 글이 있으면 그것부터(시작한 걸 끝내기) → 주제가 있으면 고르기 → 키워드가 있으면 주제 뽑기 → 키워드 넣기.
     waiting = [p for p in posts if p.get("status") != "scheduled"]
@@ -2947,7 +2989,7 @@ def blog_home(path_key):
     else:
         todo = {"n": 1, "text": "먼저 밀고 싶은 키워드를 1~3개 넣어 주세요. 뭘 넣을지 모르면 💡 추천에서 [＋]를 누르세요.", "cta": "키워드 넣기 ↓", "href": "#keywords"}
     return render_template("blog.html", key=path_key, posts=posts, recs=recs, published=published,
-                           kw=kwd, todo=todo, plans=plans, note=(request.args.get("note") or "")[:200],
+                           kw=kwd, todo=todo, shots_total=shots_total, plans=plans, note=(request.args.get("note") or "")[:200],
                            drafting=("blog_draft" in busy),
                            store=_store_info(), store_fields=STORE_FIELDS,
                            ranks=ranks, job=job, worker=_worker_view(), error=error)
@@ -3259,7 +3301,7 @@ def _blog_purpose(post: dict, body: str, blocks: list[dict]) -> dict:
                     break
         except Exception:  # noqa: BLE001
             pass
-    wishes = [{"i": b["i"], "text": b.get("text") or ""} for b in blocks if b.get("t") == "wish"]
+    wishes = [{"i": b["i"], "text": b.get("text") or "", "tip": b.get("tip") or ""} for b in blocks if b.get("t") == "wish"]
     photos = sum(1 for b in blocks if b.get("t") in ("photo", "video"))
     return {"kw": kwinfo, "subs": sub_rows, "why": why, "intent": intent,
             "competition": competition, "tier": tier, "tier_ko": _TIER_KO.get(tier, ""),
@@ -3308,6 +3350,76 @@ def blog_post(path_key, post_id):
                            worker=_worker_view(), error=error)
 
 
+_SHOT_KINDS = [   # (key, icon, 판별 낱말) — 위에서부터 먼저 맞는 것. 매장에서 '같은 곳에서 몰아 찍기'용 묶음.
+    ("video", "🎬", ("동영상", "영상", "클립", "타임랩스")),
+    ("make", "👩‍🍳", ("단면", "굽", "구워", "토스팅", "그릴", "만드는", "조리", "자르", "반으로", "바르", "과정", "올리는", "담는")),
+    ("store", "🏪", ("외관", "간판", "입구", "매장", "좌석", "창가", "인테리어", "내부", "카운터", "쇼케이스", "주차", "건물", "전경", "분위기", "테이블")),
+]
+_SHOT_SORT = ("외관", "간판", "입구", "전경", "주차", "카운터", "쇼케이스", "좌석", "창가", "내부", "분위기",
+              "단면", "토스팅", "그릴", "크림치즈", "음료", "커피", "세트", "포장")
+_SHOT_LABELS = [("store", "🏪 매장·외관"), ("menu", "🥯 메뉴·상차림"), ("make", "👩‍🍳 만드는 과정·단면"), ("video", "🎬 영상")]
+
+
+def _shot_kind(text: str) -> dict:
+    """컷 설명으로 종류를 어림한다(규칙, AI 없음). 못 가리면 메뉴."""
+    if "대표 사진" in (text or ""):
+        return {"key": "menu", "icon": "⭐"}
+    for key, icon, words in _SHOT_KINDS:
+        if any(w in (text or "") for w in words):
+            return {"key": key, "icon": icon}
+    return {"key": "menu", "icon": "🥯"}
+
+
+@app.route("/<path_key>/blog/shots")
+def blog_shots(path_key):
+    """📸 촬영 목록 — 발행 전 모든 초안의 '여기엔 이런 사진' 컷을 한 화면에(사장님 2026-09-17).
+
+    매장에서 일하면서 초안을 하나씩 열어 볼 수 없다 — 컷 목록만 보고 찍어서 바로 올린다.
+    올리기는 글 화면과 같은 길(blog_post_photo upload_after)이고 next=shots 로 여기로 돌아온다.
+    """
+    check(path_key)
+    by = "kind" if request.args.get("by") == "kind" else "post"
+    groups, total, error = [], 0, None
+    try:
+        posts = [p for p in blog.list_posts(limit=50)
+                 if p.get("status") not in ("published", "scheduled")]
+    except Exception as e:  # noqa: BLE001
+        posts, error = [], f"글을 불러오지 못했어요: {str(e)[:120]}"
+        db.log_error("service", f"촬영 목록 로드 실패: {e}", kind=type(e).__name__, path=request.path)
+    for p in posts:
+        blocks = _blog_render(p.get("body", ""))
+        wishes = [{"i": b["i"], "text": b.get("text") or "", "tip": b.get("tip") or "",
+                   "kind": _shot_kind(b.get("text") or "")}
+                  for b in blocks if b.get("t") == "wish"]
+        if not wishes:
+            continue
+        groups.append({"id": p["id"], "title": p.get("title") or "(제목 없음)",
+                       "kw": p.get("main_keyword") or "", "wishes": wishes,
+                       "media": sum(1 for b in blocks if b.get("t") == "img")})
+        total += len(wishes)
+    kinds = []
+    if by == "kind":
+        for k, label in _SHOT_LABELS:
+            items = [dict(w, post_id=g["id"], post_title=g["title"])
+                     for g in groups for w in g["wishes"] if w["kind"]["key"] == k]
+            if items:
+                # 비슷한 장면끼리 붙인다 — 같은 자리에서 몰아 찍게(리뷰 2026-09-17)
+                items.sort(key=lambda w: next((n for n, x in enumerate(_SHOT_SORT) if x in w["text"]), 99))
+                kinds.append({"key": k, "label": label, "items": items})
+    focus = request.args.get("focus") or ""
+    anchor = request.args.get("anchor") or ""
+    done = request.args.get("done") or ""
+    done_post = None
+    if done.isdigit():
+        dp = next((p for p in posts if str(p.get("id")) == done), None)
+        done_post = {"id": int(done), "title": (dp or {}).get("title") or "이 글"}
+    return render_template("blog_shots.html", key=path_key, groups=groups, kinds=kinds, by=by,
+                           total=total, focus=focus if focus.isdigit() else "",
+                           anchor=anchor if re.fullmatch(r"[a-z0-9-]{1,40}", anchor) else "",
+                           done_post=done_post, error=error,
+                           note=(request.args.get("note") or "")[:200])
+
+
 @app.route("/<path_key>/blog/post/<int:post_id>/photo", methods=["POST"])
 def blog_post_photo(path_key, post_id):
     """③ 사진·영상 — 본문의 사진 표시를 빼고·바꾸고·더한다(집 PC 안 거침).
@@ -3332,9 +3444,23 @@ def blog_post_photo(path_key, post_id):
             fs = request.files.get("photo")
             if not fs or not fs.filename:
                 raise ValueError("사진이나 영상을 고르지 않았어요.")
-            new = _blog_upload_media(post_id, fs)
-            act = "replace" if act == "upload_replace" else "insert_after"
-        if act == "remove" and rel:
+            _wt = (request.form.get("wish_text") or "").strip()
+            try:
+                _at0 = int(request.form.get("after") or -1)
+            except ValueError:
+                _at0 = -1
+            if act == "upload_after" and request.form.get("next") == "shots" \
+                    and _wish_slot(_blog_chunks(body), _at0, _wt) < 0:
+                # 📸 촬영 목록의 낡은 화면 — 그 컷 자리가 이미 없다. 파일을 올리기 **전에** 멈춘다
+                # (버킷에 주인 없는 파일이 쌓이지 않게, 2026-09-17).
+                act = "skip"
+                note = "그 사진 자리를 못 찾았어요(이미 채웠을 수 있어요) — 목록을 새로 열었습니다."
+            else:
+                new = _blog_upload_media(post_id, fs)
+                act = "replace" if act == "upload_replace" else "insert_after"
+        if act == "skip":
+            pass
+        elif act == "remove" and rel:
             pat = re.compile(r"[ \t]*\[\s*[📷🎬]\s*" + re.escape(rel) + r"\s*\][ \t]*\n?")
             body, n = pat.subn("", body, count=1)
             note = "사진을 뺐어요." if n else "그 사진이 본문에 없어요."
@@ -3348,13 +3474,21 @@ def blog_post_photo(path_key, post_id):
                 at = int(request.form.get("after") or -1)
             except ValueError:
                 at = -1
+            wish_text = (request.form.get("wish_text") or "").strip()
+            from_shots = request.form.get("next") == "shots"
+            if from_shots:
+                # 촬영 목록에서 온 업로드 — 화면이 낡아 번호가 어긋났을 수 있다. 같은 설명의 부탁 자리를
+                # 찾고, 없으면 엉뚱한 데 넣지 않는다(_wish_slot, 2026-09-17).
+                at = _wish_slot(chunks, at, wish_text)
             if 0 <= at < len(chunks):
                 if re.match(r"^\[\s*📸\s*부탁", chunks[at].strip()):
                     chunks[at] = _mark_for(new)          # 부탁 자리에 바로 사진이 들어간다
                 else:
                     chunks.insert(at + 1, _mark_for(new))
                 body = "\n\n".join(chunks)
-                note = "그 자리에 사진을 넣었어요."
+                note = "✅ 올렸어요 — 그 자리에 들어갔습니다." if from_shots else "그 자리에 사진을 넣었어요."
+            elif from_shots:
+                note = "그 사진 자리를 못 찾았어요(이미 채웠을 수 있어요) — 목록을 새로 열었습니다."
             else:
                 note = "넣을 자리를 못 찾았어요 — 화면을 새로고침한 뒤 다시 해주세요."
         elif act == "remove_wish":
@@ -3387,6 +3521,12 @@ def blog_post_photo(path_key, post_id):
                      kind=type(e).__name__, path=request.path,
                      detail=traceback.format_exc())
         note = f"사진을 바꾸지 못했어요: {str(e)[:100]}"
+    if request.form.get("next") == "shots":          # 📸 촬영 목록에서 올렸다 — 그 목록의 그 자리로
+        anchor = request.form.get("anchor") or ""
+        done = post_id if (note.startswith("✅") and _blog_media_counts(body)[1] == 0) else None
+        return redirect(url_for("blog_shots", path_key=path_key, note=note, focus=post_id, done=done,
+                                anchor=anchor if re.fullmatch(r"[a-z0-9-]{1,40}", anchor) else None,
+                                by="kind" if request.form.get("by") == "kind" else None))
     return redirect(url_for("blog_post", path_key=path_key, post_id=post_id,
                             note=note) + "#photos")
 

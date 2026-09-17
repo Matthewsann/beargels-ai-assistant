@@ -1,0 +1,84 @@
+{# 사진·영상 바로 올리기 — 글 화면과 촬영 목록이 같이 쓴다(2026-09-17 분리·견고화).
+   폼: class="up", 숨은 칸(action·after·…) + <label>글자<input type=file name=photo hidden onchange="upGo(this)"></label>. #}
+  <script>
+    // 사진을 고르면 바로 올린다. 폰 원본(4~6MB)을 그대로 보내면 모바일에서 수십 초라
+    // (2026-09-15 사장님 "너무 오래 걸려"), 브라우저에서 먼저 긴 변 1600px JPEG 로 줄여
+    // 보낸다(≈0.6MB). 줄이기가 안 되는 브라우저면 원본 그대로 보낸다.
+    // 리뷰 2026-09-17: ① 한 번에 하나만(올리는 중 다른 버튼은 잠근다 — 화면이 넘어가며 뒤 업로드가 사라졌다)
+    //   ② 라벨 글자만 바꾼다(textContent 로 바꾸면 안의 file 칸이 지워진다) ③ 서버가 리다이렉트로 답했을 때만
+    //   이동한다(오류 응답이면 POST 주소가 GET 으로 열려 405 빈 화면이 됐다).
+    function upText(lab, txt) {
+      for (var i = 0; i < lab.childNodes.length; i++) {
+        var n = lab.childNodes[i];
+        if (n.nodeType === 3 && n.nodeValue.trim()) { n.nodeValue = txt + ' '; return; }
+      }
+      lab.insertBefore(document.createTextNode(txt + ' '), lab.firstChild);
+    }
+    function upLock(on) {
+      window._upBusy = on;
+      document.querySelectorAll('form.up label').forEach(function (l) {
+        l.style.pointerEvents = on ? 'none' : '';
+        l.style.opacity = on ? '.5' : '';
+      });
+    }
+    function upGo(inp) {
+      if (!inp.files || !inp.files.length) return;
+      var file = inp.files[0], form = inp.form, lab = inp.parentElement;
+      if (window._upBusy) {
+        alert('앞의 것을 올리는 중이에요 — 끝나면 다시 눌러 주세요.');
+        inp.value = '';
+        return;
+      }
+      // 영상(2026-09-16)은 줄이지 않고 이름·확장자 그대로 보낸다 — 서버가 확장자로 영상을 알아본다
+      var isVideo = /^video\//.test(file.type) || /\.(mp4|mov|m4v)$/i.test(file.name || '');
+      if (isVideo && file.size > 50 * 1024 * 1024) {
+        alert('영상이 50MB를 넘어요 — 폰에서 짧게 자르거나 화질을 낮춰 주세요.');
+        inp.value = '';
+        return;
+      }
+      var before = (lab.textContent || '').trim();
+      upLock(true);
+      lab.style.opacity = '1';
+      upText(lab, isVideo ? '⏳ 영상 올리는 중…' : '⏳ 줄이는 중…');
+      function fail(msg) {
+        upLock(false);
+        upText(lab, before || '📷 다시 올리기');
+        inp.value = '';
+        alert(msg);
+      }
+      shrink(file).catch(function () { return file; }).then(function (blob) {
+        var fd = new FormData();
+        form.querySelectorAll('input[type=hidden]').forEach(function (h) { fd.append(h.name, h.value); });
+        fd.append('photo', blob, isVideo ? (file.name || 'video.mp4')
+                                         : (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg');
+        var size = blob.size > 1048576 ? (blob.size / 1048576).toFixed(1) + 'MB' : Math.round(blob.size / 1024) + 'KB';
+        upText(lab, isVideo ? '⏳ 영상 올리는 중… 1~2분 걸려요 (' + size + ') — 화면을 닫지 마세요'
+                            : '⏳ 올리는 중… (' + size + ')');
+        // ⚠ form.action 이 아니다 — 폼 안에 name="action" 숨은 칸이 있어 그 요소가 잡힌다
+        //   (2026-09-15 실측: '/post/3/[object HTMLInputElement]' 로 가서 404).
+        var url = form.getAttribute('action');
+        return fetch(url, {method: 'POST', body: fd, credentials: 'same-origin'});
+      }).then(function (r) {
+        if (r.redirected && r.url) { location.replace(r.url); return; }   // 서버의 redirect(note 포함)로 이동
+        fail('올리지 못했어요 — 인터넷이 느리거나 파일이 커요. 잠시 뒤 다시 눌러 주세요.');
+      }).catch(function () {
+        fail('올리지 못했어요 — 인터넷 연결을 확인하고 다시 눌러 주세요.');
+      });
+    }
+    function shrink(file) {
+      var MAX = 1600;
+      if (!/^image\//.test(file.type) || file.size < 700 * 1024 || !window.createImageBitmap) {
+        return Promise.resolve(file);                    // 이미 작거나 못 줄이면 그대로
+      }
+      // imageOrientation:'from-image' 가 폰 세로사진의 EXIF 회전을 반영한다
+      return createImageBitmap(file, {imageOrientation: 'from-image'}).then(function (bmp) {
+        var s = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
+        var w = Math.round(bmp.width * s), h = Math.round(bmp.height * s);
+        var c = document.createElement('canvas'); c.width = w; c.height = h;
+        c.getContext('2d').drawImage(bmp, 0, 0, w, h);
+        return new Promise(function (res, rej) {
+          c.toBlob(function (b) { b ? res(b) : rej(new Error('toBlob')); }, 'image/jpeg', 0.86);
+        });
+      });
+    }
+  </script>

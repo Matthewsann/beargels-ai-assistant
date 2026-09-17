@@ -36,6 +36,8 @@
     <div style="font-size:12px; color:var(--accent); font-weight:700; letter-spacing:.02em;">👉 지금 할 일 · {{ todo.n }}단계</div>
     <div style="font-size:14px; margin-top:3px; line-height:1.5;">{{ todo.text }}</div>
     {% if todo.cta %}<a class="btn sm primary" href="{{ todo.href }}" style="margin-top:8px; text-decoration:none;">{{ todo.cta }}</a>{% endif %}
+    {# 촬영 목록 입구는 단계와 상관없이 — 다른 글이 품질·예약 단계여도 찍을 사진이 남아 있을 수 있다(리뷰 2026-09-17) #}
+    {% if shots_total %}<a class="btn wide" href="{{ url_for('blog_shots', path_key=key) }}" style="margin-top:8px; min-height:44px; text-decoration:none;">📸 매장에서 찍을 사진 {{ shots_total }}장 — 촬영 목록 열기</a>{% endif %}
   </div>
 
   {% with cur=todo.n %}{% include "_blog_steps.html" %}{% endwith %}
@@ -47,7 +49,7 @@
       <li><b>키워드</b> — 손님이 네이버에 칠 말을 1~3개 넣어요. 모르겠으면 💡 추천에서 [＋].</li>
       <li><b>주제 뽑기</b> — [🎯 주제 뽑기]를 누르면 AI 가 그 키워드로 글 주제 10개를 만들어요 (1~3분).</li>
       <li><b>주제 고르기</b> — 마음에 드는 주제의 [✍️ 이 주제로 초안 만들기]. 글이 생기면 '진행 중인 글'에 나타나요.</li>
-      <li><b>글 열기</b> — 사진 자리마다 [📷 사진·영상 올리기]로 폰에서 올리고, [🔍 품질 채점]으로 점수를 봐요.</li>
+      <li><b>사진·영상</b> — 매장에서는 <b>📸 촬영 목록</b>을 열어 사진 설명을 보고 찍어서 바로 올려요. 다 올리면 글을 열어 [🔍 품질 채점].</li>
       <li><b>예약 발행</b> — 시각을 확인하고 [📅 이 시각에 예약 발행]. 나머지는 집 PC 가 네이버에 넣어요.</li>
     </ol>
     <div style="font-size:12px; color:var(--muted); margin-top:6px;">맨 위 <b>👉 지금 할 일</b>이 다음에 누를 버튼을 알려줘요. 그것만 따라가면 됩니다.</div>
@@ -215,6 +217,11 @@
 
   {# ══ 진행 중인 글 — 3~5단계는 글 화면에서. 카드마다 '다음 할 일' 한 줄. ══ #}
   <div class="sec">📝 진행 중인 글 <span style="font-weight:400; color:var(--muted); font-size:12px;">{{ posts|length }}편 · 누르면 이어서 해요</span></div>
+  {% if shots_total %}
+  {# 매장에서는 글을 하나씩 열 수 없다 — 모든 글의 찍을 컷을 한 화면에서 보고 바로 올린다(사장님 2026-09-17) #}
+  <a class="btn wide" href="{{ url_for('blog_shots', path_key=key) }}" style="margin-bottom:10px; min-height:44px; text-decoration:none;">
+    📸 촬영 목록 — 찍을 사진 {{ shots_total }}장, 보고 찍어서 바로 올리기</a>
+  {% endif %}
   {% if posts %}
     {% for p in posts %}
     <a class="plain card" href="{{ url_for('blog_post', path_key=key, post_id=p.id) }}">

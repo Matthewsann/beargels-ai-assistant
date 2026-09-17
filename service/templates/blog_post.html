@@ -92,7 +92,8 @@
           {% if not preview %}<a href="#w{{ w.i }}" style="font-size:12px; color:var(--accent); white-space:nowrap;">자리 보기 ↓</a>{% endif %}</li>
         {% endfor %}
       </ol>
-      <div style="font-size:12px; color:var(--muted); margin-top:4px;">이 순서대로 한 번에 찍어 두고, 아래 각 자리의 [📷 사진·영상 올리기]로 바로 올리면 됩니다.</div>
+      <div style="font-size:12px; color:var(--muted); margin-top:4px;">이 순서대로 한 번에 찍어 두고, 아래 각 자리의 [📷 사진·영상 올리기]로 바로 올리면 됩니다.
+        매장에서는 <a href="{{ url_for('blog_shots', path_key=key, focus=post.id) }}" style="color:var(--accent);">📸 촬영 목록</a>이 편해요 — 모든 글의 찍을 사진을 한 화면에서 바로 올립니다.</div>
       {% else %}<div style="color:var(--muted);">사진 자리가 다 찼어요.</div>{% endif %}
     </div>
   </div>
@@ -173,6 +174,7 @@
                   padding:12px 14px; background:var(--warn-bg); color:var(--warn); text-align:left; scroll-margin-top:12px;">
         <div style="font-size:13px; font-weight:600;">📸 여기엔 이런 사진</div>
         <div style="font-size:13px; margin-top:3px;">{{ b.text }}</div>
+        {% if b.tip %}<div style="font-size:12px; margin-top:3px; opacity:.85;">💡 {{ b.tip }}</div>{% endif %}
         {% if not preview %}
         <div style="margin-top:9px;">
           <form method="post" enctype="multipart/form-data" class="up"
@@ -418,55 +420,6 @@
     })();
   </script>
   {% endif %}
-  <script>
-    // 사진을 고르면 바로 올린다. 폰 원본(4~6MB)을 그대로 보내면 모바일에서 수십 초라
-    // (2026-09-15 사장님 "너무 오래 걸려"), 브라우저에서 먼저 긴 변 1600px JPEG 로 줄여
-    // 보낸다(≈0.6MB). 줄이기가 안 되는 브라우저면 원본 그대로 보낸다.
-    function upGo(inp) {
-      if (!inp.files || !inp.files.length) return;
-      var file = inp.files[0], form = inp.form, lab = inp.parentElement;
-      // 영상(2026-09-16)은 줄이지 않고 이름·확장자 그대로 보낸다 — 서버가 확장자로 영상을 알아본다
-      var isVideo = /^video\//.test(file.type) || /\.(mp4|mov|m4v)$/i.test(file.name || '');
-      if (isVideo && file.size > 50 * 1024 * 1024) {
-        alert('영상이 50MB를 넘어요 — 폰에서 짧게 자르거나 화질을 낮춰 주세요.');
-        inp.value = '';
-        return;
-      }
-      lab.style.pointerEvents = 'none';
-      lab.textContent = isVideo ? '⏳ 올리는 중…' : '⏳ 줄이는 중…';
-      shrink(file).then(function (blob) {
-        var fd = new FormData();
-        form.querySelectorAll('input[type=hidden]').forEach(function (h) { fd.append(h.name, h.value); });
-        fd.append('photo', blob, isVideo ? (file.name || 'video.mp4')
-                                         : (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg');
-        lab.textContent = '⏳ 올리는 중… (' + Math.round(blob.size / 1024) + 'KB)';
-        // ⚠ form.action 이 아니다 — 폼 안에 name="action" 숨은 칸이 있어 그 요소가 잡힌다
-        //   (2026-09-15 실측: '/post/3/[object HTMLInputElement]' 로 가서 404).
-        var url = form.getAttribute('action');
-        return fetch(url, {method: 'POST', body: fd, credentials: 'same-origin'});
-      }).then(function (r) {
-        location.replace(r.url || location.pathname);   // 서버의 redirect(note 포함)로 이동
-      }).catch(function () {
-        lab.textContent = '⏳ 올리는 중…';
-        form.submit();                                   // 무엇이든 막히면 예전 방식
-      });
-    }
-    function shrink(file) {
-      var MAX = 1600;
-      if (!/^image\//.test(file.type) || file.size < 700 * 1024 || !window.createImageBitmap) {
-        return Promise.resolve(file);                    // 이미 작거나 못 줄이면 그대로
-      }
-      // imageOrientation:'from-image' 가 폰 세로사진의 EXIF 회전을 반영한다
-      return createImageBitmap(file, {imageOrientation: 'from-image'}).then(function (bmp) {
-        var s = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
-        var w = Math.round(bmp.width * s), h = Math.round(bmp.height * s);
-        var c = document.createElement('canvas'); c.width = w; c.height = h;
-        c.getContext('2d').drawImage(bmp, 0, 0, w, h);
-        return new Promise(function (res, rej) {
-          c.toBlob(function (b) { b ? res(b) : rej(new Error('toBlob')); }, 'image/jpeg', 0.86);
-        });
-      });
-    }
-  </script>
+  {% include "_blog_upload_js.html" %}
 
 {% endblock %}

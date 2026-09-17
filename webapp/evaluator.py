@@ -13,7 +13,7 @@ import planner  # load_knowledge, _client_cfg 재사용
 
 def _clean_len(body: str) -> int:
     """마크다운 기호·사진자리·태그를 대충 걷어낸 본문 글자 수(공백 제외)."""
-    t = re.sub(r"\[[📷🎬📸][^\]]*\]", "", body)      # 📸 부탁(사장님이 넣을 사진 자리)도 글이 아니다
+    t = re.sub(r"\[[📷🎬📸][^\]]*\](?:[ \t]*\(\s*(?:팁|TIP|Tip|tip)\s*[:：][^)\n]*\))?", "", body)      # 📸 부탁(사장님이 넣을 사진 자리)도 글이 아니다
     t = re.sub(r"[#>*`\-]", "", t)
     t = re.sub(r"#\S+", "", t)  # 해시태그
     t = re.sub(r"\s+", "", t)

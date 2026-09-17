@@ -1,0 +1,119 @@
+{% extends "blog_base.html" %}
+{% block heading %}촬영 목록{% endblock %}
+{% block sub %}매장에서 보고 → 찍고 → 바로 올리기{% endblock %}
+{% block content %}
+  {# 📸 촬영 목록 — 발행 전 모든 초안의 '여기엔 이런 사진' 자리를 한 곳에(사장님 2026-09-17:
+     "매장에 있을 때는 초안을 보면서 하나하나 찍을 수 없어. 일하면서 바로바로 찍어서 올릴 수 있게").
+     자리마다 [📷 사진 올리기] 하나 — 올리면 그 글의 그 자리에 들어가고 목록에서 사라진다.
+     화면 말은 '사진'(영상 포함)으로 통일한다 — '컷'은 안 쓴다(리뷰 2026-09-17). #}
+  <a href="{{ url_for('blog_home', path_key=key) }}" class="btn sm" style="text-decoration:none;">← 블로그로</a>
+
+  {% if error %}
+  <div class="panel" style="margin-top:10px; border-color:var(--bad); background:var(--bad-bg); color:var(--bad);">
+    목록을 불러오지 못했어요 — 잠시 뒤 다시 열어 주세요.
+    <a class="btn wide" href="{{ url_for('blog_shots', path_key=key) }}" style="margin-top:8px; text-decoration:none;">🔄 다시 열기</a>
+  </div>
+  {% else %}
+
+  {% if done_post %}
+  <div class="panel" style="margin-top:10px; border-color:var(--ok); background:var(--ok-bg); padding:12px 14px;">
+    <div style="font-size:14.5px; font-weight:700; color:var(--ok);">🎉 「{{ done_post.title[:26] }}」 사진을 다 넣었어요</div>
+    <div style="font-size:13px; margin-top:3px;">이제 글을 열어 <b>[🔍 품질 채점]</b>을 누르면 돼요.</div>
+    <a class="btn wide primary" href="{{ url_for('blog_post', path_key=key, post_id=done_post.id) }}#quality"
+       style="margin-top:8px; text-decoration:none;">글 열어 품질 채점하기 →</a>
+  </div>
+  {% endif %}
+
+  <div class="panel" style="margin-top:10px; border-color:var(--accent); background:var(--accent-bg); padding:12px 14px;">
+    {% if total %}
+    <div style="font-size:15px; font-weight:700;">📸 찍을 사진 {{ total }}장 <span style="font-weight:400; font-size:12.5px; color:var(--muted);">· 글 {{ groups|length }}편</span></div>
+    <div style="font-size:13px; margin-top:3px; line-height:1.55;">
+      설명을 보고 찍은 뒤 <b>[📷 사진 올리기]</b>를 누르세요. 폰이 물어보면 지금 찍을 땐 <b>카메라</b>,
+      아까 찍어 둔 거면 <b>사진첩</b>. 올리면 그 글의 그 자리에 들어가고 여기서 사라져요. 영상은 50MB 까지.
+    </div>
+    <div class="row" style="margin-top:9px;">
+      <a class="btn {{ 'primary' if by == 'post' else '' }}" style="flex:1; min-height:44px; text-decoration:none;"
+         href="{{ url_for('blog_shots', path_key=key) }}">📝 글별로</a>
+      <a class="btn {{ 'primary' if by == 'kind' else '' }}" style="flex:1; min-height:44px; text-decoration:none;"
+         href="{{ url_for('blog_shots', path_key=key, by='kind') }}">🗂 장소별로</a>
+    </div>
+    <div style="font-size:12px; color:var(--muted); margin-top:5px;">장소별로 = 매장·메뉴·만드는 과정끼리 모아서, 같은 자리에서 몰아 찍기.</div>
+    {% if by == 'post' and groups|length > 1 %}
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:9px;">
+      {% for g in groups %}
+      <a class="btn sm" href="#p{{ g.id }}" style="text-decoration:none; font-size:12px;">{{ g.title[:10] }}… {{ g.wishes|length }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% else %}
+    <div style="font-size:15px; font-weight:700;">🎉 찍을 사진을 다 올렸어요</div>
+    <div style="font-size:13px; margin-top:3px; line-height:1.55;">글을 열어 <b>[🔍 품질 채점]</b> → <b>[📅 예약 발행]</b> 순서로 마무리하면 돼요. 새 초안을 만들면 여기에 목록이 다시 생겨요.</div>
+    <a class="btn wide primary" href="{{ url_for('blog_home', path_key=key) }}" style="margin-top:8px; text-decoration:none;">블로그 홈으로 →</a>
+    {% endif %}
+  </div>
+
+  {% macro shot(post_id, w, anchor, post_title='') %}
+  <div class="card" id="s{{ post_id }}-{{ w.i }}" style="padding:12px 13px; scroll-margin-top:10px;">
+    <div style="display:flex; gap:10px; align-items:flex-start;">
+      <div style="font-size:22px; line-height:1.2; flex:none;">{{ w.kind.icon }}</div>
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:14.5px; line-height:1.5; word-break:keep-all;">{{ w.text or '(설명 없는 사진 자리)' }}</div>
+        {% if w.tip %}<div style="font-size:12.5px; color:var(--muted); margin-top:3px; line-height:1.45;">💡 {{ w.tip }}</div>{% endif %}
+        {% if post_title %}<div style="font-size:12px; color:var(--muted); margin-top:2px;">글 · {{ post_title }}</div>{% endif %}
+      </div>
+    </div>
+    <form method="post" enctype="multipart/form-data" class="up" style="margin:9px 0 0;"
+          action="{{ url_for('blog_post_photo', path_key=key, post_id=post_id) }}">
+      <input type="hidden" name="action" value="upload_after">
+      <input type="hidden" name="after" value="{{ w.i }}">
+      <input type="hidden" name="wish_text" value="{{ w.text }}">
+      <input type="hidden" name="next" value="shots">
+      <input type="hidden" name="by" value="{{ by }}">
+      <input type="hidden" name="anchor" value="{{ anchor }}">
+      <label class="btn wide primary" style="cursor:pointer; font-size:15px; padding:12px; min-height:48px;">{{ '🎬 영상 올리기' if w.kind.key == 'video' else '📷 사진 올리기' }}
+        <input type="file" name="photo" accept="image/*,video/mp4,video/quicktime,.mp4,.mov,.m4v" hidden onchange="upGo(this)"></label>
+    </form>
+  </div>
+  {% endmacro %}
+
+  {% if by == 'kind' %}
+    {% for k in kinds %}
+    <div class="sec" id="k-{{ k.key }}" style="scroll-margin-top:10px;">{{ k.label }} <span style="font-weight:400; color:var(--muted); font-size:12px;">{{ k['items']|length }}장</span></div>
+    {% for w in k['items'] %}{{ shot(w.post_id, w, 'k-' ~ k.key, w.post_title) }}{% endfor %}
+    {% endfor %}
+  {% else %}
+    {% for g in groups %}
+    <div class="sec" id="p{{ g.id }}" style="scroll-margin-top:10px;">
+      📝 {{ g.title }}
+      <div style="font-weight:400; color:var(--muted); font-size:12px; margin-top:2px;">
+        남은 사진 {{ g.wishes|length }}장{% if g.media %} · 넣은 것 {{ g.media }}{% endif %}{% if g.kw %} · 키워드 {{ g.kw }}{% endif %}
+        · <a href="{{ url_for('blog_post', path_key=key, post_id=g.id) }}" style="color:var(--accent);">글 열기 →</a>
+      </div>
+    </div>
+    {% for w in g.wishes %}{{ shot(g.id, w, 'p' ~ g.id) }}{% endfor %}
+    {% endfor %}
+  {% endif %}
+  {% endif %}
+
+  {# 올린 결과는 아래 고정 알림으로 — 맨 위 알림은 돌아온 자리로 스크롤되며 화면 밖으로 밀렸다(리뷰 2026-09-17) #}
+  {% if note %}
+  {% set ok = note.startswith('✅') %}
+  <div id="toast" onclick="this.remove()"
+       style="position:fixed; left:12px; right:12px; bottom:16px; z-index:50; font-size:15px; font-weight:600;
+              padding:14px; border-radius:12px; box-shadow:0 4px 14px rgba(0,0,0,.25); text-align:center;
+              background:{{ 'var(--ok-bg)' if ok else 'var(--bad-bg)' }}; color:{{ 'var(--ok)' if ok else 'var(--bad)' }};
+              border:1px solid {{ 'var(--ok)' if ok else 'var(--bad)' }};">{{ note }}</div>
+  <script>setTimeout(function () { var t = document.getElementById('toast'); if (t) t.remove(); }, {{ 5000 if ok else 9000 }});</script>
+  {% endif %}
+
+  {% if anchor or focus %}
+  <script>
+    // 방금 올린 자리로 돌아온다(장소별 보기는 그 묶음으로, 글별 보기는 그 글로). 그 글을 다 채웠으면 맨 위 🎉 안내.
+    (function () {
+      var el = document.getElementById({{ anchor|tojson }}) || document.getElementById('p{{ focus }}');
+      if (el) el.scrollIntoView();
+    })();
+  </script>
+  {% endif %}
+  {% include "_blog_upload_js.html" %}
+{% endblock %}

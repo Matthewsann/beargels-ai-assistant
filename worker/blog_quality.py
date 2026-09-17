@@ -58,7 +58,7 @@ def _save(d: dict) -> None:
 
 # 사진·영상 자리표시. 📸 부탁(사장님이 사진을 넣을 자리, 2026-09-15)도 자리표시다 — 퇴고가
 # 잃어버리면 되돌려 넣고, 글자 수엔 안 센다.
-MARK_RE = re.compile(r"\[[📷🎬📸][^\]]*\]")
+MARK_RE = re.compile(r"\[[📷🎬📸][^\]]*\](?:[ \t]*\(\s*(?:팁|TIP|Tip|tip)\s*[:：][^)\n]*\))?")   # 뒤의 (팁: …) 까지 한 덩어리
 
 
 def score(body: str, title: str, main_keyword: str) -> dict:
