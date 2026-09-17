@@ -46,6 +46,9 @@ DEBUG_DIR = ROOT / "posts" / "_debug"
 # 마지막 실패의 기계가 읽을 수 있는 원인 — 호출자(worker)가 사장님용
 # 한국어 메시지로 바꾸는 데 쓴다. draft_one 이 False/None 을 돌려주기 전에 채운다.
 LAST_ERROR = ""
+# 글은 들어갔지만 사람이 네이버에서 한 번 봐야 하는 일(예: 소제목 색을 검정으로 못 돌림).
+# fill_editor 가 비우고, type_blocks 가 채우며, worker/blog_jobs.do_publish 가 결과 문장에 붙인다(리뷰 2026-09-17).
+LAST_WARNINGS: list[str] = []
 
 # 스마트에디터 기본 선택자 후보들. config.yaml 의 selectors 로 덮어쓸 수 있습니다.
 # 각 항목은 '먼저 되는 것을 쓰는' 후보 리스트입니다.
@@ -99,6 +102,39 @@ DEFAULT_SELECTORS = {
     "size_button": [
         "button[data-name='font-size']",
     ],
+    # ── 글자 색 (실측 2026-09-17, SE ONE 1.78.1 — posts/_debug/probe/font_color_layer.html·
+    #    font_color_items.json·probe_log.txt) ──
+    # 버튼을 누르면 div.se-color-picker-option 이 열린다(닫힌 상태엔 DOM 에 없음). 팔레트 71색은
+    # button.se-color-palette[data-color='#rrggbb'] (소문자 6자리). 옵션을 클릭하면 선택 span 의
+    # 인라인 style 이 color: rgb(…) 로 바뀌고 레이어는 스스로 닫힌다(Escape 불필요).
+    # 버튼 안 span.se-font-color-indicator[data-role='color'] 의 background-color 가 현재 색이다.
+    "font_color_button": [
+        "button[data-name='font-color']",
+    ],
+    # 소제목 색 — 팔레트에 실제 갈색 계열은 #823f00·#b85c00·#6a5f00·#700001 뿐. #823f00(진갈색)을 쓴다.
+    # (클릭 방식은 #333333·#000000 으로 검증, #823f00 자체는 아직 안 눌러 봄)
+    "font_color_heading": [
+        "button.se-color-palette[data-color='#823f00']",
+    ],
+    # 본문으로 되돌릴 색 — 검정. 실측: #000000 클릭 → style color: rgb(0,0,0) 복귀 확인.
+    "font_color_default": [
+        "button.se-color-palette[data-color='#000000']",
+    ],
+    # ── 글꼴 (실측 2026-09-17 — posts/_debug/probe/font_family_layer.html·font_family_options.json) ──
+    # 옵션은 열릴 때만 렌더: div.se-toolbar-option-font-family[role='listbox'] 안
+    # button[data-role='option'][data-name='font-family'][data-value='{id}'] (title='' 이라 글자로는 못 잡음).
+    # 버튼 안 span.se-toolbar-label[data-role='label'] 이 현재 글꼴 이름(실측 기본 '나눔고딕').
+    # ⚠ 옵션 클릭 자체는 이번 실측에서 안 눌러 봤다 — 글자 크기 옵션과 같은 생성 패턴이라 같은 방식으로 고른다.
+    "font_family_button": [
+        "button[data-name='font-family']",
+    ],
+    # 본문 글꼴 — 나눔바른고딕(화면 가독성용 고딕), 없으면 나눔스퀘어.
+    "font_family_body": [
+        "button[data-role='option'][data-name='font-family'][data-value='nanumbarungothic']",
+        "button.se-toolbar-option-font-family-nanumbarungothic-button",
+        "button[data-role='option'][data-name='font-family'][data-value='nanumsquare']",
+        "button.se-toolbar-option-font-family-nanumsquare-button",
+    ],
     # 본문 첫 줄 위 툴바의 '구분선' 버튼
     "divider_button": [
         "button[data-name='horizontal-line']",
@@ -112,10 +148,14 @@ DEFAULT_SELECTORS = {
         ".se-popup-button-confirm",
         "button:has-text('확인')",
     ],
-    # 사진을 넣은 뒤 뜨는 '사진 설명' 칸(여기에 글이 잘못 들어가는 걸 막는 데 씀)
+    # 사진 컴포넌트 안의 '사진 설명' 칸 — _fill_image_caption 이 마지막 사진 컴포넌트 안에서 찾는다.
+    # 실측 2026-09-17(posts/_debug/probe/image_component.html·image_component_after.html):
+    #   .se-component.se-image > … > div.se-module.se-module-text.se-caption > p.se-text-paragraph
+    #   삽입 직후엔 display:none — 컴포넌트 안 img 를 클릭해야 se-is-on 이 붙어 보인다.
+    #   '.se-module-caption' 은 DOM 에 없어 뺐다.
     "image_caption": [
         ".se-caption .se-text-paragraph",
-        ".se-module-caption .se-text-paragraph",
+        ".se-caption",
     ],
     # 임시저장 버튼
     "save": [
@@ -296,7 +336,28 @@ def _close_layer(page: Page, frame: Frame) -> None:
 
     이 레이어가 남아 있으면 투명 dim 이 이후 모든 클릭을 가로챈다
     — 사진 11·13번과 저장이 전부 막혔던 실제 원인(2026-08-28 실측).
+    동영상 업로더는 닫기가 따로다(실측 2026-09-17, video_close_confirm.html): #video-uploader-wrap
+    button.nvu_btn_close → .nvu_layer_confirm 확인 레이어 → '확인' 클릭이면 레이어·dim 이 사라진다.
     """
+    try:
+        nvu_close = frame.locator("#video-uploader-wrap button.nvu_btn_close").first
+        if nvu_close.count() > 0 and nvu_close.is_visible():
+            nvu_close.click(timeout=2000)
+            ok = None
+            for _ in range(10):                  # 확인 레이어가 늦게 뜰 수 있다 — 최대 3초(리뷰 2026-09-17)
+                page.wait_for_timeout(300)
+                cand = frame.locator(".nvu_layer_confirm button:has-text('확인')").first
+                if cand.count() > 0 and cand.is_visible():
+                    ok = cand
+                    break
+            if ok is not None:
+                ok.click(timeout=2000)
+                page.wait_for_timeout(500)
+            if _dim_gone(frame):
+                return
+            print("    · 동영상 업로더를 닫았는데 dim 이 남아 있음 — 일반 닫기로 이어갑니다")
+    except Exception:  # noqa: BLE001
+        pass
     for css in ("button.se-popup-close-button", ".se-popup-close-button",
                 "button[data-name='close']", ".se-popup button:has-text('닫기')",
                 "button[title='닫기']"):
@@ -305,11 +366,14 @@ def _close_layer(page: Page, frame: Frame) -> None:
             if loc.count() > 0:
                 loc.click(timeout=2000)
                 page.wait_for_timeout(500)
-                return
+                if _dim_gone(frame):             # 눌렀는데 dim 이 남으면 다음 후보로(리뷰 2026-09-17)
+                    return
         except Exception:  # noqa: BLE001
             continue
     page.keyboard.press("Escape")
     page.wait_for_timeout(500)
+    if not _dim_gone(frame):
+        print("    · 레이어 dim 이 아직 남아 있음 — 다음 클릭이 막힐 수 있습니다")
 
 
 def _dim_gone(frame: Frame) -> bool:
@@ -319,46 +383,77 @@ def _dim_gone(frame: Frame) -> bool:
         return True
 
 
-def _fill_video_meta(page: Page, frame: Frame, desc: str, tags) -> None:
-    """영상 첨부 레이어의 내용(설명)·태그 칸 — 있으면 채우고, 못 찾으면 건너뛴다(사장님 2026-09-17).
+def _fill_video_meta(page: Page, frame: Frame, desc: str, tags) -> bool:
+    """영상 첨부 레이어의 정보(설명)·태그 칸 — 있으면 채우고, 못 찾으면 건너뛴다(사장님 2026-09-17).
 
-    nvu(네이버 동영상 업로더)의 제목 칸(input.nvu_inp)만 DOM 으로 확인돼 있다. 설명·태그 칸은
-    후보 선택자로 더듬는다 — 실제 이름은 다음 발행 때 posts/_debug/video_layer.html 로 확인.
+    실측 2026-09-17(posts/_debug/probe/video_fields.json·video_fields_after_tagclick.json·
+    video_layer_filled.html — nvu 네이버 동영상 업로더):
+      · 제목: input#nvu_inp_box_title.nvu_inp (필수, placeholder '제목을 입력하세요. (최대 40자, 필수)')
+      · 정보(설명): textarea#nvu_inp_box_description.nvu_inp (placeholder '정보를 입력해주세요. (최대 300자)')
+        — 라벨이 '정보'라 placeholder 에 '설명'이 없다. 옛 후보(textarea.nvu_txt 등)는 전부 안 맞아 지웠다.
+      · 태그: button#nvu_inp_box_tag.nvu_tag_label '태그추가' 를 먼저 눌러야 input.nvu_tag_inp(role=combobox,
+        버튼 클릭 전엔 display:none)가 보인다 → fill + Enter 마다 li.nvu_tag_item 하나 생성 확인.
+    설명이나 태그 중 하나라도 넣었으면 True, 하나도 못 넣었으면 False(로그만 남기고 글은 계속).
     """
     found = []
     if desc:
-        for sel in ("textarea.nvu_txt", "textarea[class*='nvu']", ".nvu_desc textarea",
-                    "textarea[placeholder*='설명']", "textarea[placeholder*='내용']", "textarea"):
-            try:
-                loc = frame.locator(sel).first
-                if loc.count() and loc.is_visible():
-                    loc.click(timeout=2000)
-                    loc.fill(desc[:200])
-                    found.append("내용")
+        try:
+            loc = None
+            for sel in ("textarea#nvu_inp_box_description", "textarea.nvu_inp"):
+                cand = frame.locator(sel).first
+                if cand.count() and cand.is_visible():
+                    loc = cand
                     break
-            except Exception:  # noqa: BLE001
-                continue
+            if loc is not None:
+                loc.click(timeout=2000)
+                loc.fill(desc[:300])
+                found.append("정보")
+            else:
+                print("    · 영상 정보(설명) 칸을 못 찾음(건너뜀)")
+        except Exception as e:  # noqa: BLE001
+            print(f"    · 영상 정보(설명) 입력 실패({str(e)[:50]})")
     if tags:
-        for sel in ("input.nvu_inp_tag", "input[placeholder*='태그']", "input[class*='tag']",
-                    "[class*='tag'] input[type='text']"):
-            try:
-                loc = frame.locator(sel).first
-                if loc.count() and loc.is_visible():
-                    for tg in list(tags)[:5]:
-                        loc.click(timeout=2000)
-                        loc.fill(str(tg)[:20])
-                        page.keyboard.press("Enter")
-                        page.wait_for_timeout(200)
-                    found.append(f"태그 {min(len(tags), 5)}개")
-                    break
-            except Exception:  # noqa: BLE001
-                continue
+        try:
+            # '태그추가' 버튼을 눌러 입력칸을 연다(입력칸은 이미 열려 있으면 그대로 쓴다)
+            inp = frame.locator("input.nvu_tag_inp").first
+            if not (inp.count() and inp.is_visible()):
+                opener = None
+                for sel in ("button#nvu_inp_box_tag", "button.nvu_tag_label"):
+                    cand = frame.locator(sel).first
+                    if cand.count() and cand.is_visible():
+                        opener = cand
+                        break
+                if opener is not None:
+                    opener.click(timeout=2000)
+                    page.wait_for_timeout(300)
+                    inp = frame.locator("input.nvu_tag_inp").first
+            if inp.count() and inp.is_visible():
+                n_ok = 0
+                for tg in list(tags)[:5]:
+                    word = str(tg).lstrip("#").strip()[:20]
+                    if not word:
+                        continue
+                    inp.click(timeout=2000)
+                    inp.fill(word)
+                    page.keyboard.press("Enter")
+                    page.wait_for_timeout(250)
+                    n_ok += 1
+                try:
+                    n_items = frame.locator("li.nvu_tag_item").count()
+                except Exception:  # noqa: BLE001
+                    n_items = -1
+                found.append(f"태그 {n_ok}개" + (f"(항목 {n_items}개 확인)" if n_items >= 0 else ""))
+            else:
+                print("    · 영상 태그 칸을 못 찾음(건너뜀)")
+        except Exception as e:  # noqa: BLE001
+            print(f"    · 영상 태그 입력 실패({str(e)[:50]})")
     try:
         DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         (DEBUG_DIR / "video_layer.html").write_text(frame.content(), encoding="utf-8")
     except Exception:  # noqa: BLE001
         pass
-    print("    · 영상 정보 입력: " + (", ".join(found) if found else "설명·태그 칸을 못 찾음(제목만)"))
+    print("    · 영상 정보 입력: " + (", ".join(found) if found else "정보·태그 못 넣음(제목만)"))
+    return bool(found)
 
 
 def insert_video(page: Page, frame: Frame, selectors: dict, path: str,
@@ -411,7 +506,10 @@ def insert_video(page: Page, frame: Frame, selectors: dict, path: str,
         _refocus_body(page, frame)
         return False
 
-    # 업로드 완료 = 완료 버튼(nvu_btn_submit)이 나타난다. 클립은 수 MB 라 금방.
+    # 완료 버튼(button.nvu_btn_submit)이 보일 때까지 기다린다.
+    # ⚠ 실측 2026-09-17(video_fields.json): 이 버튼은 업로드가 **시작되자마자** 보인다
+    #   (class nvu_btn_type3 = 아직 삽입 불가, 파일 상태 .nvu_file.nvu_step_upload '업로드 진행중').
+    #   그래서 '보이면 업로드 완료'는 헛신호 — 아래에서 진행중 표시가 사라질 때까지 따로 기다린다.
     submit = None
     waited = 0
     while waited < timeout_ms:
@@ -436,25 +534,71 @@ def insert_video(page: Page, frame: Frame, selectors: dict, path: str,
         _refocus_body(page, frame)
         return False
 
+    # 파일 항목 .nvu_file 의 단계 클래스(레이어 CSS 실측: nvu_step_wait → nvu_step_upload → nvu_step_extract
+    # → nvu_step_service, 실패는 nvu_step_fail)가 앞 세 단계를 벗어나거나 완료 버튼이 nvu_btn_type2 로
+    # 바뀌면 삽입 가능으로 본다(type2 는 추정 — 둘 중 하나만 맞아도 통과). 끝까지 '진행중'이면 남은 시간만
+    # 기다린 뒤 예전처럼 완료를 눌러 본다 — 뒤의 15초 재클릭 로직이 받쳐 준다.
+    def _uploading() -> bool:
+        try:
+            if frame.locator("button.nvu_btn_submit.nvu_btn_type2").count() > 0:
+                return False
+            return frame.locator(
+                ".nvu_file.nvu_step_wait, .nvu_file.nvu_step_upload, .nvu_file.nvu_step_extract").count() > 0
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _upload_failed() -> bool:
+        try:
+            return frame.locator(".nvu_file.nvu_step_fail, .nvu_file.nvu_step_fail_thumb").count() > 0
+        except Exception:  # noqa: BLE001
+            return False
+
+    if _uploading():
+        print("    · 동영상 업로드 진행중 — 끝나길 기다립니다")
+        while waited < timeout_ms and _uploading() and not _upload_failed():
+            page.wait_for_timeout(1000)
+            waited += 1000
+            try:                                  # 오류 팝업만 뜬 채 '진행중'에 멈추면 3분을 허비한다(리뷰 2026-09-17)
+                if frame.locator(".se-popup:has-text('오류')").count() > 0:
+                    print("    · 동영상 업로드 중 오류 팝업 — 닫고 건너뜁니다.")
+                    clear_popups(page, frame, selectors)
+                    _close_layer(page, frame)
+                    _refocus_body(page, frame)
+                    return False
+            except Exception:  # noqa: BLE001
+                pass
+        if _upload_failed():
+            print("    · 동영상 업로드 실패 표시(nvu_step_fail) — 닫고 건너뜁니다.")
+            _close_layer(page, frame)
+            _refocus_body(page, frame)
+            return False
+        if _uploading():
+            print(f"    · {timeout_ms // 1000}초가 지나도 '업로드 진행중' — 그래도 완료를 눌러 봅니다")
+
     inserted = False
     page.wait_for_timeout(1500)           # 업로드 목록이 자리잡을 시간
     try:
-        title_box = frame.locator("input.nvu_inp").first
-        if title_box.count() > 0:
+        # 제목 칸 — 실측 2026-09-17: input#nvu_inp_box_title.nvu_inp (textarea.nvu_inp 는 설명 칸이라 input 으로 한정)
+        title_box = first_working(frame, ["input#nvu_inp_box_title", "input.nvu_inp"])   # id 우선(리뷰 2026-09-17)
+        if title_box is not None:
             title_box.click(timeout=3000)
             title_box.fill(title[:40])
             page.wait_for_timeout(300)
             print(f"    · 영상 제목: {title[:40]}")
+        else:
+            print("    · 영상 제목 칸을 못 찾음(필수 칸 — 삽입이 막힐 수 있음)")
         _fill_video_meta(page, frame, desc, tags)
-        # 삽입 성공 판정은 클래스 이름에 걸지 않는다(SE 내부 클래스는 자주
-        # 바뀐다). 대신 ①본문 컴포넌트 수가 늘었거나 ②업로더 레이어가 스스로
-        # 닫혔으면 성공. 완료 클릭이 간혹 무시되면(실측) 한 번 더 누른다.
+        # 삽입 성공 = 본문 컴포넌트 수가 늘어남. 업로더 레이어가 닫힌 것은 보조 신호로만 본다.
+        # ⚠ 실측 2026-09-17: 옛 판정 'nvu_btn_append.nvu_local 이 안 보이면 닫힘'은 틀렸다 — 업로드가
+        #   시작되는 순간 그 버튼이 헤더의 .nvu_btn_local 로 바뀌어 사라지므로 삽입 전에도 참이 됐다.
+        #   레이어 루트는 div.se-popup.se-popup-video-upload > … > div#video-uploader-wrap 이고,
+        #   닫히면 둘 다 DOM 에서 사라진다(video_layer.html·probe_end_frame.html).
         before = frame.locator(".se-component").count()
 
         def layer_open() -> bool:
             try:
-                return frame.locator(
-                    "button.nvu_btn_append.nvu_local:visible").count() > 0
+                return (frame.locator("#video-uploader-wrap").count() > 0
+                        or frame.locator(".se-popup-video-upload").count() > 0)
             except Exception:  # noqa: BLE001
                 return False
 
@@ -463,8 +607,14 @@ def insert_video(page: Page, frame: Frame, selectors: dict, path: str,
         while waited2 < 90000:
             page.wait_for_timeout(1000)
             waited2 += 1000
-            if frame.locator(".se-component").count() > before or not layer_open():
+            if frame.locator(".se-component").count() > before:
                 inserted = True
+                break
+            if not layer_open():
+                page.wait_for_timeout(2000)      # 레이어는 닫혔는데 블록이 아직이면 잠깐 더
+                inserted = frame.locator(".se-component").count() > before
+                if not inserted:
+                    print("    · 업로더 레이어는 닫혔지만 본문에 영상 블록이 안 생겼습니다")
                 break
             if waited2 == 15000:          # 15초째 그대로면 완료를 한 번 더
                 try:
@@ -490,24 +640,60 @@ def insert_video(page: Page, frame: Frame, selectors: dict, path: str,
     return inserted
 
 
-def _fill_image_caption(page: Page, frame: Frame, caption: str) -> bool:
+def _fill_image_caption(page: Page, frame: Frame, selectors: dict, caption: str) -> bool:
     """방금 넣은 사진의 '사진 설명' 칸에 설명을 적는다(사장님 2026-09-17: 사진에도 제목).
-    네이버는 이 설명을 이미지 정보로 같이 노출한다. 칸을 못 찾으면 건너뛴다."""
+    네이버는 이 설명을 이미지 정보로 같이 노출한다. 칸을 못 찾으면 건너뛴다.
+
+    실측 2026-09-17(posts/_debug/probe/image_component.html → image_component_after.html):
+      · 칸은 마지막 .se-component.se-image 안 div.se-module.se-caption > p.se-text-paragraph.
+      · 삽입 직후엔 display:none 이라 is_visible 로 찾으면 '못 찾음'이 됐다 — 컴포넌트 안 img 를
+        클릭하면 .se-caption 에 se-is-on 이 붙어 보인다. 그래서 img 클릭이 먼저다.
+      · 클릭 뒤 '설명 테스트' 타이핑 → .se-caption textContent 에 포함 확인(typed_ok=true).
+      · 포커스가 가면 캡션 안에 인라인 툴바 글자(정렬/굵게…)가 textContent 에 섞이므로 검증은 '포함'으로.
+    입력 뒤 커서를 본문 끝으로 되돌리는 건 호출자(insert_media)의 _refocus_body 가 한다.
+    """
     if not caption:
         return False
+    text = caption[:60]
     try:
         comp = frame.locator(".se-component.se-image").last
-        for sel in (".se-caption .se-text-paragraph", ".se-module-caption .se-text-paragraph",
-                    "[class*='caption'] .se-text-paragraph", "[class*='caption']"):
-            cap = comp.locator(sel).first
-            if cap.count() and cap.is_visible():
-                cap.click(timeout=2000)
-                page.wait_for_timeout(150)
-                page.keyboard.type(caption[:60], delay=8)
-                page.wait_for_timeout(200)
-                print(f"    · 사진 설명: {caption[:30]}")
-                return True
-        print("    · 사진 설명 칸을 못 찾음(건너뜀)")
+        if comp.count() == 0:
+            print("    · 사진 설명: 사진 컴포넌트가 없음(건너뜀)")
+            return False
+        # ① 사진을 클릭해 설명 칸을 연다
+        img = comp.locator("img.se-image-resource, img").first
+        if img.count():
+            try:
+                img.click(timeout=2000)
+                page.wait_for_timeout(300)
+            except Exception as e:  # noqa: BLE001
+                print(f"    · 사진 클릭 실패({str(e)[:40]}) — 설명 칸이 안 열릴 수 있음")
+        # ② 보이는 설명 칸을 찾아 적는다
+        cap = None
+        for sel in selectors.get("image_caption") or DEFAULT_SELECTORS["image_caption"]:
+            cand = comp.locator(sel).first
+            if cand.count() and cand.is_visible():
+                cap = cand
+                break
+        if cap is None:
+            print("    · 사진 설명 칸을 못 찾음(건너뜀)")
+            return False
+        cap.click(timeout=2000)
+        page.wait_for_timeout(150)
+        page.keyboard.type(text, delay=8)
+        page.wait_for_timeout(200)
+        try:
+            got = comp.locator(".se-caption").first.text_content(timeout=1000) or ""
+        except Exception:  # noqa: BLE001
+            got = ""
+        if not got:
+            print(f"    · 사진 설명을 쳤지만 칸을 다시 못 읽어 확인 못 함: {text[:30]}")
+            return False
+        if text[:10] not in got:
+            print(f"    · 사진 설명을 쳤지만 칸에서 확인 안 됨: {text[:30]}")
+            return False
+        print(f"    · 사진 설명: {text[:30]}")
+        return True
     except Exception as e:  # noqa: BLE001
         print(f"    · 사진 설명 입력 실패({str(e)[:50]})")
     return False
@@ -568,7 +754,7 @@ def insert_media(page: Page, frame: Frame, selectors: dict, path: str,
     if clear_popups(page, frame, selectors):
         print("    · 업로드 안내/오류 팝업을 닫았습니다.")
     if inserted:
-        _fill_image_caption(page, frame, caption)
+        _fill_image_caption(page, frame, selectors, caption)
     # 사진을 넣으면 커서가 '사진 설명' 칸에 가 있을 수 있다. 그대로 두면
     # 다음 문단이 사진 설명으로 들어가 버린다 → 본문 맨 끝으로 커서를 되돌린다.
     _refocus_body(page, frame)
@@ -651,6 +837,92 @@ def set_font_size(page: Page, frame: Frame, selectors: dict, size: int) -> bool:
     return _pick_option(frame, selectors["size_button"], options, page)
 
 
+def _current_font_color(frame: Frame) -> str:
+    """툴바 글자색 버튼의 현재 색 표시(span.se-font-color-indicator 의 background-color). 못 읽으면 ''."""
+    try:
+        ind = frame.locator("button[data-name='font-color'] span.se-font-color-indicator").first
+        if ind.count():
+            return (ind.evaluate("el => getComputedStyle(el).backgroundColor") or "").replace(" ", "")
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+def set_font_color(page: Page, frame: Frame, selectors: dict, which: str) -> bool:
+    """글자 색을 고른다. which='heading'(진갈색) 또는 'default'(검정). 성공하면 True.
+
+    실측 2026-09-17(posts/_debug/probe/font_color_layer.html·font_color_items.json·probe_log.txt):
+      · 글자 선택을 유지한 채 button[data-name='font-color'] 클릭 → div.se-color-picker-option 이 열린다.
+      · 팔레트 항목 button.se-color-palette[data-color='#rrggbb'] 를 클릭하면 선택 span 의 인라인
+        style color 가 바뀌고 **레이어는 스스로 닫힌다**(Escape 불필요). #333333 → #000000 왕복으로 검증.
+      · 팔레트 button 요소 자체를 클릭한다(안쪽 span.se-blind 는 글자만).
+    ⚠ 번짐 방지: 팔레트가 열린 상태에서 **소제목 색과 검정 둘 다** 있는지 먼저 확인하고, 하나라도 없으면
+      아무것도 클릭하지 않고 Escape 로 닫는다 — 못 되돌리는 색은 다음 문단까지 물든다.
+    """
+    key = {"heading": "font_color_heading", "default": "font_color_default"}.get(which)
+    if key is None:
+        print(f"    · 글자 색: 모르는 종류 '{which}'")
+        return False
+    opener = first_working(frame, selectors["font_color_button"])
+    if opener is None:
+        print("    · 글자 색 버튼을 못 찾음(색 건너뜀)")
+        return False
+    try:
+        opener.click(timeout=3000)
+        page.wait_for_timeout(300)
+        layer = frame.locator(".se-color-picker-option").first
+        if layer.count() == 0:
+            print("    · 글자 색 팔레트가 안 열림(색 건너뜀)")
+            page.keyboard.press("Escape")
+            return False
+        head_opt = first_working(frame, selectors["font_color_heading"])
+        dflt_opt = first_working(frame, selectors["font_color_default"])
+        if head_opt is None or dflt_opt is None:
+            missing = [n for n, o in (("소제목 색", head_opt), ("검정", dflt_opt)) if o is None]
+            print(f"    · 팔레트에 {'·'.join(missing)} 항목이 없음 — 색은 건드리지 않음")
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(200)
+            return False
+        target = head_opt if which == "heading" else dflt_opt
+        target.click(timeout=3000)
+        page.wait_for_timeout(250)
+        if frame.locator(".se-color-picker-option").count() > 0:   # 실측상 스스로 닫히지만 혹시 남으면
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(150)
+        if which == "default":
+            now = _current_font_color(frame)
+            if now and now not in ("rgb(0,0,0)", "rgba(0,0,0,1)"):
+                print(f"    · 글자 색 되돌리기 뒤에도 표시가 {now} — 다음 문단이 물들 수 있음")
+                return False
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"    · 글자 색 선택 실패({str(e)[:50]})")
+        try:
+            page.keyboard.press("Escape")
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+
+
+def set_font_family(page: Page, frame: Frame, selectors: dict) -> bool:
+    """본문 글꼴을 한 번 고른다(type_blocks 시작에서). 못 찾으면 False.
+
+    실측 2026-09-17(posts/_debug/probe/font_family_layer.html·font_family_options.json): 옵션 버튼은
+    글자 크기 옵션과 같은 생성 패턴이라 _pick_option 으로 고른다. Escape 로 닫히는 것 확인.
+    ⚠ 옵션 클릭 자체는 실측에서 안 눌러 봤다 — 고른 뒤 버튼 라벨(span[data-role='label'])로 확인한다.
+    """
+    if not _pick_option(frame, selectors["font_family_button"], selectors["font_family_body"], page):
+        print("    · 본문 글꼴 옵션을 못 찾음(기본 글꼴 유지)")
+        return False
+    try:
+        label = frame.locator("button[data-name='font-family'] span[data-role='label']").first
+        name = (label.text_content(timeout=1000) or "").strip() if label.count() else ""
+    except Exception:  # noqa: BLE001
+        name = ""
+    print(f"    · 본문 글꼴: {name or '(라벨 못 읽음)'}")
+    return True
+
+
 def insert_divider(page: Page, frame: Frame, selectors: dict) -> bool:
     btn = first_working(frame, selectors["divider_button"])
     if btn is None:
@@ -664,9 +936,10 @@ def insert_divider(page: Page, frame: Frame, selectors: dict) -> bool:
         return False
 
 
-# 가독성(사장님 2026-09-17): 본문 16(네이버 기본 15 — 폰에서 16이 편하다), 소제목 19 굵게 + 앞에
-# 빈 줄 하나, 절마다 핵심 문장 하나 `**굵게**`. 글자 색·글꼴은 다음 발행 때 툴바 DOM 을 받아 본
-# 뒤에 넣는다(posts/_debug/toolbar.json) — 못 찾는 선택자로 색을 걸면 다음 문단까지 물든다.
+# 가독성(사장님 2026-09-17): 본문 16(네이버 기본 15 — 폰에서 16이 편하다), 소제목 19 굵게 + 진갈색
+# + 앞에 빈 줄 하나, 절마다 핵심 문장 하나 `**굵게**`, 본문 글꼴은 나눔바른고딕(없으면 나눔스퀘어).
+# 글자 색·글꼴 선택자는 2026-09-17 프로브 실측(posts/_debug/probe/) — set_font_color 는 소제목 색과
+# 검정이 팔레트에 둘 다 있을 때만 칠한다(못 되돌리는 색은 다음 문단까지 물든다).
 BODY_SIZE = 16
 HEAD_SIZE = 19
 _BOLD_RE = re.compile(r"(\*\*[^*\n]+?\*\*)")
@@ -698,7 +971,9 @@ def type_blocks(page: Page, frame: Frame, selectors: dict, body_loc,
     clear_text_toggles(page, frame)
     if set_font_size(page, frame, selectors, BODY_SIZE):
         print(f"    · 본문 글자 크기 {BODY_SIZE}")
+    set_font_family(page, frame, selectors)      # 본문 글꼴 한 번(실측 2026-09-17, 못 찾으면 건너뜀)
     first_text = True
+    after_heading, heading_colored = False, False   # 소제목 직후인가(사진이 바로 오면 서식을 다시 건다)
     for i, b in enumerate(blocks):
         btype = b.get("type")
         if btype == "divider":
@@ -735,15 +1010,24 @@ def type_blocks(page: Page, frame: Frame, selectors: dict, body_loc,
                 page.wait_for_timeout(200)
                 set_font_size(page, frame, selectors, HEAD_SIZE)
                 set_bold(page, frame, True)
+                # 소제목 색(진갈색) — 실측 2026-09-17: 글자색 버튼을 눌러도 선택이 유지되고, 팔레트 클릭으로
+                # 선택 span 에 색이 붙는다. 팔레트에 소제목 색·검정이 다 있을 때만 칠한다(번짐 방지).
+                colored = set_font_color(page, frame, selectors, "heading")
                 page.keyboard.press("End")
                 page.wait_for_timeout(150)
                 page.keyboard.press("Enter")
                 page.wait_for_timeout(150)
-                # 다음 문단이 19·굵게를 물려받지 않게 되돌린다
+                # 다음 문단이 19·굵게·색을 물려받지 않게 되돌린다
                 set_bold(page, frame, False)
                 set_font_size(page, frame, selectors, BODY_SIZE)
+                if colored and not set_font_color(page, frame, selectors, "default"):
+                    # 한 번 더 — 그래도 안 되면 경고를 남기고 호출자(일꾼 결과 문장)에 알린다
+                    if not set_font_color(page, frame, selectors, "default"):
+                        LAST_WARNINGS.append(f"소제목 「{text[:16]}」 뒤 글자 색을 검정으로 못 돌림 — 네이버에서 색 번짐 확인")
+                after_heading, heading_colored = True, colored
                 first_text = True
                 continue
+            after_heading = False
             first_text = False
         else:
             path = b.get("path")
@@ -764,6 +1048,14 @@ def type_blocks(page: Page, frame: Frame, selectors: dict, body_loc,
             if ok:
                 page.wait_for_timeout(400)
                 first_text = False
+                if after_heading:
+                    # 소제목 바로 뒤에 사진·영상이 오면 그 뒤 새 문단이 소제목 서식(19·굵게·색)을 물려받을 수
+                    # 있다(리뷰 지적 2026-09-17, 이 순서는 미실측) — 본문 서식을 한 번 더 건다(멱등).
+                    set_bold(page, frame, False)
+                    set_font_size(page, frame, selectors, BODY_SIZE)
+                    if heading_colored:
+                        set_font_color(page, frame, selectors, "default")
+                    after_heading = False
 
     # 베어글스 고정 서식: 다 쓰고 나서 전체 선택 → 가운데 정렬 한 번에.
     # (단락마다 정렬 버튼을 누르면 선택이 풀리는 문제를 피한다)
@@ -802,6 +1094,7 @@ def fill_editor(page: Page, cfg: dict, post: dict) -> Frame | None:
     # blocks 가 있으면 사진까지 같이 넣는다(없으면 예전처럼 글자만).
     blocks = post.get("blocks")
 
+    LAST_WARNINGS.clear()
     print(f"  · '{title}' 작성 시작")
     page.goto(write_url(blog_id), wait_until="domcontentloaded")
     page.wait_for_timeout(1500)

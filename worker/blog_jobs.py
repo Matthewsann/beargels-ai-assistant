@@ -667,8 +667,10 @@ def do_publish(payload: dict) -> tuple[int, str]:
     # '사진 N장 포함'은 준비한 개수가 아니라 **실제 들어간 개수**를 말한다
     with_photo = f" (사진·영상 {len(inserted)}개 들어감)" if inserted else " (⚠ 미디어 0개)"
     fail_note = f" · ⚠ {len(failed)}개는 업로드 실패" if failed else ""
+    # 에디터가 남긴 '사람이 봐야 할 것'(예: 소제목 색 복귀 실패) — 사장님이 시각 확인 단계에서 잡게(리뷰 2026-09-17)
+    warn_note = "".join(f" · ⚠ {w}" for w in list(getattr(na, "LAST_WARNINGS", []) or [])[:3])
     head = "네이버 예약 발행 설정" if reserved else "네이버 임시저장 완료"
-    return 1, (f"{head}{with_photo}{fail_note}{reserve_note}"
+    return 1, (f"{head}{with_photo}{fail_note}{warn_note}{reserve_note}"
                f" — {post.get('title', '')[:40]}")
 
 

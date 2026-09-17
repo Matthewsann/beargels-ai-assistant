@@ -90,3 +90,6 @@ data/archive_media/
 
 # 집 PC 일꾼의 정기 점검 스탬프(market_scan_at.txt 등) — 기기 로컬 런타임 상태
 state/
+# 에디터 실측 덤프(로그인된 에디터 HTML·스크린샷) — 리포 루트 posts/ (2026-09-17)
+/posts/
+_menu_harness_tmp.html
