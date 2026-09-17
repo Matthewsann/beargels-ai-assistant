@@ -126,6 +126,11 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(wa, "PROJECTS_DIR", str(tmp_path / "projects"))
     monkeypatch.setattr(planner, "HOOKS_FILE", str(tmp_path / "hooks.json"))
     calls = {"cloud": [], "cloud_undo": []}
+    # 브리프 원본·버킷을 건드리지 않는다 — 예전엔 테스트를 돌릴 때마다 실제
+    # data/briefs.json 을 읽어 실제 버킷에 올렸다(2026-09-17 프로브로 발견).
+    from sns_automation import briefs
+    monkeypatch.setattr(briefs, "PATH", str(tmp_path / "briefs.json"))
+    monkeypatch.setattr(briefs, "push", lambda items=None: None)
     monkeypatch.setattr(cloud_sync, "mark_published",
                         lambda pid, at, **kw: calls["cloud"].append((pid, at, kw)) or True)
     monkeypatch.setattr(cloud_sync, "unmark_published",
