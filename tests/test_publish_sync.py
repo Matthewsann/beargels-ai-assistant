@@ -125,21 +125,11 @@ def test_assign_posts_prefers_closest_in_time_when_captions_tie():
 def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(wa, "PROJECTS_DIR", str(tmp_path / "projects"))
     monkeypatch.setattr(planner, "HOOKS_FILE", str(tmp_path / "hooks.json"))
-    calls = {"cloud": [], "cloud_undo": [], "calendar": [], "calendar_undo": []}
+    calls = {"cloud": [], "cloud_undo": []}
     monkeypatch.setattr(cloud_sync, "mark_published",
                         lambda pid, at, **kw: calls["cloud"].append((pid, at, kw)) or True)
     monkeypatch.setattr(cloud_sync, "unmark_published",
                         lambda pid, **kw: calls["cloud_undo"].append(pid) or True)
-    from database import mkt_store
-
-    def fake_auto_record(**kw):          # 진짜 auto_record 처럼 같은 source_ref 는 한 번만
-        if any(c["source_ref"] == kw["source_ref"] for c in calls["calendar"]):
-            return None
-        calls["calendar"].append(kw)
-        return 1
-    monkeypatch.setattr(mkt_store, "auto_record", fake_auto_record)
-    monkeypatch.setattr(mkt_store, "delete_auto_record",
-                        lambda ref: calls["calendar_undo"].append(ref) or 1)
     return calls
 
 
@@ -172,10 +162,6 @@ def test_mark_reel_published_records_everywhere_and_is_idempotent(sandbox):
     assert len(hooks) == 2 and all(h["published"] for h in hooks)
     assert all(h["permalink"].endswith("/reel/abc/") for h in hooks)
 
-    cal = sandbox["calendar"]
-    assert len(cal) == 1 and cal[0]["source_ref"] == f"reel#{pid}"
-    assert cal[0]["day"] == "2026-09-04"          # KST 날짜(UTC 02:00 → 11:00)
-    assert "제철 과일산도 단면" in cal[0]["title"]
     assert sandbox["cloud"] and sandbox["cloud"][0][0] == pid
 
     # 두 번 눌러도 안전 — 발행 시각·출처는 처음 것을 지킨다
@@ -196,18 +182,6 @@ def test_mark_unknown_or_bad_project_raises_without_echoing_pid(sandbox):
         ps.mark_reel_published("../../다른곳")
 
 
-def test_calendar_failure_does_not_block_record(sandbox, monkeypatch):
-    from database import mkt_store
-
-    def boom(**kw):
-        raise RuntimeError("db down")
-    monkeypatch.setattr(mkt_store, "auto_record", boom)
-    pid = "1788000000-잠봉뵈르-베이글"
-    _project(pid, CAP)
-    res = ps.mark_reel_published(pid)
-    assert res["already"] is False and wa._load_project(pid)["published"] is True
-
-
 def test_unmark_reverts_all_four_places(sandbox):
     pid = "1788000000-제철-과일산도-단면"
     _project(pid, CAP)
@@ -219,7 +193,7 @@ def test_unmark_reverts_all_four_places(sandbox):
     assert not p.get("published") and "ig_media_id" not in p and "published_at" not in p
     h = _hooks(pid)[0]
     assert h["published"] is False and h["likes"] is None and "media_id" not in h
-    assert sandbox["calendar_undo"] == [f"reel#{pid}"] and sandbox["cloud_undo"] == [pid]
+    assert sandbox["cloud_undo"] == [pid]
     # 떼어낸 게시물 a 는 history 에 남아 다음 동기화가 다시 붙이지 않는다(오매칭을 사람이 고치는 길)
     assert p["published_history"][0]["ig_media_id"] == "a"
     notes = ps.sync_published_reels(client=_FakeApi([_post_a()]), now=T_NEW + 7200)
@@ -231,7 +205,7 @@ def test_unmark_reverts_all_four_places(sandbox):
     assert wa._load_project(pid)["ig_media_id"] == "c"
 
 
-def test_new_version_keeps_old_hooks_and_calendar_intact(sandbox):
+def test_new_version_keeps_old_hooks_intact(sandbox):
     """v1 발행·성과 → 다시 만들기 → v2 발행: 옛 판 훅·캘린더는 그대로, 새 판만 새로 기록."""
     pid = "1788000000-제철-과일산도-단면"
     _project(pid, CAP)
@@ -252,14 +226,11 @@ def test_new_version_keeps_old_hooks_and_calendar_intact(sandbox):
     h0, h1 = _hooks(pid)
     assert h0["media_id"] == "a" and h0["likes"] == 12       # 옛 판 그대로(성과도 안 덮임)
     assert h1["media_id"] == "b" and h1["likes"] == 3        # 새 판만 새 게시물
-    refs = [c["source_ref"] for c in sandbox["calendar"]]
-    assert len(refs) == 2 and refs[0] == f"reel#{pid}" and refs[1].startswith(f"reel#{pid}@")
 
     ps.unmark_reel_published(pid)                             # v2 취소 — v1 은 건드리지 않는다
     h0, h1 = _hooks(pid)
     assert h0["published"] and h0["likes"] == 12
     assert not h1["published"] and h1["likes"] is None
-    assert sandbox["calendar_undo"] == [refs[1]]
 
 
 def test_new_version_moves_publish_record_to_history():
@@ -317,15 +288,12 @@ def test_sync_detects_publish_and_refreshes_likes(sandbox):
     h = _hooks(hit)[0]
     assert h["published"] and h["likes"] == 12 and h["comments"] == 3 and h["media_id"] == "a"
     assert not wa._load_project(miss).get("published")     # 닮은 게시물이 없으면 그대로
-    assert sandbox["calendar"][0]["source_ref"] == f"reel#{hit}"
 
     # 다음 날 좋아요가 늘었다 — 같은 게시물을 또 '감지'하지 않고 숫자만 갱신
     api.posts[0]["like_count"] = 20
-    n_before = len(sandbox["calendar"])
     notes = ps.sync_published_reels(client=api, now=1788600000)
     assert any("새로 감지된 발행 없음" in n for n in notes)
     assert _hooks(hit)[0]["likes"] == 20
-    assert len(sandbox["calendar"]) == n_before       # 성과 갱신은 캘린더에 다시 적지 않는다
     assert not api.insight_calls                       # 권한 없으면 인사이트를 부르지 않는다
 
 
@@ -346,7 +314,6 @@ def test_sync_links_post_to_manually_marked_reel(sandbox):
     assert p["published_at"] == T_NEW + 3600 and p["published_source"] == "manual"   # 누른 기록 유지
     h = _hooks(pid)[0]
     assert h["likes"] == 12 and h["comments"] == 3 and h["media_id"] == "a"
-    assert len(sandbox["calendar"]) == 1              # 캘린더 중복 기록 없음(auto_record 의 reel# 마커)
 
 
 def test_sync_links_by_permalink_first(sandbox):

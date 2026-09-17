@@ -16,7 +16,6 @@
 기록되는 곳(네 군데가 한 번에):
     · projects/<id>/project.json  published / published_at / ig_permalink / ig_media_id
     · data/hook_library.json      published + 성과(좋아요·댓글, 권한 있으면 도달·저장·공유)
-    · Supabase mkt_campaigns      auto_record("reel#<id>") — 마케팅 캘린더
     · reels/index.json(버킷)      완성본 카드에 ✅ 표시·숫자 (직원 웹이 읽는다)
 
 규칙 하나 — **다시 만들면 새 판이다.** '틀린 말 고치기'나 같은 폴더로 다시
@@ -261,14 +260,6 @@ def start_new_version(p: dict, now: int | None = None) -> dict:
     return p
 
 
-def _calendar_ref(p: dict) -> str:
-    """MKT 캘린더 자동 기록 마커 — 판마다 다르게(두 번째 발행도 기록되고, 취소가 옛 판을 안 지운다)."""
-    ref = f"reel#{p['id']}"
-    if p.get("rendered_at"):
-        ref += f"@{int(p['rendered_at'])}"
-    return ref
-
-
 def mark_reel_published(pid: str, *, url: str | None = None, at: int | None = None,
                         media_id: str | None = None, source: str = "manual",
                         likes: int | None = None, comments: int | None = None) -> dict:
@@ -299,18 +290,6 @@ def mark_reel_published(pid: str, *, url: str | None = None, at: int | None = No
     planner.mark_published(pid, at=p["published_at"], url=url, media_id=media_id)
     if likes is not None or comments is not None:
         planner.record_project_result(pid, likes=likes, comments=comments)
-
-    # 마케팅 캘린더 — 릴스 발행 = 마케팅 실행 (사장님 지시 2026-08-30).
-    # auto_record 는 스스로 예외를 삼키고 중복(reel#pid)도 막는다.
-    try:
-        from database import mkt_store
-        day = datetime.fromtimestamp(p["published_at"], KST).strftime("%Y-%m-%d")
-        mkt_store.auto_record(
-            title=f"릴스: {title}" if title else "릴스 발행",
-            source_ref=_calendar_ref(p), day=day,
-            memo="릴스 발행 " + ("자동 감지" if source == "auto" else "기록"))
-    except Exception as e:  # noqa: BLE001 — 기록 실패가 발행 표시를 막으면 안 된다
-        logger.warning("캘린더 자동 기록 실패(%s): %s", pid, str(e)[:120])
 
     # 직원 웹 완성본 카드에 ✅ — 실패해도 로컬 기록은 이미 끝났다.
     try:
@@ -345,7 +324,6 @@ def unmark_reel_published(pid: str) -> dict:
     p = _load(pid)
     title = (p.get("title") or p.get("menu") or "").strip()
     was = bool(p.get("published"))
-    ref = _calendar_ref(p)
     if p.get("ig_media_id"):
         # 떼어낸 게시물은 history 에 남겨 다음 동기화가 같은 게시물을 다시 붙이지
         # 않게 한다(자동 감지가 엉뚱한 게시물을 잡았을 때 사람이 고치는 길).
@@ -356,11 +334,6 @@ def unmark_reel_published(pid: str) -> dict:
         p.pop(k, None)
     wa._save_project(p)
     planner.unmark_published(pid)
-    try:
-        from database import mkt_store
-        mkt_store.delete_auto_record(ref)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("캘린더 기록 삭제 실패(%s): %s", pid, str(e)[:120])
     try:
         cloud_sync.unmark_published(pid)
     except Exception as e:  # noqa: BLE001

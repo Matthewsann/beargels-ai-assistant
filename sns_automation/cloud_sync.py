@@ -208,6 +208,20 @@ def load_ideas(c=None) -> dict:
         return {}
 
 
+def drop_idea(brief_id: str) -> None:
+    """접은 제안을 아이디어함에서 뺀다."""
+    import time
+    c = client()
+    cur = load_ideas(c).get("ideas") or []
+    keep = [i for i in cur if i.get("brief_id") != brief_id]
+    if len(keep) == len(cur):
+        return
+    _bucket(c).upload(IDEAS, json.dumps(
+        {"updated": int(time.time()), "ideas": keep},
+        ensure_ascii=False).encode("utf-8"),
+        {"content-type": "application/json; charset=utf-8", "upsert": "true"})
+
+
 def push_ideas(ideas: list[dict], *, source: str = "weekly") -> None:
     """촬영 아이디어를 올린다. source='ref' 는 레퍼런스 기반(앞에 붙임)."""
     import time

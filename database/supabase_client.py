@@ -454,17 +454,32 @@ def request_reel_full(topic, memo="", by=None):
     return (get_client().table("jobs").insert(row).execute().data or [None])[0]
 
 
-def request_reel_ideas(desc=None, by=None):
-    """촬영 아이디어 요청. desc 가 있으면 레퍼런스 변환(reel_ref)."""
+def request_reel_ideas(desc=None, by=None, topic=None):
+    """매니저에게 주제 제안을 부탁한다.
+
+    desc  — 레퍼런스(마음에 든 릴스 설명) → 우리 버전 1개 (reel_ref)
+    topic — 사장님이 직접 정한 주제 → 릴스·블로그 가이드를 붙여 1개 (reel_ref)
+    둘 다 없으면 새 제안 묶음(reel_ideas). 같은 묶음 요청이 줄 서 있으면 그걸 돌려준다.
+    """
     import json as _json
-    kind = "reel_ref" if desc else "reel_ideas"
+    one = bool(desc or topic)
+    kind = "reel_ref" if one else "reel_ideas"
     live = (get_client().table("jobs").select("*")
             .eq("kind", kind).in_("status", ["pending", "running"])
             .limit(1).execute().data)
-    if live and not desc:
+    if live and not one:
         return live[0]
     row = {"kind": kind, "status": "pending", "requested_by": by or "",
-           "message": _json.dumps({"desc": desc or ""}, ensure_ascii=False)}
+           "message": _json.dumps({"desc": desc or "", "topic": topic or ""},
+                                  ensure_ascii=False)}
+    return (get_client().table("jobs").insert(row).execute().data or [None])[0]
+
+
+def request_brief_dismiss(brief_id, by=None):
+    """[이건 안 할래요] — 제안 브리프를 접는다(집 PC 가 원본에서 표시)."""
+    import json as _json
+    row = {"kind": "brief_dismiss", "status": "pending", "requested_by": by or "",
+           "message": _json.dumps({"brief_id": brief_id}, ensure_ascii=False)}
     return (get_client().table("jobs").insert(row).execute().data or [None])[0]
 
 
@@ -472,7 +487,7 @@ def request_reel_published(pid, url=None, by=None, undo=False):
     """[📤 인스타에 올렸어요] — 발행 사실을 집 PC 에 기록 요청. undo=True 면 되돌리기.
 
     같은 릴스·같은 방향의 요청이 이미 대기·진행 중이면 그 잡을 돌려준다(연타 방지).
-    집 PC 가 훅 라이브러리·MKT 캘린더·완성본 카드에 한 번에 남긴다(또는 지운다).
+    집 PC 가 훅 라이브러리·완성본 카드에 한 번에 남긴다(또는 지운다).
     """
     import json as _json
     live = (get_client().table("jobs").select("*")
@@ -564,7 +579,7 @@ def last_reel_job():
     rows = (get_client().table("jobs").select("*")
             .in_("kind", ["reel", "reel_video", "pipe",
                           "reel_full", "reel_ideas", "reel_ref", "reel_published",
-                          "reel_shoot", "content_intake"])
+                          "reel_shoot", "content_intake", "brief_dismiss"])
             .order("requested_at", desc=True).limit(1).execute().data)
     return rows[0] if rows else None
 
@@ -658,7 +673,7 @@ def last_collect_at():
 INTERACTIVE_JOB_KINDS = ("post", "post_edit", "regen", "rescrape", "wake", "reel",
                          "reel_video", "reel_topics", "pipe",
                          "reel_full", "reel_ideas", "reel_ref", "reel_published",
-                         "reel_shoot", "content_intake", "ledger_sync")
+                         "reel_shoot", "content_intake", "ledger_sync", "brief_dismiss")
 
 
 def claim_next_job(interactive_only=False):

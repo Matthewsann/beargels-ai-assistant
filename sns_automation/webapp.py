@@ -953,7 +953,7 @@ def create_app() -> FastAPI:
     @app.post("/api/projects/{pid}/published")
     async def mark_published(pid: str):
         # 직원 웹 [올렸어요]·인스타 자동 감지와 같은 함수 — 프로젝트·훅
-        # 라이브러리·MKT 캘린더·완성본 카드에 한 번에 남긴다(publish_sync).
+        # 라이브러리·완성본 카드에 한 번에 남긴다(publish_sync).
         from . import publish_sync
         try:
             await asyncio.to_thread(publish_sync.mark_reel_published, pid)

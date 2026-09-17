@@ -133,7 +133,8 @@ def test_rank_alone_does_not_claim_blog_success(store, monkeypatch):
     b = briefs.create("주제", blog={"keyword": "송도 베이글"})
     briefs.set_rank(b["id"], 5)
     assert briefs.get(b["id"])["verdict"] == {}          # 판정하지 않는다
-    assert briefs.as_prompt_context() == ""
+    # 판정 되먹임에는 안 들어간다(‘이미 제안해 둔 주제’ 목록에 이름만 나오는 건 괜찮다)
+    assert "지난 주제가 어떻게 됐나" not in briefs.as_prompt_context()
     # 글을 내고 발행되면 그때부터 순위를 성과로 읽는다
     briefs.patch(b["id"], blog={"post_id": 7})
     briefs.record_blog(b["id"], published_at=1788500000)
@@ -567,3 +568,51 @@ def test_pa_can_import_briefs_without_local_files():
     assert top <= {"json", "logging", "os", "re", "time", "__future__"}, top
     deploy = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
     assert "upload sns_automation/briefs.py" in deploy
+
+
+def test_dismissed_proposal_is_closed_and_told_to_manager(store):
+    """[이건 안 할래요] — 제안만 접히고, 다음 제안 프롬프트에 '다시 내지 말 것'으로 간다."""
+    a = briefs.create("접을 주제")
+    b = briefs.create("찍는 중 주제")
+    briefs.set_status(b["id"], briefs.SHOOTING)
+    assert briefs.dismiss(a["id"])["dismissed"] is True
+    assert briefs.get(a["id"])["status"] == briefs.CLOSED
+    assert briefs.dismiss(b["id"]) is None                 # 시작한 건 실수로 접히지 않는다
+    assert briefs.get(b["id"])["status"] == briefs.SHOOTING
+    ctx = briefs.as_prompt_context()
+    assert "안 하겠다고 접은 주제" in ctx and "접을 주제" in ctx
+    assert briefs.to_card(briefs.get(a["id"]))["dismissed"] is True
+
+
+def test_push_refuses_when_source_file_is_missing(tmp_path, monkeypatch):
+    """원본이 없는 자리에서 push 하면 웹 사본이 0개로 덮인다(2026-09-17 실사고) — 올리지 않는다."""
+    from sns_automation import cloud_sync
+    monkeypatch.setattr(briefs, "PATH", str(tmp_path / "nope" / "briefs.json"))
+    monkeypatch.setattr(cloud_sync, "_bucket",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("올리면 안 된다")))
+    briefs.push()
+
+
+def test_owner_topic_and_dismiss_flow_through_auto_make(store, monkeypatch):
+    """콘텐츠 기획 [＋ 내가 정한 주제]·[이건 안 할래요] — AI·버킷 없이 흐름만."""
+    from sns_automation import auto_make, cloud_sync, planner
+
+    async def fake_plan(topic):
+        return [{"title": "밤 크림치즈", "why": "사장님 주제", "hook_angle": "훅",
+                 "shots": [{"what": "바르기", "secs": 3}],
+                 "blog_keyword": "송도 베이글", "blog_angle": "가을 신메뉴"}]
+    pushed, dropped = [], []
+    monkeypatch.setattr(planner, "plan_from_topic", fake_plan)
+    monkeypatch.setattr(cloud_sync, "push_ideas", lambda ideas, source="weekly": pushed.append((ideas, source)))
+    monkeypatch.setattr(cloud_sync, "drop_idea", lambda bid: dropped.append(bid))
+
+    assert auto_make.run_topic("가을 신메뉴 밤 크림치즈") == "밤 크림치즈"
+    b = briefs.by_folder("밤 크림치즈")
+    assert b["source"] == "owner" and b["blog"]["keyword"] == "송도 베이글"
+    assert pushed[0][0][0]["brief_id"] == b["id"]
+
+    assert auto_make.dismiss_brief(b["id"]) == "밤 크림치즈"
+    assert briefs.get(b["id"])["dismissed"] and dropped == [b["id"]]
+    import pytest
+    with pytest.raises(auto_make.MakeError):
+        auto_make.dismiss_brief(b["id"])                   # 이미 접은 건 다시 못 접는다

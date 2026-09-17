@@ -183,6 +183,19 @@ def set_status(bid: str, status: str) -> dict | None:
 
 # ── 성과 (6단계) ─────────────────────────────────────────────
 
+def dismiss(bid: str) -> dict | None:
+    """사장님이 [이건 안 할래요] 한 제안 — 접고, 다음 제안 때 다시 안 나오게 남긴다.
+
+    지우지 않는 이유: 지우면 매니저가 같은 주제를 또 들고 온다. 아직 아무것도
+    시작 안 한 '제안'만 접을 수 있다(촬영에 들어간 건 실수로 접히면 안 된다).
+    """
+    b = get(bid)
+    if not b or b.get("status") != PROPOSED:
+        return None
+    b["status"], b["dismissed"] = CLOSED, True
+    return upsert(b)
+
+
 def record_insta(bid: str, **metrics) -> dict | None:
     """릴스 발행·성과를 브리프에 모은다(publish_sync 가 부른다)."""
     b = patch(bid, insta={k: v for k, v in metrics.items() if v is not None})
@@ -285,14 +298,25 @@ def as_prompt_context(items: list[dict] | None = None, limit: int = 6) -> str:
     """다음 기획 프롬프트에 넣을 되먹임 — 숫자가 아니라 판정 문장."""
     items = items if items is not None else load()
     done = [b for b in items if (b.get("verdict") or {}).get("line")]
-    if not done:
-        return ""
-    done.sort(key=lambda b: b["verdict"].get("at") or 0, reverse=True)
-    lines = ["[지난 주제가 어떻게 됐나 — 이 판정을 근거로 다음을 고른다]"]
-    for b in done[:limit]:
-        lines.append(f"· 「{b['topic']}」 — {b['verdict']['line']}")
-        for a in b["verdict"].get("next") or []:
-            lines.append(f"    → {a}")
+    lines = []
+    if done:
+        done.sort(key=lambda b: b["verdict"].get("at") or 0, reverse=True)
+        lines.append("[지난 주제가 어떻게 됐나 — 이 판정을 근거로 다음을 고른다]")
+        for b in done[:limit]:
+            lines.append(f"· 「{b['topic']}」 — {b['verdict']['line']}")
+            for a in b["verdict"].get("next") or []:
+                lines.append(f"    → {a}")
+    # 사장님이 접은 제안 — 같은 주제를 또 들고 오지 않게. 아직 안 고른 제안과도
+    # 겹치지 않게 알려준다(제안은 버튼을 누를 때마다 쌓이므로).
+    no = [b["topic"] for b in items if b.get("dismissed")][-8:]
+    if no:
+        lines.append("[사장님이 안 하겠다고 접은 주제 — 같은 주제·같은 각도로 다시 내지 않는다]")
+        lines.append("· " + " / ".join(no))
+    waiting = [b["topic"] for b in items
+               if b.get("status") == PROPOSED and not b.get("dismissed")][-8:]
+    if waiting:
+        lines.append("[이미 제안해 둔 주제 — 겹치지 않게 새 주제를 낸다]")
+        lines.append("· " + " / ".join(waiting))
     return "\n".join(lines)
 
 
@@ -315,12 +339,20 @@ def to_card(b: dict) -> dict:
                    "bad": (intake.get("bad") or [])[:4],
                    "missing": (intake.get("missing") or [])[:4]},
         "verdict": (b.get("verdict") or {}).get("line"),
+        "verdict_next": ((b.get("verdict") or {}).get("next") or [])[:2],
+        "comments": insta.get("comments"), "blog_title": blog.get("title"),
+        "dismissed": bool(b.get("dismissed")),
     }
 
 
 def push(items: list[dict] | None = None) -> None:
     """직원 웹이 읽을 사본을 버킷에 올린다. 실패해도 로컬 원본은 그대로."""
     from . import cloud_sync
+    if items is None and not os.path.exists(PATH):
+        # 원본 파일이 없는 자리(작업용 복사본 폴더·새 기기)에서 부르면 빈 목록이
+        # 직원 웹 사본을 덮어 제안이 통째로 사라진다(2026-09-17 실사고 — 6개가 0개로).
+        logger.warning("브리프 원본(%s)이 없어 올리지 않음 — 웹 사본 보호", PATH)
+        return
     items = items if items is not None else load()
     body = json.dumps({"updated": int(time.time()),
                        "briefs": [to_card(b) for b in items[:MAX_KEEP]]},

@@ -700,6 +700,31 @@ def run_reference(desc: str) -> str:
     return ideas[0].get("title", "")
 
 
+def run_topic(topic: str) -> str:
+    """사장님이 정한 주제 → 가이드 붙은 제안 1개(콘텐츠 기획 화면)."""
+    from . import cloud_sync, planner
+    ideas = asyncio.run(planner.plan_from_topic(topic))
+    if not ideas:
+        raise MakeError("주제에 가이드를 붙이지 못했어요.")
+    _briefs_from_ideas(ideas, "owner")
+    cloud_sync.push_ideas(ideas, source="ref")     # 앞에 붙는다(레퍼런스와 같은 자리)
+    return ideas[0].get("title", "")
+
+
+def dismiss_brief(brief_id: str) -> str:
+    """[이건 안 할래요] — 제안을 접고 인스타 화면 아이디어함에서도 뺀다."""
+    from . import briefs, cloud_sync
+    b = briefs.dismiss(brief_id)
+    if not b:
+        raise MakeError("이미 시작했거나 없는 주제라 접지 못했어요.")
+    briefs.push()
+    try:
+        cloud_sync.drop_idea(brief_id)
+    except Exception as e:  # noqa: BLE001 — 아이디어함 정리는 부가 작업
+        logger.warning("아이디어함에서 빼기 실패(무시): %s", str(e)[:120])
+    return b.get("topic", "")
+
+
 #: PA 파이프라인 화면에 올리는 최근 프로젝트 수
 PIPE_RECENT = 6
 

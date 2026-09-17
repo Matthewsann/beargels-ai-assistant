@@ -620,6 +620,22 @@ async def plan_from_reference(desc: str) -> list[dict]:
     return (data.get("ideas") or [])[:1]
 
 
+async def plan_from_topic(topic: str) -> list[dict]:
+    """사장님이 직접 정한 주제 → 릴스·블로그 가이드를 붙인 기획 1개.
+
+    주제는 사장님 것이니 바꾸지 않는다. 매니저의 몫은 '그 주제를 어떻게 찍고
+    어떤 키워드로 쓸지'다(콘텐츠 기획 화면 [＋ 내가 정한 주제], 2026-09-17).
+    """
+    user = (
+        "[사장님이 정한 주제]\n" + topic.strip()[:300] + "\n\n"
+        "이 주제를 그대로 살려 촬영 기획 1개를 내라. 주제를 다른 메뉴로 바꾸지 말 것.\n"
+        "title 은 사장님 주제를 12자 안팎으로 다듬은 것, why 에는 이 주제가 위 근거\n"
+        "(유입 검색어·매출·네이버 경쟁) 중 무엇과 닿는지 — 닿는 게 없으면 없다고 솔직히."
+    )
+    data = await _ask(_ideas_system(), user, _SHOOT_IDEAS_SCHEMA)
+    return (data.get("ideas") or [])[:1]
+
+
 async def suggest_hooks(title: str, menu: str, base_hook: str = "") -> dict:
     """같은 소재로 훅 자막 3버전 (1→N 변형용)."""
     try:

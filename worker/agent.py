@@ -1827,16 +1827,37 @@ def run_reel_ideas_job(job) -> None:
     try:
         sys.path.insert(0, str(ROOT))
         from sns_automation import auto_make
-        if is_ref:
+        if is_ref and (req.get("topic") or "").strip():
+            title = auto_make.run_topic(req["topic"])
+            msg = f"정하신 주제에 릴스·블로그 가이드를 붙였어요 — '{title}'"
+        elif is_ref:
             title = auto_make.run_reference(req.get("desc") or "")
             msg = f"레퍼런스를 우리 버전 기획으로 옮겼어요 — '{title}'"
         else:
             n = auto_make.run_ideas()
-            msg = f"이번 주 촬영 아이디어 {n}개 준비 완료"
+            msg = f"새 주제 제안 {n}개 준비 완료"
         db.finish_job(jid, "done", msg, 1)
     except Exception as e:  # noqa: BLE001
         logger.error("아이디어 잡 #%s 실패: %s", jid, e)
         logger.debug(traceback.format_exc())
+        db.finish_job(jid, "error", str(e)[:200], 0)
+
+
+def run_brief_dismiss_job(job) -> None:
+    """콘텐츠 기획 [이건 안 할래요] — 제안 브리프를 접는다."""
+    import json as _json
+    jid = job["id"]
+    try:
+        req = _json.loads(job.get("message") or "{}")
+    except ValueError:
+        req = {}
+    try:
+        sys.path.insert(0, str(ROOT))
+        from sns_automation import auto_make
+        topic = auto_make.dismiss_brief(req.get("brief_id") or "")
+        db.finish_job(jid, "done", f"'{topic}' 제안을 접었어요", 1)
+    except Exception as e:  # noqa: BLE001
+        logger.error("제안 접기 잡 #%s 실패: %s", jid, e)
         db.finish_job(jid, "error", str(e)[:200], 0)
 
 
@@ -2137,7 +2158,7 @@ def maybe_market_scan() -> None:
     """주 1회 인스타 시장조사(내 계정 API + 해시태그 웹) → 주제 추천 갱신.
 
     사장님 확정(2026-09-03): 아이디어는 **그 주의 실측 시장** 위에서 나와야
-    한다. 조사가 끝나면 run_ideas 로 제안 카드도 새 데이터로 다시 짠다.
+    한다. 제안 자체는 사장님이 버튼을 누를 때만 만든다(2026-09-17).
     """
     try:
         if _MARKET_STAMP.exists():
@@ -2152,18 +2173,16 @@ def maybe_market_scan() -> None:
     db.worker_ping("working", "인스타 시장조사 중")
     try:
         sys.path.insert(0, str(ROOT))
-        from sns_automation import auto_make, market_scan
+        from sns_automation import market_scan
         notes = market_scan.run_weekly()
         logger.info("시장조사: %s", " / ".join(notes))
         if any("로그인 필요" in n for n in notes):
             db.log_error("worker", "인스타 시장조사 — 전용 크롬에 인스타 로그인이 "
                          "필요합니다(launch_chrome.bat 크롬에서 인스타 로그인 한 번)",
                          kind="SessionExpired", path="maybe_market_scan")
-        try:
-            auto_make.run_ideas()      # 새 시장 데이터로 제안 카드 갱신
-            logger.info("시장조사 반영 — 촬영 아이디어 갱신 완료")
-        except Exception as e:  # noqa: BLE001
-            logger.warning("아이디어 갱신 실패(다음 기회에): %s", e)
+        # 조사만 한다. 주제 제안은 자동으로 만들지 않는다(사장님 2026-09-17:
+        # "주기적 x / 내가 원할 때 버튼으로") — 콘텐츠 기획 [💡 새 제안 받기]가
+        # 누르는 순간의 최신 조사 위에서 제안을 짠다.
     except Exception as e:  # noqa: BLE001
         logger.error("시장조사 실패: %s", e)
         logger.debug(traceback.format_exc())
@@ -2219,6 +2238,8 @@ def run_job(job) -> None:
         return run_reel_full_job(job)
     if job.get("kind") in ("reel_ideas", "reel_ref"):
         return run_reel_ideas_job(job)
+    if job.get("kind") == "brief_dismiss":
+        return run_brief_dismiss_job(job)
     if job.get("kind") == "reel_published":
         return run_reel_published_job(job)
     if job.get("kind") == "reel_shoot":

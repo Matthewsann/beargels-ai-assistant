@@ -1849,7 +1849,7 @@ def instagram_published(path_key):
     """[📤 인스타에 올렸어요] — 발행 사실을 집 PC 에 기록 요청한다(잡 큐).
 
     발행은 사람이, 발행 사실은 시스템이 반드시 안다(사장님 확정 2026-09-04).
-    이 기록이 훅 라이브러리·MKT 캘린더·완성본 카드에 한 번에 남고, 그 뒤
+    이 기록이 훅 라이브러리·완성본 카드에 한 번에 남고, 그 뒤
     좋아요·댓글이 자동으로 따라와 다음 기획 프롬프트에 들어간다.
     안 눌러도 집 PC 가 6시간마다 내 계정 게시물을 읽어 알아챈다 — 이 버튼은
     '지금 바로' 남기고 싶을 때와 자동 감지가 못 맞췄을 때의 확실한 길.
@@ -4168,124 +4168,68 @@ def menu_settings_save(path_key, key):
 
 
 # ---------------------------------------------------------------------------
-# 마케팅 캘린더 (/mkt) — 설계: 2026-08-26 사장님 확정 (목업 v3)
-# 매출 원천: 드라이브 장부관리 폴더의 TOS/IMU 포스 엑셀(집 PC 일꾼이 자동 반영)
+# 콘텐츠 기획 (/mkt) — 사장님 확정 2026-09-17
+#
+# 예전 마케팅 캘린더 자리다(행사 기록·매출 효과 계산은 전부 걷어냈다 —
+# 사장님 "ALL"). 이제 이 화면은 **매니저**다: 어떤 주제를 어떤 콘텐츠로
+# 올리면 좋을지 제안하고(브리프), 고른 주제를 블로그·인스타 프로그램에 넘긴다.
+# 주소를 /mkt 로 둔 건 북마크·홈 카드가 안 깨지게 하려는 것뿐이다.
+# 제안은 자동으로 돌지 않는다 — [💡 새 제안 받기]를 눌렀을 때만(사장님 지시).
+# 화면 조립은 service/plan_page.py, 브리프 쓰기는 전부 집 PC 잡으로.
 # ---------------------------------------------------------------------------
 
-from database import mkt_store  # noqa: E402
-from service import mkt_page  # noqa: E402
+from database import mkt_store  # noqa: E402 — 매출 목표 저장(/sales)이 쓴다
+from service import plan_page  # noqa: E402
 
 
 @app.route("/<path_key>/mkt")
 def mkt_home(path_key):
     check(path_key)
-    # PA 서버는 UTC — 그냥 now() 면 한국 아침 9시 전의 기록·조회가 전부
-    # '어제'로 밀려 요일 비교가 통째로 어긋난다(2026-08-30 감사 #17).
-    today = datetime.now(KST).date()
     try:
-        y = int(request.args.get("y", today.year))
-        m = int(request.args.get("m", today.month))
-        assert 1 <= m <= 12 and 2024 <= y <= 2100
-    except (ValueError, AssertionError):
-        y, m = today.year, today.month
-    view = mkt_page.build_month_view(y, m, today)
-    return render_template("mkt.html", key=path_key, v=view)
+        cards = _briefs_cached()
+    except Exception:  # noqa: BLE001 — 버킷이 잠깐 안 읽혀도 화면은 뜬다
+        cards = []
+    try:
+        job = db.last_reel_job()
+    except Exception:  # noqa: BLE001
+        job = None
+    return render_template("plan.html", key=path_key,
+                           v=plan_page.build_view(cards, job))
 
 
 @app.route("/<path_key>/mkt/guide")
 def mkt_guide(path_key):
+    """옛 캘린더 가이드 주소 — 기획 화면으로 보낸다."""
     check(path_key)
-    return render_template("mkt_guide.html", key=path_key)
+    return redirect(url_for("mkt_home", path_key=path_key))
 
 
-@app.route("/<path_key>/mkt/campaign", methods=["POST"])
-def mkt_campaign_new(path_key):
+@app.route("/<path_key>/content/dismiss", methods=["POST"])
+def content_dismiss(path_key):
+    """[이건 안 할래요] — 제안을 접는다. 브리프 원본은 집 PC 것이라 잡으로."""
     check(path_key)
-    f = request.get_json(force=True) or {}
-    title = (f.get("title") or "").strip()
-    start = (f.get("start") or "").strip()
-    if not title or not start:
-        return jsonify({"ok": False, "error": "제목과 시작일은 필수예요."}), 400
-    category = f.get("category") or "store"
-    end = (f.get("end") or "").strip() or None
-    if category == "var" and not end:
-        end = start                       # 변수는 당일 단발
-    targets = [t.strip() for t in (f.get("targets") or []) if t.strip()]
-    if not targets:
-        try:
-            targets = mkt_store.extract_targets(
-                title, mkt_store.distinct_products(days=120))
-        except Exception:  # noqa: BLE001
-            targets = []
-    cost = f.get("cost")
+    bid = (request.form.get("brief_id") or "").strip()[:120]
+    if not bid:
+        return jsonify(error="어느 주제인지 알 수 없어요."), 400
     try:
-        cost = int(str(cost).replace(",", "")) if cost not in (None, "") else None
-    except ValueError:
-        cost = None
-    try:
-        cid = mkt_store.create_campaign(
-            title, category, start, end, targets or None, cost,
-            (f.get("memo") or "").strip() or None)
-        return jsonify({"ok": True, "id": cid, "targets": targets})
+        db.request_brief_dismiss(bid, by="직원웹")
     except Exception as e:  # noqa: BLE001
-        db.log_error("service", f"캠페인 저장 실패: {e}", kind=type(e).__name__,
-                     path=request.path, detail=traceback.format_exc())
-        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+        return jsonify(error=f"요청을 넣지 못했어요: {e}"), 500
+    return jsonify(ok=True)
 
 
-@app.route("/<path_key>/mkt/campaign/<int:cid>/update", methods=["POST"])
-def mkt_campaign_update(path_key, cid):
+@app.route("/<path_key>/content/topic", methods=["POST"])
+def content_topic(path_key):
+    """[＋ 내가 정한 주제] — 매니저가 릴스·블로그 가이드를 붙여 제안 카드로."""
     check(path_key)
-    f = request.get_json(force=True) or {}
+    topic = (request.form.get("topic") or "").strip()[:120]
+    if len(topic) < 2:
+        return jsonify(error="주제를 적어주세요."), 400
     try:
-        if f.get("action") == "end":
-            mkt_store.update_campaign(
-                cid, end_date=f.get("end") or str(datetime.now(KST).date()),
-                status="done")
-        elif f.get("action") == "delete":
-            mkt_store.delete_campaign(cid)
-        else:
-            patch = {k: f[k] for k in
-                     ("title", "category", "start_date", "end_date",
-                      "target_products", "cost", "memo") if k in f}
-            mkt_store.update_campaign(cid, **patch)
-        return jsonify({"ok": True})
+        db.request_reel_ideas(topic=topic, by="직원웹")
     except Exception as e:  # noqa: BLE001
-        db.log_error("service", f"캠페인 수정 실패(#{cid}): {e}",
-                     kind=type(e).__name__, path=request.path,
-                     detail=traceback.format_exc())
-        return jsonify({"ok": False, "error": str(e)[:200]}), 500
-
-
-@app.route("/<path_key>/mkt/campaign/<int:cid>/effect")
-def mkt_campaign_effect(path_key, cid):
-    check(path_key)
-    try:
-        return jsonify(mkt_page.campaign_effect(cid))
-    except Exception as e:  # noqa: BLE001
-        return jsonify({"error": str(e)[:200]}), 200
-
-
-@app.route("/<path_key>/mkt/day/<day>")
-def mkt_day(path_key, day):
-    check(path_key)
-    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
-        abort(400)
-    try:
-        return jsonify(mkt_page.day_detail(day))
-    except Exception as e:  # noqa: BLE001
-        return jsonify({"error": str(e)[:200]}), 200
-
-
-@app.route("/<path_key>/mkt/import", methods=["POST"])
-def mkt_import(path_key):
-    """'장부 지금 반영' — 집 PC 일꾼에게 폴더 스캔 요청."""
-    check(path_key)
-    try:
-        mkt_store.request_pos_import(by="mkt")
-        return jsonify({"ok": True})
-    except Exception as e:  # noqa: BLE001
-        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+        return jsonify(error=f"요청을 넣지 못했어요: {e}"), 500
+    return jsonify(ok=True)
 
 
 # ---------------------------------------------------------------------------
