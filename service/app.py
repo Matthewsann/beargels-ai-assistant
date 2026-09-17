@@ -3406,6 +3406,10 @@ def blog_shots(path_key):
                 # 비슷한 장면끼리 붙인다 — 같은 자리에서 몰아 찍게(리뷰 2026-09-17)
                 items.sort(key=lambda w: next((n for n, x in enumerate(_SHOT_SORT) if x in w["text"]), 99))
                 kinds.append({"key": k, "label": label, "items": items})
+    if request.args.get("print"):
+        # 🖨 A4 체크리스트(사장님 2026-09-17) — 같은 목록을 흑백 인쇄용으로. 폰을 못 볼 때 종이로 들고 찍는다.
+        return render_template("blog_shots_print.html", key=path_key, groups=groups, kinds=kinds, by=by,
+                               total=total, today=datetime.now(KST).strftime("%Y-%m-%d"))
     focus = request.args.get("focus") or ""
     anchor = request.args.get("anchor") or ""
     done = request.args.get("done") or ""

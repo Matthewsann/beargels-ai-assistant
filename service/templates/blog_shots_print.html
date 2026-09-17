@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>촬영 체크리스트 {{ today }}</title>
+{# 🖨 촬영 체크리스트 — A4 세로, 흑백(사장님 2026-09-17: "촬영 목록 체크리스트로 A4 프린트").
+   화면의 촬영 목록과 같은 데이터·같은 보기(글별/장소별). 한 줄 = ☐ + 사진 설명 + 💡 팁. 줄은 쪽 사이에서 안 잘린다. #}
+<style>
+  @page { size: A4 portrait; margin: 12mm 12mm 14mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: #000; background: #fff; font-family: "Malgun Gothic", "맑은 고딕", -apple-system, sans-serif;
+         font-size: 11pt; line-height: 1.45; }
+  .sheet { max-width: 186mm; margin: 0 auto; padding: 10px; }
+  h1 { font-size: 16pt; margin: 0 0 2mm; }
+  .meta { font-size: 9.5pt; color: #333; margin-bottom: 4mm; border-bottom: 1.5pt solid #000; padding-bottom: 2mm; }
+  h2 { font-size: 12pt; margin: 5mm 0 1.5mm; padding: 1.2mm 2mm; background: #eee; border-left: 3pt solid #000;
+       break-after: avoid; page-break-after: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  h2 small { font-weight: 400; font-size: 9pt; color: #333; }
+  .row { display: flex; gap: 3mm; align-items: flex-start; padding: 1.8mm 0; border-bottom: .5pt solid #bbb;
+         break-inside: avoid; page-break-inside: avoid; }
+  .box { flex: none; width: 5.5mm; height: 5.5mm; border: 1.2pt solid #000; border-radius: 1mm; margin-top: .6mm; }
+  .no { flex: none; width: 7mm; font-size: 9pt; color: #444; text-align: right; margin-top: .8mm; }
+  .txt { flex: 1; min-width: 0; word-break: keep-all; }
+  .tip { font-size: 9.5pt; color: #333; margin-top: .4mm; }
+  .from { font-size: 8.5pt; color: #555; margin-top: .3mm; }
+  .kind { flex: none; font-size: 8.5pt; border: .6pt solid #666; border-radius: 1.5mm; padding: 0 1.5mm; margin-top: .8mm; white-space: nowrap; }
+  .foot { margin-top: 5mm; font-size: 9pt; color: #333; }
+  .bar { position: sticky; top: 0; background: #fff; padding: 10px; border-bottom: 1px solid #ccc; display: flex; gap: 8px; justify-content: center; }
+  .bar button, .bar a { font: inherit; font-size: 15px; padding: 10px 16px; border-radius: 9px; border: 1px solid #185fa5;
+                        background: #185fa5; color: #fff; text-decoration: none; cursor: pointer; }
+  .bar a { background: #fff; color: #185fa5; }
+  @media print { .bar { display: none; } .sheet { padding: 0; } }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <button onclick="window.print()">🖨 인쇄하기</button>
+    <a href="{{ url_for('blog_shots', path_key=key, by=('kind' if by == 'kind' else None)) }}">← 촬영 목록으로</a>
+  </div>
+  <div class="sheet">
+    <h1>📸 촬영 체크리스트 <span style="font-size:11pt; font-weight:400;">— 베어글스 블로그</span></h1>
+    <div class="meta">{{ today }} · 찍을 사진 {{ total }}장 · 글 {{ groups|length }}편 · {{ '장소별(같은 자리에서 몰아 찍기)' if by == 'kind' else '글별' }}
+      · 찍었으면 ☐ 에 체크, 올리기는 폰의 [📸 촬영 목록]에서</div>
+
+    {% set kind_ko = {'store': '매장', 'menu': '메뉴', 'make': '과정', 'video': '영상'} %}
+    {% if not total %}
+      <p>찍을 사진이 없어요 — 모든 사진 자리가 찼습니다.</p>
+    {% elif by == 'kind' %}
+      {% for k in kinds %}
+      <h2>{{ k.label }} <small>{{ k['items']|length }}장</small></h2>
+      {% for w in k['items'] %}
+      <div class="row"><div class="box"></div><div class="no">{{ loop.index }}</div>
+        <div class="txt">{{ w.text or '(설명 없는 사진 자리)' }}
+          {% if w.tip %}<div class="tip">💡 {{ w.tip }}</div>{% endif %}
+          <div class="from">글 · {{ w.post_title }}</div></div></div>
+      {% endfor %}
+      {% endfor %}
+    {% else %}
+      {% for g in groups %}
+      <h2>{{ g.title }} <small>남은 사진 {{ g.wishes|length }}장{% if g.kw %} · 키워드 {{ g.kw }}{% endif %}</small></h2>
+      {% for w in g.wishes %}
+      <div class="row"><div class="box"></div><div class="no">{{ loop.index }}</div>
+        <div class="txt">{{ w.text or '(설명 없는 사진 자리)' }}
+          {% if w.tip %}<div class="tip">💡 {{ w.tip }}</div>{% endif %}</div>
+        <div class="kind">{{ '영상' if w.kind.key == 'video' else kind_ko.get(w.kind.key, '메뉴') }}</div></div>
+      {% endfor %}
+      {% endfor %}
+    {% endif %}
+    <div class="foot">메모: ______________________________________________________________</div>
+  </div>
+</body>
+</html>

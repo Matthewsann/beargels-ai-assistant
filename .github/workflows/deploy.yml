@@ -119,6 +119,7 @@ jobs:
           upload service/templates/_blog_steps.html
           upload service/templates/_blog_upload_js.html
           upload service/templates/blog_shots.html
+          upload service/templates/blog_shots_print.html
           upload service/templates/menu.html
           upload service/templates/menu_tasks.html
           upload service/templates/menu_ingredients.html
