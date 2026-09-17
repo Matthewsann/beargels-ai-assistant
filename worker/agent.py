@@ -1898,7 +1898,7 @@ def run_reel_published_job(job) -> None:
             msg = f"'{res['title'] or '릴스'}' 인스타 발행 기록 완료"
             if res.get("already"):
                 msg += " (이미 기록돼 있었어요)"
-            msg += " — 좋아요·댓글은 6시간 안에 자동으로 따라와요"
+            msg += " — 좋아요·댓글은 하루 안에 자동으로 따라와요"
         db.finish_job(jid, "done", msg, 1)
         logger.info("발행 기록 잡 #%s 완료 — %s", jid, msg)
     except Exception as e:  # noqa: BLE001
@@ -2040,7 +2040,8 @@ def maybe_naver_research() -> None:
 
 
 _REEL_SYNC_STAMP = ROOT / "state" / "reel_sync_at.txt"
-REEL_SYNC_HOURS = float(os.getenv("REEL_SYNC_HOURS", "6"))
+# 사장님 지시(2026-09-17): 성과 읽기는 하루 한 번이면 된다(예전 6시간).
+REEL_SYNC_HOURS = float(os.getenv("REEL_SYNC_HOURS", "24"))
 _reel_sync_skipped_logged = False
 
 
@@ -2054,14 +2055,14 @@ def _reel_sync_retry_in(hours: float) -> None:
 
 
 def maybe_reel_sync() -> None:
-    """6시간마다 내 인스타 게시물을 읽어 ①올린 릴스 자동 감지·게시물 연결 ②성과 갱신.
+    """하루 한 번 내 인스타 게시물을 읽어 ①올린 릴스 자동 감지·게시물 연결 ②성과 갱신.
 
     [올렸어요]를 안 눌러도 발행을 알아채고(블로그 RSS 감지와 같은 원리),
     좋아요·댓글(권한 있으면 도달·저장·공유)을 훅 라이브러리에 적어 다음
     기획 프롬프트(_hook_summary)에 실제 숫자가 들어가게 한다.
     그래프 API 호출은 회당 1~2번 — 한도와 무관하다.
 
-    실패 처리: 네트워크 같은 일시 장애는 1시간 뒤 다시(6시간 약속을 지킨다).
+    실패 처리: 네트워크 같은 일시 장애는 1시간 뒤 다시(하루 한 번 약속을 지킨다).
     토큰·권한 문제(MetaGraphError)는 사람이 고쳐야 하니 하루 한 번만 다시 시도하고,
     같은 오류는 error_log 에 한 번만 남긴다(스탬프 파일에 마지막 오류를 적어 둔다).
     """
