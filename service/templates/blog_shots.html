@@ -26,10 +26,10 @@
 
   <div class="panel" style="margin-top:10px; border-color:var(--accent); background:var(--accent-bg); padding:12px 14px;">
     {% if total %}
-    <div style="font-size:15px; font-weight:700;">📸 찍을 사진 {{ total }}장 <span style="font-weight:400; font-size:12.5px; color:var(--muted);">· 글 {{ groups|length }}편</span></div>
+    <div style="font-size:15px; font-weight:700;">📸 찍을 사진 {{ total }}장 <span style="font-weight:400; font-size:12.5px; color:var(--muted);">· 글 {{ groups|selectattr('wishes')|list|length }}편</span></div>
     <div style="font-size:13px; margin-top:3px; line-height:1.55;">
       설명을 보고 찍은 뒤 <b>[📷 사진 올리기]</b>를 누르세요. 폰이 물어보면 지금 찍을 땐 <b>카메라</b>,
-      아까 찍어 둔 거면 <b>사진첩</b>. 올리면 그 글의 그 자리에 들어가고 여기서 사라져요. 영상은 50MB 까지.
+      아까 찍어 둔 거면 <b>사진첩</b>. 올리면 그 글의 그 자리에 들어가고, 글마다 아래 <b>✅ 올린 사진</b>에서 확인·바꾸기를 할 수 있어요. 영상은 50MB 까지.
     </div>
     <div class="row" style="margin-top:9px;">
       <a class="btn {{ 'primary' if by == 'post' else '' }}" style="flex:1; min-height:44px; text-decoration:none;"
@@ -49,7 +49,7 @@
     {% endif %}
     {% else %}
     <div style="font-size:15px; font-weight:700;">🎉 찍을 사진을 다 올렸어요</div>
-    <div style="font-size:13px; margin-top:3px; line-height:1.55;">글을 열어 <b>[🔍 품질 채점]</b> → <b>[📅 예약 발행]</b> 순서로 마무리하면 돼요. 새 초안을 만들면 여기에 목록이 다시 생겨요.</div>
+    <div style="font-size:13px; margin-top:3px; line-height:1.55;">글을 열어 <b>[🔍 품질 채점]</b> → <b>[📅 예약 발행]</b> 순서로 마무리하면 돼요. 새 초안을 만들면 여기에 목록이 다시 생겨요.{% if groups %} 잘못 올린 사진은 아래 <b>✅ 올린 사진</b>에서 바꿀 수 있어요.{% endif %}</div>
     <a class="btn wide primary" href="{{ url_for('blog_home', path_key=key) }}" style="margin-top:8px; text-decoration:none;">블로그 홈으로 →</a>
     {% endif %}
   </div>
@@ -78,11 +78,67 @@
   </div>
   {% endmacro %}
 
+  {# ✅ 올린 사진 — 잘못 올렸으면 여기서 바꾸거나 뺀다(사장님 2026-09-17: "실수로 잘못 선택했는데 바꿀 수가 없네").
+     빼면 원래의 '찍을 사진' 자리가 되살아난다(app._shot_origin_*). #}
+  {% macro uploaded_list(g, anchor) %}
+  {% if g.uploaded %}
+  <details style="margin:2px 0 12px;" {{ 'open' if focus|string == g.id|string else '' }}>
+    <summary style="cursor:pointer; font-size:13.5px; font-weight:600; padding:8px 2px; min-height:40px;">✅ 올린 사진 {{ g.uploaded|length }}장
+      <span style="font-weight:400; color:var(--muted); font-size:12px;">— 눌러서 확인 · 잘못 올렸으면 바꾸기</span></summary>
+    {% for u in g.uploaded %}
+    <div class="card" style="padding:10px 11px;">
+      <div style="display:flex; gap:10px; align-items:flex-start;">
+        {% if u.thumb and not u.video %}
+        <a href="{{ u.thumb }}" target="_blank" rel="noopener" style="flex:none;">
+          <img src="{{ u.thumb }}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"
+               style="width:84px; height:84px; object-fit:cover; border-radius:9px; display:block; background:var(--line);"></a>
+        {% else %}
+        <div style="flex:none; width:84px; height:84px; border-radius:9px; background:var(--line); display:flex; align-items:center; justify-content:center; font-size:30px;">{{ '🎬' if u.video else '📷' }}</div>
+        {% endif %}
+        <div style="flex:1; min-width:0; font-size:13px; line-height:1.45; word-break:keep-all;">
+          {{ u.text or '올린 ' ~ ('영상' if u.video else '사진') }}
+          <div style="font-size:11.5px; color:var(--muted); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ u.name }}</div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <form method="post" enctype="multipart/form-data" class="up" style="flex:1; margin:0;"
+              action="{{ url_for('blog_post_photo', path_key=key, post_id=g.id) }}">
+          <input type="hidden" name="action" value="upload_replace">
+          <input type="hidden" name="rel" value="{{ u.rel }}">
+          <input type="hidden" name="next" value="shots">
+          <input type="hidden" name="by" value="{{ by }}">
+          <input type="hidden" name="anchor" value="{{ anchor }}">
+          <label class="btn wide" style="cursor:pointer; min-height:44px;">🔁 다른 사진으로 바꾸기
+            <input type="file" name="photo" accept="image/*,video/mp4,video/quicktime,.mp4,.mov,.m4v" hidden onchange="upGo(this)"></label>
+        </form>
+        <form method="post" style="flex:none; margin:0;" action="{{ url_for('blog_post_photo', path_key=key, post_id=g.id) }}"
+              onsubmit="return confirm('이 사진을 뺄까요?{{ ' 자리가 다시 찍을 사진 목록으로 돌아와요.' if u.text else '' }}');">
+          <input type="hidden" name="action" value="remove">
+          <input type="hidden" name="rel" value="{{ u.rel }}">
+          <input type="hidden" name="next" value="shots">
+          <input type="hidden" name="by" value="{{ by }}">
+          <input type="hidden" name="anchor" value="{{ anchor }}">
+          <button class="btn" type="submit" style="min-height:44px;">↩ 빼기</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </details>
+  {% endif %}
+  {% endmacro %}
+
   {% if by == 'kind' %}
     {% for k in kinds %}
     <div class="sec" id="k-{{ k.key }}" style="scroll-margin-top:10px;">{{ k.label }} <span style="font-weight:400; color:var(--muted); font-size:12px;">{{ k['items']|length }}장</span></div>
     {% for w in k['items'] %}{{ shot(w.post_id, w, 'k-' ~ k.key, w.post_title) }}{% endfor %}
     {% endfor %}
+    {% if groups|selectattr('uploaded')|list %}
+    <div class="sec" id="k-uploaded" style="scroll-margin-top:10px;">✅ 올린 사진 <span style="font-weight:400; color:var(--muted); font-size:12px;">글마다 눌러서 확인</span></div>
+    {% for g in groups %}{% if g.uploaded %}
+    <div style="font-size:13px; font-weight:600; margin:6px 2px 0;">📝 {{ g.title }}</div>
+    {{ uploaded_list(g, 'k-uploaded') }}
+    {% endif %}{% endfor %}
+    {% endif %}
   {% else %}
     {% for g in groups %}
     <div class="sec" id="p{{ g.id }}" style="scroll-margin-top:10px;">
@@ -93,6 +149,7 @@
       </div>
     </div>
     {% for w in g.wishes %}{{ shot(g.id, w, 'p' ~ g.id) }}{% endfor %}
+    {{ uploaded_list(g, 'p' ~ g.id) }}
     {% endfor %}
   {% endif %}
   {% endif %}

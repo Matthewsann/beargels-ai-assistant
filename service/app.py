@@ -3350,6 +3350,33 @@ def blog_post(path_key, post_id):
                            worker=_worker_view(), error=error)
 
 
+BLOG_SHOT_ORIGIN_KEY = "blog_shot_origin"   # menu_settings {글번호: {rel: {text, tip}}} — 사진이 들어간 자리의 원래 부탁
+
+
+def _shot_origin_all() -> dict:
+    try:
+        return db.get_setting(BLOG_SHOT_ORIGIN_KEY) or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _shot_origin_save(post_id, body: str, change) -> None:
+    """부탁 자리에 들어간 사진의 '원래 부탁'을 적어 둔다(사장님 2026-09-17: "잘못 선택했는데 바꿀 수가 없네").
+    사진을 빼면 그 부탁 자리를 되살리려는 것. 본문에 이제 없는 사진의 기록은 그때그때 치운다. 실패해도 업로드는 산다."""
+    try:
+        allo = _shot_origin_all()
+        mine = dict(allo.get(str(post_id)) or {})
+        change(mine)
+        mine = {rel: v for rel, v in mine.items() if rel in (body or "")}
+        if mine:
+            allo[str(post_id)] = mine
+        else:
+            allo.pop(str(post_id), None)
+        db.menu_set_setting(BLOG_SHOT_ORIGIN_KEY, allo)
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"사진 자리 기록 실패(post {post_id}): {e}", kind=type(e).__name__, path="shot_origin")
+
+
 _SHOT_KINDS = [   # (key, icon, 판별 낱말) — 위에서부터 먼저 맞는 것. 매장에서 '같은 곳에서 몰아 찍기'용 묶음.
     ("video", "🎬", ("동영상", "영상", "클립", "타임랩스")),
     ("make", "👩‍🍳", ("단면", "굽", "구워", "토스팅", "그릴", "만드는", "조리", "자르", "반으로", "바르", "과정", "올리는", "담는")),
@@ -3380,6 +3407,7 @@ def blog_shots(path_key):
     check(path_key)
     by = "kind" if request.args.get("by") == "kind" else "post"
     groups, total, error = [], 0, None
+    origins = _shot_origin_all()
     try:
         posts = [p for p in blog.list_posts(limit=50)
                  if p.get("status") not in ("published", "scheduled")]
@@ -3391,11 +3419,14 @@ def blog_shots(path_key):
         wishes = [{"i": b["i"], "text": b.get("text") or "", "tip": b.get("tip") or "",
                    "kind": _shot_kind(b.get("text") or "")}
                   for b in blocks if b.get("t") == "wish"]
-        if not wishes:
-            continue
+        omap = origins.get(str(p["id"])) or {}
+        # 올린 사진 — 잘못 올렸으면 여기서 바꾸거나 뺀다(사장님 2026-09-17). 부탁 자리에 넣은 것만 설명이 붙는다.
+        uploaded = [dict(b, text=(omap.get(b["rel"]) or {}).get("text") or "") for b in blocks if b.get("t") == "img"]
+        if not wishes and not uploaded:
+            continue                      # 찍을 것도, 올린 것도 없는 글은 안 보인다
         groups.append({"id": p["id"], "title": p.get("title") or "(제목 없음)",
                        "kw": p.get("main_keyword") or "", "wishes": wishes,
-                       "media": sum(1 for b in blocks if b.get("t") == "img")})
+                       "uploaded": uploaded, "media": len(uploaded)})
         total += len(wishes)
     kinds = []
     if by == "kind":
@@ -3408,7 +3439,7 @@ def blog_shots(path_key):
                 kinds.append({"key": k, "label": label, "items": items})
     if request.args.get("print"):
         # 🖨 A4 체크리스트(사장님 2026-09-17) — 같은 목록을 흑백 인쇄용으로. 폰을 못 볼 때 종이로 들고 찍는다.
-        return render_template("blog_shots_print.html", key=path_key, groups=groups, kinds=kinds, by=by,
+        return render_template("blog_shots_print.html", key=path_key, groups=[g for g in groups if g["wishes"]], kinds=kinds, by=by,
                                total=total, today=datetime.now(KST).strftime("%Y-%m-%d"))
     focus = request.args.get("focus") or ""
     anchor = request.args.get("anchor") or ""
@@ -3465,13 +3496,25 @@ def blog_post_photo(path_key, post_id):
         if act == "skip":
             pass
         elif act == "remove" and rel:
-            pat = re.compile(r"[ \t]*\[\s*[📷🎬]\s*" + re.escape(rel) + r"\s*\][ \t]*\n?")
-            body, n = pat.subn("", body, count=1)
-            note = "사진을 뺐어요." if n else "그 사진이 본문에 없어요."
+            origin = (_shot_origin_all().get(str(post_id)) or {}).get(rel)
+            if origin and origin.get("text"):
+                # 부탁 자리에 넣었던 사진 — 빼면 그 부탁(설명+팁)이 되살아나 다시 찍어 올릴 수 있다
+                wish = f"[📸 부탁: {origin['text']}]" + (f" (팁: {origin['tip']})" if origin.get("tip") else "")
+                pat = re.compile(r"\[\s*[📷🎬]\s*" + re.escape(rel) + r"\s*\]")
+                body, n = pat.subn(lambda m: wish, body, count=1)
+                note = "사진을 뺐어요 — 그 자리가 다시 '찍을 사진'으로 돌아왔어요." if n else "그 사진이 본문에 없어요."
+            else:
+                pat = re.compile(r"[ \t]*\[\s*[📷🎬]\s*" + re.escape(rel) + r"\s*\][ \t]*\n?")
+                body, n = pat.subn("", body, count=1)
+                note = "사진을 뺐어요." if n else "그 사진이 본문에 없어요."
+            if n:
+                _shot_origin_save(post_id, body, lambda m: m.pop(rel, None))
         elif act == "replace" and rel and new:
             pat = re.compile(r"\[\s*[📷🎬]\s*" + re.escape(rel) + r"\s*\]")
-            body, n = pat.subn(_mark_for(new), body, count=1)
+            body, n = pat.subn(lambda m: _mark_for(new), body, count=1)
             note = "사진을 바꿨어요." if n else "바꿀 자리를 못 찾았어요."
+            if n:
+                _shot_origin_save(post_id, body, lambda m: m.__setitem__(new, m.pop(rel)) if rel in m else None)
         elif act == "insert_after" and new:
             chunks = _blog_chunks(body)
             try:
@@ -3485,11 +3528,18 @@ def blog_post_photo(path_key, post_id):
                 # 찾고, 없으면 엉뚱한 데 넣지 않는다(_wish_slot, 2026-09-17).
                 at = _wish_slot(chunks, at, wish_text)
             if 0 <= at < len(chunks):
+                _origin = None
                 if re.match(r"^\[\s*📸\s*부탁", chunks[at].strip()):
+                    _wm0 = _WISH_BLOCK.fullmatch(chunks[at].strip())
+                    _origin = {"text": (_wish_text_of(chunks[at]) or ""),
+                               "tip": ((_wm0.group(2) if _wm0 else "") or "").strip()}
                     chunks[at] = _mark_for(new)          # 부탁 자리에 바로 사진이 들어간다
                 else:
                     chunks.insert(at + 1, _mark_for(new))
                 body = "\n\n".join(chunks)
+                if _origin and _origin["text"]:
+                    _o = _origin
+                    _shot_origin_save(post_id, body, lambda m: m.__setitem__(new, _o))
                 note = "✅ 올렸어요 — 그 자리에 들어갔습니다." if from_shots else "그 자리에 사진을 넣었어요."
             elif from_shots:
                 note = "그 사진 자리를 못 찾았어요(이미 채웠을 수 있어요) — 목록을 새로 열었습니다."
@@ -3526,8 +3576,10 @@ def blog_post_photo(path_key, post_id):
                      detail=traceback.format_exc())
         note = f"사진을 바꾸지 못했어요: {str(e)[:100]}"
     if request.form.get("next") == "shots":          # 📸 촬영 목록에서 올렸다 — 그 목록의 그 자리로
+        if note.startswith(("사진을 바꿨어요", "사진을 뺐어요")):
+            note = "✅ " + note
         anchor = request.form.get("anchor") or ""
-        done = post_id if (note.startswith("✅") and _blog_media_counts(body)[1] == 0) else None
+        done = post_id if (note.startswith("✅ 올렸어요") and _blog_media_counts(body)[1] == 0) else None
         return redirect(url_for("blog_shots", path_key=path_key, note=note, focus=post_id, done=done,
                                 anchor=anchor if re.fullmatch(r"[a-z0-9-]{1,40}", anchor) else None,
                                 by="kind" if request.form.get("by") == "kind" else None))
