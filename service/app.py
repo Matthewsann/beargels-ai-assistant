@@ -3580,8 +3580,9 @@ def blog_post_photo(path_key, post_id):
     act = request.form.get("action") or ""
     rel = (request.form.get("rel") or "").strip()
     new = (request.form.get("new_rel") or "").strip()
-    post = blog.get_post(post_id)
-    if not post:
+    # 글과 '원래 부탁' 기록을 한꺼번에(속도 검진 2026-09-18: PA 에선 조회 하나가 0.65초라 차례로 두면 그만큼 는다)
+    post = _prefetch(settings=(BLOG_SHOT_ORIGIN_KEY,), post=lambda: blog.get_post(post_id) or {"_missing": True})["post"]
+    if not post or post.get("_missing"):
         abort(404)
     body = post.get("body") or ""
     note = ""
