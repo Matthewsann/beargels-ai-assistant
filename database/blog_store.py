@@ -50,10 +50,14 @@ def save_post(title, body, post_type=None, main_keyword=None,
     return res.data[0]["id"] if res.data else None
 
 
-def list_posts(status=None, limit=100):
-    q = get_client().table(POSTS).select("*").neq("status", "trashed")
+def list_posts(status=None, limit=100, exclude=(), columns="*"):
+    """exclude=빼는 상태들, columns=필요한 칼럼만(발행 완료 목록은 본문이 필요 없다 — 50편 본문 124KB 를
+    화면마다 내려받고 있었다, 속도 검진 2026-09-18)."""
+    q = get_client().table(POSTS).select(columns).neq("status", "trashed")
     if status:
         q = q.eq("status", status)
+    for st in exclude:
+        q = q.neq("status", st)
     res = q.order("created_at", desc=True).limit(limit).execute()
     return res.data or []
 

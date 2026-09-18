@@ -185,7 +185,7 @@ def schedule_staff(token):
 # 화면 하나가 조회를 6번 하면 그게 그대로 더해져 5초가 된다. 그래서
 #   ① 서로 필요 없는 조회는 **동시에** 돌리고(가장 느린 것 하나 시간만 든다)
 #   ② 일꾼 상태·작업 상태·알림처럼 몇 초 사이 안 바뀌는 건 잠깐 캐시한다.
-_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="db")
+_POOL = ThreadPoolExecutor(max_workers=12, thread_name_prefix="db")   # 블로그 홈이 14개를 동시에 읽는다(속도 검진 2026-09-18)
 
 
 @app.context_processor
@@ -241,6 +241,76 @@ def gather(**calls) -> dict:
             out[k] = f.result(timeout=25)
         except Exception:  # noqa: BLE001
             out[k] = None
+    return out
+
+
+# ── 요청 안 메모(속도 검진 2026-09-18) ──
+# 실측(PA 실서버): 블로그 홈 7~11초·글 화면 3~5초. 홈 한 번에 Supabase 를 17번 **차례로** 불렀고(같은
+# blog_quality_scores 를 5번), 글 화면은 잡 표를 4번. PA→Supabase 왕복이 0.4초쯤이라 횟수가 곧 시간이다.
+# 같은 요청 안에서 같은 설정·같은 조회는 한 번만 부르고(_once·get_setting 메모), 화면은 _prefetch 로
+# 한꺼번에 읽는다. 쓰기(menu_set_setting)는 그 키의 메모를 지워 같은 요청 안의 뒤 읽기가 낡지 않게 한다.
+from flask import g as _fg, has_request_context  # noqa: E402
+
+
+def _memo_box(name: str) -> dict:
+    box = getattr(_fg, name, None)
+    if box is None:
+        box = {}
+        setattr(_fg, name, box)
+    return box
+
+
+def _once(name: str, fn):
+    """같은 요청 안에서는 같은 이름의 조회를 한 번만 한다(요청 밖·풀 스레드에선 그냥 부른다)."""
+    if not has_request_context():
+        return fn()
+    box = _memo_box("_once")
+    if name not in box:
+        box[name] = fn()
+    return box[name]
+
+
+_raw_get_setting, _raw_set_setting = db.get_setting, db.menu_set_setting
+
+
+def _memo_get_setting(key, default=None):
+    if not has_request_context():
+        return _raw_get_setting(key, default)
+    box = _memo_box("_settings")
+    if key not in box:
+        box[key] = _raw_get_setting(key, None)
+    v = box[key]
+    return default if v is None else v
+
+
+def _memo_set_setting(key, value):
+    out = _raw_set_setting(key, value)
+    if has_request_context():
+        _memo_box("_settings").pop(key, None)
+    return out
+
+
+db.get_setting, db.menu_set_setting = _memo_get_setting, _memo_set_setting
+
+
+def _prefetch(settings=(), **calls) -> dict:
+    """설정 키들과 조회들을 **동시에** 읽고 요청 메모에 심는다.
+
+    그 뒤의 db.get_setting(키)·_once(이름, …) 은 메모를 쓴다. 실패한 조회는 None(gather 와 같다) — 설정은
+    실패도 심어 같은 요청 안에서 다시 두드리지 않고, 조회는 안 심어 필요하면 한 번 더 시도한다."""
+    fns = {f"setting:{k}": (lambda k=k: _raw_get_setting(k, None)) for k in settings}
+    fns.update(calls)
+    out = gather(**fns)
+    if has_request_context():
+        sb, ob = _memo_box("_settings"), _memo_box("_once")
+        for k in settings:
+            sb[k] = out.pop(f"setting:{k}", None)
+        for k in calls:
+            if out.get(k) is not None:
+                ob[k] = out[k]
+    else:
+        for k in settings:
+            out[k] = out.pop(f"setting:{k}", None)
     return out
 
 
@@ -434,7 +504,7 @@ def _tab_counts() -> dict:
 def _worker_view() -> dict:
     """집 PC 일꾼 상태를 화면용으로 정리."""
     try:
-        st = db.worker_status()
+        st = _once("worker_status", db.worker_status)
     except Exception:  # noqa: BLE001
         return {"alive": False, "text": "상태 확인 실패", "state": "error"}
     if not st:
@@ -2605,6 +2675,14 @@ def skip(path_key, review_id):
 
 from database import blog_store as blog  # noqa: E402
 
+_ranks_cached = cached(120)(blog.latest_ranks)     # 순위는 매일 아침 한 번 갱신 — 2분쯤 묵어도 같다(33KB 절약)
+_PUBLISHED_COLS = "id,title,main_keyword,naver_url,published_at,updated_at,status,created_at,post_type"
+
+
+def _busy_kinds() -> set:
+    """지금 돌고 있는 블로그 잡 종류 — 같은 요청 안에서는 한 번만 묻는다(잡 표를 4번 두드리던 것)."""
+    return _once("busy_kinds", blog.busy_kinds) or set()
+
 
 _PHOTO_MARK = re.compile(r"\[\s*([📷🎬])\s*([^\[\]\n]{1,200}?)\s*\]")
 
@@ -2932,18 +3010,22 @@ def blog_home(path_key):
     error = None
     posts, recs, ranks, job, plans, busy = [], [], [], None, [], set()
     try:
-        posts = blog.list_posts(limit=50)
-        recs = blog.list_recommendations()
-        ranks = blog.latest_ranks()
-        job = _blog_job_view(blog.latest_blog_job())
-        try:
-            busy = blog.busy_kinds()
-        except Exception:  # noqa: BLE001
-            busy = set()
-        try:
-            plans = blog.latest_plans()
-        except Exception:  # noqa: BLE001 — 007 SQL 을 아직 안 돌렸으면 없는 테이블
-            plans = []
+        # 한 화면에 필요한 것을 **한꺼번에** 읽는다(속도 검진 2026-09-18: 차례로 17번 → 동시에 1번).
+        # 발행 완료 글은 본문 없이(_PUBLISHED_COLS), 진행 중인 글만 본문째.
+        r = _prefetch(settings=(BLOG_SCORES_KEY, BLOG_PUBLISHED_PERF_KEY, BLOG_TARGET_KEY, BLOG_RESEARCH_KEY,
+                                "place_keywords", STORE_INFO_KEY),
+                      posts=lambda: blog.list_posts(limit=50, exclude=("published",)),
+                      published=lambda: blog.list_posts(status="published", limit=30, columns=_PUBLISHED_COLS),
+                      recs=blog.list_recommendations, ranks=_ranks_cached,
+                      latest_blog_job=blog.latest_blog_job, busy_kinds=blog.busy_kinds,
+                      plans=blog.latest_plans, worker_status=db.worker_status)
+        if r["posts"] is None or r["recs"] is None:
+            raise RuntimeError("blog_posts / blog_recommendations 조회가 실패했어요")
+        posts = r["posts"] + (r["published"] or [])
+        recs, ranks = r["recs"], r["ranks"] or []
+        job = _blog_job_view(r["latest_blog_job"])
+        busy = r["busy_kinds"] or set()
+        plans = r["plans"] or []          # 007 SQL 을 아직 안 돌렸으면 없는 테이블 → None
     except Exception as e:  # noqa: BLE001
         error = f"데이터를 불러오지 못했어요: {str(e)[:150]}"
         db.log_error("service", f"블로그 화면 로드 실패: {e}",
@@ -3293,7 +3375,7 @@ def _blog_purpose(post: dict, body: str, blocks: list[dict]) -> dict:
         pass
     if not why:
         try:
-            for r in blog.list_recommendations():
+            for r in _once("recommendations", blog.list_recommendations) or []:
                 if (kw and (r.get("main_keyword") or "") == kw) or \
                    ((r.get("title") or "") and (r.get("title") or "") == (post.get("title") or "")):
                     why, intent = r.get("why") or "", r.get("search_intent") or ""
@@ -3313,12 +3395,16 @@ def blog_post(path_key, post_id):
     check(path_key)
     post = None
     error = None
-    try:
-        post = blog.get_post(post_id)
-    except Exception as e:  # noqa: BLE001
-        error = f"글을 불러오지 못했어요: {str(e)[:150]}"
-    if post is None and error is None:
+    # 글·이전 초안·채점·잡·추천을 한꺼번에(속도 검진 2026-09-18: 차례로 9번 → 동시에 1번)
+    r = _prefetch(settings=(BLOG_VERSIONS_KEY, BLOG_SCORES_KEY),
+                  post=lambda: blog.get_post(post_id) or {"_missing": True},
+                  busy_kinds=blog.busy_kinds, recommendations=blog.list_recommendations)
+    if r["post"] is None:
+        error = "글을 불러오지 못했어요 — 잠시 뒤 다시 열어 주세요."
+    elif r["post"].get("_missing"):
         abort(404)
+    else:
+        post = r["post"]
     post = post or {}
     # ?v=prev — 보관된 초안을 **읽기만** 한다. 넘겨보는 것만으로 글이 바뀌면
     # 안 되므로 여기서는 DB 를 건드리지 않는다(바꾸는 건 '이 초안으로 정하기').
@@ -3330,14 +3416,14 @@ def blog_post(path_key, post_id):
     blocks = _blog_render((shown or {}).get("body", ""))
     quality = _blog_quality(post_id, post.get("body", ""))
     try:
-        scoring = "blog_score" in blog.busy_kinds()
+        scoring = "blog_score" in _busy_kinds()
     except Exception:  # noqa: BLE001
         scoring = False
     return render_template("blog_post.html", key=path_key, post=post,
                            photos=photos, step=_blog_step(post, quality), blocks=blocks,
                            quality=quality, scoring=scoring, quality_min=BLOG_QUALITY_MIN,
                            recommend=_recommend_publish_time(),
-                           publishing=("blog_publish" in (blog.busy_kinds() if True else set())),
+                           publishing=("blog_publish" in _busy_kinds()),
                            purpose=_blog_purpose(post, (shown or {}).get("body", ""), blocks),
                            note=(request.args.get("note") or "")[:200],
                            prev=prev, preview=preview,
@@ -3407,13 +3493,13 @@ def blog_shots(path_key):
     check(path_key)
     by = "kind" if request.args.get("by") == "kind" else "post"
     groups, total, error = [], 0, None
+    r = _prefetch(settings=(BLOG_SHOT_ORIGIN_KEY,),
+                  posts=lambda: blog.list_posts(limit=50, exclude=("published", "scheduled")))
     origins = _shot_origin_all()
-    try:
-        posts = [p for p in blog.list_posts(limit=50)
-                 if p.get("status") not in ("published", "scheduled")]
-    except Exception as e:  # noqa: BLE001
-        posts, error = [], f"글을 불러오지 못했어요: {str(e)[:120]}"
-        db.log_error("service", f"촬영 목록 로드 실패: {e}", kind=type(e).__name__, path=request.path)
+    posts = r["posts"]
+    if posts is None:
+        posts, error = [], "글을 불러오지 못했어요 — 잠시 뒤 다시 열어 주세요."
+        db.log_error("service", "촬영 목록 로드 실패(blog_posts 조회)", kind="PrefetchError", path=request.path)
     for p in posts:
         blocks = _blog_render(p.get("body", ""))
         wishes = [{"i": b["i"], "text": b.get("text") or "", "tip": b.get("tip") or "",
