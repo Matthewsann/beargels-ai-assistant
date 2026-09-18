@@ -3423,6 +3423,7 @@ def blog_post(path_key, post_id):
     r = _prefetch(settings=(BLOG_VERSIONS_KEY, BLOG_SCORES_KEY),
                   post=lambda: blog.get_post(post_id) or {"_missing": True},
                   busy_kinds=blog.busy_kinds, recommendations=blog.list_recommendations,
+                  worker_status=db.worker_status,   # 실측: 파도 뒤에 따로 0.5초 기다리고 있었다
                   briefs=_briefs_cached)      # 30초 캐시가 비었을 때 스토리지 0.4초 — 뒤에서 따로 기다리지 않게
     if r["post"] is None:
         error = "글을 불러오지 못했어요 — 잠시 뒤 다시 열어 주세요."
