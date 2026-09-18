@@ -93,10 +93,20 @@ PLAT = {"baemin": "배민", "coupang": "쿠팡이츠"}
 # 공통
 # ---------------------------------------------------------------------------
 
+@app.before_request
+def _mark_start():
+    request.environ["_t0"] = time.perf_counter()
+
+
 @app.after_request
 def no_index(resp):
-    """검색엔진 수집 금지 — 비밀 주소가 검색에 노출되면 의미가 없다."""
+    """검색엔진 수집 금지 — 비밀 주소가 검색에 노출되면 의미가 없다.
+    Server-Timing 헤더(속도 검진 2026-09-18): 앱이 쓴 시간만 — 브라우저 개발자도구·curl -D 로 보면
+    '느림'이 앱(DB 조회)인지 망(PA 왕복)인지 바로 갈린다."""
     resp.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+    t0 = request.environ.get("_t0")
+    if t0:
+        resp.headers["Server-Timing"] = f"app;dur={(time.perf_counter() - t0) * 1000:.0f}"
     return resp
 
 
