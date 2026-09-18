@@ -106,7 +106,8 @@ def no_index(resp):
     resp.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
     t0 = request.environ.get("_t0")
     if t0:
-        resp.headers["Server-Timing"] = f"app;dur={(time.perf_counter() - t0) * 1000:.0f}"
+        resp.headers["Server-Timing"] = ", ".join(
+            [f"app;dur={(time.perf_counter() - t0) * 1000:.0f}"] + request.environ.get("_timing", []))
     return resp
 
 
@@ -308,19 +309,38 @@ def _prefetch(settings=(), **calls) -> dict:
 
     그 뒤의 db.get_setting(키)·_once(이름, …) 은 메모를 쓴다. 실패한 조회는 None(gather 와 같다) — 설정은
     실패도 심어 같은 요청 안에서 다시 두드리지 않고, 조회는 안 심어 필요하면 한 번 더 시도한다."""
-    fns = {f"setting:{k}": (lambda k=k: _raw_get_setting(k, None)) for k in settings}
+    settings = tuple(settings)
+    fns = {"settings:batch": (lambda: db.get_settings(settings))} if settings else {}   # 설정은 한 번에
     fns.update(calls)
-    out = gather(**fns)
+    took: dict = {}
+
+    def timed(name, fn):
+        def run():
+            t = time.perf_counter()
+            try:
+                return fn()
+            finally:
+                took[name] = time.perf_counter() - t
+        return run
+
+    t0 = time.perf_counter()
+    out = gather(**{k: timed(k, fn) for k, fn in fns.items()})
+    if has_request_context() and took:
+        # Server-Timing 에 조회 파도의 시간·가장 느린 조회를 싣는다 — 실서버에서 무엇이 느린지 보려고
+        slow = max(took, key=took.get)
+        request.environ.setdefault("_timing", []).append(
+            f'db;dur={(time.perf_counter() - t0) * 1000:.0f};desc="n={len(took)} slowest={slow} {took[slow] * 1000:.0f}ms"')
+    batch = out.pop("settings:batch", None) or {}
     if has_request_context():
         sb, ob = _memo_box("_settings"), _memo_box("_once")
         for k in settings:
-            sb[k] = out.pop(f"setting:{k}", None)
+            sb[k] = batch.get(k)
         for k in calls:
             if out.get(k) is not None:
                 ob[k] = out[k]
     else:
         for k in settings:
-            out[k] = out.pop(f"setting:{k}", None)
+            out[k] = batch.get(k)
     return out
 
 

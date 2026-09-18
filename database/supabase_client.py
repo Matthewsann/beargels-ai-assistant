@@ -1365,6 +1365,17 @@ def get_setting(key, default=None):
     return rows[0]["value"] if rows else default
 
 
+def get_settings(keys) -> dict:
+    """설정 여러 개를 **한 번에** 읽는다 {key: value} (없는 키는 빠진다). 화면 하나가 설정 6개를 따로따로
+    읽으면 왕복 6번이다(속도 검진 2026-09-18)."""
+    keys = [k for k in keys if k]
+    if not keys:
+        return {}
+    rows = (get_client().table("menu_settings").select("key,value")
+            .in_("key", keys).execute().data) or []
+    return {r["key"]: r["value"] for r in rows}
+
+
 def menu_update_item(sku, fields: dict):
     payload = {k: v for k, v in fields.items() if k in _MENU_ITEM_COLS}
     if not payload:
