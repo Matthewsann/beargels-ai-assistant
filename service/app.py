@@ -3402,7 +3402,8 @@ def blog_post(path_key, post_id):
     # 글·이전 초안·채점·잡·추천을 한꺼번에(속도 검진 2026-09-18: 차례로 9번 → 동시에 1번)
     r = _prefetch(settings=(BLOG_VERSIONS_KEY, BLOG_SCORES_KEY),
                   post=lambda: blog.get_post(post_id) or {"_missing": True},
-                  busy_kinds=blog.busy_kinds, recommendations=blog.list_recommendations)
+                  busy_kinds=blog.busy_kinds, recommendations=blog.list_recommendations,
+                  briefs=_briefs_cached)      # 30초 캐시가 비었을 때 스토리지 0.4초 — 뒤에서 따로 기다리지 않게
     if r["post"] is None:
         error = "글을 불러오지 못했어요 — 잠시 뒤 다시 열어 주세요."
     elif r["post"].get("_missing"):

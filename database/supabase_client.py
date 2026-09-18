@@ -59,9 +59,14 @@ def _use_http1(client: Client) -> None:
     try:
         import httpx
         old = client.postgrest.session
+        # keepalive 를 길게(속도 검진 2026-09-18): httpx 기본 5초라 화면과 화면 사이에 연결이 끊겨 조회마다
+        # TLS 를 새로 맺었다 — PA(미국)↔Supabase 는 왕복 0.18초라 새 연결 한 번이 0.5초, 살아 있으면 0.2초.
+        # 서버가 먼저 닫은 연결은 httpx 가 재사용 전에 걸러낸다.
         client.postgrest.session = httpx.Client(
             base_url=old.base_url, headers=dict(old.headers), timeout=old.timeout,
-            follow_redirects=True, http2=False)
+            follow_redirects=True, http2=False,
+            limits=httpx.Limits(max_connections=40, max_keepalive_connections=20,
+                                keepalive_expiry=float(os.getenv("SUPABASE_KEEPALIVE", "90"))))
         try:
             old.close()
         except Exception:  # noqa: BLE001

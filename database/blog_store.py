@@ -12,6 +12,7 @@
 """
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 from .supabase_client import get_client
@@ -240,12 +241,21 @@ def request_blog_job(kind, payload=None, by=None):
     return res.data[0] if res.data else None
 
 
+_stale_checked_at = 0.0
+
+
 def busy_kinds() -> set:
     """지금 대기·진행 중인 블로그 잡 종류들 — 화면이 '쓰는 중'을 알리는 데 쓴다."""
-    try:
-        release_stale_jobs()       # 30분 넘게 running 이면 실패 처리 — 화면이 영원히 '중'에 갇히지 않게
-    except Exception:  # noqa: BLE001
-        pass
+    global _stale_checked_at
+    now = time.monotonic()
+    if now - _stale_checked_at >= 60:
+        # 30분 넘게 running 이면 실패 처리 — 화면이 영원히 '중'에 갇히지 않게. 1분에 한 번이면 충분하다
+        # (속도 검진 2026-09-18: 화면마다 조회 둘을 차례로 두드려 0.5초씩 더 들었다).
+        _stale_checked_at = now
+        try:
+            release_stale_jobs()
+        except Exception:  # noqa: BLE001
+            pass
     rows = (get_client().table(JOBS).select("kind")
             .in_("status", ["pending", "running"]).like("kind", "blog_%")
             .execute().data) or []
