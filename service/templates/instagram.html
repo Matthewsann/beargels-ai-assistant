@@ -229,15 +229,12 @@
             <span class="tag">📁 폴더 준비됨 — 찍어서 그 폴더에 넣어주세요</span>
           {% else %}
             <button class="btn pri" onclick="startShoot(this)">📸 이거 찍을게요</button>
+            {% if i.brief_id %}<button class="btn mini" onclick="dismissIdea(this)">이건 안 할래요</button>{% endif %}
           {% endif %}
         </div>
         <details class="fold sm">
           <summary>촬영 방법 {{ i.shots|length }}컷 보기</summary>
           {% for s in i.shots %}<div class="sub-row">📹 {{ s.what }} <span class="meta" style="display:inline">{{ s.secs|int }}초</span></div>{% endfor %}
-          {% if i.blog_keyword %}
-          <div class="meta" style="margin-top:6px">📝 같은 촬영으로 블로그도:
-            <b>{{ i.blog_keyword }}</b>{% if i.blog_angle %} — {{ i.blog_angle }}{% endif %}</div>
-          {% endif %}
         </details>
       </div>
       {% endfor %}
@@ -247,6 +244,11 @@
     <div class="row" style="margin-top:10px">
       <button class="btn" onclick="askIdeas('')">💡 새 아이디어 주세요</button>
     </div>
+    <details class="fold sm" style="margin-top:8px">
+      <summary>＋ 내가 정한 주제로 촬영 가이드 받기</summary>
+      <input type="text" id="ownTopic" placeholder="예) 잠봉뵈르 베이글 단면">
+      <button class="btn" style="margin-top:2px" onclick="ownTopic()">가이드 받기</button>
+    </details>
     <details class="fold sm" style="margin-top:8px">
       <summary>📎 마음에 드는 릴스를 봤어요 — 우리 버전으로 바꾸기</summary>
       <textarea id="refDesc" rows="2"
@@ -313,6 +315,33 @@ async function startShoot(btn){
   }
 }
 
+// ＋ 내가 정한 주제 → 파트너가 훅·샷 가이드를 붙여 제안 카드로
+async function ownTopic(){
+  const topic = (document.querySelector("#ownTopic").value || "").trim();
+  if(topic.length < 2){ stBox().innerHTML = '<div class="note">주제를 적어주세요.</div>'; return; }
+  const fd = new FormData(); fd.append("topic", topic);
+  try{
+    const r = await fetch(location.pathname.replace(/\/instagram$/,"") + "/content/topic", {method:"POST", body:fd});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || "요청 실패");
+    stBox().innerHTML = '<div class="okmsg">⏳ 그 주제로 촬영 가이드를 붙이는 중… (30초~1분)</div>';
+    window.scrollTo({top:0, behavior:"smooth"});
+    startPoll();
+  }catch(e){ stBox().innerHTML = `<div class="note">실패: ${esc(e.message)}</div>`; }
+}
+// 이건 안 할래요 — 제안을 접는다(지우지 않고 표시만, 같은 주제를 또 들고 오지 않게)
+async function dismissIdea(btn){
+  const row = btn.closest("[data-brief]");
+  const fd = new FormData(); fd.append("brief_id", row.dataset.brief || "");
+  btn.disabled = true;
+  try{
+    const r = await fetch(location.pathname.replace(/\/instagram$/,"") + "/content/dismiss", {method:"POST", body:fd});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || "요청 실패");
+    row.closest(".reel").style.opacity = ".45";
+    btn.textContent = "접었어요";
+  }catch(e){ stBox().innerHTML = `<div class="note">실패: ${esc(e.message)}</div>`; btn.disabled = false; }
+}
 // 💡 아이디어 / 📎 레퍼런스
 async function askIdeas(desc){
   desc = (desc || "").trim();

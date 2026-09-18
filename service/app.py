@@ -1109,7 +1109,7 @@ def _visit_class(n):
 
 # 홈 바로가기 카드에 담당자를 달 수 있는 프로그램들(사장님 요청 2026-08-26).
 # 순서는 화면에 보이는 순서와 같게 둔다(사장님이 정한 순서, 2026-08-28).
-HOME_PROGRAMS = ("meeting", "mkt", "review", "blog", "insta", "place", "menu")
+HOME_PROGRAMS = ("meeting", "review", "blog", "insta", "place", "menu")   # mkt 는 2026-09-17 제거
 
 
 @app.route("/<path_key>/")
@@ -3366,13 +3366,7 @@ def _blog_purpose(post: dict, body: str, blocks: list[dict]) -> dict:
         }
     sub_rows = [{"kw": s, "count": body.count(s), "head": any(s in h for h in heads)} for s in subs if s]
     why, intent, competition, tier, angle = "", "", "", "", ""
-    try:
-        for b in _briefs_cached():
-            if b.get("post_id") == post.get("id"):
-                why, tier, angle = b.get("why") or "", b.get("keyword_tier") or "", b.get("blog_angle") or ""
-                break
-    except Exception:  # noqa: BLE001
-        pass
+    # (인스타 브리프에서 블로그 각도를 읽던 연결은 끊었다 — 워크플로 분리 2026-09-17)
     if not why:
         try:
             for r in _once("recommendations", blog.list_recommendations) or []:
@@ -4450,40 +4444,12 @@ def menu_settings_save(path_key, key):
 
 
 # ---------------------------------------------------------------------------
-# 콘텐츠 기획 (/mkt) — 사장님 확정 2026-09-17
-#
-# 예전 마케팅 캘린더 자리다(행사 기록·매출 효과 계산은 전부 걷어냈다 —
-# 사장님 "ALL"). 이제 이 화면은 **매니저**다: 어떤 주제를 어떤 콘텐츠로
-# 올리면 좋을지 제안하고(브리프), 고른 주제를 블로그·인스타 프로그램에 넘긴다.
-# 주소를 /mkt 로 둔 건 북마크·홈 카드가 안 깨지게 하려는 것뿐이다.
-# 제안은 자동으로 돌지 않는다 — [💡 새 제안 받기]를 눌렀을 때만(사장님 지시).
-# 화면 조립은 service/plan_page.py, 브리프 쓰기는 전부 집 PC 잡으로.
+# 콘텐츠 기획 화면(/mkt)은 2026-09-17 저녁에 없앴다 — 사장님 "인스타와 블로그는
+# 별도로 관리". 인스타 기획은 /instagram 의 💡 카드, 블로그 기획은 /blog 홈이 맡는다.
+# 아래 두 라우트는 그 카드가 쓰는 버튼이다. 브리프 원본은 집 PC 것이라 잡으로 간다.
 # ---------------------------------------------------------------------------
 
 from database import mkt_store  # noqa: E402 — 매출 목표 저장(/sales)이 쓴다
-from service import plan_page  # noqa: E402
-
-
-@app.route("/<path_key>/mkt")
-def mkt_home(path_key):
-    check(path_key)
-    try:
-        cards = _briefs_cached()
-    except Exception:  # noqa: BLE001 — 버킷이 잠깐 안 읽혀도 화면은 뜬다
-        cards = []
-    try:
-        job = db.last_reel_job()
-    except Exception:  # noqa: BLE001
-        job = None
-    return render_template("plan.html", key=path_key,
-                           v=plan_page.build_view(cards, job))
-
-
-@app.route("/<path_key>/mkt/guide")
-def mkt_guide(path_key):
-    """옛 캘린더 가이드 주소 — 기획 화면으로 보낸다."""
-    check(path_key)
-    return redirect(url_for("mkt_home", path_key=path_key))
 
 
 @app.route("/<path_key>/content/dismiss", methods=["POST"])
@@ -4502,7 +4468,7 @@ def content_dismiss(path_key):
 
 @app.route("/<path_key>/content/topic", methods=["POST"])
 def content_topic(path_key):
-    """[＋ 내가 정한 주제] — 매니저가 릴스·블로그 가이드를 붙여 제안 카드로."""
+    """[＋ 내가 정한 주제] — 파트너가 촬영 가이드(훅·샷)를 붙여 제안 카드로."""
     check(path_key)
     topic = (request.form.get("topic") or "").strip()[:120]
     if len(topic) < 2:

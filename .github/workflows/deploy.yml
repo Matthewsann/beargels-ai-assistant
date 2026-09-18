@@ -123,7 +123,6 @@ jobs:
           upload service/templates/menu.html
           upload service/templates/menu_tasks.html
           upload service/templates/menu_ingredients.html
-          upload service/templates/plan.html
           upload service/templates/meeting.html
           upload service/templates/meeting_detail.html
           upload service/templates/meeting_form.html
@@ -133,7 +132,6 @@ jobs:
           upload sns_automation/cloud_sync.py
           upload sns_automation/briefs.py
           upload sns_automation/first_party.py
-          upload service/plan_page.py
           upload service/sales_page.py
           upload service/dashboard_page.py
           upload service/operations_judgment.py

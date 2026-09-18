@@ -48,21 +48,16 @@ def _find_folder(topic: str) -> str:
 def _finish_bookkeeping(p: dict, plan: dict | None) -> None:
     """완성본이 나온 뒤의 장부 정리 — 소재 사용 원장 + 콘텐츠 브리프.
 
-    원장(worker/media_ledger)에 "인스타가 이 소재의 이 구간을 썼다"를 남겨야
-    블로그가 같은 컷을 또 쓰지 않는다. 로컬 웹 finalize 는 예전부터 이걸
-    했는데 원버튼 경로(PA)에는 빠져 있었다(설계 검토 2026-09-04).
+    쓴 컷은 project.json 에만 적는다. 공용 소재 원장(worker/media_ledger)에 올려
+    블로그가 같은 컷을 피하게 하던 연결은 끊었다(사장님 2026-09-17 워크플로 분리 —
+    블로그 사진은 사장님이 폰에서 직접 올려 원장을 볼 일이 없다).
     실패해도 완성 저장을 막지 않는다 — 장부는 부가 기록이다.
     """
-    from . import webapp as wa
     shots = (plan or {}).get("shots") or []
     used = [{"name": s["clip"], "in": s.get("in"), "dur": s.get("dur")}
             for s in shots if isinstance(s, dict) and s.get("clip")]
     if used:
         p["used_media"] = used
-    try:
-        wa._record_usage_to_ledger(p)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("사용 원장 기록 실패: %s", str(e)[:120])
     try:
         from . import briefs
         b = briefs.by_project(p["id"]) or briefs.by_folder(p.get("source_dir") or "")
@@ -545,9 +540,8 @@ def _briefs_from_ideas(ideas: list[dict], source: str) -> list[dict]:
                 continue
             b = briefs.create(
                 title, why=i.get("why", ""), source=source,
-                insta={"hook_angle": i.get("hook_angle", ""), "shots": i.get("shots") or []},
-                blog={"keyword": (i.get("blog_keyword") or "").strip(),
-                      "angle": (i.get("blog_angle") or "").strip()})
+                insta={"hook_angle": i.get("hook_angle", ""), "shots": i.get("shots") or []})
+            # 블로그 필드는 더 안 채운다 — 인스타·블로그 워크플로 분리(사장님 2026-09-17)
             i["brief_id"] = b["id"]
             made.append(b)
         if made:
@@ -592,8 +586,6 @@ def start_shoot(brief_id: str = "", title: str = "") -> dict:
         # 안 돌며 새 성과가 옛 성과를 덮는다(2026-09-04 검토).
         b = briefs.create(b.get("topic") or title, why=b.get("why", ""),
                           insta=dict(b.get("insta") or {}, project_id=None),
-                          blog={"keyword": (b.get("blog") or {}).get("keyword", ""),
-                                "angle": (b.get("blog") or {}).get("angle", "")},
                           source="reshoot")
     if b is None:
         # 브리프가 없으면(옛 카드) 제목만으로 만든다 — 흐름이 끊기지 않게.
@@ -618,11 +610,7 @@ def start_shoot(brief_id: str = "", title: str = "") -> dict:
     lines.append("[찍을 샷]")
     for n, s in enumerate(insta.get("shots") or [], 1):
         lines.append(f"{n}. {s.get('what', '')} ({s.get('secs', 0)}초)")
-    if blog.get("keyword"):
-        lines += ["", "[같은 촬영으로 블로그도 씁니다]",
-                  f"검색 키워드: {blog['keyword']}",
-                  f"글 각도: {blog.get('angle', '')}",
-                  "→ 위 샷 외에 '완성 접시 정면 사진' 한 장을 더 찍어주세요(블로그 대표사진)."]
+    # (블로그 안내는 넣지 않는다 — 인스타·블로그 워크플로 분리, 2026-09-17)
     lines += ["", "[찍고 나서]", "이 폴더에 그대로 올려주세요. 10분 안에 제가 확인하고",
               "못 쓰는 컷이 있으면 알려드릴게요.", "",
               f"(브리프 {b['id']} · 이 파일은 자동으로 만들어졌어요)"]

@@ -181,22 +181,32 @@ def test_summarize_marks_whether_ranking_is_real():
 
 # ── 기획 프롬프트에 실제로 들어가는가 ──────────────────────────
 
-def test_planner_prompt_includes_first_party_blocks(monkeypatch):
+def test_instagram_prompt_judges_by_instagram_only(monkeypatch):
+    """인스타 기획 프롬프트는 인스타 기준으로만 판단한다(사장님 2026-09-17).
+
+    네이버 유입 검색어·네이버 실측은 들어가지 않고, 매출은 '어떤 메뉴로 찍을까'의
+    보조로 **인스타 시장 블록 뒤**에 붙는다. 이걸 어기면 블로그 사정이 인스타 주제를
+    끌고 가는 옛 구조로 돌아간다.
+    """
     from sns_automation import planner
     monkeypatch.setattr(planner, "_brand_core", lambda: "브랜드")
     monkeypatch.setattr(planner, "_editing_rules", lambda: "문법")
     monkeypatch.setattr(planner, "_hook_summary", lambda: "훅")
     monkeypatch.setattr(planner, "_brief_feedback", lambda: "")
-    monkeypatch.setattr(planner, "_naver", lambda: "[네이버 검색 실측]")
-    monkeypatch.setattr(planner, "_market", lambda: "[시장]")
+    monkeypatch.setattr(planner, "_naver", lambda: "[네이버 검색 실측] 송도베이글 green")
+    monkeypatch.setattr(planner, "_market", lambda: "[시장] 라인업 문법")
     monkeypatch.setattr(planner, "_place", lambda: "[유입 검색어] 송도베이글 16회")
     monkeypatch.setattr(planner, "_sales", lambda: "[잘 팔린 메뉴] 베이글 샌드위치")
     p = planner._ideas_system()
-    assert "송도베이글 16회" in p and "베이글 샌드위치" in p
-    # 근거의 우선순위가 프롬프트에 명시돼야 한다
-    assert "근거의 우선순위" in p
-    # '[네이버 검색 실측]' 은 규칙 문장에도 나오므로 **블록 자리**(마지막 등장)와 비교한다
-    naver_block = p.rindex("[네이버 검색 실측]")
-    assert p.index("[유입 검색어]") < naver_block
-    assert p.index("[잘 팔린 메뉴]") < naver_block
-    assert p.index("[유입 검색어]") < p.index("[잘 팔린 메뉴]")
+    assert "송도베이글 16회" not in p and "송도베이글 green" not in p
+    assert "판단 기준은 인스타그램" in p and "근거의 우선순위" in p
+    assert "베이글 샌드위치" in p and "보조" in p
+    assert p.index("[시장]") < p.index("[잘 팔린 메뉴]")
+
+
+def test_instagram_prompt_omits_sales_block_when_empty(monkeypatch):
+    from sns_automation import planner
+    for name in ("_brand_core", "_editing_rules", "_hook_summary", "_brief_feedback",
+                 "_market", "_sales"):
+        monkeypatch.setattr(planner, name, lambda: "")
+    assert "[참고 — 지금 잘 팔리는 메뉴" not in planner._ideas_system()   # 원칙 줄의 언급은 남는다

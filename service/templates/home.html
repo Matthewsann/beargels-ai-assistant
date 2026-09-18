@@ -252,11 +252,10 @@
   </a>
   {% endif %}
 
-  {# 이번 주 콘텐츠 — 찍을 것·도착한 소재·제작·발행을 한 화면에(설계 2026-09-04).
-     예전엔 인스타·블로그·캘린더 네 화면에 흩어져 있어 월요일에 뭘 해야 하는지
-     보이지 않았다. 주제 하나(브리프)가 두 채널을 관통한다. #}
+  {# 이번 주 인스타 — 찍을 것·도착한 소재·제작·발행을 한 화면에(설계 2026-09-04).
+     브리프는 인스타 전용이다(2026-09-17 워크플로 분리) — 블로그 진행은 /blog 홈이 보여준다. #}
   {% if week_content %}
-  <div class="sec-lbl">이번 주 콘텐츠</div>
+  <div class="sec-lbl">이번 주 인스타</div>
   <div id="wcMsg"></div>
   <div class="wcbox">
     {% for b in week_content %}
@@ -302,8 +301,8 @@
 
   <div class="sec-lbl">바로가기</div>
   {# 카드 순서는 사이드바(_sidebar.html)와 같아야 한다 — 사장님이 정한 순서
-     (2026-08-28): 회의 기록 · 콘텐츠 기획(옛 MKT 캘린더) · 리뷰 답글 · 네이버 블로그 · 인스타 ·
-     스마트플레이스 · 메뉴/원가. 한쪽만 바꾸면 직원이 매번 다시 찾는다. #}
+     (2026-08-28): 회의 기록 · 리뷰 답글 · 네이버 블로그 · 인스타 · 스마트플레이스 · 메뉴/원가.
+     콘텐츠 기획 카드는 2026-09-17 없앴다(인스타·블로그 별도 관리). 한쪽만 바꾸면 직원이 매번 다시 찾는다. #}
   <div class="grid">
     <a class="app" href="{{ url_for('meeting_home', path_key=key) }}">
       {% if meet_open %}<span class="badge soft">{{ meet_open }}</span>{% endif %}
@@ -313,14 +312,6 @@
       <button class="owner {{ '' if owners.meeting else 'none' }}" type="button"
               onclick="setOwner(event, 'meeting')" data-name="{{ owners.meeting or '' }}">
         👤 {{ owners.meeting or '담당자 지정' }}</button>
-    </a>
-    <a class="app" href="{{ url_for('mkt_home', path_key=key) }}">
-      <div class="ico">📣</div>
-      <div class="nm">콘텐츠 기획</div>
-      <div class="ds">매니저 제안 · 주제 고르기</div>
-      <button class="owner {{ '' if owners.mkt else 'none' }}" type="button"
-              onclick="setOwner(event, 'mkt')" data-name="{{ owners.mkt or '' }}">
-        👤 {{ owners.mkt or '담당자 지정' }}</button>
     </a>
     <a class="app" href="{{ url_for('review_home', path_key=key) }}">
       {% if stat.todo %}<span class="badge">{{ stat.todo }}</span>{% endif %}

@@ -594,13 +594,15 @@ def test_push_refuses_when_source_file_is_missing(tmp_path, monkeypatch):
 
 
 def test_owner_topic_and_dismiss_flow_through_auto_make(store, monkeypatch):
-    """콘텐츠 기획 [＋ 내가 정한 주제]·[이건 안 할래요] — AI·버킷 없이 흐름만."""
+    """인스타 화면 [＋ 내가 정한 주제]·[이건 안 할래요] — AI·버킷 없이 흐름만.
+
+    2026-09-17 워크플로 분리 뒤 제안에는 블로그 필드가 없다 — 브리프도 인스타 전용.
+    """
     from sns_automation import auto_make, cloud_sync, planner
 
     async def fake_plan(topic):
         return [{"title": "밤 크림치즈", "why": "사장님 주제", "hook_angle": "훅",
-                 "shots": [{"what": "바르기", "secs": 3}],
-                 "blog_keyword": "송도 베이글", "blog_angle": "가을 신메뉴"}]
+                 "shots": [{"what": "바르기", "secs": 3}]}]
     pushed, dropped = [], []
     monkeypatch.setattr(planner, "plan_from_topic", fake_plan)
     monkeypatch.setattr(cloud_sync, "push_ideas", lambda ideas, source="weekly": pushed.append((ideas, source)))
@@ -608,7 +610,7 @@ def test_owner_topic_and_dismiss_flow_through_auto_make(store, monkeypatch):
 
     assert auto_make.run_topic("가을 신메뉴 밤 크림치즈") == "밤 크림치즈"
     b = briefs.by_folder("밤 크림치즈")
-    assert b["source"] == "owner" and b["blog"]["keyword"] == "송도 베이글"
+    assert b["source"] == "owner" and not (b.get("blog") or {}).get("keyword")
     assert pushed[0][0][0]["brief_id"] == b["id"]
 
     assert auto_make.dismiss_brief(b["id"]) == "밤 크림치즈"
