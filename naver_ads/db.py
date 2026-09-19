@@ -38,6 +38,25 @@ CREATE TABLE IF NOT EXISTS ads (
     inspect_status TEXT,
     fetched_at     TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS daily_stats (
+    stat_date   TEXT NOT NULL,
+    entity_type TEXT NOT NULL,      -- campaign | adgroup | ad
+    entity_id   TEXT NOT NULL,
+    imp_cnt     INTEGER,
+    clk_cnt     INTEGER,
+    cost        INTEGER,            -- salesAmt(원)
+    ctr         REAL,
+    cpc         REAL,
+    avg_rnk     REAL,
+    ccnt        INTEGER,            -- 전환수(참고)
+    fetched_at  TEXT NOT NULL,
+    PRIMARY KEY (stat_date, entity_type, entity_id)
+);
+CREATE TABLE IF NOT EXISTS bizmoney (
+    snap_date  TEXT PRIMARY KEY,
+    balance    INTEGER,
+    fetched_at TEXT NOT NULL
+);
 """
 
 
