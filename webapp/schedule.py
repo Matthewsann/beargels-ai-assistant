@@ -185,6 +185,76 @@ def all_week_starts() -> list[date]:
 
 
 # ---------------------------------------------------------------------------
+# 휴무 신청 (직원이 내고, 사장님이 처리한다)
+# ---------------------------------------------------------------------------
+# schedule/timeoff.json 한 파일. 한 건 =
+#   {"id": "...", "who": "하늘", "from": "2026-09-25", "to": "2026-09-27",
+#    "allDay": true, "s": 9, "e": 14,          # allDay 가 false 일 때만 s·e
+#    "reason": "병원", "status": "pending|approved|rejected",
+#    "note": "사장님 한마디", "at": "...", "decidedAt": "..."}
+# 사장님이 처리하기 전(pending)까지는 직원이 고치거나 취소할 수 있다
+# (사장님 2026-09-20). 처리된 뒤엔 화면에서 손대지 못한다.
+TIMEOFF_OPEN = "pending"
+
+
+def load_timeoff() -> list[dict]:
+    path = DATA / "timeoff.json"
+    if not path.exists():
+        return []
+    try:
+        rows = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+
+
+def save_timeoff(rows: list[dict]) -> None:
+    DATA.mkdir(parents=True, exist_ok=True)
+    (DATA / "timeoff.json").write_text(
+        json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def clean_timeoff(raw: dict) -> dict | None:
+    """직원이 보낸 신청 한 건을 믿을 수 있는 모양으로 깎는다."""
+    who = str(raw.get("who") or "").strip()
+    reason = str(raw.get("reason") or "").strip()
+    if not who or not reason:
+        return None                      # 사유는 반드시 받는다(사장님 2026-09-20)
+    try:
+        d1 = parse_iso(raw.get("from"), None)
+        d2 = parse_iso(raw.get("to"), None)
+    except ValueError:
+        return None
+    if d2 < d1:
+        d1, d2 = d2, d1
+    if (d2 - d1).days > 30:              # 실수로 몇 년치가 들어오는 걸 막는다
+        d2 = d1 + timedelta(days=30)
+    out = {
+        "who": who[:40],
+        "from": d1.isoformat(),
+        "to": d2.isoformat(),
+        "allDay": bool(raw.get("allDay", True)),
+        "reason": reason[:200],
+    }
+    if not out["allDay"]:
+        try:
+            a, b = float(raw.get("s")), float(raw.get("e"))
+        except (TypeError, ValueError):
+            return None
+        if not (0 <= a < b <= 30):
+            return None
+        out["s"], out["e"] = a, b
+    return out
+
+
+def timeoff_for(rows: list[dict], iso: str) -> list[dict]:
+    """그 날짜에 걸리는 신청들 (근무표에 표시할 때 쓴다)."""
+    return [r for r in rows
+            if (r.get("from") or "") <= iso <= (r.get("to") or "")]
+
+
+# ---------------------------------------------------------------------------
 # 공휴일 · 날씨
 # ---------------------------------------------------------------------------
 # 공휴일은 한국천문연구원 특일 정보 API(공공데이터포털, 무료)에서 1년에 한 번 받아
@@ -269,6 +339,7 @@ def build_boot(anchor: date, *, back: int = WEEKS_BACK, fwd: int = WEEKS_FWD) ->
         "holidays": load_holidays(),
         "weather": load_weather(),
         "sales": load_sales(),
+        "timeoff": load_timeoff(),
         "dow": DOW,
     }
 
@@ -295,7 +366,9 @@ def staff_view(token: str):
         abort(404)
     # fwd=8: 확정해 둔 미래 주는 이번 주가 아니어도 전부 보여준다(사장님 2026-09-07).
     # 화면(schedule.js)이 확정된 주만 골라 그리므로, 넉넉히 내려보내도 안 어지럽다.
-    return render_template("schedule_public.html", boot=build_boot(date.today(), back=1, fwd=8))
+    return render_template("schedule_public.html",
+                           boot=build_boot(date.today(), back=1, fwd=8),
+                           staff_post=url_for("schedule.staff_timeoff", token=token))
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +433,98 @@ def api_new_token():
     save_config(cfg)
     return jsonify({"ok": True, "url": url_for("schedule.staff_view",
                                                token=cfg["publicToken"], _external=True)})
+
+
+# ---------------------------------------------------------------------------
+# 휴무 신청 — 직원이 내고 고치고 취소한다 (토큰만 있으면 되는 공개 길)
+# ---------------------------------------------------------------------------
+def handle_staff_timeoff(body: dict):
+    """직원용 화면에서 오는 신청 처리. 사장님이 손대기 전 것만 고칠 수 있다."""
+    action = str(body.get("action") or "").strip()
+    rows = load_timeoff()
+
+    if action == "add":
+        row = clean_timeoff(body)
+        if not row:
+            return jsonify({"ok": False, "error": "날짜와 사유를 채워주세요."}), 400
+        row["id"] = secrets.token_urlsafe(8)
+        row["status"] = TIMEOFF_OPEN
+        row["at"] = datetime.now().isoformat(timespec="seconds")
+        rows.append(row)
+        save_timeoff(rows)
+        return jsonify({"ok": True, "timeoff": rows})
+
+    rid = str(body.get("id") or "")
+    found = next((r for r in rows if r.get("id") == rid), None)
+    if not found:
+        return jsonify({"ok": False, "error": "그 신청을 찾지 못했어요."}), 404
+    # 사장님이 이미 처리한 건 직원이 못 건드린다
+    if found.get("status") != TIMEOFF_OPEN:
+        return jsonify({"ok": False,
+                        "error": "사장님이 이미 처리한 신청이라 고칠 수 없어요."}), 409
+    # 남의 신청을 고치지 못하게 — 이름이 맞아야 한다(이 화면의 본인 확인은 이름뿐)
+    if str(body.get("who") or "").strip() != found.get("who"):
+        return jsonify({"ok": False, "error": "본인이 낸 신청만 고칠 수 있어요."}), 403
+
+    if action == "cancel":
+        rows = [r for r in rows if r.get("id") != rid]
+        save_timeoff(rows)
+        return jsonify({"ok": True, "timeoff": rows})
+
+    if action == "edit":
+        row = clean_timeoff(body)
+        if not row:
+            return jsonify({"ok": False, "error": "날짜와 사유를 채워주세요."}), 400
+        found.pop("s", None); found.pop("e", None)
+        found.update(row)
+        found["at"] = datetime.now().isoformat(timespec="seconds")
+        save_timeoff(rows)
+        return jsonify({"ok": True, "timeoff": rows})
+
+    return jsonify({"ok": False, "error": "알 수 없는 요청이에요."}), 400
+
+
+def handle_owner_timeoff(body: dict):
+    """사장님이 승인·거절·되돌리기. 근무표는 건드리지 않는다(사장님 2026-09-20)."""
+    action = str(body.get("action") or "").strip()
+    rows = load_timeoff()
+    rid = str(body.get("id") or "")
+    found = next((r for r in rows if r.get("id") == rid), None)
+    if not found:
+        return jsonify({"ok": False, "error": "그 신청을 찾지 못했어요."}), 404
+
+    if action == "delete":
+        rows = [r for r in rows if r.get("id") != rid]
+        save_timeoff(rows)
+        return jsonify({"ok": True, "timeoff": rows})
+
+    if action in ("approve", "reject", "reopen"):
+        found["status"] = {"approve": "approved", "reject": "rejected",
+                           "reopen": TIMEOFF_OPEN}[action]
+        note = str(body.get("note") or "").strip()[:200]
+        if action == "reopen":
+            found.pop("note", None); found.pop("decidedAt", None)
+        else:
+            if note:
+                found["note"] = note
+            found["decidedAt"] = datetime.now().isoformat(timespec="seconds")
+        save_timeoff(rows)
+        return jsonify({"ok": True, "timeoff": rows})
+
+    return jsonify({"ok": False, "error": "알 수 없는 요청이에요."}), 400
+
+
+@bp.route("/s/<token>/timeoff", methods=["POST"])
+def staff_timeoff(token: str):
+    cfg = load_config()
+    if not secrets.compare_digest(token, cfg.get("publicToken") or ""):
+        abort(404)
+    return handle_staff_timeoff(request.get_json(silent=True) or {})
+
+
+@bp.route("/schedule/api/timeoff", methods=["POST"])
+def api_timeoff():
+    return handle_owner_timeoff(request.get_json(silent=True) or {})
 
 
 # ---------------------------------------------------------------------------

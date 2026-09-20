@@ -14,6 +14,7 @@
   var HOL = B.holidays || {};
   var WX = B.weather || {};
   var SALES = B.sales || {};
+  var TIMEOFF = B.timeoff || [];
   var DOW = B.dow || ['월', '화', '수', '목', '금', '토', '일'];
   var TODAY = B.todayIso;
 
@@ -207,6 +208,10 @@
       var iso = wk.iso[i], n = wk.days[i].length;
       var hol = holidayOf(iso), closed = isClosed(iso, i), w = weatherOf(iso), bz = bizOf(iso);
       var today = iso === TODAY, spTag = specialTag(iso);
+      // 그날 휴무 신청이 있으면 헤더에 알린다 (승인된 것 / 기다리는 것)
+      var offs = TIMEOFF.filter(function (r) {
+        return (r.from || '') <= iso && iso <= (r.to || '') && r.status !== 'rejected';
+      });
       var cls = [today ? 'today' : '', i === 5 ? 'sat' : (i === 6 ? 'sun' : ''),
                  hol ? 'hol' : '', closed ? 'closed' : ''].filter(Boolean).join(' ');
       head += '<div class="dh ' + cls + '">'
@@ -214,6 +219,8 @@
         + '<span class="dt num">' + d + '</span>'
         + (hol ? '<span class="holname">' + esc(hol) + '</span>' : '')
         + (w ? '<span class="wx">' + esc(w.icon || '') + ' <span class="num">' + esc(w.hi) + '°</span></span>' : '')
+        + (offs.length ? '<span class="offtag' + (offs.some(function (r) { return r.status === 'pending'; }) ? ' pend' : '') + '">'
+            + '🙋 ' + offs.map(function (r) { return esc(r.who); }).join(',') + '</span>' : '')
         + (closed ? '<span class="closedtag">휴무</span>'
                   : '<span class="biz num' + (spTag ? ' sp' : '') + '">'
                     + (spTag ? spTag + ' ' : '') + hm(bz.open) + '–' + hm(bz.close) + '</span>'
@@ -1023,11 +1030,151 @@
     saveWeek(wkIdx); renderAll();
   }
 
+
+  // ── 휴무 신청 ─────────────────────────────────────────────
+  // 직원이 내고, 사장님이 처리한다. 사장님이 손대기 전(pending)까지는
+  // 직원이 고치거나 취소할 수 있다(사장님 2026-09-20).
+  var offDraft = { allDay: true, s: 9, e: 14 }, offEditId = null;
+
+  function offLabel(r) {
+    var span = mdOf(r.from) + (r.to !== r.from ? ' ~ ' + mdOf(r.to) : '');
+    return span + ' · ' + (r.allDay ? '하루 종일' : hm(+r.s) + '–' + hm(+r.e));
+  }
+  function offStatus(r) {
+    return r.status === 'approved' ? '<span class="tag success">✅ 승인</span>'
+         : r.status === 'rejected' ? '<span class="tag warning">✖ 거절</span>'
+         : '<span class="tag accent">⏳ 기다리는 중</span>';
+  }
+  function offMsg(text, bad) {
+    var el = $('offMsg'); if (!el) return;
+    el.innerHTML = text;
+    el.className = 'note' + (bad ? ' warn' : '');
+    el.hidden = !text;
+  }
+  function offPost(body) {
+    return fetch(window.SCHED_TIMEOFF_POST, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+    });
+  }
+
+  function offRender() {
+    if (!$('offWho')) return;
+    $('offWho').innerHTML = (CFG.staff || []).map(function (st) {
+      return '<button class="' + (st.name === meName ? 'on' : '') + '"'
+        + ' onclick="SCHED.pickMe(\'' + esc(st.name) + '\')">'
+        + '<i class="pdot" style="background:' + st.c + '"></i>' + esc(st.name) + '</button>';
+    }).join('') || '<span class="cap">아직 등록된 직원이 없어요.</span>';
+    $('offMineTitle').textContent = (meName || '내') + ' 님이 낸 신청';
+
+    // 날짜 기본값 — 처음 열면 오늘
+    if (!$('offFrom').value) { $('offFrom').value = TODAY; $('offTo').value = TODAY; }
+    var a = $('offFrom').value, b = $('offTo').value;
+    if (a && b) {
+      if (b < a) { $('offTo').value = a; b = a; }
+      var n = Math.round((new Date(b) - new Date(a)) / 86400000) + 1;
+      $('offDays').textContent = n > 1 ? n + '일' : '하루';
+    }
+    $('offAllDay').classList.toggle('on', offDraft.allDay);
+    $('offPart').classList.toggle('on', !offDraft.allDay);
+    $('offTimeWrap').hidden = offDraft.allDay;
+    if (!offDraft.allDay) {
+      $('offStartWrap').innerHTML = tpick(offDraft.s, {
+        label: '빼는 시작', cb: function (v) { offDraft.s = toH(v); }
+      });
+      $('offEndWrap').innerHTML = tpick(offDraft.e, {
+        label: '빼는 끝', cb: function (v) { offDraft.e = toH(v); }
+      });
+    }
+    $('offFormTitle').textContent = offEditId ? '신청 고치기' : '휴무 신청';
+    $('offSubmit').textContent = offEditId ? '고친 내용 저장' : '신청하기';
+    $('offCancelEdit').hidden = !offEditId;
+
+    var mine = TIMEOFF.filter(function (r) { return r.who === meName; })
+      .sort(function (x, y) { return String(y.from).localeCompare(String(x.from)); });
+    $('offMine').innerHTML = mine.length ? mine.map(function (r) {
+      var open = r.status === 'pending';
+      return '<div class="post" style="padding:12px 14px;margin-bottom:10px;">'
+        + '<div class="rowbar" style="margin-bottom:6px;">'
+        + '<b class="num">' + offLabel(r) + '</b>' + offStatus(r) + '</div>'
+        + '<div class="cap">사유: ' + esc(r.reason || '') + '</div>'
+        + (r.note ? '<div class="note" style="margin:8px 0 0;">사장님: ' + esc(r.note) + '</div>' : '')
+        + (open
+            ? '<div class="rowbar" style="margin-top:10px;">'
+              + '<button class="btn chip" onclick="SCHED.offEdit(\'' + r.id + '\')">✏️ 고치기</button>'
+              + '<button class="btn chip" onclick="SCHED.offCancel(\'' + r.id + '\')">🗑 취소</button></div>'
+            : '<div class="cap" style="margin-top:8px;">사장님이 처리해서 더는 고칠 수 없어요.</div>')
+        + '</div>';
+    }).join('') : '<div class="post cap">아직 낸 신청이 없어요.</div>';
+  }
+
+
+  // ── 휴무 신청 — 사장님 쪽 ─────────────────────────────────
+  // 승인해도 근무표는 건드리지 않는다(사장님 2026-09-20). 그 날짜에 표시만 하고
+  // 근무를 빼거나 대신 넣는 건 사장님이 주간 화면에서 직접 한다.
+  function offPendingCount() {
+    return TIMEOFF.filter(function (r) { return r.status === 'pending'; }).length;
+  }
+
+  function offOwnerPost(body) {
+    return fetch(API + '/api/timeoff', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+    });
+  }
+
+  function offOwnerCard(r) {
+    var open = r.status === 'pending';
+    var who = staffOf(r.who);
+    return '<div class="post" style="padding:12px 14px;margin-bottom:10px;">'
+      + '<div class="rowbar" style="margin-bottom:6px;">'
+      + '<i class="pdot" style="background:' + (who ? who.c : '#8a897f') + '"></i>'
+      + '<b>' + esc(r.who) + '</b>'
+      + '<span class="num">' + offLabel(r) + '</span>'
+      + offStatus(r) + '</div>'
+      + '<div class="cap">사유: ' + esc(r.reason || '') + '</div>'
+      + (r.note ? '<div class="cap">내 메모: ' + esc(r.note) + '</div>' : '')
+      + '<div class="rowbar" style="margin-top:10px;">'
+      + (open
+          ? '<button class="btn small primary" onclick="SCHED.offDecide(\'' + r.id + '\',\'approve\')">✅ 승인</button>'
+            + '<button class="btn small danger" onclick="SCHED.offDecide(\'' + r.id + '\',\'reject\')">✖ 거절</button>'
+          : '<button class="btn small" onclick="SCHED.offDecide(\'' + r.id + '\',\'reopen\')">↩ 다시 보류로</button>'
+            + '<button class="unlock" onclick="SCHED.offDelete(\'' + r.id + '\')">지우기</button>')
+      + '</div></div>';
+  }
+
+  function renderOwnerTimeoff() {
+    if (!$('offOwnerPending')) return;
+    var pending = TIMEOFF.filter(function (r) { return r.status === 'pending'; })
+      .sort(function (a, b) { return String(a.from).localeCompare(String(b.from)); });
+    var done = TIMEOFF.filter(function (r) { return r.status !== 'pending'; })
+      .sort(function (a, b) { return String(b.from).localeCompare(String(a.from)); });
+
+    $('offOwnerPending').innerHTML = pending.length
+      ? pending.map(offOwnerCard).join('')
+      : '<div class="post cap">기다리는 신청이 없어요.</div>';
+    $('offOwnerDone').innerHTML = done.length
+      ? done.map(offOwnerCard).join('')
+      : '<div class="post cap">처리한 신청이 아직 없어요.</div>';
+
+    // 탭 이름에 기다리는 건수를 띄운다 — 안 보면 모르니까
+    var tab = document.querySelector('#view-admin .stabs button[data-tab="tab-off"]')
+           || document.querySelector('#sched .stabs button[data-tab="tab-off"]');
+    if (tab) {
+      var n = pending.length;
+      tab.innerHTML = '🙋 휴무 신청' + (n ? ' <span class="tag warning">' + n + '</span>' : '');
+    }
+  }
+
   // ── 전체 다시 그리기 ──────────────────────────────────────
   function renderAll() {
     recalcAxis();
     renderWeek(); renderDay(); renderSettings();
-    renderStaffWeek(); renderMe();
+    renderStaffWeek(); renderMe(); offRender(); renderOwnerTimeoff();
   }
 
   // ── 바깥에서 부르는 것들 ──────────────────────────────────
@@ -1125,6 +1272,79 @@
       meName = n;
       try { localStorage.setItem('beargels-sched-me', n); } catch (_) {}
       renderMe(); renderStaffWeek();
+    },
+    offDecide: function (id, action) {
+      var note = '';
+      if (action === 'reject') {
+        note = prompt('거절 사유를 한 줄로 적어주세요 (직원 화면에 보여요)') || '';
+        if (!note.trim()) return;           // 이유 없이 거절하지 않는다
+      } else if (action === 'approve') {
+        note = prompt('직원에게 남길 말 (없으면 비워두세요)') || '';
+      }
+      offOwnerPost({ action: action, id: id, note: note }).then(function (res) {
+        if (!res.ok) { flash(res.j.error || '처리하지 못했어요.', true); return; }
+        TIMEOFF = res.j.timeoff || [];
+        flash(action === 'approve' ? '승인했어요. 근무표는 직접 고쳐주세요.'
+            : action === 'reject' ? '거절했어요.' : '다시 보류로 돌렸어요.');
+        renderAll();
+      }).catch(function () { flash('처리하지 못했어요.', true); });
+    },
+    offDelete: function (id) {
+      if (!confirm('이 신청 기록을 아예 지울까요?')) return;
+      offOwnerPost({ action: 'delete', id: id }).then(function (res) {
+        if (!res.ok) { flash(res.j.error || '지우지 못했어요.', true); return; }
+        TIMEOFF = res.j.timeoff || []; flash('지웠어요.'); renderAll();
+      }).catch(function () { flash('지우지 못했어요.', true); });
+    },
+    offRender: offRender,
+    offKind: function (allDay) { offDraft.allDay = !!allDay; offRender(); },
+    offEdit: function (id) {
+      var r = TIMEOFF.filter(function (x) { return x.id === id; })[0];
+      if (!r || r.status !== 'pending') return;
+      offEditId = id;
+      $('offFrom').value = r.from; $('offTo').value = r.to;
+      offDraft = { allDay: !!r.allDay, s: +r.s || 9, e: +r.e || 14 };
+      $('offReason').value = r.reason || '';
+      offMsg(''); offRender();
+      $('offFormTitle').scrollIntoView({ block: 'center' });
+    },
+    offEditCancel: function () {
+      offEditId = null; $('offReason').value = '';
+      offDraft = { allDay: true, s: 9, e: 14 };
+      offMsg(''); offRender();
+    },
+    offCancel: function (id) {
+      if (!confirm('이 휴무 신청을 취소할까요?')) return;
+      offPost({ action: 'cancel', id: id, who: meName }).then(function (res) {
+        if (!res.ok) { offMsg(esc(res.j.error || '취소하지 못했어요.'), true); return; }
+        TIMEOFF = res.j.timeoff || []; offMsg('취소했어요.'); offRender();
+      }).catch(function () { offMsg('연결이 안 돼요. 잠시 뒤 다시 해주세요.', true); });
+    },
+    offSubmit: function () {
+      if (!meName) { offMsg('먼저 이름을 골라주세요.', true); return; }
+      var reason = ($('offReason').value || '').trim();
+      if (!reason) { offMsg('사유를 적어주세요. 사장님이 판단할 때 꼭 필요해요.', true); return; }
+      if (!offDraft.allDay && !(offDraft.e > offDraft.s)) {
+        offMsg('빼는 시간이 거꾸로예요.', true); return;
+      }
+      var body = {
+        action: offEditId ? 'edit' : 'add', id: offEditId, who: meName,
+        from: $('offFrom').value, to: $('offTo').value,
+        allDay: offDraft.allDay, s: offDraft.s, e: offDraft.e, reason: reason
+      };
+      $('offSubmit').disabled = true;
+      offPost(body).then(function (res) {
+        $('offSubmit').disabled = false;
+        if (!res.ok) { offMsg(esc(res.j.error || '보내지 못했어요.'), true); return; }
+        TIMEOFF = res.j.timeoff || [];
+        offMsg(offEditId ? '고쳤어요. 사장님이 다시 봐요.' : '신청했어요. 사장님이 보면 여기에 결과가 떠요.');
+        offEditId = null; $('offReason').value = '';
+        offDraft = { allDay: true, s: 9, e: 14 };
+        offRender();
+      }).catch(function () {
+        $('offSubmit').disabled = false;
+        offMsg('연결이 안 돼요. 잠시 뒤 다시 해주세요.', true);
+      });
     },
     staffView: function (v) {
       staffView = v === 'list' ? 'list' : 'cal';
@@ -1299,6 +1519,9 @@
     if (e.key !== 'Escape') return;
     window.SCHED.closeModal();
     window.SCHED.closeConfirm();
+  });
+  ['offFrom', 'offTo'].forEach(function (id) {
+    var el = $(id); if (el) el.addEventListener('change', offRender);
   });
   window.addEventListener('resize', function () { fitEvents(document); });
 

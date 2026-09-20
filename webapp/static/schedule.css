@@ -71,6 +71,12 @@
 #sched .dh .wx { font-size: 10px; color: var(--muted); }
 #sched .dh .holname { font-size: 9px; color: var(--sun); font-weight: 700; }
 #sched .dh .closedtag { font-size: 9px; color: var(--warn); font-weight: 700; }
+/* 그날 휴무 신청 — 승인된 건 초록, 아직 기다리는 건 주황 */
+#sched .dh .offtag {
+  display: block; line-height: 1.45; white-space: nowrap;
+  font-size: 9px; font-weight: 700; color: var(--ok);
+}
+#sched .dh .offtag.pend { color: var(--warn); }
 
 #sched .wkgrid-body { display: grid; grid-template-columns: 52px repeat(7, 1fr); position: relative; }
 #sched .wkaxis { border-right: 1px solid var(--line); background: var(--card); position: sticky; left: 0; z-index: 5; }

@@ -19,8 +19,8 @@ from datetime import date
 from flask import abort, jsonify, render_template, request, url_for
 
 from webapp.schedule import (  # noqa: F401 — 데이터 계층 재사용
-    build_boot, build_export, load_config, parse_iso, save_config, save_week,
-    _clean_shift,
+    build_boot, build_export, handle_owner_timeoff, handle_staff_timeoff,
+    load_config, parse_iso, save_config, save_week, _clean_shift,
 )
 
 
@@ -50,7 +50,8 @@ def staff_page(token: str):
     # fwd=8: 확정해 둔 미래 주는 이번 주가 아니어도 전부 보여준다(사장님 2026-09-07).
     # 화면(schedule.js)이 확정된 주만 골라 그리므로, 넉넉히 내려보내도 안 어지럽다.
     return render_template("schedule_public.html",
-                           boot=build_boot(date.today(), back=1, fwd=8))
+                           boot=build_boot(date.today(), back=1, fwd=8),
+                           staff_post=url_for("schedule_staff_timeoff", token=token))
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +93,19 @@ def new_token_api():
     save_config(cfg)
     return jsonify({"ok": True, "url": url_for("schedule_staff",
                                                token=cfg["publicToken"], _external=True)})
+
+
+def staff_timeoff_api(token: str):
+    """직원이 낸 휴무 신청 — 링크 토큰이 맞아야 받는다."""
+    cfg = load_config()
+    if not secrets.compare_digest(token, cfg.get("publicToken") or ""):
+        abort(404)
+    return handle_staff_timeoff(request.get_json(silent=True) or {})
+
+
+def owner_timeoff_api():
+    """사장님의 승인·거절·되돌리기 (비밀주소 안에서만 불린다)."""
+    return handle_owner_timeoff(request.get_json(silent=True) or {})
 
 
 def export():

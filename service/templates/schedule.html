@@ -76,6 +76,7 @@
       <button data-tab="tab-day" onclick="SCHEDTAB('tab-day',this)">☀️ 오늘</button>
       <button data-tab="tab-set" onclick="SCHEDTAB('tab-set',this)">⚙️ 설정</button>
       <button data-tab="tab-data" onclick="SCHEDTAB('tab-data',this)">📄 데이터</button>
+      <button data-tab="tab-off" onclick="SCHEDTAB('tab-off',this)">🙋 휴무 신청</button>
     </div>
 
     <!-- ── 주간 캘린더 ── -->
@@ -254,6 +255,19 @@
       </form>
     </section>
 
+
+      <!-- ── 휴무 신청 ── -->
+      <section id="tab-off" hidden>
+        <div class="note">🙋 직원이 낸 휴무 신청이에요. <b>승인해도 근무표는 안 바뀝니다</b> —
+          그 날짜 위에 표시만 뜨니, 근무를 빼고 대신 넣는 건 <b>📅 주간</b>에서 직접 해주세요.</div>
+
+        <div class="sec" style="margin-top:0;"><b>기다리는 신청</b><small>처리 전까지는 직원이 고칠 수 있어요</small></div>
+        <div id="offOwnerPending"></div>
+
+        <div class="sec"><b>처리한 신청</b></div>
+        <div id="offOwnerDone"></div>
+      </section>
+
     <!-- ── 되돌릴 수 없는 일 확인 ── -->
     <div class="modal" id="cmodal" hidden onclick="if(event.target===this) SCHED.closeConfirm()">
       <div class="modal-card" role="dialog" aria-modal="true">
@@ -299,7 +313,7 @@
   window.SCHED_BOOT = {{ boot | tojson }};
   window.SCHED_MODE = 'admin';
   function SCHEDTAB(id, btn) {
-    ['tab-week', 'tab-day', 'tab-set', 'tab-data'].forEach(function (t) {
+    ['tab-week', 'tab-day', 'tab-set', 'tab-data', 'tab-off'].forEach(function (t) {
       document.getElementById(t).hidden = (t !== id);
     });
     btn.parentElement.querySelectorAll('button').forEach(function (b) { b.classList.toggle('on', b === btn); });

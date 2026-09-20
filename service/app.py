@@ -183,6 +183,18 @@ def schedule_export(path_key):
     return sched.export()
 
 
+@app.route("/<path_key>/schedule/api/timeoff", methods=["POST"])
+def schedule_timeoff(path_key):
+    check(path_key)
+    return sched.owner_timeoff_api()
+
+
+@app.route("/s/<token>/timeoff", methods=["POST"])
+def schedule_staff_timeoff(token):
+    """직원이 휴무를 신청·수정·취소한다 (로그인 없음, 토큰으로 막는다)."""
+    return sched.staff_timeoff_api(token)
+
+
 @app.route("/s/<token>")
 def schedule_staff(token):
     """직원용 근무표 열람 — 비밀주소와 별개의 토큰. 스케줄만 보인다."""

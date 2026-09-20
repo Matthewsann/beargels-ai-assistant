@@ -53,6 +53,7 @@
     <div class="stabs">
       <button class="on" data-tab="stab-week" onclick="STAB('stab-week',this)">📅 스케줄</button>
       <button data-tab="stab-me" onclick="STAB('stab-me',this)">⭐ 내 근무</button>
+      <button data-tab="stab-off" onclick="STAB('stab-off',this)">🙋 휴무 신청</button>
     </div>
 
     <section id="stab-week">
@@ -73,14 +74,60 @@
       <div class="sec"><b id="meTitle"></b><small>앞으로의 근무</small></div>
       <div class="list" id="meList"></div>
     </section>
+    <section id="stab-off" hidden>
+      <div class="chiprow" id="offWho"></div>
+      <div class="cap" style="margin:0 0 12px;">누가 내는 신청인지 골라주세요. 폰이 기억해요.</div>
+
+      <div class="post">
+        <b id="offFormTitle">휴무 신청</b>
+        <div class="cap" style="margin:4px 0 12px;">사장님이 보고 처리해요. 처리 전까지는 고치거나 취소할 수 있어요.</div>
+
+        <label class="lbl" for="offFrom">언제부터</label>
+        <div class="rowbar">
+          <input class="fld num" type="date" id="offFrom" style="width:auto;">
+          <span class="cap">~</span>
+          <input class="fld num" type="date" id="offTo" style="width:auto;">
+          <span class="cap" id="offDays"></span>
+        </div>
+
+        <div class="rowbar" style="margin-top:12px;">
+          <button class="btn chip on" id="offAllDay" onclick="SCHED.offKind(true)">하루 종일</button>
+          <button class="btn chip" id="offPart" onclick="SCHED.offKind(false)">시간만 빼기</button>
+        </div>
+        <div id="offTimeWrap" hidden style="margin-top:10px;">
+          <label class="lbl">빼고 싶은 시간</label>
+          <div class="rowbar">
+            <span id="offStartWrap"></span>
+            <span class="cap">~</span>
+            <span id="offEndWrap"></span>
+          </div>
+        </div>
+
+        <label class="lbl" for="offReason" style="margin-top:12px;">사유 <span style="color:var(--warn)">*</span></label>
+        <input class="fld" type="text" id="offReason" maxlength="200"
+               placeholder="예: 병원 예약 / 가족 행사" style="width:100%;">
+
+        <div class="rowbar" style="margin-top:14px;">
+          <button class="btn primary" id="offSubmit" onclick="SCHED.offSubmit()">신청하기</button>
+          <button class="btn" id="offCancelEdit" hidden onclick="SCHED.offEditCancel()">수정 취소</button>
+        </div>
+        <div class="note" id="offMsg" hidden></div>
+      </div>
+
+      <div class="sec"><b id="offMineTitle">내가 낸 신청</b></div>
+      <div id="offMine"></div>
+    </section>
+
   </div>
 </div>
 
 <script>
   window.SCHED_BOOT = {{ boot | tojson }};
   window.SCHED_MODE = 'public';
+  window.SCHED_TIMEOFF_POST = {{ staff_post | tojson }};
   function STAB(id, btn) {
-    ['stab-week', 'stab-me'].forEach(function (t) { document.getElementById(t).hidden = (t !== id); });
+    ['stab-week', 'stab-me', 'stab-off'].forEach(function (t) { document.getElementById(t).hidden = (t !== id); });
+    if (id === 'stab-off' && window.SCHED) window.SCHED.offRender();
     btn.parentElement.querySelectorAll('button').forEach(function (b) { b.classList.toggle('on', b === btn); });
   }
 </script>
