@@ -25,6 +25,7 @@ from webapp.schedule import (  # noqa: F401 — 데이터 계층 재사용
 
 
 def _boot_for(key: str, **kw) -> dict:
+    kw.setdefault("with_timeoff", True)   # 관리자 화면만 휴무 신청을 받아 간다
     boot = build_boot(date.today(), **kw)
     boot["api"] = f"/{key}/schedule"   # JS 가 저장할 때 쓸 주소 앞부분
     return boot
@@ -79,7 +80,8 @@ def save_config_api():
     body = request.get_json(silent=True) or {}
     cfg = load_config()
     for k in ("bizHours", "closedDows", "closedDates", "specialDays", "presets",
-              "staff", "recentTimes", "salesPerHead", "showHoliday", "showWeather"):
+              "staff", "recentTimes", "salesPerHead", "showHoliday", "showWeather",
+              "timeoffLeadWeeks", "timeoffCutoffDow", "timeoffCutoffTime"):
         if k in body:
             cfg[k] = body[k]
     save_config(cfg)

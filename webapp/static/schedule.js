@@ -15,6 +15,7 @@
   var WX = B.weather || {};
   var SALES = B.sales || {};
   var TIMEOFF = B.timeoff || [];
+  var OFFWIN = B.timeoffWindow || {};
   var DOW = B.dow || ['월', '화', '수', '목', '금', '토', '일'];
   var TODAY = B.todayIso;
 
@@ -939,6 +940,19 @@
         + '영업시간을 바꿔도 <b>과거 근무표는 그대로</b> 남습니다.';
     $('bizHint').className = 'note' + (dirty ? ' warn' : '');
 
+    if ($('offLeadIn')) {
+      $('offLeadIn').value = CFG.timeoffLeadWeeks != null ? CFG.timeoffLeadWeeks : 2;
+      $('offCutDow').innerHTML = DOW.map(function (d, i) {
+        return '<option value="' + i + '"' +
+          (i === (CFG.timeoffCutoffDow != null ? CFG.timeoffCutoffDow : 2) ? ' selected' : '') +
+          '>' + d + '요일</option>';
+      }).join('');
+      $('offCutTime').value = CFG.timeoffCutoffTime || '23:59';
+      var w = OFFWIN.earliest ? mdOf(OFFWIN.earliest) + '(' + DOW[dowOf(OFFWIN.earliest)] + ')' : '—';
+      $('offRuleNote').innerHTML =
+        '지금 기준으로 직원은 <b class="num">' + w + '</b>부터 신청할 수 있어요. '
+        + '마감이 지나면 한 주 뒤로 밀립니다.';
+    }
     $('holChk').checked = !!CFG.showHoliday;
     $('wxChk').checked = !!CFG.showWeather;
     $('sphIn').value = CFG.salesPerHead || 35;
@@ -1051,6 +1065,29 @@
     el.className = 'note' + (bad ? ' warn' : '');
     el.hidden = !text;
   }
+  // 직원 화면이 들고 있는 TIMEOFF 는 '이 폰에서 낸 것'뿐이다.
+  // 전체 기록은 사장님만 본다(사장님 2026-09-20). 이름은 고르기만 하면 되는
+  // 값이라 이름으로 찾으면 남의 사유가 보인다 — 그래서 낼 때 받은 번호로 찾는다.
+  function offIds() {
+    try { return JSON.parse(localStorage.getItem('beargels-sched-myoff') || '[]'); }
+    catch (_) { return []; }
+  }
+  function offRememberId(id) {
+    if (!id) return;
+    var list = offIds();
+    if (list.indexOf(id) < 0) list.push(id);
+    try { localStorage.setItem('beargels-sched-myoff', JSON.stringify(list)); } catch (_) {}
+  }
+  function offLoadMine() {
+    if (MODE !== 'public') { offRender(); return; }
+    var ids = offIds();
+    if (!ids.length) { TIMEOFF = []; offRender(); return; }
+    offPost({ action: 'mine', ids: ids }).then(function (res) {
+      if (res.ok) TIMEOFF = res.j.timeoff || [];
+      offRender();
+    }).catch(function () { offRender(); });
+  }
+
   function offPost(body) {
     return fetch(window.SCHED_TIMEOFF_POST, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1068,9 +1105,24 @@
         + '<i class="pdot" style="background:' + st.c + '"></i>' + esc(st.name) + '</button>';
     }).join('') || '<span class="cap">아직 등록된 직원이 없어요.</span>';
     $('offMineTitle').textContent = (meName || '내') + ' 님이 낸 신청';
+    var hint = $('offMineHint');
+    if (hint) hint.textContent = '이 폰에서 낸 신청만 보여요. 다른 기기로 냈거나 사장님이 처리한 건 사장님께 말씀해주세요.';
 
-    // 날짜 기본값 — 처음 열면 오늘
-    if (!$('offFrom').value) { $('offFrom').value = TODAY; $('offTo').value = TODAY; }
+    // 마감 규칙 — 이 날짜 전은 이미 근무표가 짜여서 못 낸다
+    var early = OFFWIN.earliest || TODAY;
+    $('offFrom').min = early; $('offTo').min = early;
+    if ($('offWinNote')) {
+      var cut = (OFFWIN.cutoff || '').replace('T', ' ');
+      $('offWinNote').innerHTML = '📌 지금은 <b class="num">' + mdOf(early) + '('
+        + DOW[dowOf(early)] + ')</b>부터 신청할 수 있어요.'
+        + (cut ? '<br>다음 마감은 <b class="num">' + cut.slice(5).replace('-', '/')
+                 + '</b> — 지나면 한 주 뒤로 밀려요.' : '');
+    }
+
+    // 날짜 기본값 — 처음 열면 신청할 수 있는 가장 이른 날
+    if (!$('offFrom').value) { $('offFrom').value = early; $('offTo').value = early; }
+    if ($('offFrom').value < early) { $('offFrom').value = early; }
+    if ($('offTo').value < early) { $('offTo').value = early; }
     var a = $('offFrom').value, b = $('offTo').value;
     if (a && b) {
       if (b < a) { $('offTo').value = a; b = a; }
@@ -1272,6 +1324,7 @@
       meName = n;
       try { localStorage.setItem('beargels-sched-me', n); } catch (_) {}
       renderMe(); renderStaffWeek();
+      offLoadMine();          // 고른 사람의 신청을 서버에서 새로 받아 온다
     },
     offDecide: function (id, action) {
       var note = '';
@@ -1315,7 +1368,7 @@
     },
     offCancel: function (id) {
       if (!confirm('이 휴무 신청을 취소할까요?')) return;
-      offPost({ action: 'cancel', id: id, who: meName }).then(function (res) {
+      offPost({ action: 'cancel', id: id, who: meName, ids: offIds() }).then(function (res) {
         if (!res.ok) { offMsg(esc(res.j.error || '취소하지 못했어요.'), true); return; }
         TIMEOFF = res.j.timeoff || []; offMsg('취소했어요.'); offRender();
       }).catch(function () { offMsg('연결이 안 돼요. 잠시 뒤 다시 해주세요.', true); });
@@ -1327,15 +1380,23 @@
       if (!offDraft.allDay && !(offDraft.e > offDraft.s)) {
         offMsg('빼는 시간이 거꾸로예요.', true); return;
       }
+      var early = OFFWIN.earliest || TODAY;
+      if ($('offFrom').value < early) {
+        offMsg('<b>' + mdOf(early) + '</b> 이후 날짜만 신청할 수 있어요. '
+             + '그 전 기간은 이미 근무표가 짜여서 마감됐어요.', true);
+        return;
+      }
       var body = {
         action: offEditId ? 'edit' : 'add', id: offEditId, who: meName,
         from: $('offFrom').value, to: $('offTo').value,
-        allDay: offDraft.allDay, s: offDraft.s, e: offDraft.e, reason: reason
+        allDay: offDraft.allDay, s: offDraft.s, e: offDraft.e, reason: reason,
+        ids: offIds()
       };
       $('offSubmit').disabled = true;
       offPost(body).then(function (res) {
         $('offSubmit').disabled = false;
         if (!res.ok) { offMsg(esc(res.j.error || '보내지 못했어요.'), true); return; }
+        offRememberId(res.j.id);        // 이 폰이 낸 신청으로 기억해 둔다
         TIMEOFF = res.j.timeoff || [];
         offMsg(offEditId ? '고쳤어요. 사장님이 다시 봐요.' : '신청했어요. 사장님이 보면 여기에 결과가 떠요.');
         offEditId = null; $('offReason').value = '';
@@ -1491,6 +1552,15 @@
       if (n > 0) { CFG.salesPerHead = n; saveConfig(); renderAll(); }
     },
     setFlag: function (key, on) { CFG[key] = !!on; saveConfig(); renderAll(); },
+    saveOffRule: function () {
+      var lead = parseInt($('offLeadIn').value, 10);
+      if (!(lead >= 0 && lead <= 8)) { flash('몇 주 앞인지 0~8 사이로 적어주세요.', true); return; }
+      CFG.timeoffLeadWeeks = lead;
+      CFG.timeoffCutoffDow = parseInt($('offCutDow').value, 10) || 0;
+      CFG.timeoffCutoffTime = $('offCutTime').value || '23:59';
+      saveConfig();
+      flash('저장했어요. 새로고침하면 새 기준이 적용돼요.');
+    },
     newToken: function () {
       if (!confirm('직원용 링크를 새로 만들까요?\n지금 링크는 더 이상 열리지 않아요.')) return;
       post(API + '/api/token', {}).then(function (r) {
@@ -1529,4 +1599,5 @@
   if (!meName && (CFG.staff || []).length) meName = CFG.staff[0].name;
   wkIdx = currentWeekIdx();
   renderAll();
+  offLoadMine();
 })();

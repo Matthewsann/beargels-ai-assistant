@@ -80,6 +80,11 @@ def default_config() -> dict:
         # 근무 추가창에서 마지막으로 고른 시간 3개 — 고정 시간대에 없는 시간을
         # 다시 쓸 때 드롭다운을 또 돌리지 않게 버튼으로 띄운다.
         "recentTimes": [],
+        # 휴무 신청 마감 규칙 — 스케줄을 몇 주 앞서 짜는가(D+2Week),
+        # 그 주 무슨 요일 몇 시까지 받는가. 0=월 … 6=일
+        "timeoffLeadWeeks": 2,
+        "timeoffCutoffDow": 2,
+        "timeoffCutoffTime": "23:59",
         "salesPerHead": 35,
         "showHoliday": True,
         "showWeather": True,
@@ -248,6 +253,37 @@ def clean_timeoff(raw: dict) -> dict | None:
     return out
 
 
+def timeoff_window(cfg: dict, now: datetime | None = None) -> dict:
+    """지금 신청할 수 있는 가장 이른 날짜와 이번 마감 시각.
+
+    스케줄을 2주 앞서 짜므로 다다음주 월요일부터가 기본이고, 이번 주 마감
+    (기본 수요일 23:59)이 지나면 그 주가 잠겨 한 주 뒤로 밀린다.
+    """
+    now = now or datetime.now()
+    lead = max(0, int(cfg.get("timeoffLeadWeeks", 2) or 0))
+    cut_dow = min(6, max(0, int(cfg.get("timeoffCutoffDow", 2) or 0)))
+    raw = str(cfg.get("timeoffCutoffTime") or "23:59")
+    try:
+        hh, mm = (int(x) for x in raw.split(":")[:2])
+    except ValueError:
+        hh, mm = 23, 59
+
+    mon = monday_of(now.date())
+    cutoff = datetime.combine(mon + timedelta(days=cut_dow), datetime.min.time())
+    cutoff = cutoff.replace(hour=min(23, hh), minute=min(59, mm))
+
+    earliest = mon + timedelta(weeks=lead)
+    passed = now > cutoff
+    if passed:
+        earliest += timedelta(weeks=1)
+    return {
+        "earliest": earliest.isoformat(),
+        # 지금 지켜야 할 마감 — 이번 주 것이 지났으면 다음 주 것
+        "cutoff": (cutoff + timedelta(weeks=1) if passed else cutoff).isoformat(timespec="minutes"),
+        "leadWeeks": lead, "cutoffDow": cut_dow, "cutoffTime": f"{hh:02d}:{mm:02d}",
+    }
+
+
 def timeoff_for(rows: list[dict], iso: str) -> list[dict]:
     """그 날짜에 걸리는 신청들 (근무표에 표시할 때 쓴다)."""
     return [r for r in rows
@@ -311,7 +347,8 @@ def load_weather() -> dict:
 # ---------------------------------------------------------------------------
 # 화면에 넘길 데이터 한 덩이
 # ---------------------------------------------------------------------------
-def build_boot(anchor: date, *, back: int = WEEKS_BACK, fwd: int = WEEKS_FWD) -> dict:
+def build_boot(anchor: date, *, back: int = WEEKS_BACK, fwd: int = WEEKS_FWD,
+               with_timeoff: bool = False) -> dict:
     cfg = load_config()
     today = date.today()
     first = monday_of(anchor) - timedelta(weeks=back)
@@ -339,7 +376,10 @@ def build_boot(anchor: date, *, back: int = WEEKS_BACK, fwd: int = WEEKS_FWD) ->
         "holidays": load_holidays(),
         "weather": load_weather(),
         "sales": load_sales(),
-        "timeoff": load_timeoff(),
+        # 휴무 신청은 여기 넣지 않는다 — 직원 화면에 남의 사유가 실린다.
+        # 관리자 화면만 build_boot(..., with_timeoff=True) 로 받아 간다.
+        "timeoff": load_timeoff() if with_timeoff else [],
+        "timeoffWindow": timeoff_window(cfg),
         "dow": DOW,
     }
 
@@ -353,7 +393,7 @@ def schedule_home():
     cfg = load_config()
     return render_template(
         "schedule.html",
-        boot=build_boot(anchor),
+        boot=build_boot(anchor, with_timeoff=True),
         public_url=url_for("schedule.staff_view", token=cfg["publicToken"], _external=True),
     )
 
@@ -418,7 +458,8 @@ def api_save_config():
     body = request.get_json(silent=True) or {}
     cfg = load_config()
     for key in ("bizHours", "closedDows", "closedDates", "specialDays", "presets",
-                "staff", "recentTimes", "salesPerHead", "showHoliday", "showWeather"):
+                "staff", "recentTimes", "salesPerHead", "showHoliday", "showWeather",
+                "timeoffLeadWeeks", "timeoffCutoffDow", "timeoffCutoffTime"):
         if key in body:
             cfg[key] = body[key]
     save_config(cfg)
@@ -442,17 +483,44 @@ def handle_staff_timeoff(body: dict):
     """직원용 화면에서 오는 신청 처리. 사장님이 손대기 전 것만 고칠 수 있다."""
     action = str(body.get("action") or "").strip()
     rows = load_timeoff()
+    # 이 폰에서 낸 신청의 번호들. 이름이 아니라 이걸로 찾는다 —
+    # 이름은 고르기만 하면 되는 값이라, 이름으로 찾아 주면 남의 이름을 골라
+    # 사유를 들여다볼 수 있다(사장님 2026-09-20).
+    ids = body.get("ids")
+    ids = {str(x) for x in ids} if isinstance(ids, list) else set()
+
+    def mine():
+        """이 폰에서 낸 것만. 남의 휴무 사유는 직원에게 안 내려간다."""
+        return [r for r in rows if r.get("id") in ids]
+
+    if action == "mine":
+        return jsonify({"ok": True, "timeoff": mine()})
+
+    cfg = load_config()
+    win = timeoff_window(cfg)
+
+    def too_early(row):
+        """마감이 지난 기간이면 막는다. 화면을 건너뛰고 보내도 여기서 걸린다."""
+        if row["from"] >= win["earliest"]:
+            return None
+        return jsonify({"ok": False, "error":
+                        f"{md(parse_iso(win['earliest']))} 이후 날짜만 신청할 수 있어요. "
+                        "그 전 기간은 이미 근무표가 짜여서 마감됐어요."}), 400
 
     if action == "add":
         row = clean_timeoff(body)
         if not row:
             return jsonify({"ok": False, "error": "날짜와 사유를 채워주세요."}), 400
+        bad = too_early(row)
+        if bad:
+            return bad
         row["id"] = secrets.token_urlsafe(8)
         row["status"] = TIMEOFF_OPEN
         row["at"] = datetime.now().isoformat(timespec="seconds")
         rows.append(row)
         save_timeoff(rows)
-        return jsonify({"ok": True, "timeoff": rows})
+        ids.add(row["id"])          # 방금 낸 건 바로 보여 준다
+        return jsonify({"ok": True, "id": row["id"], "timeoff": mine()})
 
     rid = str(body.get("id") or "")
     found = next((r for r in rows if r.get("id") == rid), None)
@@ -462,24 +530,28 @@ def handle_staff_timeoff(body: dict):
     if found.get("status") != TIMEOFF_OPEN:
         return jsonify({"ok": False,
                         "error": "사장님이 이미 처리한 신청이라 고칠 수 없어요."}), 409
-    # 남의 신청을 고치지 못하게 — 이름이 맞아야 한다(이 화면의 본인 확인은 이름뿐)
-    if str(body.get("who") or "").strip() != found.get("who"):
+    # 번호를 모르면 못 고친다. 번호는 낸 사람 폰에만 있는 임의 토큰이라
+    # 찍어 맞힐 수 없다 — 이름 확인보다 이게 실제로 막아 준다.
+    if rid not in ids:
         return jsonify({"ok": False, "error": "본인이 낸 신청만 고칠 수 있어요."}), 403
 
     if action == "cancel":
         rows = [r for r in rows if r.get("id") != rid]
         save_timeoff(rows)
-        return jsonify({"ok": True, "timeoff": rows})
+        return jsonify({"ok": True, "timeoff": mine()})
 
     if action == "edit":
         row = clean_timeoff(body)
         if not row:
             return jsonify({"ok": False, "error": "날짜와 사유를 채워주세요."}), 400
+        bad = too_early(row)
+        if bad:
+            return bad
         found.pop("s", None); found.pop("e", None)
         found.update(row)
         found["at"] = datetime.now().isoformat(timespec="seconds")
         save_timeoff(rows)
-        return jsonify({"ok": True, "timeoff": rows})
+        return jsonify({"ok": True, "timeoff": mine()})
 
     return jsonify({"ok": False, "error": "알 수 없는 요청이에요."}), 400
 

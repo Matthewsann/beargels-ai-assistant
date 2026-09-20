@@ -146,6 +146,26 @@
       </div>
     </div>
 
+    <div class="sec"><b>휴무 신청 마감</b><small>스케줄을 미리 짜는 만큼 앞서 받아요</small></div>
+    <div class="post">
+      <div class="rowbar">
+        <label class="cap" for="offLeadIn">스케줄을 몇 주 앞서 짜나요</label>
+        <input class="fld num" type="number" id="offLeadIn" min="0" max="8" style="width:70px;">
+        <span class="cap">주 뒤부터 신청 가능</span>
+      </div>
+      <div class="rowbar" style="margin-top:10px;">
+        <label class="cap" for="offCutDow">마감 요일·시각</label>
+        <select class="fld" id="offCutDow" style="width:auto;"></select>
+        <input class="fld num" type="time" id="offCutTime" style="width:auto;">
+        <button class="btn small primary" onclick="SCHED.saveOffRule()">저장</button>
+      </div>
+      <div class="note" id="offRuleNote"></div>
+      <div class="note" style="margin-bottom:0;">
+        예) 2주 앞 · 수요일 23:59 → 이번 주 수요일 밤까지는 <b>다다음주 월요일</b>부터 신청할 수 있고,
+        수요일이 지나면 그 주가 잠겨 <b>한 주 뒤 월요일</b>부터로 밀려요.
+      </div>
+    </div>
+
     <div class="sec"><b>고정 근무 시간대</b><small>근무 추가할 때 버튼 한 번으로 시간이 채워져요</small></div>
     <div class="post">
       <div id="presetHost"></div>
