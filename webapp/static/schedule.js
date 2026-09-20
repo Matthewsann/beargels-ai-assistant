@@ -1078,14 +1078,22 @@
     if (list.indexOf(id) < 0) list.push(id);
     try { localStorage.setItem('beargels-sched-myoff', JSON.stringify(list)); } catch (_) {}
   }
+  var offLoading = false;
+
   function offLoadMine() {
     if (MODE !== 'public') { offRender(); return; }
     var ids = offIds();
-    if (!ids.length) { TIMEOFF = []; offRender(); return; }
+    // 고른 즉시 다시 그린다 — 서버를 기다리면 버튼이 옛 사람에 남아 있었다
+    // (클라우드 왕복 0.7초, 사장님 2026-09-20).
+    TIMEOFF = [];
+    offLoading = ids.length > 0;
+    offRender();
+    if (!ids.length) return;
+
     offPost({ action: 'mine', ids: ids }).then(function (res) {
       if (res.ok) TIMEOFF = res.j.timeoff || [];
-      offRender();
-    }).catch(function () { offRender(); });
+    }).catch(function () { /* 목록만 못 받은 것 — 화면은 그대로 둔다 */ })
+      .then(function () { offLoading = false; offRender(); });
   }
 
   function offPost(body) {
@@ -1159,7 +1167,9 @@
               + '<button class="btn chip" onclick="SCHED.offCancel(\'' + r.id + '\')">🗑 취소</button></div>'
             : '<div class="cap" style="margin-top:8px;">사장님이 처리해서 더는 고칠 수 없어요.</div>')
         + '</div>';
-    }).join('') : '<div class="post cap">아직 낸 신청이 없어요.</div>';
+    }).join('')
+      : (offLoading ? '<div class="post cap">불러오는 중…</div>'
+                    : '<div class="post cap">아직 낸 신청이 없어요.</div>');
   }
 
 
