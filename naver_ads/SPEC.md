@@ -75,7 +75,8 @@ NAVER_AD_CUSTOMER_ID=   # 고객 ID (숫자)
 | 광고그룹 목록 | GET | `/ncc/adgroups?nccCampaignId={id}` |
 | 소재 목록 | GET | `/ncc/ads?nccAdgroupId={id}` |
 
-- 대상 캠페인 ID: `cmp-a001-06-000000010065791`
+- 대상 캠페인 ID: ~~`cmp-a001-06-000000010065791`~~ → **계정 교체(2026-09-21) 후 `cmp-a001-06-000000011118697`** (고객 ID 4494916, '플레이스#1 - 지역소상공인광고', 2026-09-21 18:10 KST 등록, 일 예산 5,000원). 옛 계정 4192626 의 DB·원본은 `data/ads_4192626.db`·`data/raw_4192626/` 로 옆에 두었다.
+- 광고그룹 `adgroupType = "LOCAL_AD"` = **지역소상공인광고**(캠페인 이름으로 확인). 공식 enum 은 `WEB_SITE, SHOPPING, INFORMATION, PRODUCT, BRAND_SEARCH, PLACE, CATALOG, BRAND_ZONE, SHOPPING_BRAND, LOCAL_AD, BRAND_NEW, DOOH`.
 - ID의 `-06-` 구간이 캠페인 유형 코드로 보인다(플레이스 추정). **실제 응답의 `campaignTp` 값을 로그로 찍어 확인**하고 이 문서에 기록할 것.
   - ✅ **확인(2026-09-20):** `GET /ncc/campaigns` 200, 해당 캠페인 `campaignTp = "PLACE"`. 계정 4192626 에 캠페인은 이 하나뿐.
   - ⚠️ 이 캠페인은 고객 ID **4192626** 소유다. 다른 계정 키로 부르면 200 이지만 빈 배열이 오고, ID 직접 조회는 404 `code 1018 No permission` 이 난다 — 인증 실패가 아니라 계정이 다른 것.
@@ -91,6 +92,8 @@ NAVER_AD_CUSTOMER_ID=   # 고객 ID (숫자)
 - `fields` 예: `["impCnt","clkCnt","salesAmt","ctr","cpc","avgRnk"]`
 - `timeRange` 예: `{"since":"2026-09-01","until":"2026-09-19"}`
 - 일별 데이터가 필요하면 `datePreset`/`timeIncrement` 계열 파라미터 지원 여부를 문서에서 확인할 것.
+- ✅ **실측(2026-09-20):** `/stats` 는 캠페인·광고그룹·소재 세 수준 모두 200. `timeIncrement` 기본이 `1`(일별)이라 안 줘도 날짜별 행(`dateStart`/`dateEnd`)이 온다. **한 번에 92일까지**(400, code 11004) — 백필은 92일 창으로 쪼갠다(`collect.windows`). 응답 필드: `impCnt clkCnt salesAmt ctr cpc avgRnk ccnt`. `datePreset` enum: today/yesterday/last7days/last30days/lastweek/lastmonth/lastquarter.
+- ✅ 비즈머니 잔액: `GET /billing/bizmoney` → `{customerId, bizmoney, budgetLock, refundLock}`. 수집 때마다 `bizmoney` 표에 스냅샷, 6,000원 아래면 경고.
 
 ### 2-3. 키워드 리서치 (이게 사실상 핵심)
 
