@@ -240,6 +240,10 @@ AI 호출은 무료(Gemini)가 기본이고, 품질·분량은 품질 게이트�
   (`crawler/coupang.py fetch_orders`). `database/platform_fees.py` 가 그걸 날짜별로 합쳐
   `platform_fees_daily`(schema_v16)에 넣는다 — 주문 수집 직후마다(`_rebuild_platform_fees`),
   빠진 기간은 잡 `orders_backfill`(message `YYYY-MM-DD..YYYY-MM-DD`, 한 주씩 되긁음)로.
+  ⚠️ **몰아 긁으면 막힌다**(2026-09-23 실측): 한 주(10쪽)를 받자마자 다음 주를 두드리면
+  레이트리밋 10056, 끊긴 주를 90초 뒤 다시 두드리면 Akamai 403 이 몇 시간 간다. 그래서
+  `maybe_fee_backfill` 이 **2시간에 한 주씩**(`platform_fees.missing_week`, 주문 없는 날
+  2일 이상인 가장 오래된 월~일) 조용히 채운다. 되긁기 잡도 주마다 한 번만 시도한다.
   엑셀 다운로드·정산 관리 화면은 안 쓴다(정산 내역 조회는 스크립트로 안 열렸고, 스크립트
   fetch 는 Akamai 403 — 페이지 자신의 요청만 통한다). 취소 주문은 건수만, 금액은 0.
   실측 비율(9월 21일치): 중개 7.3% · 결제 2.7% · 배달비 16.4% · 부가세 3.0% · 광고 3.9% ·
