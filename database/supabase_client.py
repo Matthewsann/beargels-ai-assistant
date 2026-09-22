@@ -2386,12 +2386,27 @@ def component_delete(row_id):
     return recompute_costs([sku], force=True)
 
 
-def _set_cost(sku, comps, cost_of):
-    """세트 원가 = 고정 구성 합 + 택1 자리마다 가장 비싼 것.
+def extra_key(component_sku, choice_group):
+    """set_extras 안의 키 — 행 id 는 묶음 복제·재담기로 바뀌어서 쓰지 않는다."""
+    return f"{component_sku}|{choice_group or ''}"
+
+
+_COMBO_CAP = 20000   # 택1 묶음 조합 전수조사 상한(넘으면 묶음별 최악으로 근사)
+
+
+def _set_cost(sku, comps, cost_of, price=None, extras=None):
+    """세트 원가 = 고정 구성 합 + 택1 자리마다 손님이 고를 수 있는 것 중 **가장 불리한 조합**.
+
+    옵션마다 추가금(extras)이 있으면 '가장 비싼 것'이 아니라 원가율
+    (원가 ÷ (세트가 + 추가금))이 가장 나쁜 조합을 고른다 — 추가금을 받는
+    옵션은 원가가 높아도 오히려 덜 불리할 수 있다(사장님 2026-09-21).
+    price(매장가)나 추가금이 없으면 예전처럼 가장 비싼 구성 기준.
 
     cost_of(sku) 가 None(원가 미상)인 구성이 하나라도 끼면 세트 원가도 못 낸다 —
     빠뜨린 채 합치면 실제보다 싸 보여서 위험하다.
+    Returns None | {"cost", "extra", "picks": [{"group","component_sku"}]}
     """
+    extras = extras or {}
     total, fixed = 0.0, [c for c in comps if not c.get("choice_group")]
     for c in fixed:
         v = cost_of(c["component_sku"])
@@ -2402,17 +2417,65 @@ def _set_cost(sku, comps, cost_of):
     for c in comps:
         if c.get("choice_group"):
             groups.setdefault(c["choice_group"], []).append(c)
-    for _, rows in groups.items():
+    opts = []                                   # 묶음별 [(원가, 추가금, 구성sku)]
+    for g, rows in groups.items():
         vals = []
         for c in rows:
             v = cost_of(c["component_sku"])
             if v is None:
                 return None
-            vals.append(float(c.get("qty") or 1) * v)
+            e = extras.get(extra_key(c["component_sku"], g)) or 0
+            vals.append((float(c.get("qty") or 1) * v, float(e), c["component_sku"]))
         if not vals:
             return None
-        total += max(vals)                 # 최악(가장 비싼 선택) 기준
-    return round(total, 1)
+        opts.append((g, vals))
+
+    use_rate = bool(price) and any(e for _, vals in opts for _, e, _ in vals)
+    n_combo = 1
+    for _, vals in opts:
+        n_combo *= len(vals)
+    if not use_rate or n_combo > _COMBO_CAP:
+        picks = [(g, max(vals, key=lambda t: t[0])) for g, vals in opts]   # 가장 비싼 것
+    else:
+        best, picks, picks_cost = None, [], 0.0
+        stack = [(0, total, 0.0, [])]
+        while stack:
+            i, cst, ext, chosen = stack.pop()
+            if i == len(opts):
+                r = cst / (float(price) + ext)
+                # 같은 원가율이면 원가가 큰 쪽(더 보수적)을 남긴다
+                if best is None or r > best or (r == best and cst > picks_cost):
+                    best, picks, picks_cost = r, chosen, cst
+                continue
+            g, vals = opts[i]
+            for t in vals:
+                stack.append((i + 1, cst + t[0], ext + t[1], chosen + [(g, t)]))
+    cost = total + sum(t[0] for _, t in picks)
+    return {"cost": round(cost, 1),
+            "extra": round(sum(t[1] for _, t in picks)),
+            "picks": [{"group": g, "component_sku": t[2]} for g, t in picks]}
+
+
+def set_extra_save(sku, component_sku, choice_group, extra):
+    """세트 옵션 하나의 추가금을 적고 그 세트 원가를 다시 잰다."""
+    if not sku or not component_sku or not choice_group:
+        raise ValueError("추가금은 택1 묶음 안의 옵션에만 붙습니다")
+    try:
+        extra = max(0, int(round(float(extra or 0))))
+    except (TypeError, ValueError):
+        raise ValueError("추가금은 숫자(원)로 적어주세요")
+    all_ex = get_setting("set_extras") or {}
+    mine = dict(all_ex.get(sku) or {})
+    k = extra_key(component_sku, choice_group)
+    if extra:
+        mine[k] = extra
+    else:
+        mine.pop(k, None)
+    all_ex[sku] = mine
+    menu_set_setting("set_extras", all_ex)
+    recomputed = recompute_costs([sku], force=True)
+    worst = (get_setting("set_worst") or {}).get(sku)
+    return {"recomputed": recomputed, "extras": mine, "worst": worst}
 
 
 def recompute_costs(skus=None, force=False, _seen=None):
@@ -2445,9 +2508,14 @@ def recompute_costs(skus=None, force=False, _seen=None):
     if not by_sku and not comps_by:
         return {}
     targets = set(by_sku) | set(comps_by)
-    items = (sb.table("menu_items").select("sku,ingredient_cost,cost_source")
+    items = (sb.table("menu_items")
+             .select("sku,ingredient_cost,cost_source,store_price,store_active,delivery_price")
              .in_("sku", list(targets)).execute().data)
     src_by = {i["sku"]: (i.get("cost_source") or "") for i in items}
+    # 원가율의 기준가는 화면과 같은 규칙 — 매장 판매 중이면 매장가, 아니면 배달가
+    # (2026-09-15). 다르게 잡으면 화면과 서버가 서로 다른 '가장 불리한 조합'을 낸다.
+    price_by = {i["sku"]: (i.get("store_price") if i.get("store_active") and i.get("store_price")
+                           else i.get("delivery_price")) for i in items}
     updated = {}
     stamp = f"레시피 자동계산({date.today().isoformat()})"
     for sku, lns in by_sku.items():
@@ -2484,16 +2552,29 @@ def recompute_costs(skus=None, force=False, _seen=None):
             return float(v) if v is not None else None
 
         set_stamp = f"세트 구성 자동합산({date.today().isoformat()})"
+        all_extras = get_setting("set_extras") or {}
+        worst_all = get_setting("set_worst") or {}
+        worst_dirty = False
         for sku, rows in comps_by.items():
             if not force and src_by.get(sku, "").startswith("웹에서 직접 입력"):
                 continue
-            cost = _set_cost(sku, rows, cost_of)
-            if cost is None:
+            res = _set_cost(sku, rows, cost_of, price=price_by.get(sku),
+                            extras=all_extras.get(sku))
+            if res is None:
                 continue          # 구성품 중 원가 미상이 있으면 건드리지 않는다
+            cost = res["cost"]
+            stamp = set_stamp + (" · 옵션 추가금 반영" if res["extra"] else "")
             sb.table("menu_items").update(
-                {"ingredient_cost": cost, "cost_source": set_stamp}
+                {"ingredient_cost": cost, "cost_source": stamp}
             ).eq("sku", sku).execute()
             updated[sku] = cost
+            # 가장 불리한 조합의 추가금 — 화면이 원가율 분모(세트가 + 추가금)에 얹는다
+            w = {"extra": res["extra"], "picks": res["picks"]}
+            if worst_all.get(sku) != w:
+                worst_all[sku] = w
+                worst_dirty = True
+        if worst_dirty:
+            menu_set_setting("set_worst", worst_all)
 
     # ── 꼬리 연쇄 — 어느 문으로 들어왔든 바뀐 원가를 쓰는 곳까지 흘려보낸다.
     # 예전엔 호출자마다 따로 챙겨야 해서 자재 합치기·삭제·시드 경로가 각각

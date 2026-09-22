@@ -88,10 +88,19 @@ border-radius:6px;font-size:11px;padding:2px 8px;cursor:pointer}
 .stp{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;flex:0 0 auto}
 .stp button{border:none;background:var(--card);color:var(--ink);width:28px;height:26px;cursor:pointer;font-size:14px}
 .stp span{min-width:26px;text-align:center;line-height:26px;font-size:13px;border-left:1px solid var(--line);border-right:1px solid var(--line)}
-.ssum{display:flex;gap:14px;align-items:center;padding:9px 12px;margin:8px 0;border:1px solid var(--line);
+.ssum{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:9px 12px;margin:8px 0;border:1px solid var(--line);
 border-radius:10px;background:var(--card);font-size:13px;font-variant-numeric:tabular-nums}
 .ssum b{color:var(--green)}
 .maxpill{font-size:10px;background:var(--amberbg);color:var(--amber);border-radius:4px;padding:0 5px;margin-left:4px}
+.basepill{font-size:10px;background:var(--brownbg);color:var(--brown);border-radius:4px;padding:0 5px;margin-left:4px}
+.worstpill{font-size:10px;background:var(--redbg);color:var(--red);border-radius:4px;padding:0 5px;margin-left:4px}
+/* 옵션 줄 둘째 단 — 추가금 · 원가율 · 추천 (폰에선 줄바꿈) */
+.xrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:0 10px 7px 10px;font-size:12px;color:var(--sub);font-variant-numeric:tabular-nums}
+.xrow .xin{width:70px;padding:3px 6px;font-size:13px;text-align:right;border:1px solid var(--line);border-radius:6px;color:var(--ink)}
+.xrow .rate{font-weight:700;color:var(--ink)}
+.xrow .rate.bad{color:var(--red)}
+.xrow .rec{margin-left:auto;display:inline-flex;align-items:center;gap:4px}
+.xrow .rec button{border:1px solid var(--green);background:var(--greenbg);color:var(--green);border-radius:6px;padding:2px 8px;font-size:12px;cursor:pointer}
 /* 분류별 펼쳐 보기 */
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:2px 0}
 .seg button{border:none;background:var(--card);color:var(--sub);font-size:12.5px;
@@ -1051,8 +1060,24 @@ function scApply(j){
   const rc=j.recomputed||{};
   for(const k in rc){ const m=DATA.items.find(x=>x.sku===k);
     if(m) m.ingredient_cost=rc[k]; }
+  if(j.worst!==undefined){ DATA.settings.set_worst=DATA.settings.set_worst||{};
+    if(j.worst) DATA.settings.set_worst[SKU]=j.worst; else delete DATA.settings.set_worst[SKU]; }
   _mcMap=null;
 }
+// 옵션 추가금 — 서버가 세트 원가·가장 불리한 조합(set_worst)을 다시 재서 돌려준다
+const xkey=(cs,g)=>`${cs}|${g||""}`;
+const xtra=(cs,g)=>+(((DATA.settings.set_extras||{})[SKU]||{})[xkey(cs,g)]||0);
+const worstOf=()=>((DATA.settings.set_worst||{})[SKU])||null;
+async function scExtra(cs,g,val){
+  if(SCBUSY) return;
+  scLock(true, "계산 중…");
+  const j=await api("/set_extra",{sku:SKU, component_sku:cs, choice_group:g, extra:val||0});
+  scLock(false);
+  if(!j){ render(); return; }
+  DATA.settings.set_extras=DATA.settings.set_extras||{}; DATA.settings.set_extras[SKU]=j.extras||{};
+  scApply(j); render(); toast(+val?`추가금 +${won(+val)}원 반영 ✓`:"추가금 없앰 ✓");
+}
+function scExtraEl(el){ scExtra(el.dataset.cs, el.dataset.g, el.value); }
 async function scSave(rows, okMsg, busyMsg){
   if(SCBUSY) return null;
   scLock(true, busyMsg);
@@ -1179,29 +1204,72 @@ function renderSetComposer(it){
       <span class="pr">${v==null?'<span class="pill" style="background:var(--amberbg);color:var(--amber)">원가 미상</span>':w1(line)+"원"}</span>
       <span class="del" onclick="scDel(${c.id})">빼기</span></div>`;
   };
-  const gBlock=(g,rows)=>{
-    const vals=rows.map(c=>{const v=mcost(c.component_sku);return v==null?null:(+c.qty||1)*v;});
-    const ok=vals.every(v=>v!=null); const mx=ok?Math.max(...vals):null;
-    return `<div class="sgrp"><div class="gh">🔀 ${g} <span style="font-weight:400">택1</span>
-        <button onclick="scOpenPick('${g.replace(/'/g,"\\'")}')">＋ 담기</button>
-        <button onclick="scDupGroup('${g.replace(/'/g,"\\'")}')" title="같은 선택지를 하나 더 — 2종 고르는 세트용">묶음 하나 더</button>
-        <span class="sub">${ok?`원가 ${w1(mx)}원 (최고가 기준)`:"원가 미상 포함"}</span></div>
-      ${rows.map((c,i)=>{
-        const v=mcost(c.component_sku); const line=v==null?null:(+c.qty||1)*v;
-        const star=ok&&line===mx?'<span class="maxpill">★최고가</span>':"";
-        const m=DATA.items.find(x=>x.sku===c.component_sku);
-        return `<div class="srow"><span>${m?m.name:c.component_sku}${star}</span>
-          <span class="pr">${v==null?'<span class="pill" style="background:var(--amberbg);color:var(--amber)">원가 미상</span>':w1(line)+"원"}</span>
-          <span class="del" onclick="scDel(${c.id})">빼기</span></div>`;}).join("")}</div>`;
-  };
   const {total,miss}=setCostCalc();
   const setStoreOn=!!it.store_active && !!it.store_price;   // 매장 꺼짐 → 배달가 기준(2026-09-15)
   const sp=setStoreOn?it.store_price:it.delivery_price;
   const spLabel=setStoreOn?"매장가":"배달가";
-  const sum = comps.length
-    ? (miss?`구성 ${miss}곳이 <b style="color:var(--amber)">원가 미상</b>이라 세트 원가를 못 냅니다 — 그 메뉴 레시피부터`
-          :`세트 원가 <b>${w1(total)}원</b>${sp?` · 원가율 ${(total/sp*100).toFixed(1)}% <span class="sub">(${spLabel} ${won(sp)}원)</span>`:` · <span class="sub">${spLabel}가 없어 원가율 계산 불가</span>`}`)
-    : `아직 구성이 없습니다 — 아래에서 메뉴를 담아 주세요`;
+  const tg=target(it.category);
+  // ── 추가금 계산기의 기준 ──
+  // 기본 옵션 = 묶음에서 원가가 가장 싼 것. 기본 원가율 r0 = (고정 + 묶음별 기본 합) ÷ 세트가.
+  // 옵션 i 의 원가율 = (다른 묶음은 기본, 이 묶음만 i) ÷ (세트가 + 이 옵션 추가금).
+  // 추천 추가금(B) = 기본 옵션과 같은 원가율이 되는 값 = (원가차) ÷ r0, 100원 올림.
+  const lineCost=c=>{const v=mcost(c.component_sku); return v==null?null:(+c.qty||1)*v;};
+  const fixedCost=fixed.reduce((a,c)=>{const v=lineCost(c); return a==null||v==null?null:a+v;},0);
+  const baseOf={};                       // 묶음 → 기본 옵션 원가
+  for(const [g,rows] of Object.entries(groups)){
+    const vs=rows.map(lineCost); baseOf[g]=vs.some(v=>v==null)?null:Math.min(...vs);
+  }
+  const baseSum=Object.values(baseOf).reduce((a,v)=>a==null||v==null?null:a+v,0);
+  const baseCost=(fixedCost==null||baseSum==null)?null:fixedCost+baseSum;
+  const r0=(baseCost!=null&&sp)?baseCost/sp:null;
+  const worst=worstOf();
+  const isWorst=(cs,g)=>!!(worst&&worst.picks||[]).find(p=>p.group===g&&p.component_sku===cs);
+  const qa=x=>String(x).replace(/&/g,"&amp;").replace(/"/g,"&quot;");
+  const gBlock=(g,rows)=>{
+    const vals=rows.map(lineCost);
+    const ok=vals.every(v=>v!=null); const bg=baseOf[g];
+    const baseRow=ok?rows[vals.indexOf(bg)]:null;
+    return `<div class="sgrp"><div class="gh">🔀 ${g} <span style="font-weight:400">택1</span>
+        <button onclick="scOpenPick('${g.replace(/'/g,"\\'")}')">＋ 담기</button>
+        <button onclick="scDupGroup('${g.replace(/'/g,"\\'")}')" title="같은 선택지를 하나 더 — 2종 고르는 세트용">묶음 하나 더</button>
+        <span class="sub">${ok?`기본: ${baseRow?(DATA.items.find(x=>x.sku===baseRow.component_sku)||{}).name||"":""}`:"원가 미상 포함"}</span></div>
+      ${rows.map((c,i)=>{
+        const line=vals[i]; const m=DATA.items.find(x=>x.sku===c.component_sku);
+        const cs=c.component_sku, e=xtra(cs,g);
+        const isBase=ok&&c===baseRow;
+        const pills=(isBase?'<span class="basepill">기본</span>':"")+(isWorst(cs,g)&&!isBase?'<span class="worstpill">★가장 불리</span>':"");
+        let xr="";
+        if(ok&&r0!=null){
+          const rate=(baseCost-bg+line)/(sp+e);
+          const rec=line<=bg?0:Math.ceil(((line-bg)/r0)/100)*100;
+          const recHtml=rec>0&&rec!==e
+            ?`<span class="rec">💡 추천 +${won(rec)}원 <button onclick="scExtra('${cs}','${g.replace(/'/g,"\\'")}',${rec})">적용</button></span>`
+            :(rec===0&&e>0?`<span class="rec sub">기본보다 싸서 추가금 없어도 됨</span>`:(e>0&&rec===e?`<span class="rec sub">✓ 기본과 같은 원가율</span>`:""));
+          xr=`<div class="xrow">추가금 +<input class="xin" type="number" step="100" min="0" placeholder="0"
+                value="${e||""}" data-cs="${qa(cs)}" data-g="${qa(g)}" onchange="scExtraEl(this)">원
+              <span>→ 원가율 <span class="rate ${rate>tg?"bad":""}">${(rate*100).toFixed(1)}%</span></span>${recHtml}</div>`;
+        } else if(ok&&!sp){
+          xr=`<div class="xrow sub">${spLabel}가 없어 원가율·추천 계산 불가</div>`;
+        }
+        return `<div class="srow" style="border-bottom:none"><span>${m?m.name:cs}${pills}</span>
+          <span class="pr">${line==null?'<span class="pill" style="background:var(--amberbg);color:var(--amber)">원가 미상</span>':w1(line)+"원"}</span>
+          <span class="del" onclick="scDel(${c.id})">빼기</span></div>${xr}`;}).join("")}</div>`;
+  };
+  // 요약 — 기본 조합 ~ 가장 불리한 조합(서버 set_worst) 원가율 범위
+  let sum;
+  if(!comps.length) sum=`아직 구성이 없습니다 — 아래에서 메뉴를 담아 주세요`;
+  else if(miss) sum=`구성 ${miss}곳이 <b style="color:var(--amber)">원가 미상</b>이라 세트 원가를 못 냅니다 — 그 메뉴 레시피부터`;
+  else if(!sp) sum=`세트 원가(가장 불리) <b>${w1(total)}원</b> · <span class="sub">${spLabel}가 없어 원가율 계산 불가</span>`;
+  else {
+    const wExtra=worst?+worst.extra||0:0;
+    const wCost=it.ingredient_cost!=null?+it.ingredient_cost:total;
+    const wRate=wCost/(sp+wExtra);
+    const wNames=(worst&&worst.picks||[]).map(p=>(DATA.items.find(x=>x.sku===p.component_sku)||{}).name).filter(Boolean);
+    const anyGroup=Object.keys(groups).length>0;
+    sum=`<span style="white-space:nowrap">원가율 <b>${(r0*100).toFixed(1)}%</b>${anyGroup?` ~ <b style="color:${wRate>tg?"var(--red)":"var(--green)"}">${(wRate*100).toFixed(1)}%</b>`:""}</span>
+      <span class="sub">(${spLabel} ${won(sp)}원 · 목표 ${(tg*100).toFixed(0)}%)</span>
+      ${anyGroup&&wNames.length?`<span class="sub" style="flex-basis:100%">가장 불리한 조합: ${wNames.join(" + ")}${wExtra?` (+${won(wExtra)}원 받음)`:""} → 원가 ${w1(wCost)}원</span>`:""}`;
+  }
   document.getElementById("main").innerHTML=`
   <div class="bar" style="margin-bottom:8px">
     <button onclick="backToList()">← 메뉴 목록</button>
@@ -1209,7 +1277,9 @@ function renderSetComposer(it){
       <span class="sub">${it.sku} · 세트</span></div>
   </div>
   <p class="note" style="margin:0 0 8px">세트는 자재가 아니라 <b>메뉴를 엮어서</b> 만듭니다.
-    구성 메뉴의 원가가 오르내리면 세트 원가도 자동으로 따라갑니다. 저장은 자동.</p>
+    구성 메뉴의 원가가 오르내리면 세트 원가도 자동으로 따라갑니다. 저장은 자동.<br>
+    택1 옵션에 <b>추가금</b>을 넣으면 그 옵션의 원가율이 바로 계산되고, 💡추천은
+    <b>기본 옵션과 같은 원가율</b>이 되는 금액(100원 단위)입니다.</p>
   ${fixed.length?`<div class="sgrp"><div class="gh">📌 항상 들어감</div>${fixed.map(c=>row(c,false)).join("")}</div>`:""}
   ${Object.entries(groups).map(([g,rows])=>gBlock(g,rows)).join("")}
   <div class="ssum">${sum}</div>

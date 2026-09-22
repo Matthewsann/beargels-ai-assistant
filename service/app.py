@@ -4160,6 +4160,7 @@ def menu_components_bulk(path_key):
     body = request.get_json(force=True) or {}
     try:
         out = db.components_upsert_many(body.get("sku"), body.get("rows"))
+        out["worst"] = (db.get_setting("set_worst") or {}).get(body.get("sku"))
         return jsonify({"ok": True, **out})
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
@@ -4169,11 +4170,33 @@ def menu_components_bulk(path_key):
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
+@app.route("/<path_key>/menu/set_extra", methods=["POST"])
+def menu_set_extra(path_key):
+    """세트 택1 옵션의 추가금 — 원가율 계산기(사장님 2026-09-21: 추가금을 얼마
+    받아야 좋은지 알기 위해). 저장하면 세트 원가·최악 조합을 다시 잰다."""
+    check(path_key)
+    body = request.get_json(force=True) or {}
+    try:
+        out = db.set_extra_save(body.get("sku"), body.get("component_sku"),
+                                body.get("choice_group"), body.get("extra"))
+        return jsonify({"ok": True, **out})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        db.log_error("service", f"세트 추가금 저장 실패: {e}", kind=type(e).__name__,
+                     path=request.path, detail=traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
 @app.route("/<path_key>/menu/component/<int:row_id>/delete", methods=["POST"])
 def menu_component_delete(path_key, row_id):
     check(path_key)
     try:
-        return jsonify({"ok": True, "recomputed": db.component_delete(row_id)})
+        rec = db.component_delete(row_id)
+        worst = None
+        if rec:
+            worst = (db.get_setting("set_worst") or {}).get(next(iter(rec)))
+        return jsonify({"ok": True, "recomputed": rec, "worst": worst})
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 

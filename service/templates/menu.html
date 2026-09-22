@@ -579,9 +579,12 @@ function margin(it, ch){
   if (c == null) return null;
   return om().allocation === "proportional" ? c - deliveryShare(it, ch) : c;
 }
+// 세트의 ingredient_cost 는 '가장 불리한 옵션 조합'의 원가다. 그 조합에 추가금이
+// 붙어 있으면 손님이 그만큼 더 내므로 분모에도 얹는다(안 얹으면 실제보다 나쁘게 나온다).
+const worstExtra = it => +(((DATA.settings||{}).set_worst||{})[it.sku]||{}).extra || 0;
 function costRate(it, ch){
   const p = chPrice(it, ch);
-  return (p && it.ingredient_cost != null) ? it.ingredient_cost / p : null;
+  return (p && it.ingredient_cost != null) ? it.ingredient_cost / (p + worstExtra(it)) : null;
 }
 // 화면에 보이는 원가율의 기준가 — 매장 판매가 켜져 있으면 매장가, **꺼져 있으면 배달가**
 // (사장님 2026-09-15). 매장에서 안 파는 메뉴에 매장가 기준 원가율을 보여 주면 실제로
@@ -1794,6 +1797,7 @@ function setEditor(sku){
     ${rows.length?`<table style="width:100%;min-width:0;margin-top:4px"><tbody>${rows.map(line).join("")}</tbody></table>`
                  :'<div class="note">아직 구성이 없습니다 — 아래 버튼으로 엮어 주세요.</div>'}
     ${miss?`<div class="note warn" style="padding:4px 6px">구성 중 ${miss}개가 원가 미상이라 세트 원가를 못 냅니다.</div>`:""}
+    ${worstExtra(it)?`<div class="note" style="padding:4px 6px">옵션 추가금 반영 — 가장 불리한 조합은 +${won(worstExtra(it))}원을 더 받아 그만큼 원가율 분모에 얹었습니다.</div>`:""}
     <div style="margin-top:6px">
       <a href="/{{ key }}/menu/ingredients?sku=${sku}"
          style="display:inline-block;background:var(--brown);color:#fff;border-radius:8px;
