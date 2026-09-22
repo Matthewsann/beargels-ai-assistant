@@ -54,3 +54,23 @@ def test_date_range_ms_explicit_kst_boundaries():
 def test_page_size_clamp_constant():
     # pageSize>10 이면 쿠팡이 빈 응답을 주므로 상한 10.
     assert CoupangCrawler.MAX_PAGE_SIZE == 10
+
+
+def test_fetch_orders_marks_incomplete_when_a_page_fails():
+    """레이트리밋으로 중간 페이지가 None 이면 last_fetch_complete=False (되긁기 재시도 근거)."""
+    from crawler.coupang import CoupangCrawler
+    c = CoupangCrawler.__new__(CoupangCrawler)
+    pages = [{"orderPageVo": {"content": [{"salePrice": 1, "createdAt": 0}] * 10,
+                              "totalElements": 25, "lastPageNumber": 2}}, None]
+    c._fetch_order_page = lambda *a, **k: pages.pop(0)
+    got = c.fetch_orders(start_date="2026-07-01", end_date="2026-07-07")
+    assert len(got) == 10 and c.last_fetch_complete is False
+
+
+def test_fetch_orders_marks_complete_at_last_page():
+    from crawler.coupang import CoupangCrawler
+    c = CoupangCrawler.__new__(CoupangCrawler)
+    pages = [{"orderPageVo": {"content": [{"salePrice": 1, "createdAt": 0}] * 3,
+                              "totalElements": 3, "lastPageNumber": 0}}]
+    c._fetch_order_page = lambda *a, **k: pages.pop(0)
+    assert len(c.fetch_orders(days=1)) == 3 and c.last_fetch_complete is True

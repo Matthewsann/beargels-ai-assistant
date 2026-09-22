@@ -1321,17 +1321,34 @@ def run_orders_backfill_job(job) -> None:
         start, end = date.fromisoformat(a.strip()), date.fromisoformat(b.strip())
         if not ensure_chrome():
             raise RuntimeError("크롤링용 Chrome 을 켜지 못했습니다")
-        saved, cur = 0, start
+        # 실측(2026-09-23 첫 되긁기): 한 주(10쪽)를 받자마자 다음 주를 두드리면
+        # 레이트리밋(10056)에 걸려 그 주가 통째로 0건이 됐다(9주 중 5주). 그래서
+        # 주 사이에 쉬고, 끝까지 못 받은 주(last_fetch_complete=False)는 길게
+        # 쉰 뒤 최대 3번 다시 받는다. 저장은 upsert 라 겹쳐도 안전.
+        saved, cur, short = 0, start, []
         with CoupangCrawler() as c:
             while cur <= end:
                 upto = min(cur + timedelta(days=6), end)
-                db.worker_ping("working", f"쿠팡 주문 되긁는 중 {cur}~{upto}")
-                orders = c.fetch_orders(start_date=cur, end_date=upto, max_pages=80)
-                saved += db.save_orders(orders)
-                logger.info("쿠팡 되긁기 %s~%s: %d건", cur, upto, len(orders))
+                got, ok = 0, False
+                for attempt in range(1, 4):
+                    db.worker_ping("working", f"쿠팡 주문 되긁는 중 {cur}~{upto} ({attempt}/3)")
+                    orders = c.fetch_orders(start_date=cur, end_date=upto, max_pages=80)
+                    saved += db.save_orders(orders)
+                    got = max(got, len(orders))
+                    ok = getattr(c, "last_fetch_complete", True)
+                    logger.info("쿠팡 되긁기 %s~%s: %d건%s", cur, upto, len(orders),
+                                "" if ok else " (중간에 끊김 — 쉬었다 다시)")
+                    if ok:
+                        break
+                    time.sleep(90)
+                if not ok:
+                    short.append(f"{cur}~{upto}")
                 cur = upto + timedelta(days=1)
+                time.sleep(25)     # 주 사이 숨 고르기(레이트리밋 예방)
         n_days = platform_fees.rebuild(start, end)
         msg = f"쿠팡 주문 {saved}건 되긁음 · 수수료 집계 {n_days}일 ({start}~{end})"
+        if short:
+            msg += " · 덜 받은 주: " + ", ".join(short)
         db.finish_job(jid, "done", msg, saved)
     except Exception as e:  # noqa: BLE001
         db.log_error("worker", f"쿠팡 되긁기 실패: {e}", kind=type(e).__name__,

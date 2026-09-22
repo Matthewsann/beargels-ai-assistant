@@ -213,6 +213,9 @@ class CoupangCrawler:
         """
         start_ms, end_ms = self._date_range_ms(days, start_date, end_date)
 
+        # 끝까지 다 받았는지(True) / 레이트리밋 등으로 중간에 끊겼는지(False).
+        # 되긁기(worker run_orders_backfill_job)가 덜 받은 주를 다시 돌리는 근거.
+        self.last_fetch_complete = False
         orders = []
         for page_num in range(max_pages):
             data = self._fetch_order_page(page_num, start_ms, end_ms, page_size)
@@ -225,8 +228,11 @@ class CoupangCrawler:
             last = opv.get("lastPageNumber")
             if (not content or len(orders) >= total
                     or (last is not None and page_num >= last)):
+                self.last_fetch_complete = True
                 break
             human_pause(2.0, 3.5)
+        else:
+            self.last_fetch_complete = True   # max_pages 까지 다 돌았다
 
         logger.info("쿠팡 주문 %d건 수집 (최근 %s일)",
                     len(orders), days if not start_date else "기간지정")
@@ -277,7 +283,7 @@ class CoupangCrawler:
     RATE_LIMIT_CODE = "10056"
 
     def _fetch_order_page(self, page_num, start_ms, end_ms, page_size,
-                          retries=3):
+                          retries=4):
         """order/condition POST 를 가로채 body 를 바꿔 한 페이지를 가져온다.
 
         200 이어도 body 가 {data:null, error:{code:10056}} 인 레이트리밋 응답이
@@ -332,10 +338,12 @@ class CoupangCrawler:
             if err:
                 code = err.get("code") if isinstance(err, dict) else None
                 if code == self.RATE_LIMIT_CODE and attempt < retries:
-                    # 레이트리밋 — 점점 길게 쉬었다 재시도.
+                    # 레이트리밋 — 점점 길게 쉬었다 재시도. 실측(2026-09-23 되긁기):
+                    # 10쪽짜리 한 주를 받은 직후 8~14초 백오프로는 세 번 다 막혔다.
+                    # 20~30초 × 회차로 늘려 최대 90초까지 기다린다.
                     logger.info("쿠팡 레이트리밋(10056) — 백오프 후 재시도 %d/%d",
                                 attempt, retries)
-                    human_pause(8.0 * attempt, 14.0 * attempt)
+                    human_pause(20.0 * attempt, 30.0 * attempt)
                     continue
                 logger.warning("쿠팡 주문 API 오류 %s: %s",
                                code, (err or {}).get("message"))
