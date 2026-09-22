@@ -28,7 +28,7 @@ import subprocess
 import sys
 import time
 import traceback
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -1304,6 +1304,54 @@ def run_ledger_sync_job(job) -> None:
         db.worker_ping("idle", "대기 중")
 
 
+def run_orders_backfill_job(job) -> None:
+    """잡 orders_backfill — 쿠팡 주문을 기간 지정으로 되긁고 수수료 집계를 다시 만든다.
+
+    왜(2026-09-23): 수수료·배달비·광고비 집계(platform_fees_daily)는 orders.raw
+    에서 나오는데, 일꾼의 매일 수집(최근 3일)이 9월에야 제대로 돌아 7~8월은
+    며칠치뿐이었다. message 에 'YYYY-MM-DD..YYYY-MM-DD'. 포털이 10건씩 페이지를
+    리로드하며 주므로 한 주씩 끊어 받는다(주당 최대 60쪽=600건).
+    """
+    from database import platform_fees
+    from crawler.coupang import CoupangCrawler
+    jid = job["id"]
+    db.worker_ping("working", "쿠팡 주문 되긁는 중")
+    try:
+        a, b = (job.get("message") or "").split("..")
+        start, end = date.fromisoformat(a.strip()), date.fromisoformat(b.strip())
+        if not ensure_chrome():
+            raise RuntimeError("크롤링용 Chrome 을 켜지 못했습니다")
+        saved, cur = 0, start
+        with CoupangCrawler() as c:
+            while cur <= end:
+                upto = min(cur + timedelta(days=6), end)
+                db.worker_ping("working", f"쿠팡 주문 되긁는 중 {cur}~{upto}")
+                orders = c.fetch_orders(start_date=cur, end_date=upto, max_pages=80)
+                saved += db.save_orders(orders)
+                logger.info("쿠팡 되긁기 %s~%s: %d건", cur, upto, len(orders))
+                cur = upto + timedelta(days=1)
+        n_days = platform_fees.rebuild(start, end)
+        msg = f"쿠팡 주문 {saved}건 되긁음 · 수수료 집계 {n_days}일 ({start}~{end})"
+        db.finish_job(jid, "done", msg, saved)
+    except Exception as e:  # noqa: BLE001
+        db.log_error("worker", f"쿠팡 되긁기 실패: {e}", kind=type(e).__name__,
+                     path="run_orders_backfill_job", detail=traceback.format_exc())
+        db.finish_job(jid, "error", str(e)[:300], 0)
+    finally:
+        db.worker_ping("idle", "대기 중")
+
+
+def _rebuild_platform_fees(days=None):
+    """주문을 긁은 뒤 수수료 일별 집계를 같이 갱신한다(실패해도 수집은 유지)."""
+    try:
+        from database import platform_fees
+        platform_fees.rebuild_recent(days or ORDER_DAYS + 2)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("플랫폼 수수료 집계 실패: %s", e)
+        db.log_error("worker", f"플랫폼 수수료 집계 실패: {e}", kind=type(e).__name__,
+                     path="_rebuild_platform_fees")
+
+
 def run_pos_import_job(job) -> None:
     """웹 '매출 지금 반영' 버튼 요청 처리 — 배달 주문 + 포스 장부 둘 다."""
     from worker import pos_import
@@ -1314,6 +1362,7 @@ def run_pos_import_job(job) -> None:
         order_msg = ""
         try:
             n_ord, ord_warn = collect_orders()
+            _rebuild_platform_fees()
             order_msg = f"배달 주문 {n_ord}건"
             if ord_warn:
                 order_msg += " (" + " · ".join(ord_warn)[:120] + ")"
@@ -1625,6 +1674,7 @@ def maybe_pos_import() -> None:
         try:
             n_ord, ord_warn = collect_orders()
             logger.info("배달 주문 자동 수집: %d건", n_ord)
+            _rebuild_platform_fees()
             if ord_warn:
                 db.log_error("worker",
                              "배달 주문 수집 경고: " + " · ".join(ord_warn)[:300],
@@ -2227,6 +2277,8 @@ def run_job(job) -> None:
         return run_pos_import_job(job)
     if job.get("kind") == "ledger_sync":
         return run_ledger_sync_job(job)
+    if job.get("kind") == "orders_backfill":
+        return run_orders_backfill_job(job)
     if job.get("kind") == "meeting_organize":
         return run_meeting_organize_job(job)
     if job.get("kind") == "reel":
