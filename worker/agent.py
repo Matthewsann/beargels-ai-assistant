@@ -1325,22 +1325,20 @@ def run_orders_backfill_job(job) -> None:
         # 레이트리밋(10056)에 걸려 그 주가 통째로 0건이 됐다(9주 중 5주). 그래서
         # 주 사이에 쉬고, 끝까지 못 받은 주(last_fetch_complete=False)는 길게
         # 쉰 뒤 최대 3번 다시 받는다. 저장은 upsert 라 겹쳐도 안전.
+        # 두 번째 실측(2026-09-23): 끊긴 주를 90초 뒤 바로 다시 두드리니 Akamai 가
+        # 403 으로 아예 막았다(5주 연속 0건). 그래서 여기서는 한 주에 한 번만
+        # 시도하고 주 사이 25초 쉰다. 덜 받은 주는 maybe_fee_backfill 이 2시간마다
+        # 하나씩 조용히 채운다.
         saved, cur, short = 0, start, []
         with CoupangCrawler() as c:
             while cur <= end:
                 upto = min(cur + timedelta(days=6), end)
-                got, ok = 0, False
-                for attempt in range(1, 4):
-                    db.worker_ping("working", f"쿠팡 주문 되긁는 중 {cur}~{upto} ({attempt}/3)")
-                    orders = c.fetch_orders(start_date=cur, end_date=upto, max_pages=80)
-                    saved += db.save_orders(orders)
-                    got = max(got, len(orders))
-                    ok = getattr(c, "last_fetch_complete", True)
-                    logger.info("쿠팡 되긁기 %s~%s: %d건%s", cur, upto, len(orders),
-                                "" if ok else " (중간에 끊김 — 쉬었다 다시)")
-                    if ok:
-                        break
-                    time.sleep(90)
+                db.worker_ping("working", f"쿠팡 주문 되긁는 중 {cur}~{upto}")
+                orders = c.fetch_orders(start_date=cur, end_date=upto, max_pages=80)
+                saved += db.save_orders(orders)
+                ok = getattr(c, "last_fetch_complete", True)
+                logger.info("쿠팡 되긁기 %s~%s: %d건%s", cur, upto, len(orders),
+                            "" if ok else " (중간에 끊김 — 2시간 드립이 채운다)")
                 if not ok:
                     short.append(f"{cur}~{upto}")
                 cur = upto + timedelta(days=1)
@@ -1348,12 +1346,61 @@ def run_orders_backfill_job(job) -> None:
         n_days = platform_fees.rebuild(start, end)
         msg = f"쿠팡 주문 {saved}건 되긁음 · 수수료 집계 {n_days}일 ({start}~{end})"
         if short:
-            msg += " · 덜 받은 주: " + ", ".join(short)
+            msg += " · 덜 받은 주(드립이 채움): " + ", ".join(short)
         db.finish_job(jid, "done", msg, saved)
     except Exception as e:  # noqa: BLE001
         db.log_error("worker", f"쿠팡 되긁기 실패: {e}", kind=type(e).__name__,
                      path="run_orders_backfill_job", detail=traceback.format_exc())
         db.finish_job(jid, "error", str(e)[:300], 0)
+    finally:
+        db.worker_ping("idle", "대기 중")
+
+
+_FEE_BACKFILL_STAMP = ROOT / "state" / "fee_backfill_at.txt"
+FEE_BACKFILL_HOURS = float(os.getenv("FEE_BACKFILL_HOURS", "2"))
+
+
+def maybe_fee_backfill() -> None:
+    """2시간마다, 쿠팡 주문이 빠진 가장 오래된 한 주를 조용히 되긁는다.
+
+    왜(2026-09-23): 수수료·배달비·광고비 집계는 orders.raw 에서 나오는데
+    7~8월은 며칠치뿐이었고, 한 번에 몰아 되긁으니 포털이 레이트리밋(10056)
+    → Akamai 403 으로 막았다. 그래서 한 번에 한 주(≤10쪽)만, 2시간 간격.
+    빠진 주가 없으면 아무것도 안 한다. 실패해도 다음 차례에 또 시도한다.
+    """
+    try:
+        if _FEE_BACKFILL_STAMP.exists() and \
+                time.time() - _FEE_BACKFILL_STAMP.stat().st_mtime < FEE_BACKFILL_HOURS * 3600:
+            return
+    except OSError:
+        pass
+    from database import platform_fees
+    try:
+        week = platform_fees.missing_week()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("빠진 주 찾기 실패: %s", e)
+        return
+    _FEE_BACKFILL_STAMP.parent.mkdir(exist_ok=True)
+    _FEE_BACKFILL_STAMP.write_text(datetime.now().isoformat(), encoding="utf-8")
+    if not week:
+        return
+    start, end = week
+    if not ensure_chrome():
+        return
+    try:
+        from crawler.coupang import CoupangCrawler
+        db.worker_ping("working", f"쿠팡 주문 빈 주 채우는 중 {start}~{end}")
+        with CoupangCrawler() as c:
+            orders = c.fetch_orders(start_date=start, end_date=end, max_pages=80)
+            n = db.save_orders(orders)
+            ok = getattr(c, "last_fetch_complete", True)
+        platform_fees.rebuild(start, end)
+        logger.info("쿠팡 빈 주 채움 %s~%s: %d건%s", start, end, n,
+                    "" if ok else " (끊김 — 다음 차례에 이어서)")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("쿠팡 빈 주 채우기 실패: %s", e)
+        db.log_error("worker", f"쿠팡 빈 주 채우기 실패 {start}~{end}: {e}",
+                     kind=type(e).__name__, path="maybe_fee_backfill")
     finally:
         db.worker_ping("idle", "대기 중")
 
@@ -2474,6 +2521,7 @@ def main() -> int:
                     maybe_naver_research()
                     maybe_intake_qc()
                     maybe_reel_sync()
+                    maybe_fee_backfill()
                     db.worker_ping("idle", "대기 중")
             if job:
                 # 일감이 있으면 쉬지 않고 바로 다음 것을 집는다. 예전엔 한 건

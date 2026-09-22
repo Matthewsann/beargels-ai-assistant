@@ -88,3 +88,46 @@ def test_rebuild는_읽은_것을_날짜별로_upsert한다(monkeypatch):
     assert pf.rebuild(date(2026, 9, 20), date(2026, 9, 22)) == 1
     assert seen["conflict"] == "platform,day"
     assert seen["rows"][0]["day"] == "2026-09-22" and seen["rows"][0]["net"] == 8666
+
+
+def test_빠진_주는_가장_오래된_것_하나(monkeypatch):
+    """7/8~7/14 가 통째로 비었고 7/15 주는 이틀만 비면 7/8 주가 먼저."""
+    from datetime import date, timedelta
+    have = set()
+    d = date(2026, 6, 1)
+    while d <= date(2026, 9, 22):
+        if not (date(2026, 7, 8) <= d <= date(2026, 7, 14)) and d not in (date(2026, 7, 16), date(2026, 7, 17)):
+            have.add(d.isoformat())
+        d += timedelta(days=1)
+
+    class T:
+        def select(self, *a): return self
+        def eq(self, *a): return self
+        def gte(self, *a): return self
+        def lte(self, *a): return self
+        def limit(self, *a): return self
+        def execute(self):
+            return type("R", (), {"data": [{"ordered_date": x} for x in sorted(have)]})()
+
+    monkeypatch.setattr(pf, "get_client", lambda: type("C", (), {"table": lambda s, n: T()})())
+    wk = pf.missing_week(today=date(2026, 9, 23), lookback_days=113)   # 6/1(월)부터
+    assert wk == (date(2026, 7, 6), date(2026, 7, 12))     # 7/8 이 든 월~일
+    # 하루만 빈 주는 안 고른다(min_missing=2) — 7/16·17 이틀은 고른다
+    have.update({"2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10", "2026-07-11", "2026-07-12", "2026-07-13", "2026-07-14"})
+    assert pf.missing_week(today=date(2026, 9, 23), lookback_days=113) == (date(2026, 7, 13), date(2026, 7, 19))
+
+
+def test_빠진_주가_없으면_None(monkeypatch):
+    from datetime import date, timedelta
+    have = [{"ordered_date": (date(2026, 5, 1) + timedelta(days=i)).isoformat()} for i in range(200)]
+
+    class T:
+        def select(self, *a): return self
+        def eq(self, *a): return self
+        def gte(self, *a): return self
+        def lte(self, *a): return self
+        def limit(self, *a): return self
+        def execute(self): return type("R", (), {"data": have})()
+
+    monkeypatch.setattr(pf, "get_client", lambda: type("C", (), {"table": lambda s, n: T()})())
+    assert pf.missing_week(today=date(2026, 9, 23)) is None

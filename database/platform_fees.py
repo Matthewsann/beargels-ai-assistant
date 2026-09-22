@@ -113,6 +113,32 @@ def fees_daily(start: date, end: date, platform="coupang") -> list:
             .order("day").limit(2000).execute().data) or []
 
 
+def missing_week(today: date | None = None, lookback_days: int = 120, min_missing: int = 2):
+    """orders 에 쿠팡 주문이 없는 날이 min_missing 일 이상인 가장 오래된 한 주(월~일).
+
+    (start, end) 또는 None. 어제까지만 본다(오늘은 아직 쌓이는 중). 가게가 문을
+    연 날엔 쿠팡 주문이 0건인 날이 거의 없으므로 '행이 없는 날 = 안 긁은 날'.
+    일꾼 maybe_fee_backfill 이 2시간마다 이걸 하나 골라 채운다 — 한 번에 몰아
+    긁으면 포털이 막는다(2026-09-23 실측: 10056 레이트리밋 뒤 Akamai 403).
+    """
+    today = today or date.today()
+    end = today - timedelta(days=1)
+    start = end - timedelta(days=lookback_days)
+    rows = (get_client().table("orders").select("ordered_date").eq("platform", "coupang")
+            .gte("ordered_date", start.isoformat()).lte("ordered_date", end.isoformat())
+            .limit(20000).execute().data) or []
+    have = {r["ordered_date"][:10] for r in rows if r.get("ordered_date")}
+    monday = start - timedelta(days=start.weekday())
+    while monday <= end:
+        sunday = min(monday + timedelta(days=6), end)
+        days = [(monday + timedelta(days=i)) for i in range((sunday - monday).days + 1)]
+        missing = [d for d in days if d.isoformat() not in have]
+        if len(missing) >= min_missing:
+            return monday, sunday
+        monday += timedelta(days=7)
+    return None
+
+
 def request_backfill(start: date, end: date, by=None):
     """집 PC 일꾼에게 '이 기간 쿠팡 주문을 되긁고 집계하라' 잡(orders_backfill).
 
