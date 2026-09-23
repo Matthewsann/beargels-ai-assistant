@@ -308,6 +308,15 @@ def collect_orders(days=None) -> tuple[int, list[str]]:
     def _baemin():
         from crawler.baemin import BaeminCrawler
         with BaeminCrawler() as c:
+            # API 가로채기(정산 항목 포함, 2026-09-23). 실패하면 옛 표 읽기로.
+            try:
+                got = c.fetch_orders_api(
+                    start_date=datetime.now().date() - timedelta(days=days),
+                    end_date=datetime.now().date())
+                if got:
+                    return got
+            except Exception as e:  # noqa: BLE001
+                logger.warning("배민 주문 API 수집 실패 — 표 읽기로: %s", e)
             return c.fetch_orders(
                 start_date=datetime.now().date() - timedelta(days=days),
                 end_date=datetime.now().date())
@@ -1317,10 +1326,22 @@ def run_orders_backfill_job(job) -> None:
     jid = job["id"]
     db.worker_ping("working", "쿠팡 주문 되긁는 중")
     try:
-        a, b = (job.get("message") or "").split("..")
+        msg = (job.get("message") or "").strip()
+        platform = "coupang"
+        if " " in msg:                                  # 'baemin 2026-07-01..2026-08-31'
+            platform, msg = msg.split(" ", 1)
+        a, b = msg.split("..")
         start, end = date.fromisoformat(a.strip()), date.fromisoformat(b.strip())
         if not ensure_chrome():
             raise RuntimeError("크롤링용 Chrome 을 켜지 못했습니다")
+        if platform == "baemin":
+            from crawler.baemin import BaeminCrawler
+            with BaeminCrawler() as c:
+                orders = c.fetch_orders_api(start_date=start, end_date=end)
+                saved = db.save_orders(orders)
+            n_days = platform_fees.rebuild(start, end)
+            db.finish_job(jid, "done", f"배민 주문 {saved}건 되긁음 · 수수료 집계 {n_days}일 ({start}~{end})", saved)
+            return
         # 실측(2026-09-23 첫 되긁기): 한 주(10쪽)를 받자마자 다음 주를 두드리면
         # 레이트리밋(10056)에 걸려 그 주가 통째로 0건이 됐다(9주 중 5주). 그래서
         # 주 사이에 쉬고, 끝까지 못 받은 주(last_fetch_complete=False)는 길게
@@ -1375,34 +1396,44 @@ def maybe_fee_backfill() -> None:
     except OSError:
         pass
     from database import platform_fees
-    try:
-        week = platform_fees.missing_week()
-    except Exception as e:  # noqa: BLE001
-        logger.warning("빠진 주 찾기 실패: %s", e)
-        return
     _FEE_BACKFILL_STAMP.parent.mkdir(exist_ok=True)
     _FEE_BACKFILL_STAMP.write_text(datetime.now().isoformat(), encoding="utf-8")
-    if not week:
-        return
-    start, end = week
-    if not ensure_chrome():
-        return
-    try:
-        from crawler.coupang import CoupangCrawler
-        db.worker_ping("working", f"쿠팡 주문 빈 주 채우는 중 {start}~{end}")
-        with CoupangCrawler() as c:
-            orders = c.fetch_orders(start_date=start, end_date=end, max_pages=80)
-            n = db.save_orders(orders)
-            ok = getattr(c, "last_fetch_complete", True)
-        platform_fees.rebuild(start, end)
-        logger.info("쿠팡 빈 주 채움 %s~%s: %d건%s", start, end, n,
-                    "" if ok else " (끊김 — 다음 차례에 이어서)")
-    except Exception as e:  # noqa: BLE001
-        logger.warning("쿠팡 빈 주 채우기 실패: %s", e)
-        db.log_error("worker", f"쿠팡 빈 주 채우기 실패 {start}~{end}: {e}",
-                     kind=type(e).__name__, path="maybe_fee_backfill")
-    finally:
-        db.worker_ping("idle", "대기 중")
+    # 쿠팡·배민 각각 빈 주 하나씩(2026-09-23 배민 추가). 배민은 100건씩 받아 한 주가
+    # 1~3쪽이라 가볍다.
+    for platform, name in (("coupang", "쿠팡"), ("baemin", "배민")):
+        try:
+            week = platform_fees.missing_week(platform=platform)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("%s 빠진 주 찾기 실패: %s", name, e)
+            continue
+        if not week:
+            continue
+        start, end = week
+        if not ensure_chrome():
+            return
+        try:
+            db.worker_ping("working", f"{name} 주문 빈 주 채우는 중 {start}~{end}")
+            if platform == "coupang":
+                from crawler.coupang import CoupangCrawler
+                with CoupangCrawler() as c:
+                    orders = c.fetch_orders(start_date=start, end_date=end, max_pages=80)
+                    n = db.save_orders(orders)
+                    ok = getattr(c, "last_fetch_complete", True)
+            else:
+                from crawler.baemin import BaeminCrawler
+                with BaeminCrawler() as c:
+                    orders = c.fetch_orders_api(start_date=start, end_date=end)
+                    n = db.save_orders(orders)
+                    ok = getattr(c, "last_fetch_complete", True)
+            platform_fees.rebuild(start, end)
+            logger.info("%s 빈 주 채움 %s~%s: %d건%s", name, start, end, n,
+                        "" if ok else " (끊김 — 다음 차례에 이어서)")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("%s 빈 주 채우기 실패: %s", name, e)
+            db.log_error("worker", f"{name} 빈 주 채우기 실패 {start}~{end}: {e}",
+                         kind=type(e).__name__, path="maybe_fee_backfill")
+        finally:
+            db.worker_ping("idle", "대기 중")
 
 
 def _rebuild_platform_fees(days=None):

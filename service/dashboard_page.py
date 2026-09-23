@@ -333,13 +333,14 @@ def _sum_rows(rows) -> dict:
 
 
 def fee_actual(rows: list, y: int, m: int) -> dict | None:
-    """보는 달의 쿠팡 실측 수수료 3칸 + 며칠치인지. 그 달 자료가 없으면 None."""
+    """보는 달의 실측 수수료 3칸 + 며칠치인지(플랫폼별 행이 섞이면 날짜로 센다).
+    그 달 자료가 없으면 None."""
     ym = f"{y}-{m:02d}"
     mine = [r for r in rows if str(r.get("day", ""))[:7] == ym and (r.get("orders") or 0) > 0]
     if not mine:
         return None
     out = _fee3(_sum_rows(mine))
-    out["days"] = len(mine)
+    out["days"] = len({str(r["day"])[:10] for r in mine})
     return out
 
 
@@ -349,27 +350,31 @@ def fee_trend(rows: list, end: date, weeks: int = 12) -> dict:
     하루이틀짜리 마지막 주는 뺀다(주간 매출 추이와 같은 규칙). 자료가 없는 주·달은
     건너뛴다(빈 채로 — 크롤러 잠정치를 섞지 않는 원칙과 같은 결).
     """
-    by_day = {str(r["day"])[:10]: r for r in rows if (r.get("orders") or 0) > 0}
+    by_day = defaultdict(list)                      # 플랫폼별 행이 같은 날에 겹칠 수 있다
+    for r in rows:
+        if (r.get("orders") or 0) > 0:
+            by_day[str(r["day"])[:10]].append(r)
     monday = end - timedelta(days=end.weekday())
     wk = {"labels": [], "sales": [], "fee": [], "adv": [], "keep": [], "days": []}
     for i in range(weeks - 1, -1, -1):
         start = monday - timedelta(days=7 * i)
         days = [start + timedelta(days=d) for d in range(7) if start + timedelta(days=d) <= end]
-        got = [by_day[d.isoformat()] for d in days if d.isoformat() in by_day]
+        got_days = [d.isoformat() for d in days if d.isoformat() in by_day]
+        got = [r for d in got_days for r in by_day[d]]
         if not got or (i == 0 and len(days) < 3):
             continue
         f = _fee3(_sum_rows(got))
         wk["labels"].append(f"{start.month}/{start.day}")
-        wk["sales"].append(man(f["sales"])); wk["days"].append(len(got))
+        wk["sales"].append(man(f["sales"])); wk["days"].append(len(got_days))
         for k in ("fee", "adv", "keep"):
             wk[k].append(f[f"{k}_pct"])
     mo = {"labels": [], "sales": [], "fee": [], "adv": [], "keep": [], "days": []}
-    months = defaultdict(list)
-    for d, r in by_day.items():
-        months[d[:7]].append(r)
+    months, mdays = defaultdict(list), defaultdict(set)
+    for d, rs in by_day.items():
+        months[d[:7]].extend(rs); mdays[d[:7]].add(d)
     for ym in sorted(months):
         f = _fee3(_sum_rows(months[ym]))
-        mo["labels"].append(_label(ym)); mo["sales"].append(man(f["sales"])); mo["days"].append(len(months[ym]))
+        mo["labels"].append(_label(ym)); mo["sales"].append(man(f["sales"])); mo["days"].append(len(mdays[ym]))
         for k in ("fee", "adv", "keep"):
             mo[k].append(f[f"{k}_pct"])
     return {"weekly": wk, "monthly": mo}
@@ -777,12 +782,17 @@ def build_dashboard(y: int, m: int, today: date | None = None, explicit: bool = 
                 "ad_rate": _pct(max((L.get("delivery_fee_rate") or 0) - BASE_FEE_RATE, 0)),
                 "month": L["label"]}
     # ── 쿠팡 실측 수수료(주문 건별 정산 항목, platform_fees_daily) ──────────
-    def _fee_rows():
+    def _fee_rows(platform):
         from database import platform_fees          # 서버에 파일이 없어도 화면은 떠야 한다
-        return platform_fees.fees_daily(today - timedelta(days=120), today)
-    fee_rows, _ = sp._safe(_fee_rows, [])
-    fees = {"month": fee_actual(fee_rows, y, m), "trend": fee_trend(fee_rows, today),
-            "label": f"{m}월", "any": bool(fee_rows)}
+        return platform_fees.fees_daily(today - timedelta(days=120), today, platform=platform)
+    fee_rows = {p: sp._safe(lambda p=p: _fee_rows(p), [])[0] for p in ("coupang", "baemin")}
+    both = fee_rows["coupang"] + fee_rows["baemin"]
+    fees = {"label": f"{m}월", "any": bool(both),
+            "platforms": {p: {"month": fee_actual(fee_rows[p], y, m), "trend": fee_trend(fee_rows[p], today)}
+                          for p in ("coupang", "baemin")},
+            "total": {"month": fee_actual(both, y, m), "trend": fee_trend(both, today)}}
+    # 옛 키(템플릿 호환): 합계를 기본으로
+    fees["month"], fees["trend"] = fees["total"]["month"], fees["total"]["trend"]
 
     sales_gauges = []
     if L:

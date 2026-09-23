@@ -205,6 +205,114 @@ class BaeminCrawler:
         logger.info("주문 %d건 수집 (%s ~ %s)", len(orders), start_date, end_date)
         return orders
 
+    # -- 주문(API 가로채기) ---------------------------------------------------
+    # 정찰(2026-09-23): 주문내역 화면은 self-api.baemin.com/v4/orders 를 부르고,
+    # 응답의 원소마다 {order, settle} 가 있다. settle 에 건별 정산 항목이 있다:
+    #   orderBrokerageItems: ORDER_AMOUNT(주문금액) · ADVERTISE_FEE(중개이용료) ·
+    #                        DISCOUNT_AMOUNT(고객할인비용 = 가게 부담 쿠폰·즉시할인)
+    #   deliveryItems:       DELIVERY_SUPPLY_PRICE(배달비) · DELIVERY_TIP_AMOUNT(가게배달팁)
+    #                        · DEVLIERY_TIP_INSTANT_DISCOUNT · BAEMIN_CLUB_INSTANT_DISCOUNT
+    #   etcItems:            SERVICE_FEE(결제정산수수료)
+    #   deductionAmountTotalVat(부가세) · depositDueAmount(입금예정) · notDisplayReason
+    #   (NOT_READY = 거래 다음날부터 채워진다)
+    # 화면 주소의 startDate/endDate 는 무시되지만(기본 최근 7일), 페이지 자신의
+    # 요청을 가로채 쿼리를 바꾸면 원하는 기간·100건씩 받을 수 있다(쿠팡과 같은 패턴).
+    # 스크립트 fetch 는 'Failed to fetch' 로 막힌다 — 페이지 자신의 요청만 통한다.
+    ORDER_API_GLOB = "**/v4/orders?*"
+    ORDER_API_PAGE = 100
+    _PAY_TYPE = {"BARO": "바로결제", "MEET": "만나서결제"}
+    _AD_KEY = {"BAEMIN_1_PLUS": "배민배달", "OPEN_LIST": "가게배달", "TAKEOUT": "픽업",
+               "BAEMIN_1": "배민1 한집배달", "STOD": "알뜰배달", "ULTRA_CALL": "울트라콜",
+               "CENTRAL_CPC": "우리가게클릭"}
+
+    def fetch_orders_api(self, start_date=None, end_date=None, max_pages=40):
+        """주문내역 API 응답을 가로채 {order, settle} 원본째 받는다(기간 지정 가능).
+
+        Returns: 공용 스키마 dict 리스트(raw = JSON 문자열 {"order":…, "settle":…}).
+        """
+        import json
+        from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+        start_date = start_date or (date.today() - timedelta(days=1))
+        end_date = end_date or date.today()
+        if isinstance(start_date, str):
+            start_date = date.fromisoformat(start_date)
+        if isinstance(end_date, str):
+            end_date = date.fromisoformat(end_date)
+        self.last_fetch_complete = False
+        orders, offset, total = [], 0, None
+        for _ in range(max_pages):
+            captured = {}
+
+            def handle(route, _request=None, _offset=offset):
+                u = urlsplit(route.request.url)
+                q = dict(parse_qsl(u.query))
+                q.update({"startDate": start_date.isoformat(), "endDate": end_date.isoformat(),
+                          "limit": str(self.ORDER_API_PAGE), "offset": str(_offset)})
+                route.continue_(url=urlunsplit(u._replace(query=urlencode(q))))
+
+            self.page.route(self.ORDER_API_GLOB, handle)
+            try:
+                with self.page.expect_response(
+                        lambda r: "/v4/orders?" in r.url, timeout=WAIT_TIMEOUT * 1000) as ri:
+                    self._open_authed(ORDERS_URL)
+                resp = ri.value
+                if resp.status != 200:
+                    logger.warning("배민 주문 API status %d: %s / %s", resp.status,
+                                   resp.url[:200], resp.text()[:200])
+                    break
+                captured = resp.json() or {}
+            except SessionExpiredError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                logger.warning("배민 주문 API 캡처 실패(offset %d): %s", offset, e)
+                break
+            finally:
+                self.page.unroute(self.ORDER_API_GLOB, handle)
+            content = captured.get("contents") or []
+            total = captured.get("totalSize") if total is None else total
+            orders.extend(o for o in (self._normalize_api_order(x) for x in content) if o)
+            offset += len(content)
+            if not content or (total is not None and offset >= total):
+                self.last_fetch_complete = True
+                break
+            human_pause(2.0, 3.5)
+        logger.info("배민 주문 %d건 수집(API, %s~%s)", len(orders), start_date, end_date)
+        return orders
+
+    @classmethod
+    def _normalize_api_order(cls, x):
+        """v4/orders 원소 {order, settle} → 공용 스키마 dict."""
+        import json
+        o = (x or {}).get("order") or {}
+        no = o.get("orderNumber")
+        if not no:
+            return None
+        dt = o.get("orderDateTime") or ""           # '2026-09-23T18:32:05'
+        ordered_at, ordered_date = None, None
+        try:
+            d = datetime.fromisoformat(dt)
+            ordered_at, ordered_date = d.strftime("%Y. %m. %d. %H:%M:%S"), d.date().isoformat()
+        except ValueError:
+            pass
+        status = {"CLOSED": "배달완료", "CANCELED": "취소", "CANCELLED": "취소"}.get(o.get("status"), o.get("status"))
+        ad = (o.get("adCampaign") or {}).get("key")
+        names = [it.get("name") for it in (o.get("items") or []) if it.get("name")]
+        return {
+            "platform": "baemin",
+            "order_no": no,
+            "status": status,
+            "ordered_at": ordered_at,
+            "ordered_date": ordered_date,
+            "menu": o.get("itemsSummary") or (", ".join(names) or None),
+            "menus": names or None,
+            "pay_type": cls._PAY_TYPE.get(o.get("payType"), o.get("payType")),
+            "delivery_method": o.get("deliveryType"),
+            "ad_service": cls._AD_KEY.get(ad, ad),
+            "price": o.get("payAmount"),
+            "raw": json.dumps({"order": o, "settle": (x or {}).get("settle")}, ensure_ascii=False),
+        }
+
     @staticmethod
     def _parse_order_row(row):
         """주문 테이블의 <tr> 하나를 dict 로 정규화한다.

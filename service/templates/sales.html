@@ -542,18 +542,29 @@
       <div class="cw"><canvas id="c31"></canvas></div>
     </div>
     <div class="card">
-      <h4>쿠팡 매출은 어디로 가나 <small>{{ v.fees.label }} · 주문 건별 정산 항목 실측{% if v.fees.month %} · {{ v.fees.month.days }}일치 {{ v.fees.month.orders }}건{% endif %}</small></h4>
-      {% if v.fees.month %}{% set f = v.fees.month %}
+      <h4>배달 매출은 어디로 가나 <small>{{ v.fees.label }} · 주문 건별 정산 항목 실측</small></h4>
+      {% macro feebox(name, f, ad_note) -%}
       <div class="fee">
-        <div class="fh">쿠팡이츠<span>매출 {{ '{:,}'.format(f.sales) }}원</span></div>
+        {% if f %}
+        <div class="fh">{{ name }}<span>매출 {{ '{:,}'.format(f.sales) }}원 · {{ f.days }}일치 {{ f.orders }}건</span></div>
         <div class="stack"><div style="width:{{ f.fee_pct }}%;background:var(--rd)">{{ f.fee_pct|round|int }}%</div><div style="width:{{ f.adv_pct }}%;background:var(--pu, #8B5CF6)">{{ f.adv_pct|round|int }}%</div><div style="width:{{ f.keep_pct }}%;background:var(--gr)">{{ f.keep_pct|round|int }}%</div></div>
         <div class="fr"><span class="l"><i style="background:var(--rd)"></i>수수료 <small>중개 + 결제 + 부가세 + 배달비</small></span><b class="lo">{{ '{:,}'.format(f.fee) }}원 · {{ f.fee_pct }}%</b></div>
-        <div class="fr"><span class="l"><i style="background:var(--pu, #8B5CF6)"></i>광고비 <small>광고 + 상점부담 쿠폰</small></span><b class="lo">{{ '{:,}'.format(f.adv) }}원 · {{ f.adv_pct }}%</b></div>
+        <div class="fr"><span class="l"><i style="background:var(--pu, #8B5CF6)"></i>광고비 <small>{{ ad_note }}</small></span><b class="lo">{{ '{:,}'.format(f.adv) }}원 · {{ f.adv_pct }}%</b></div>
         <div class="fr"><span class="l"><i style="background:var(--gr)"></i>실입금 <small>매출 − 수수료 − 광고비</small></span><b class="hi">{{ '{:,}'.format(f.keep) }}원 · {{ f.keep_pct }}%</b></div>
+        {% else %}
+        <div class="fh">{{ name }}</div>
+        <div class="empty" style="padding:8px 0">{{ v.fees.label }} 실측 자료가 아직 없어요. 일꾼이 2시간에 한 주씩 채우고 있어요.</div>
+        {% endif %}
       </div>
-      {% else %}<div class="empty">{{ v.fees.label }} 쿠팡 주문 실측 자료가 아직 없어요. {% if not v.fees.any %}집 PC 일꾼이 주문을 긁으면 채워져요.{% else %}빠진 기간은 일꾼이 2시간에 한 주씩 채우고 있어요.{% endif %}</div>{% endif %}
+      {%- endmacro %}
+      <div class="g2">
+        {{ feebox('쿠팡이츠', v.fees.platforms.coupang.month, '광고 + 상점부담 쿠폰') }}
+        {{ feebox('배달의민족', v.fees.platforms.baemin.month, '가게 부담 할인·쿠폰 (클릭 광고비는 주문에 안 붙어 제외)') }}
+      </div>
       {% if v.fees.trend.weekly.labels or v.fees.trend.monthly.labels %}
-      <h4 style="margin-top:14px">수수료·광고비 비율 추이 <div class="ctl" style="margin-left:auto"><button class="on" onclick="feeT('w',this)">주간</button><button onclick="feeT('m',this)">월간</button></div></h4>
+      <h4 style="margin-top:14px">수수료·광고비 비율 추이
+        <div class="ctl" style="margin-left:auto"><button class="on" onclick="feeP('total',this)">합계</button><button onclick="feeP('coupang',this)">쿠팡</button><button onclick="feeP('baemin',this)">배민</button></div>
+        <div class="ctl" style="margin-left:6px"><button class="on" onclick="feeT('w',this)">주간</button><button onclick="feeT('m',this)">월간</button></div></h4>
       <div class="legend"><span><span class="sw" style="background:var(--rd)"></span>수수료</span><span><span class="sw" style="background:var(--pu, #8B5CF6)"></span>광고비</span><span><span class="sw" style="background:var(--gr)"></span>실입금</span></div>
       <div class="cw sm"><canvas id="c34"></canvas></div>
       <div class="fnote">막대 하나가 매출 100%예요. 자료가 없는 주·달은 비워 둬요(며칠치인지는 막대를 누르면 나와요).</div>
@@ -852,15 +863,17 @@ function drawP3() {
   new Chart($('c32'), { type: 'bar', data: { labels: M, datasets: [{ data: C.op_profit, backgroundColor: C.op_profit.map((v, i) => (v >= 200 ? GR : v >= 0 ? YL : RD) + (estM(i) ? '66' : '')), borderRadius: 4, barPercentage: .62 }] },
     options: { ...co, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` ${c.raw > 0 ? '+' : ''}${c.raw}만원` + (estM(c.dataIndex) ? ' (예상)' : '') } } }, scales: { x: xaxis, y: axis(v => v + '만') } } });
   drawFee('all');
-  drawFeeT('w');
+  drawFeeT();
 }
 function fee(m, b) { b.parentElement.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); drawFee(m); }
-let ftc = null;
-function feeT(m, b) { b.parentElement.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); drawFeeT(m); }
-function drawFeeT(m) {
+let ftc = null, feeMode = 'w', feePlat = 'total';
+function feeT(m, b) { b.parentElement.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); feeMode = m; drawFeeT(); }
+function feeP(p, b) { b.parentElement.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); feePlat = p; drawFeeT(); }
+function drawFeeT() {
   if (!$('c34') || !V.fees) return;
   if (ftc) ftc.destroy();
-  const T = m === 'm' ? V.fees.trend.monthly : V.fees.trend.weekly;
+  const src = feePlat === 'total' ? V.fees.total : V.fees.platforms[feePlat];
+  const T = feeMode === 'm' ? src.trend.monthly : src.trend.weekly;
   const ds = [['수수료', T.fee, RD], ['광고비', T.adv, PU], ['실입금', T.keep, GR]].map(([label, data, c]) => ({ label, data, backgroundColor: c, borderRadius: 3, barPercentage: .72 }));
   ftc = new Chart($('c34'), { type: 'bar', data: { labels: T.labels, datasets: ds },
     options: { ...co, plugins: { legend: { display: false }, tooltip: { mode: 'index', callbacks: { title: it => { const i = it[0].dataIndex; return `${T.labels[i]} · 매출 ${T.sales[i]}만 · ${T.days[i]}일치`; }, label: c => ` ${c.dataset.label} ${c.raw}%` } } }, scales: { x: { ...xaxis, stacked: true }, y: { ...axis(v => v + '%'), stacked: true, max: 100 } } } });

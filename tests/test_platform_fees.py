@@ -72,6 +72,7 @@ def test_rebuild는_읽은_것을_날짜별로_upsert한다(monkeypatch):
         def __init__(self, name): self.name = name
         def select(self, *a): return self
         def eq(self, *a): return self
+        def in_(self, *a): return self
         def gte(self, *a): return self
         def lte(self, *a): return self
         def limit(self, *a): return self

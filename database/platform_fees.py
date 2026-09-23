@@ -68,14 +68,68 @@ def order_fees(raw, status=None) -> dict:
     }
 
 
+def _items(lst, code) -> int:
+    """배민 settle 항목 목록에서 code 의 amount(없으면 0)."""
+    for it in lst or []:
+        if it.get("code") == code:
+            return int(it.get("amount") or 0)
+    return 0
+
+
+def order_fees_baemin(raw) -> dict | None:
+    """배민 주문 원본({order, settle}, 2026-09-23 crawler.fetch_orders_api) → 항목별 원.
+
+    settle 이 아직 없으면(notDisplayReason=NOT_READY — 거래 다음날부터) None:
+    그 주문은 이날 합계에 아직 안 넣는다. 매일 수집(최근 3일)이 원본을 다시
+    올리면 채워진다. 옛 배민 raw(표 텍스트)도 None.
+      수수료 쪽: 중개이용료(ADVERTISE_FEE) · 결제정산수수료(etc SERVICE_FEE) ·
+                부가세(deductionAmountTotalVat) · 배달비(DELIVERY_SUPPLY_PRICE)
+      광고비 쪽(가게 부담 할인): 고객할인비용(DISCOUNT_AMOUNT) + 배달팁 할인비용 +
+                배민클럽 할인비용(가게 몫만 — 우아한형제들 지원분은 상쇄돼 0)
+      CPC 광고(우리가게클릭)는 주문에 안 붙는다 → ad_fee 0 (월 청구서로 따로).
+    """
+    if isinstance(raw, str):
+        if not raw.startswith("{"):
+            return None
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return None
+    if not isinstance(raw, dict) or "settle" not in raw:
+        return None
+    o, s = raw.get("order") or {}, raw.get("settle") or {}
+    if s.get("notDisplayReason") or not s.get("orderBrokerageItems"):
+        return None
+    st = str(o.get("status") or "").upper()
+    if "CANCEL" in st:
+        return {c: 0 for c in COLS} | {"cancelled": 1}
+    bro, dlv, etc = s.get("orderBrokerageItems"), s.get("deliveryItems"), s.get("etcItems")
+    sales = _items(bro, "ORDER_AMOUNT") or (int(o.get("payAmount") or 0) + int(o.get("orderInstantDiscountAmount") or 0))
+    service = -_items(bro, "ADVERTISE_FEE")
+    coupon = -(_items(bro, "DISCOUNT_AMOUNT") + _items(dlv, "DEVLIERY_TIP_INSTANT_DISCOUNT")
+               + _items(dlv, "BAEMIN_CLUB_INSTANT_DISCOUNT"))
+    delivery = -_items(dlv, "DELIVERY_SUPPLY_PRICE")
+    payment = -sum(int(it.get("amount") or 0) for it in (etc or []) if it.get("code") == "SERVICE_FEE")
+    vat = -int(s.get("deductionAmountTotalVat") or 0)
+    return {"orders": 1, "cancelled": 0, "sales": sales, "coupon": coupon, "service_fee": service,
+            "payment_fee": payment, "delivery_fee": delivery, "vat": vat, "ad_fee": 0,
+            "net": sales - coupon - service - payment - delivery - vat}
+
+
 def summarize(rows) -> dict:
-    """orders 행들([{platform, ordered_date, status, raw}]) → {(platform, day): 합계}."""
+    """orders 행들([{platform, ordered_date, status, raw}]) → {(platform, day): 합계}.
+
+    쿠팡은 order_fees, 배민은 order_fees_baemin(정산이 아직 없는 주문·옛 텍스트
+    raw 는 건너뛴다)."""
     out = defaultdict(lambda: {c: 0 for c in COLS})
     for r in rows:
-        if r.get("platform") != "coupang" or not r.get("ordered_date"):
-            continue    # 배민은 보류 — raw 구조가 달라 따로 붙인다
-        f = order_fees(r.get("raw"), r.get("status"))
-        acc = out[(r["platform"], r["ordered_date"][:10])]
+        p = r.get("platform")
+        if p not in ("coupang", "baemin") or not r.get("ordered_date"):
+            continue
+        f = order_fees(r.get("raw"), r.get("status")) if p == "coupang" else order_fees_baemin(r.get("raw"))
+        if f is None:
+            continue
+        acc = out[(p, r["ordered_date"][:10])]
         for c in COLS:
             acc[c] += f[c]
     return dict(out)
@@ -88,9 +142,9 @@ def rebuild(start: date, end: date) -> int:
     원칙). 취소만 있는 날은 orders=0 인 행이 생기고 그건 그대로 둔다.
     """
     rows = (get_client().table("orders").select("platform,ordered_date,status,raw")
-            .eq("platform", "coupang")
+            .in_("platform", ["coupang", "baemin"])
             .gte("ordered_date", start.isoformat()).lte("ordered_date", end.isoformat())
-            .limit(5000).execute().data) or []
+            .limit(8000).execute().data) or []
     agg = summarize(rows)
     now = datetime.now(timezone.utc).isoformat()
     payload = [{"platform": p, "day": d, "updated_at": now} | v for (p, d), v in agg.items()]
@@ -113,8 +167,12 @@ def fees_daily(start: date, end: date, platform="coupang") -> list:
             .order("day").limit(2000).execute().data) or []
 
 
-def missing_week(today: date | None = None, lookback_days: int = 120, min_missing: int = 2):
-    """orders 에 쿠팡 주문이 없는 날이 min_missing 일 이상인 가장 오래된 한 주(월~일).
+def missing_week(today: date | None = None, lookback_days: int = 120, min_missing: int = 2,
+                 platform: str = "coupang"):
+    """orders 에 그 플랫폼 주문이 없는 날이 min_missing 일 이상인 가장 오래된 한 주(월~일).
+
+    배민은 정산 항목이 있는 새 원본(raw 가 '{"order"' 로 시작)만 '있음'으로 친다 —
+    옛 표 텍스트 raw 로는 수수료를 못 만든다.
 
     (start, end) 또는 None. 어제까지만 본다(오늘은 아직 쌓이는 중). 가게가 문을
     연 날엔 쿠팡 주문이 0건인 날이 거의 없으므로 '행이 없는 날 = 안 긁은 날'.
@@ -124,9 +182,11 @@ def missing_week(today: date | None = None, lookback_days: int = 120, min_missin
     today = today or date.today()
     end = today - timedelta(days=1)
     start = end - timedelta(days=lookback_days)
-    rows = (get_client().table("orders").select("ordered_date").eq("platform", "coupang")
-            .gte("ordered_date", start.isoformat()).lte("ordered_date", end.isoformat())
-            .limit(20000).execute().data) or []
+    q = (get_client().table("orders").select("ordered_date").eq("platform", platform)
+         .gte("ordered_date", start.isoformat()).lte("ordered_date", end.isoformat()))
+    if platform == "baemin":
+        q = q.like("raw", '{"order"%')
+    rows = q.limit(20000).execute().data or []
     have = {r["ordered_date"][:10] for r in rows if r.get("ordered_date")}
     monday = start - timedelta(days=start.weekday())
     while monday <= end:
