@@ -307,6 +307,74 @@ def cost_items(L: dict, P: dict | None) -> list:
     ]
 
 
+def _fee3(acc: dict) -> dict:
+    """platform_fees_daily 합계 → 사장님이 보는 3칸(2026-09-23 지시).
+
+      수수료 = 중개 + 결제 + 부가세 + 배달비
+      광고비 = 광고(CPC) + 상점부담 쿠폰
+      실입금 = 매출 − 수수료 − 광고비   (포털 '정산 예정'은 광고비를 안 빼고
+               따로 청구하므로, 여기선 광고비까지 뺀 진짜 남는 돈으로 본다)
+    """
+    sales = acc.get("sales") or 0
+    fee = sum(acc.get(k) or 0 for k in ("service_fee", "payment_fee", "vat", "delivery_fee"))
+    adv = (acc.get("ad_fee") or 0) + (acc.get("coupon") or 0)
+    keep = sales - fee - adv
+    pct = lambda v: _pct(v / sales) if sales else None   # noqa: E731
+    return {"sales": sales, "orders": acc.get("orders") or 0, "fee": fee, "adv": adv, "keep": keep,
+            "fee_pct": pct(fee), "adv_pct": pct(adv), "keep_pct": pct(keep)}
+
+
+def _sum_rows(rows) -> dict:
+    acc = defaultdict(int)
+    for r in rows:
+        for k in ("orders", "sales", "coupon", "service_fee", "payment_fee", "delivery_fee", "vat", "ad_fee", "net"):
+            acc[k] += int(r.get(k) or 0)
+    return acc
+
+
+def fee_actual(rows: list, y: int, m: int) -> dict | None:
+    """보는 달의 쿠팡 실측 수수료 3칸 + 며칠치인지. 그 달 자료가 없으면 None."""
+    ym = f"{y}-{m:02d}"
+    mine = [r for r in rows if str(r.get("day", ""))[:7] == ym and (r.get("orders") or 0) > 0]
+    if not mine:
+        return None
+    out = _fee3(_sum_rows(mine))
+    out["days"] = len(mine)
+    return out
+
+
+def fee_trend(rows: list, end: date, weeks: int = 12) -> dict:
+    """주간(월요일 시작, 최근 N주)·월간 추이 — 3칸 비율(%)과 매출(만원).
+
+    하루이틀짜리 마지막 주는 뺀다(주간 매출 추이와 같은 규칙). 자료가 없는 주·달은
+    건너뛴다(빈 채로 — 크롤러 잠정치를 섞지 않는 원칙과 같은 결).
+    """
+    by_day = {str(r["day"])[:10]: r for r in rows if (r.get("orders") or 0) > 0}
+    monday = end - timedelta(days=end.weekday())
+    wk = {"labels": [], "sales": [], "fee": [], "adv": [], "keep": [], "days": []}
+    for i in range(weeks - 1, -1, -1):
+        start = monday - timedelta(days=7 * i)
+        days = [start + timedelta(days=d) for d in range(7) if start + timedelta(days=d) <= end]
+        got = [by_day[d.isoformat()] for d in days if d.isoformat() in by_day]
+        if not got or (i == 0 and len(days) < 3):
+            continue
+        f = _fee3(_sum_rows(got))
+        wk["labels"].append(f"{start.month}/{start.day}")
+        wk["sales"].append(man(f["sales"])); wk["days"].append(len(got))
+        for k in ("fee", "adv", "keep"):
+            wk[k].append(f[f"{k}_pct"])
+    mo = {"labels": [], "sales": [], "fee": [], "adv": [], "keep": [], "days": []}
+    months = defaultdict(list)
+    for d, r in by_day.items():
+        months[d[:7]].append(r)
+    for ym in sorted(months):
+        f = _fee3(_sum_rows(months[ym]))
+        mo["labels"].append(_label(ym)); mo["sales"].append(man(f["sales"])); mo["days"].append(len(months[ym]))
+        for k in ("fee", "adv", "keep"):
+            mo[k].append(f[f"{k}_pct"])
+    return {"weekly": wk, "monthly": mo}
+
+
 def fee_split(L: dict, platform_sales: dict, platform_orders: dict) -> list:
     """플랫폼별 수수료 분해 — 기본(11.88%)은 매출 비례, 광고·배달비는 나머지를 매출 비중으로."""
     dfees, dsales = L.get("delivery_fees"), L.get("delivery_sales") or 0
@@ -708,6 +776,12 @@ def build_dashboard(y: int, m: int, today: date | None = None, explicit: bool = 
                 "base_rate": round(BASE_FEE_RATE * 100, 1),
                 "ad_rate": _pct(max((L.get("delivery_fee_rate") or 0) - BASE_FEE_RATE, 0)),
                 "month": L["label"]}
+    # ── 쿠팡 실측 수수료(주문 건별 정산 항목, platform_fees_daily) ──────────
+    from database import platform_fees
+    fee_rows, _ = sp._safe(lambda: platform_fees.fees_daily(today - timedelta(days=120), today), [])
+    fees = {"month": fee_actual(fee_rows, y, m), "trend": fee_trend(fee_rows, today),
+            "label": f"{m}월", "any": bool(fee_rows)}
+
     sales_gauges = []
     if L:
         chg = _chg(L.get("sales_total"), P.get("sales_total") if P else None)
@@ -807,7 +881,7 @@ def build_dashboard(y: int, m: int, today: date | None = None, explicit: bool = 
         "ledger_latest": L["full"] if L else None, "ledger_status": L.get("status") if L else None,
         "ledger_alert": ledger_alert(months, today, synced_at, sync_err),
         "targets": {k: (man(val) if isinstance(val, int) and val > 1000 else val) for k, val in (targets or {}).items()},
-        "diag": diag, "cost": cost,
+        "diag": diag, "cost": cost, "fees": fees,
         "sales_series": sales_series, "cost_series": cost_series, "plat_series": plat_series,
         "sales_gauges": sales_gauges,
         "products_extra": products_extra,

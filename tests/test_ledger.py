@@ -228,3 +228,36 @@ def test_인건비가_비율로만_적힌_달은_비율에서_계산한다():
     it = {x["name"]: x for x in dp.cost_items(L, None)}["인건비"]
     assert it["won"] == round(0.20 * 33_399_713) and "인건비율" in it["src"]
     assert it["prev"] is None and it["chg"] is None
+
+
+def _fee_row(day, sales, orders=10):
+    """platform_fees_daily 한 행 — 매출의 7.8/2.7/3/16% 수수료, 4% 광고, 4% 쿠폰."""
+    return {"platform": "coupang", "day": day, "orders": orders, "cancelled": 0, "sales": sales,
+            "service_fee": int(sales * .078), "payment_fee": int(sales * .027), "vat": int(sales * .03),
+            "delivery_fee": int(sales * .16), "ad_fee": int(sales * .04), "coupon": int(sales * .04),
+            "net": sales - int(sales * .078) - int(sales * .027) - int(sales * .03) - int(sales * .16) - int(sales * .04)}
+
+
+def test_쿠팡_실측은_수수료_광고비_실입금_3칸(sales=1_000_000):
+    """사장님 2026-09-23: 중개+결제+부가세+배달비=수수료, 광고+쿠폰=광고비, 나머지=실입금."""
+    rows = [_fee_row("2026-09-0%d" % d, sales) for d in range(1, 6)]
+    f = dp.fee_actual(rows, 2026, 9)
+    assert f["days"] == 5 and f["orders"] == 50 and f["sales"] == 5 * sales
+    assert f["fee"] == 5 * (78_000 + 27_000 + 30_000 + 160_000) and f["fee_pct"] == 29.5
+    assert f["adv"] == 5 * 80_000 and f["adv_pct"] == 8.0
+    assert f["keep"] == f["sales"] - f["fee"] - f["adv"] and f["keep_pct"] == 62.5
+    assert dp.fee_actual(rows, 2026, 8) is None            # 그 달 자료 없음
+
+
+def test_쿠팡_추이는_주간_월간_비율이고_빈_주는_건너뛴다():
+    from datetime import date, timedelta
+    end = date(2026, 9, 23)                                 # 수요일 → 이번 주 3일치
+    rows = [_fee_row((end - timedelta(days=i)).isoformat(), 500_000) for i in range(0, 10)]  # 9/14~9/23
+    rows += [_fee_row("2026-08-2%d" % d, 400_000) for d in range(0, 8)]                      # 8/20~8/27
+    t = dp.fee_trend(rows, end, weeks=8)
+    wk = t["weekly"]
+    assert wk["labels"] == ["8/17", "8/24", "9/14", "9/21"]   # 9/7 주·8/31 주는 자료 없어 비움
+    assert all(abs(a + b + c - 100) < 0.3 for a, b, c in zip(wk["fee"], wk["adv"], wk["keep"]))
+    assert wk["days"][-1] == 3 and wk["sales"][-1] == 150
+    mo = t["monthly"]
+    assert mo["labels"] == ["8월", "9월"] and mo["days"] == [8, 10]
