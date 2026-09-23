@@ -121,6 +121,73 @@ def do_research(payload: dict | None = None) -> tuple[int, str]:
 
 
 
+VERSIONS_KEY = "blog_draft_versions"      # app.BLOG_VERSIONS_KEY 와 같은 키 — 2026-09-23 까지 이 이름이 빠져 있어
+                                          # 보관이 매번 NameError 로 조용히 실패했다(글#29 다시 뽑기 때 발견)
+SHOT_ORIGIN_KEY = "blog_shot_origin"      # app.BLOG_SHOT_ORIGIN_KEY — {글번호: {rel: {text, tip}}}
+
+
+def _grams(s: str) -> set:
+    s = re.sub(r"\s+", "", s or "")
+    return {s[i:i + 2] for i in range(len(s) - 1)}
+
+
+def carry_photos(old_marks: list, new_body: str, post_id) -> tuple[str, int]:
+    """다시 뽑기 뒤 사장님이 올린 사진을 새 초안의 사진 자리로 옮긴다(사장님 2026-09-23 글#29: "사진 다 사라졌다").
+
+    old_marks = 옛 본문의 `[📷 rel]` 표시들(순서대로). 사진마다 '원래 부탁' 글(menu_settings.blog_shot_origin)과
+    새 초안의 부탁 자리들을 글자 겹침으로 견줘 가장 비슷한 자리에 넣고, 비슷한 게 없으면 남은 자리에 순서대로,
+    자리가 다 차면 [매장 정보] 앞에 붙인다. 옮긴 자리의 부탁 글은 origin 에 다시 적는다(빼기 → 자리 되살리기용).
+    돌려주는 값: (본문, 옮긴 사진 수)."""
+    import blog_media
+    marks = [(m, blog_media._MEDIA_MARK_TOK.match(m).group(1).strip()) for m in old_marks
+             if blog_media._MEDIA_MARK_TOK.match(m)]
+    if not marks:
+        return new_body, 0
+    try:
+        from database import supabase_client as sdb
+        allo = sdb.get_setting(SHOT_ORIGIN_KEY) or {}
+    except Exception:  # noqa: BLE001
+        sdb, allo = None, {}
+    origins = dict(allo.get(str(post_id)) or {})
+    chunks = [c for c in re.split(r"\n\s*\n", (new_body or "").strip()) if c.strip()]
+    free = [i for i, c in enumerate(chunks) if blog_media.WISH_RE.match(c.strip())]
+    new_origins = {}
+    moved = 0
+    for mark, rel in marks:
+        want = (origins.get(rel) or {}).get("text") or ""
+        best, best_score = None, 0.0
+        if want and free:
+            g = _grams(want)
+            for i in free:
+                wm = blog_media.WISH_RE.match(chunks[i].strip())
+                cand = _grams(wm.group(1) if wm else "")
+                score = len(g & cand) / max(1, len(g | cand))
+                if score > best_score:
+                    best, best_score = i, score
+        if best is None or best_score < 0.12:
+            best = free[0] if free else None
+        if best is not None:
+            wm = blog_media.WISH_RE.match(chunks[best].strip())
+            new_origins[rel] = {"text": (wm.group(1) if wm else "").strip(),
+                                "tip": ((wm.group(2) if wm else "") or "").strip()}
+            chunks[best] = mark
+            free.remove(best)
+        else:
+            at = next((i for i, c in enumerate(chunks) if c.lstrip().startswith("[매장 정보]")), len(chunks))
+            chunks.insert(at, mark)
+            if origins.get(rel):
+                new_origins[rel] = origins[rel]
+        moved += 1
+    out = "\n\n".join(chunks) + ("\n" if (new_body or "").endswith("\n") else "")
+    if sdb is not None:
+        try:
+            allo[str(post_id)] = new_origins
+            sdb.menu_set_setting(SHOT_ORIGIN_KEY, allo)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("사진 자리 기록 갱신 실패(%s): %s", post_id, str(e)[:100])
+    return out, moved
+
+
 def keep_version(post_id, post: dict) -> None:
     """다시 쓰기 직전의 본문을 보관한다(웹의 '이전 초안으로' 버튼이 읽는다)."""
     try:
@@ -362,6 +429,15 @@ def do_draft(payload: dict) -> tuple[int, str]:
 
     if old:
         keep_version(post_id, old)          # 되돌리기용으로 직전 본문 보관
+        try:
+            import blog_media
+            old_marks = [m.group(0) for m in blog_media._MEDIA_MARK_TOK.finditer(old.get("body") or "")]
+            body, moved = carry_photos(old_marks, body, post_id)
+            if moved:
+                nw = len(blog_media.wishes(body))
+                photo_note = f" · 올려 둔 사진 {moved}장은 새 자리로 옮겼어요 · 📸 남은 사진 자리 {nw}곳"
+        except Exception as e:  # noqa: BLE001 — 사진 옮기기 실패가 다시 뽑기를 막으면 안 된다
+            logger.warning("다시 뽑기 사진 옮기기 실패(%s): %s", post_id, str(e)[:120])
         store.update_post(
             post_id, title=data.get("title") or old.get("title"), body=body,
             main_keyword=data.get("main_keyword") or old.get("main_keyword"),

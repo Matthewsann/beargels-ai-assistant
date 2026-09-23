@@ -2779,12 +2779,13 @@ def _blog_step(post: dict, quality: dict | None = None) -> int:
         return 1
     if post.get("prepared_at") or post.get("status") in ("scheduled", "published"):
         return 6
+    media, wishes = _blog_media_counts(post.get("body", ""))
+    if wishes or not media:
+        # 사진 자리가 남았으면 채점이 최신이어도 ③ — 다시 뽑기 직후 채점하면 '예약 차례'로 보이던 것(글#29, 2026-09-23)
+        return 3
     if quality and quality.get("fresh"):
         return 5
-    media, wishes = _blog_media_counts(post.get("body", ""))
-    if media and not wishes:
-        return 4
-    return 3
+    return 4
 
 
 def _blog_next(post: dict) -> dict:
