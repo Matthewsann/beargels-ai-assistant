@@ -73,6 +73,8 @@ def test_rebuild는_읽은_것을_날짜별로_upsert한다(monkeypatch):
         def select(self, *a): return self
         def eq(self, *a): return self
         def in_(self, *a): return self
+        def order(self, *a): return self
+        def range(self, *a): return self
         def gte(self, *a): return self
         def lte(self, *a): return self
         def limit(self, *a): return self
@@ -107,6 +109,9 @@ def test_빠진_주는_가장_오래된_것_하나(monkeypatch):
         def gte(self, *a): return self
         def lte(self, *a): return self
         def limit(self, *a): return self
+        def order(self, *a): return self
+        def like(self, *a): return self
+        def range(self, *a): return self
         def execute(self):
             return type("R", (), {"data": [{"ordered_date": x} for x in sorted(have)]})()
 
@@ -128,7 +133,23 @@ def test_빠진_주가_없으면_None(monkeypatch):
         def gte(self, *a): return self
         def lte(self, *a): return self
         def limit(self, *a): return self
+        def order(self, *a): return self
+        def like(self, *a): return self
+        def range(self, *a): return self
         def execute(self): return type("R", (), {"data": have})()
 
     monkeypatch.setattr(pf, "get_client", lambda: type("C", (), {"table": lambda s, n: T()})())
     assert pf.missing_week(today=date(2026, 9, 23)) is None
+
+
+def test_천행_상한을_넘겨_끝까지_읽는다(monkeypatch):
+    calls = []
+
+    class T:
+        def range(self, a, b): calls.append((a, b)); self.a = a; return self
+        def execute(self):
+            n = 1000 if self.a == 0 else 300
+            return type("R", (), {"data": [{"i": self.a + k} for k in range(n)]})()
+
+    rows = pf._all_rows(lambda: T())
+    assert len(rows) == 1300 and calls == [(0, 999), (1000, 1999)]

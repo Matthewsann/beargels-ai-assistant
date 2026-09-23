@@ -135,16 +135,33 @@ def summarize(rows) -> dict:
     return dict(out)
 
 
+PAGE = 1000   # Supabase(PostgREST) 는 limit 을 크게 줘도 한 요청에 1,000행까지만 준다
+
+
+def _all_rows(make_query) -> list:
+    """1,000행 상한을 넘겨 끝까지 읽는다(2026-09-23 실측: limit 8000 을 줘도 1,000행).
+
+    이걸 몰라 배민 7~8월 주문 735건이 있는데 집계엔 13건만 들어갔다.
+    make_query 는 order() 까지 붙은 쿼리를 새로 만드는 함수."""
+    out, off = [], 0
+    while True:
+        chunk = make_query().range(off, off + PAGE - 1).execute().data or []
+        out.extend(chunk)
+        if len(chunk) < PAGE:
+            return out
+        off += PAGE
+
+
 def rebuild(start: date, end: date) -> int:
     """orders 에서 [start, end] 를 읽어 platform_fees_daily 에 upsert. 행 수 반환.
 
     주문이 하나도 없는 날은 행을 안 만든다(장부 없는 날은 빈 채로 — 대시보드
     원칙). 취소만 있는 날은 orders=0 인 행이 생기고 그건 그대로 둔다.
     """
-    rows = (get_client().table("orders").select("platform,ordered_date,status,raw")
-            .in_("platform", ["coupang", "baemin"])
-            .gte("ordered_date", start.isoformat()).lte("ordered_date", end.isoformat())
-            .limit(8000).execute().data) or []
+    rows = _all_rows(lambda: get_client().table("orders").select("platform,ordered_date,status,raw")
+                     .in_("platform", ["coupang", "baemin"])
+                     .gte("ordered_date", start.isoformat()).lte("ordered_date", end.isoformat())
+                     .order("ordered_date"))
     agg = summarize(rows)
     now = datetime.now(timezone.utc).isoformat()
     payload = [{"platform": p, "day": d, "updated_at": now} | v for (p, d), v in agg.items()]
@@ -182,11 +199,12 @@ def missing_week(today: date | None = None, lookback_days: int = 120, min_missin
     today = today or date.today()
     end = today - timedelta(days=1)
     start = end - timedelta(days=lookback_days)
-    q = (get_client().table("orders").select("ordered_date").eq("platform", platform)
-         .gte("ordered_date", start.isoformat()).lte("ordered_date", end.isoformat()))
-    if platform == "baemin":
-        q = q.like("raw", '{"order"%')
-    rows = q.limit(20000).execute().data or []
+    def q():
+        qq = (get_client().table("orders").select("ordered_date").eq("platform", platform)
+              .gte("ordered_date", start.isoformat()).lte("ordered_date", end.isoformat())
+              .order("ordered_date"))
+        return qq.like("raw", '{"order"%') if platform == "baemin" else qq
+    rows = _all_rows(q)
     have = {r["ordered_date"][:10] for r in rows if r.get("ordered_date")}
     monday = start - timedelta(days=start.weekday())
     while monday <= end:
