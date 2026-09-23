@@ -777,8 +777,10 @@ def build_dashboard(y: int, m: int, today: date | None = None, explicit: bool = 
                 "ad_rate": _pct(max((L.get("delivery_fee_rate") or 0) - BASE_FEE_RATE, 0)),
                 "month": L["label"]}
     # ── 쿠팡 실측 수수료(주문 건별 정산 항목, platform_fees_daily) ──────────
-    from database import platform_fees
-    fee_rows, _ = sp._safe(lambda: platform_fees.fees_daily(today - timedelta(days=120), today), [])
+    def _fee_rows():
+        from database import platform_fees          # 서버에 파일이 없어도 화면은 떠야 한다
+        return platform_fees.fees_daily(today - timedelta(days=120), today)
+    fee_rows, _ = sp._safe(_fee_rows, [])
     fees = {"month": fee_actual(fee_rows, y, m), "trend": fee_trend(fee_rows, today),
             "label": f"{m}월", "any": bool(fee_rows)}
 

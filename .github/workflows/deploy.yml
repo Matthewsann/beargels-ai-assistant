@@ -37,6 +37,7 @@ on:
       - 'database/blog_store.py'
       - 'database/mkt_store.py'
       - 'database/ledger_store.py'
+      - 'database/platform_fees.py'
       - 'database/meeting_store.py'
       - 'database/work_store.py'
       - 'database/notification_store.py'
@@ -151,6 +152,7 @@ jobs:
           upload database/blog_store.py
           upload database/mkt_store.py
           upload database/ledger_store.py
+          upload database/platform_fees.py
           upload database/meeting_store.py
           upload database/work_store.py
           upload database/notification_store.py
