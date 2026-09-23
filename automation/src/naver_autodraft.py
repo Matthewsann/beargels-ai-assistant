@@ -936,140 +936,309 @@ def insert_divider(page: Page, frame: Frame, selectors: dict) -> bool:
         return False
 
 
-# 가독성(사장님 2026-09-17): 본문 16(네이버 기본 15 — 폰에서 16이 편하다), 소제목 19 굵게 + 진갈색
-# + 앞에 빈 줄 하나, 절마다 핵심 문장 하나 `**굵게**`, 본문 글꼴은 나눔바른고딕(없으면 나눔스퀘어).
-# 글자 색·글꼴 선택자는 2026-09-17 프로브 실측(posts/_debug/probe/) — set_font_color 는 소제목 색과
-# 검정이 팔레트에 둘 다 있을 때만 칠한다(못 되돌리는 색은 다음 문단까지 물든다).
+# ── 가독성 서식(사장님 2026-09-17·23) ──
+# ⚠ 2026-09-23 발행본 실측으로 드러난 것: 예전엔 빈 에디터에서 글꼴·크기를 먼저 고르고 쳤는데 **그건 안 붙는다**
+# (발행본에 se-ff·se-fs 가 하나도 없었다). 소제목 뒤 새 줄은 19pt·색을 **물려받아서** 글#3 은 본문 전체가 19pt 였다.
+# 그래서 이제 서식은 전부 **다 쓰고 나서** 건다(probe3~5 실측, posts/_debug/probe5/):
+#   · Ctrl+A → 글꼴(나눔바른고딕) → Ctrl+A → 16 → Ctrl+A → 가운데  : 모든 span 에 se-ff-…·se-fs16 이 붙는다
+#   · 소제목 줄을 **트리플클릭**으로 잡고 19·굵게·진갈색 → 다른 문단 클릭으로 선택 해제(Home/Shift+End 뒤 키 입력은
+#     팔레트에 초점이 남아 글자가 지워졌다 — 실측). 긴 소제목도 트리플클릭이 문단 전체를 잡는다.
+#   · 강조 줄(`**…**` 한 줄)은 트리플클릭 → 굵게 + 형광펜(#fff593, background-color 팔레트) — 다음 줄에 안 번진다.
+# 인용구·스티커·지도는 문서 끝에 넣을 때 뒤에 본문 문단이 안 생기므로, 빈 문단 둘을 만들고 위 것에 넣는다(_slot) —
+# 그러면 뒤에 빈 문단이 남아 거기서 이어 쓴다(_go_end = 마지막 본문 문단 클릭).
 BODY_SIZE = 16
 HEAD_SIZE = 19
-_BOLD_RE = re.compile(r"(\*\*[^*\n]+?\*\*)")
+HIGHLIGHT_COLOR = "#fff593"                 # 형광펜(연노랑) — background-color 팔레트에 있음(실측)
+STICKER_PACK = "ogq_56b08c58e6c71"          # 스티커 패널 첫 탭의 곰 팩(실측 2026-09-23, 24개) — 베어글스 곰
+STICKER_PICKS = (1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23)
+MAP_QUERY = "베어글스 송도타임스페이스"       # 장소 검색어 — 첫 결과 '베어글스 송도 타임스페이스점'(실측)
+_STAR_RE = re.compile(r"\*\*([^*\n]+?)\*\*")
 
 
-def _type_rich(page: Page, frame: Frame, line: str) -> None:
-    """`**굵게**` 구간은 굵게를 켜고 친다. 별표는 안 찍는다."""
-    for part in _BOLD_RE.split(line):
-        if not part:
-            continue
-        if len(part) > 4 and part.startswith("**") and part.endswith("**"):
+def _last_para(frame: Frame):
+    return frame.locator(".se-component.se-text p.se-text-paragraph").last
+
+
+def _go_end(page: Page, frame: Frame) -> None:
+    """마지막 본문 문단 끝으로 — 컴포넌트를 넣거나 서식을 건 뒤 이어 쓰는 자리이자, 선택을 푸는 클릭."""
+    try:
+        _last_para(frame).click(timeout=3000)
+        page.keyboard.press("End")
+        page.wait_for_timeout(150)
+    except Exception:  # noqa: BLE001
+        _refocus_body(page, frame)
+
+
+def _slot(page: Page, frame: Frame) -> None:
+    """끝에 빈 문단 둘을 만들고 위 것에 캐럿 — 여기에 컴포넌트를 넣으면 뒤에 빈 본문 문단이 남는다(실측 probe5)."""
+    _go_end(page, frame)
+    page.keyboard.press("Enter")
+    page.keyboard.press("Enter")
+    page.keyboard.press("ArrowUp")
+    page.wait_for_timeout(150)
+
+
+def _count(frame: Frame, css: str) -> int:
+    try:
+        return frame.locator(css).count()
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def insert_quotation(page: Page, frame: Frame, text: str) -> bool:
+    """인용구(세로선 스타일) 한 덩어리. 실측: 툴바 'quotation' 클릭 즉시 컴포넌트가 생기고 속성 툴바에
+    스타일 토글 button.se-quotation-group-toggle-toolbar-button[data-value='quotation_line'] 이 뜬다."""
+    before = _count(frame, ".se-component.se-quotation")
+    try:
+        _slot(page, frame)
+        frame.locator("button[data-name='quotation']").first.click(timeout=3000)
+        page.wait_for_timeout(800)
+        st = frame.locator("button.se-quotation-group-toggle-toolbar-button[data-value='quotation_line']").first
+        if st.count():
+            st.click(timeout=3000)
+            page.wait_for_timeout(400)
+        for j, line in enumerate(text.split("\n")):
+            if j:
+                page.keyboard.press("Enter")
+            page.keyboard.type(line, delay=8)
+        page.wait_for_timeout(200)
+    except Exception as e:  # noqa: BLE001
+        print(f"    · 인용구 실패({str(e)[:60]})")
+    _go_end(page, frame)
+    return _count(frame, ".se-component.se-quotation") > before
+
+
+def insert_sticker(page: Page, frame: Frame, n: int) -> bool:
+    """곰 팩 스티커 하나. 실측: 툴바 'sticker' → 오른쪽 패널(탭 button.se-tab-button 글자=팩 id,
+    항목 button.se-sidebar-element-sticker) → 클릭하면 se-sticker 컴포넌트, 패널은 열린 채라 닫는다."""
+    before = _count(frame, ".se-component.se-sticker")
+    try:
+        _slot(page, frame)
+        frame.locator("button[data-name='sticker']").first.click(timeout=3000)
+        page.wait_for_timeout(1500)
+        tab = frame.locator("button.se-tab-button", has_text=STICKER_PACK).first
+        if tab.count():
+            tab.click(timeout=3000)
+            page.wait_for_timeout(600)
+        items = frame.locator("button.se-sidebar-element-sticker")
+        cnt = items.count()
+        if cnt:
+            items.nth(STICKER_PICKS[n % len(STICKER_PICKS)] % cnt).click(timeout=3000)
+            page.wait_for_timeout(1200)
+    except Exception as e:  # noqa: BLE001
+        print(f"    · 스티커 실패({str(e)[:60]})")
+    try:
+        close = frame.locator("button.se-sidebar-close-button").first
+        if close.count() and close.is_visible():
+            close.click(timeout=2000)
+            page.wait_for_timeout(400)
+    except Exception:  # noqa: BLE001
+        pass
+    _go_end(page, frame)
+    return _count(frame, ".se-component.se-sticker") > before
+
+
+def insert_map(page: Page, frame: Frame, query: str = MAP_QUERY) -> bool:
+    """매장 지도(장소). 실측 2026-09-23: 툴바 'map' → 팝업 input.react-autosuggest__input 에 검색 → Enter →
+    li.se-place-map-search-result-item 에 마우스를 올리면 button.se-place-add-button('추가') → 그 뒤에야
+    button.se-popup-button-confirm('확인')이 살아난다 → se-placesMap 컴포넌트."""
+    before = _count(frame, ".se-component.se-placesMap")
+    try:
+        _slot(page, frame)
+        frame.locator("button[data-name='map']").first.click(timeout=3000)
+        page.wait_for_timeout(1500)
+        inp = frame.locator("input.react-autosuggest__input").first
+        inp.click(timeout=3000)
+        page.keyboard.type(query, delay=15)
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(2500)
+        item = frame.locator("li.se-place-map-search-result-item").first
+        if not item.count():
+            raise RuntimeError("검색 결과 없음")
+        item.hover(timeout=3000)
+        page.wait_for_timeout(300)
+        frame.locator("button.se-place-add-button").first.click(timeout=3000)
+        page.wait_for_timeout(800)
+        frame.locator("button.se-popup-button-confirm").first.click(timeout=3000)
+        page.wait_for_timeout(2000)
+    except Exception as e:  # noqa: BLE001
+        print(f"    · 지도 실패({str(e)[:60]})")
+    try:
+        close = frame.locator("button.se-popup-close-button").first
+        if close.count() and close.is_visible():
+            close.click(timeout=2000)
+            page.wait_for_timeout(300)
+    except Exception:  # noqa: BLE001
+        pass
+    _go_end(page, frame)
+    return _count(frame, ".se-component.se-placesMap") > before
+
+
+def set_highlight(page: Page, frame: Frame, on: bool = True) -> bool:
+    """선택 글자에 형광펜(배경색). 실측: background-color 버튼 → 팔레트 button.se-color-palette[data-color]
+    (없애기는 button.se-color-palette-no-color). 클릭하면 span 에 se-highlight + background-color."""
+    try:
+        frame.locator("button[data-name='background-color']").first.click(timeout=3000)
+        page.wait_for_timeout(500)
+        css = "button.se-color-palette-no-color" if not on else f"button.se-color-palette[data-color='{HIGHLIGHT_COLOR}']"
+        opt = frame.locator(css).first
+        if not opt.count():
+            page.keyboard.press("Escape")
+            return False
+        opt.click(timeout=3000)
+        page.wait_for_timeout(400)
+        if frame.locator(".se-color-picker-option").count():
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(150)
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"    · 형광펜 실패({str(e)[:50]})")
+        try:
+            page.keyboard.press("Escape")
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+
+
+def _format_line(page: Page, frame: Frame, selectors: dict, text: str, kind: str) -> bool:
+    """이미 쳐 둔 줄 하나를 트리플클릭으로 잡아 서식을 건다. kind='heading'(19·굵게·진갈색) / 'emph'(굵게·형광펜).
+    끝나면 마지막 문단을 클릭해 선택을 푼다 — 키보드로 풀면 팔레트에 초점이 남아 글자가 지워졌다(실측)."""
+    want = (text or "").strip()
+    if not want:
+        return False
+    pat = re.compile(r"^\s*" + re.escape(want) + r"\s*$")
+    loc = frame.locator(".se-component.se-text p.se-text-paragraph", has_text=pat).first
+    if not loc.count():
+        loc = frame.locator(".se-component.se-text p.se-text-paragraph", has_text=want[:20]).first
+        if not loc.count():
+            print(f"    · 서식 줄을 못 찾음: {want[:20]}")
+            return False
+    ok = True
+    try:
+        loc.click(click_count=3, timeout=3000)
+        page.wait_for_timeout(250)
+        if kind == "heading":
+            set_font_size(page, frame, selectors, HEAD_SIZE)
             set_bold(page, frame, True)
-            page.keyboard.type(part[2:-2], delay=8)
-            set_bold(page, frame, False)
+            if not set_font_color(page, frame, selectors, "heading"):
+                ok = False
         else:
-            page.keyboard.type(part, delay=8)
+            set_bold(page, frame, True)
+            ok = set_highlight(page, frame, True)
+    except Exception as e:  # noqa: BLE001
+        print(f"    · 서식 실패({kind} {want[:16]}): {str(e)[:50]}")
+        ok = False
+    _go_end(page, frame)
+    return ok
 
 
 def type_blocks(page: Page, frame: Frame, selectors: dict, body_loc,
                 blocks: list) -> None:
-    """글 토막과 사진을 순서대로 넣는다.
+    """글 토막·사진·인용구·스티커·지도를 순서대로 넣고, **다 넣은 뒤** 서식을 건다.
 
-    blocks 예: [{"type":"photo","path":"…jpg"}, {"type":"text","text":"…"}, …]
-    사진이 하나도 없는 예전 방식(글자만)도 그대로 돌아간다.
+    blocks 예: [{"type":"text","text":"…"}, {"type":"text","style":"heading","text":"…"},
+               {"type":"text","style":"emph","text":"…"}, {"type":"quote","text":"…"}, {"type":"sticker"},
+               {"type":"map"}, {"type":"divider"}, {"type":"photo","path":"…"}, {"type":"video","path":"…"}]
     """
     body_loc.click()
     frame.wait_for_timeout(300)
-    # 이전 문서에서 넘어온 굵게/취소선 등이 켜져 있으면 끈다(실제로 당한 문제)
-    clear_text_toggles(page, frame)
-    if set_font_size(page, frame, selectors, BODY_SIZE):
-        print(f"    · 본문 글자 크기 {BODY_SIZE}")
-    set_font_family(page, frame, selectors)      # 본문 글꼴 한 번(실측 2026-09-17, 못 찾으면 건너뜀)
+    clear_text_toggles(page, frame)       # 이전 문서에서 넘어온 굵게/취소선 등이 켜져 있으면 끈다(실제로 당한 문제)
     first_text = True
-    after_heading, heading_colored = False, False   # 소제목 직후인가(사진이 바로 오면 서식을 다시 건다)
+    headings, emphs = [], []
+    n_sticker = 0
     for i, b in enumerate(blocks):
         btype = b.get("type")
         if btype == "divider":
             if not first_text:
                 page.keyboard.press("Enter")
             if insert_divider(page, frame, selectors):
-                # 구분선 삽입 직후엔 에디터가 재정렬 중이라 바로 치면 글자가
-                # 엉뚱한 곳에 박힌다(2차 테스트에서 '베어글' 이 찢어졌다)
-                page.wait_for_timeout(1000)
+                page.wait_for_timeout(1000)     # 삽입 직후 재정렬 중이라 바로 치면 글자가 엉뚱한 곳에 박힌다
                 first_text = False
             continue
+        if btype == "quote":
+            if insert_quotation(page, frame, _STAR_RE.sub(r"\1", b.get("text") or "")):
+                first_text = False
+            continue
+        if btype == "sticker":
+            if insert_sticker(page, frame, n_sticker):
+                n_sticker += 1
+                first_text = False
+            continue
+        if btype == "map":
+            if insert_map(page, frame, b.get("query") or MAP_QUERY):
+                print("    · 매장 지도 넣음")
+                first_text = False
+            else:
+                LAST_WARNINGS.append("매장 지도를 못 넣었어요 — 네이버에서 '장소'로 직접 넣어 주세요")
+            continue
         if btype == "text":
-            text = b.get("text", "")
+            text = _STAR_RE.sub(r"\1", b.get("text", ""))
             if not text.strip():
                 continue
+            style = b.get("style")
             if not first_text:
                 page.keyboard.press("Enter")
-                page.wait_for_timeout(150)
-            heading = b.get("style") == "heading"
-            if heading and not first_text:
-                page.keyboard.press("Enter")          # 소제목 앞 빈 줄 — 절이 눈에 나뉜다
-                page.wait_for_timeout(100)
+                page.wait_for_timeout(120)
+                if style == "heading":
+                    page.keyboard.press("Enter")          # 소제목 앞 빈 줄 — 절이 눈에 나뉜다
+                    page.wait_for_timeout(100)
             lines = text.replace("\r\n", "\n").split("\n")
             for j, line in enumerate(lines):
                 if line:
-                    _type_rich(page, frame, line)
+                    page.keyboard.type(line, delay=8)
                 if j < len(lines) - 1:
                     page.keyboard.press("Enter")
-            if heading:
-                # 사람처럼: 쓴 줄을 선택한 뒤 서식을 입힌다.
-                # (툴바를 먼저 누르면 선택이 풀려 서식이 허공에 적용된다 — 실측)
-                page.keyboard.press("Home")
-                page.keyboard.press("Shift+End")
-                page.wait_for_timeout(200)
-                set_font_size(page, frame, selectors, HEAD_SIZE)
-                set_bold(page, frame, True)
-                # 소제목 색(진갈색) — 실측 2026-09-17: 글자색 버튼을 눌러도 선택이 유지되고, 팔레트 클릭으로
-                # 선택 span 에 색이 붙는다. 팔레트에 소제목 색·검정이 다 있을 때만 칠한다(번짐 방지).
-                colored = set_font_color(page, frame, selectors, "heading")
-                page.keyboard.press("End")
-                page.wait_for_timeout(150)
-                page.keyboard.press("Enter")
-                page.wait_for_timeout(150)
-                # 다음 문단이 19·굵게·색을 물려받지 않게 되돌린다
-                set_bold(page, frame, False)
-                set_font_size(page, frame, selectors, BODY_SIZE)
-                if colored and not set_font_color(page, frame, selectors, "default"):
-                    # 한 번 더 — 그래도 안 되면 경고를 남기고 호출자(일꾼 결과 문장)에 알린다
-                    if not set_font_color(page, frame, selectors, "default"):
-                        LAST_WARNINGS.append(f"소제목 「{text[:16]}」 뒤 글자 색을 검정으로 못 돌림 — 네이버에서 색 번짐 확인")
-                after_heading, heading_colored = True, colored
-                first_text = True
-                continue
-            after_heading = False
+            if style == "heading":
+                headings.append(lines[0])
+            elif style == "emph":
+                emphs.append(lines[0])
             first_text = False
+            continue
+        path = b.get("path")
+        if not path:
+            continue
+        if not first_text:
+            page.keyboard.press("Enter")
+        name = pathlib.Path(path).name
+        if btype == "video":
+            print(f"    · 동영상 넣는 중 ({i + 1}/{len(blocks)}) {name}")
+            ok = insert_video(page, frame, selectors, path,
+                              title=b.get("title") or "베어글스 송도",
+                              desc=b.get("desc") or "", tags=b.get("tags") or [])
         else:
-            path = b.get("path")
-            if not path:
-                continue
-            if not first_text:
-                page.keyboard.press("Enter")
-            name = pathlib.Path(path).name
-            if b.get("type") == "video":
-                print(f"    · 동영상 넣는 중 ({i + 1}/{len(blocks)}) {name}")
-                ok = insert_video(page, frame, selectors, path,
-                                  title=b.get("title") or "베어글스 송도",
-                                  desc=b.get("desc") or "", tags=b.get("tags") or [])
-            else:
-                print(f"    · 사진 넣는 중 ({i + 1}/{len(blocks)}) {name}")
-                ok = insert_media(page, frame, selectors, path, caption=b.get("caption") or "")
-            b["inserted"] = ok           # 호출자(worker)가 사용완료 판단에 쓴다
-            if ok:
-                page.wait_for_timeout(400)
-                first_text = False
-                if after_heading:
-                    # 소제목 바로 뒤에 사진·영상이 오면 그 뒤 새 문단이 소제목 서식(19·굵게·색)을 물려받을 수
-                    # 있다(리뷰 지적 2026-09-17, 이 순서는 미실측) — 본문 서식을 한 번 더 건다(멱등).
-                    set_bold(page, frame, False)
-                    set_font_size(page, frame, selectors, BODY_SIZE)
-                    if heading_colored:
-                        set_font_color(page, frame, selectors, "default")
-                    after_heading = False
+            print(f"    · 사진 넣는 중 ({i + 1}/{len(blocks)}) {name}")
+            ok = insert_media(page, frame, selectors, path, caption=b.get("caption") or "")
+        b["inserted"] = ok           # 호출자(worker)가 사용완료 판단에 쓴다
+        if ok:
+            page.wait_for_timeout(400)
+            first_text = False
 
-    # 베어글스 고정 서식: 다 쓰고 나서 전체 선택 → 가운데 정렬 한 번에.
-    # (단락마다 정렬 버튼을 누르면 선택이 풀리는 문제를 피한다)
+    # ── 다 넣었다. 이제 서식 — 전체 글꼴·크기·가운데 정렬, 그다음 소제목·강조 줄 ──
     try:
+        _go_end(page, frame)
         page.keyboard.press("Control+a")
         page.wait_for_timeout(300)
+        set_font_family(page, frame, selectors)
+        page.keyboard.press("Control+a")
+        page.wait_for_timeout(200)
+        if set_font_size(page, frame, selectors, BODY_SIZE):
+            print(f"    · 본문 글자 크기 {BODY_SIZE}")
+        page.keyboard.press("Control+a")
+        page.wait_for_timeout(200)
         if set_align_center(page, frame, selectors):
             print("    · 가운데 정렬 적용")
-        else:
-            print("    · 가운데 정렬 버튼을 못 찾았습니다(기본 정렬 유지)")
         page.keyboard.press("ArrowRight")     # 선택 해제
         page.wait_for_timeout(200)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as e:  # noqa: BLE001
+        print(f"    · 일괄 서식 실패({str(e)[:60]})")
+    bad_h = [h for h in headings if not _format_line(page, frame, selectors, h, "heading")]
+    bad_e = [e for e in emphs if not _format_line(page, frame, selectors, e, "emph")]
+    print(f"    · 소제목 서식 {len(headings) - len(bad_h)}/{len(headings)} · 강조 {len(emphs) - len(bad_e)}/{len(emphs)}"
+          f" · 스티커 {n_sticker}")
+    if bad_h:
+        LAST_WARNINGS.append(f"소제목 {len(bad_h)}개 서식(19·색)이 안 걸림 — 네이버에서 확인: " + " / ".join(x[:12] for x in bad_h[:3]))
+    if bad_e:
+        LAST_WARNINGS.append(f"강조 줄 {len(bad_e)}개 형광펜이 안 걸림 — 네이버에서 확인")
 
 
 def save_debug(page: Page, tag: str) -> None:

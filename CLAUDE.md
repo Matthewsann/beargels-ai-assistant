@@ -106,12 +106,24 @@ httpx 호출 수를 먼저 세고, 차례로 부르지 말고 `_prefetch` 에 �
    정보 `textarea#nvu_inp_box_description`·태그 `button#nvu_inp_box_tag` → `input.nvu_tag_inp` + Enter.
    ⚠ 영상 '완료' 버튼은 업로드 시작 즉시 보인다 — `.nvu_file` 이 wait/upload/extract 를 벗어나거나 버튼이
    `nvu_btn_type2` 가 될 때까지 기다린다. 실측 근거는 `posts/_debug/probe/`(리포 루트, gitignore, 집 PC 에만).
-   **본문 가독성**(사장님 2026-09-17, 실측 검증 8/8): 본문 16pt·나눔바른고딕, 소제목 19pt 굵게 + 진갈색
-   `#823f00` + 앞 빈 줄(다음 문단은 검정 `#000000` 으로 되돌림 — 둘 다 팔레트에 있을 때만 칠한다),
-   절마다 핵심 문장 하나 `**굵게**`(프롬프트가 쓰게 하고 `_cap_bold` 가 절당 1개로 자르며, 웹은 `emph`
-   필터, 네이버는 `_type_rich` 가 굵게 토글로 친다). 색 복귀에 실패하면 `LAST_WARNINGS` 로 잡 결과
-   문장에 '⚠ … 색 번짐 확인'이 붙는다. 실측·검증 스크립트는 프로필 사본(`automation/chrome_profile`
-   복사, 캐시 제외)으로 열었다 — 원본 프로필을 열면 일꾼 발행이 막힌다.
+   **본문 가독성·꾸밈**(사장님 2026-09-17·23, 발행본 실측으로 다시 잡음): 다른 블로거 4편과 우리 3편을 HTML 로
+   실측(2026-09-23)했더니 우리 글은 문단 평균 100자·사진 6장·스티커/인용구/지도 0 이었고, 남들은 12~25자·17~36장·
+   스티커 2~8·인용구 2~16·지도 1(전부). 게다가 **예전 서식은 발행본에 안 붙어 있었다**(빈 에디터에서 글꼴·크기를
+   먼저 고르고 치면 안 붙는다. 소제목 뒤 줄이 19pt 를 물려받아 글#3 은 본문 전체가 19pt). 그래서:
+   · 초안: **운영자 일기체**(손님인 척 금지), **한 줄 한 문장 15~35자** + 빈 줄로 문단, 1,500~2,000자,
+     `> ` 인용 줄 2개(도입 끝·마무리), 절마다 `**핵심 문장**` **한 줄 전체**, 사진 자리 **10~14곳**
+     (`blog_media.PHOTO_MIN=10`, `wish_photos` 가 모자라면 긴 절부터 다른 종류의 컷을 보탠다, evaluator 도 10).
+   · 블록(`blog_jobs._emit_text_blocks`): heading / quote / emph / divider / 절 끝마다 sticker(`STICKER_MAX=5`) /
+     `[매장 정보]` 뒤 map. 웹 글 화면은 인용(세로선)·강조(형광펜)만 그리고 스티커·지도는 목적 카드에 안내.
+   · 에디터(`naver_autodraft.type_blocks`, probe3~5 실측 `posts/_debug/probe5/`): 전부 **다 쓰고 나서** 서식 —
+     Ctrl+A → 나눔바른고딕 → Ctrl+A → 16 → Ctrl+A → 가운데, 그다음 소제목 줄을 **트리플클릭**으로 잡아 19·굵게·
+     `#823f00`, 강조 줄은 굵게 + 형광펜 `#fff593`(background-color 팔레트), 끝마다 마지막 문단 클릭으로 선택 해제
+     (키보드로 풀면 팔레트에 초점이 남아 글자가 지워졌다). 인용구(`quotation` → `se-quotation-group-toggle-toolbar-
+     button[data-value='quotation_line']`)·스티커(패널 탭 `ogq_56b08c58e6c71` 곰 팩, `button.se-sidebar-element-
+     sticker`)·지도(`map` → `input.react-autosuggest__input` → 결과 hover → `button.se-place-add-button` → `button.se-
+     popup-button-confirm`)는 **문서 끝에 넣으면 뒤에 본문이 안 생기므로** `_slot`(빈 문단 둘, 위 것에 넣기)로 넣는다.
+     실패는 `LAST_WARNINGS`. 실측·검증 스크립트는 프로필 사본(`automation/chrome_profile` 복사, 캐시 제외)으로
+     열었다 — 원본 프로필을 열면 일꾼 발행이 막힌다. ⚠ 프로브를 돌리면 네이버 임시저장함에 자동저장 글이 남는다.
 3. **예약 발행까지 — 단, 글마다 사람이 누른다** (사장님 2026-09-15, 8/29 의
    '임시저장까지만'을 번복). 글 화면 ⑤에서 사장님이 시각을 보고 [📅 이 시각에
    예약 발행]을 누르면 집 PC 가 글·사진·서식을 넣고 네이버 예약 발행까지 건다

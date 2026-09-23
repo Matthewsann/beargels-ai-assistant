@@ -76,8 +76,8 @@ def mechanical_check(body: str, title: str, main_keyword: str,
     photos = len(re.findall(r"\[\s*(?:📷|📸\s*부탁)", body))
     checks.append({
         "label": "사진 위치", "value": f"{photos}곳",
-        "status": "ok" if photos >= 6 else "warn",      # 프롬프트 '7~9곳(최소 6)' 과 같은 기준(2026-09-15)
-        "hint": "사진 자리 7~9곳(넣을 자리 📸 포함), 최소 6곳(D.I.A. 점수 핵심)",
+        "status": "ok" if photos >= 10 else "warn",     # 프롬프트 '10~14곳' 과 같은 기준(사장님 2026-09-23)
+        "hint": "사진 자리 10~14곳(넣을 자리 📸 포함), 최소 10곳(다른 블로거 17~36장 — D.I.A. 점수 핵심)",
     })
 
     has_info = bool(re.search(r"(주소|영업시간|인천|연수구|☎|전화)", body))

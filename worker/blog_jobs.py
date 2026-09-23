@@ -417,6 +417,68 @@ def _seo_name(kw: str, n: int, ext: str) -> str:
     return f"{base}-{n:02d}{ext.lower()}"
 
 
+STICKER_MAX = 5           # 다른 블로거 실측 2~8개 — 절마다 하나면 충분하다
+_QUOTE_RE = re.compile(r"^>\s?(.+)$")
+_EMPH_LINE_RE = re.compile(r"^\s*\*\*([^*\n]+?)\*\*\s*$")
+
+
+def _emit_text_blocks(blocks: list, text: str, state: dict) -> None:
+    """글 토막 하나를 줄 단위로 훑어 heading/quote/emph/text/sticker/map 블록으로 나눠 blocks 에 붙인다.
+    state = {"n_sticker": 지금까지 넣은 스티커 수, "section_text": 지금 절에 본문 줄이 있었나} — 사진 토막을
+    사이에 두고 여러 번 불려도 절은 이어진다(절 끝 스티커는 본문이 있던 절에만)."""
+    buf: list[str] = []
+
+    def flush():
+        while buf and not buf[-1].strip():
+            buf.pop()
+        while buf and not buf[0].strip():
+            buf.pop(0)
+        if buf:
+            blocks.append({"type": "text", "text": "\n".join(buf)})
+        buf.clear()
+
+    def sticker():
+        if state["section_text"] and state["n_sticker"] < STICKER_MAX:
+            blocks.append({"type": "sticker"})
+            state["n_sticker"] += 1
+        state["section_text"] = False
+
+    lines = (text or "").replace("\r\n", "\n").split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        st = line.strip()
+        m = re.match(r"^#{1,4}\s+(.+)$", st)      # `\s+` — '#해시태그 #줄' 을 소제목으로 보면 안 된다
+        if m:
+            flush(); sticker()
+            blocks.append({"type": "text", "style": "heading", "text": m.group(1).strip()})
+        elif re.match(r"^-{3,}\s*$", st):
+            flush(); blocks.append({"type": "divider"})
+        elif _QUOTE_RE.match(st):
+            flush(); blocks.append({"type": "quote", "text": _QUOTE_RE.match(st).group(1).strip()})
+            state["section_text"] = True
+        elif _EMPH_LINE_RE.match(st) or ("**" in st and st.count("**") >= 2):
+            flush()
+            blocks.append({"type": "text", "style": "emph", "text": re.sub(r"\*\*", "", st).strip()})
+            state["section_text"] = True
+        elif st.startswith("[매장 정보]"):
+            flush(); sticker()
+            j = i + 1
+            info = [st]
+            while j < len(lines) and lines[j].strip():
+                info.append(lines[j].strip()); j += 1
+            blocks.append({"type": "text", "text": "\n".join(info)})
+            blocks.append({"type": "map"})
+            i = j
+            continue
+        else:
+            buf.append(line.rstrip())
+            if st:
+                state["section_text"] = True
+        i += 1
+    flush()
+
+
 def build_blocks(body: str, *, main_keyword: str = "", sub_keywords=None,
                  title: str = "") -> tuple[list[dict], int]:
     """본문을 '글 토막 + 올릴 사진 파일' 순서로 바꾼다.
@@ -445,32 +507,26 @@ def build_blocks(body: str, *, main_keyword: str = "", sub_keywords=None,
     tags = tags[:5]
     blocks, n = [], 0
     last_text = ""
+    state = {"n_sticker": 0, "section_text": False}     # 글 하나에 스티커는 STICKER_MAX 개까지 — 사진 사이에도 절은 이어진다
+    # resolve_body 는 `[매장 정보]` 줄을 제 토막으로 떼 놓는다 — 잇달은 글 토막은 하나로 합쳐서 푼다
+    # (안 그러면 정보 블록이 '[매장 정보]' 한 줄과 '상호·주소' 줄로 갈라져 지도가 그 사이에 끼었다 — 2026-09-23 실측).
+    merged: list[dict] = []
     for b in raw:
+        if b.get("type") == "text" and merged and merged[-1].get("type") == "text":
+            prev = merged[-1].get("text") or ""
+            glue = "\n" if prev.rstrip().endswith("[매장 정보]") else "\n\n"     # 정보 블록 머리와 몸은 붙여 둔다
+            merged[-1]["text"] = prev + glue + (b.get("text") or "")
+        else:
+            merged.append(dict(b))
+    for b in merged:
         if b.get("type") == "text":
-            # 마크다운을 베어글스 서식 블록으로 푼다:
-            #   "## 소제목"  → heading 블록(에디터에서 19크기+굵게)
-            #   "---"       → divider 블록(구분선)
-            #   나머지 문단  → 일반 텍스트(가운데 정렬은 에디터에서 일괄)
-            for chunk in re.split(r"\n(?=#{1,4}\s|-{3,}\s*$)",
-                                  b.get("text", ""), flags=re.MULTILINE):
-                chunk = chunk.strip("\n")
-                if not chunk.strip():
-                    continue
-                m = re.match(r"^#{1,4}\s*(.+)$", chunk.split("\n")[0])
-                if m:
-                    blocks.append({"type": "text", "style": "heading",
-                                   "text": m.group(1).strip()})
-                    rest = "\n".join(chunk.split("\n")[1:]).strip("\n")
-                    if rest.strip():
-                        blocks.append({"type": "text", "text": rest})
-                    continue
-                if re.match(r"^-{3,}\s*$", chunk.split("\n")[0]):
-                    blocks.append({"type": "divider"})
-                    rest = "\n".join(chunk.split("\n")[1:]).strip("\n")
-                    if rest.strip():
-                        blocks.append({"type": "text", "text": rest})
-                    continue
-                blocks.append({"type": "text", "text": chunk})
+            # 마크다운을 베어글스 서식 블록으로 푼다(사장님 2026-09-23 — 다른 블로거 글처럼):
+            #   "## 소제목"    → heading(다 쓴 뒤 19·굵게·진갈색)      "---" → divider(구분선)
+            #   "> 한 줄"      → quote(인용구 세로선)                  "**핵심 문장**" 한 줄 → emph(굵게+형광펜)
+            #   절이 끝나는 곳(다음 소제목 앞)·[매장 정보] 앞 → sticker(곰 스티커, 5개까지)
+            #   [매장 정보] 블록 뒤 → map(매장 지도)
+            # 나머지 줄은 그대로 문단(한 줄 = 네이버 한 문단, 빈 줄 = 빈 문단). 가운데 정렬은 에디터에서 일괄.
+            _emit_text_blocks(blocks, b.get("text", ""), state)
             last_text = b.get("text", "") or last_text
             continue
         try:

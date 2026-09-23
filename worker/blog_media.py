@@ -571,7 +571,7 @@ def freeze_marks(body: str, cat: dict | None = None) -> str:
     return re.sub(r"\n{3,}", "\n\n", out)      # 지운 자리에 빈 줄이 남지 않게
 
 
-PHOTO_MIN = 6         # 프롬프트 '7~9곳(최소 6)' — 채점기(evaluator '사진 위치')가 6 미만이면 감점한다
+PHOTO_MIN = 10        # 사장님 2026-09-23 "10개 이상"(다른 블로거 실측 17~36장) — 프롬프트 10~14곳, evaluator 도 10
 
 # 사진 부탁 메모 — 사진을 못 찾은 자리에 "어떤 사진이 있으면 좋을지"를 남긴다(사장님 2026-09-15).
 # 📸(U+1F4F8)는 사진 표시 📷(U+1F4F7)와 다른 글자라 사진으로 세지 않고, 네이버·채점 전엔 걷어낸다.
@@ -601,7 +601,7 @@ def _wish_for(section_text: str, heading: str) -> str:
         kind = "매장 안 장면(좌석·창가·카운터)"
     else:
         kind = "이 절에서 말한 메뉴의 실물 컷(위에서 내려찍은 것)"
-    h = re.sub(r"^#{1,4}\s*", "", heading).strip()
+    h = re.sub(r"^#{1,4}\s*", "", heading.split("\n")[0]).strip()     # 소제목 토막에 본문이 붙어 있어도 첫 줄만
     tip = {"만": "가까이서, 김·단면·결이 보이게", "매": "수평을 맞추고 한 걸음 물러나 넓게",
            "이": "위에서 내려찍거나 45도로, 접시 전체가 들어오게"}.get(kind[0], "밝은 곳에서 수평을 맞춰")
     return f"[📸 부탁: 「{h[:24]}」 절에 어울리는 {kind}] (팁: {tip})"
@@ -676,6 +676,45 @@ def wish_photos(body: str) -> tuple[str, int]:
             i = j
         else:
             i += 1
+    # 그래도 PHOTO_MIN 에 못 미치면(사장님 2026-09-23 "10개 이상") 글이 긴 절부터 하나씩 더 — 같은 절엔
+    # 다른 종류의 컷을 부탁한다(같은 장면을 두 번 시키지 않게).
+    extra_kinds = ("가까이서 찍은 클로즈업(재료·단면·질감)", "손이나 동작이 들어간 과정 컷",
+                   "매장 분위기·좌석·창가 컷", "포장·테이크아웃 컷(봉투·컵 포함)",
+                   "테이블 위 세팅을 손님 자리에서 본 컷", "입구·간판이 보이는 바깥 컷")
+    exhausted: set = set()        # 부탁할 종류를 다 쓴 절(소제목 글자) — 같은 부탁을 두 번 시키지 않는다
+    guard = 0
+    while len(wishes("\n\n".join(chunks))) < PHOTO_MIN and guard < PHOTO_MIN * 2:
+        guard += 1
+        secs = []
+        i = 0
+        while i < len(chunks):
+            if chunks[i].startswith("## "):
+                j = i + 1
+                while j < len(chunks) and not chunks[j].startswith("## "):
+                    j += 1
+                body_chunks = [c for c in chunks[i + 1:j] if not c.lstrip().startswith("[매장 정보]")
+                               and not all(t.startswith("#") for t in c.split())]
+                n_w = sum(1 for c in chunks[i:j] if WISH_RE.search(c) or _MEDIA_MARK.search(c))
+                if chunks[i] not in exhausted:
+                    secs.append((sum(len(c) for c in body_chunks) / (n_w + 1), i, j))
+                i = j
+            else:
+                i += 1
+        if not secs:
+            break
+        _, i, j = max(secs)
+        h = re.sub(r"^#{1,4}\s*", "", chunks[i].split("\n")[0]).strip()[:24]
+        section = "\n".join(chunks[i:j])
+        kind = next((k for k in extra_kinds if k not in section), None)
+        if kind is None:
+            exhausted.add(chunks[i])
+            continue
+        # 그 절의 마지막 본문 문단 뒤에(정보 블록·태그 앞)
+        at = j - 1
+        while at > i and (chunks[at].lstrip().startswith("[매장 정보]") or all(t.startswith("#") for t in chunks[at].split())):
+            at -= 1
+        chunks.insert(at + 1, f"[📸 부탁: 「{h}」 절의 {kind}] (팁: 밝은 곳에서 수평을 맞춰, 주인공이 화면의 2/3)")
+        wished += 1
     out = "\n\n".join(chunks)
     if wished:
         logger.info("사진 자리 부탁 메모 %d개 추가 → 총 %d곳", wished, len(wishes(out)))

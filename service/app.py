@@ -2948,9 +2948,15 @@ def _wish_slot(chunks: list[str], at: int, wish_text: str) -> int:
 
 @app.template_filter("emph")
 def _emph(text: str):
-    """`**굵게**` 를 <b> 로 — 글 화면이 네이버에 들어갈 모습(굵게)을 그대로 보여 준다(2026-09-17)."""
+    """`**굵게**` 를 <b> 로 — 글 화면이 네이버에 들어갈 모습을 그대로 보여 준다(2026-09-17).
+    2026-09-23: 네이버에선 그 **줄 전체**가 굵게 + 노란 형광펜이 되므로(naver_autodraft._format_line) 여기도 같게."""
     from markupsafe import Markup, escape
-    return Markup(re.sub(r"\*\*([^*\n]+?)\*\*", r"<b>\1</b>", str(escape(text or ""))))
+    out = []
+    for ln in str(escape(text or "")).split("\n"):
+        if "**" in ln and ln.count("**") >= 2:
+            ln = '<b style="background:#fff593; color:#111; padding:0 2px;">' + re.sub(r"\*\*", "", ln) + "</b>"
+        out.append(ln)
+    return Markup("\n".join(out))
 
 
 _WISH_LINE = re.compile(r"(?P<wish>\[\s*📸\s*부탁\s*[:：][^\]]*\]"
@@ -2982,6 +2988,9 @@ def _blog_render(body: str) -> list[dict]:
                            "tip": (_wm.group(2) or "").strip()})
         elif re.match(r"^#{1,4}\s+", c):
             blocks.append({"t": "h", "i": i, "text": re.sub(r"^#{1,4}\s+", "", c).strip()})
+        elif re.fullmatch(r">\s?[^\n]+", c.strip()):
+            # `> 한 줄` — 네이버 인용구(세로선)가 된다(2026-09-23). 토막 전체가 인용 줄일 때만.
+            blocks.append({"t": "quote", "i": i, "text": re.sub(r"^>\s?", "", c.strip())})
         elif re.fullmatch(r"-{3,}\s*", c):
             blocks.append({"t": "hr", "i": i})
         elif c.lstrip().startswith("[매장 정보]"):

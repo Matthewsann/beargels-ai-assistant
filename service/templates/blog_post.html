@@ -85,6 +85,7 @@
     <div style="margin-top:9px; font-size:13px; line-height:1.6;">
       <div style="font-weight:600;">📸 찍어 올릴 사진 {{ purpose.wishes|length }}장
         <span style="font-weight:400; font-size:12px; color:var(--muted);">{% if purpose.photos %}· 이미 넣은 사진 {{ purpose.photos }}장{% endif %}</span></div>
+      <div style="font-size:12px; color:var(--muted); margin-top:3px; line-height:1.5;">발행 때 자동으로 붙어요: 소제목 진갈색·강조 줄 형광펜·절마다 곰 스티커·글 끝 매장 지도. 여기 미리보기엔 안 보여요.</div>
       {% if purpose.wishes %}
       <ol style="margin:4px 0 0; padding-left:20px;">
         {% for w in purpose.wishes %}
@@ -189,6 +190,8 @@
       </div>
       {% elif b.t == 'h' %}
       <h3 style="font-size:19px; font-weight:700; margin:22px 0 10px; line-height:1.4;">{{ b.text }}</h3>
+      {% elif b.t == 'quote' %}
+      <div style="border-left:3px solid var(--fg); text-align:left; margin:18px auto 14px; padding:6px 0 6px 14px; max-width:92%; font-size:15px; font-weight:600; line-height:1.5;">{{ b.text }}</div>
       {% elif b.t == 'hr' %}
       <hr style="border:0; border-top:1px solid var(--line); width:60%; margin:20px auto;">
       {% elif b.t == 'info' %}
