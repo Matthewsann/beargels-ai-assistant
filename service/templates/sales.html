@@ -559,12 +559,15 @@
       {%- endmacro %}
       <div class="g2">
         {{ feebox('쿠팡이츠', v.fees.platforms.coupang.month, '광고 + 상점부담 쿠폰') }}
-        {{ feebox('배달의민족', v.fees.platforms.baemin.month, '가게 부담 할인·쿠폰 (클릭 광고비는 주문에 안 붙어 제외)') }}
+        {{ feebox('배달의민족', v.fees.platforms.baemin.month, '가게 부담 할인·쿠폰') }}
       </div>
+      <div class="fnote" style="margin-top:8px">배민의 클릭 광고비(우리가게클릭)는 주문에 안 붙어 여기 광고비엔 안 들어가요.</div>
       {% if v.fees.trend.weekly.labels or v.fees.trend.monthly.labels %}
-      <h4 style="margin-top:14px">수수료·광고비 비율 추이
-        <div class="ctl" style="margin-left:auto"><button class="on" onclick="feeP('total',this)">합계</button><button onclick="feeP('coupang',this)">쿠팡</button><button onclick="feeP('baemin',this)">배민</button></div>
-        <div class="ctl" style="margin-left:6px"><button class="on" onclick="feeT('w',this)">주간</button><button onclick="feeT('m',this)">월간</button></div></h4>
+      <h4 style="margin-top:14px">수수료·광고비 비율 추이</h4>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:-4px 0 8px">
+        <div class="ctl"><button class="on" onclick="feeP('total',this)">합계</button><button onclick="feeP('coupang',this)">쿠팡</button><button onclick="feeP('baemin',this)">배민</button></div>
+        <div class="ctl"><button class="on" onclick="feeT('w',this)">주간</button><button onclick="feeT('m',this)">월간</button></div>
+      </div>
       <div class="legend"><span><span class="sw" style="background:var(--rd)"></span>수수료</span><span><span class="sw" style="background:var(--pu, #8B5CF6)"></span>광고비</span><span><span class="sw" style="background:var(--gr)"></span>실입금</span></div>
       <div class="cw sm"><canvas id="c34"></canvas></div>
       <div class="fnote">막대 하나가 매출 100%예요. 자료가 없는 주·달은 비워 둬요(며칠치인지는 막대를 누르면 나와요).</div>
