@@ -351,6 +351,74 @@ class CoupangCrawler:
             return data
         return None
 
+    # -- 취소·재주문 정산(손실보상) --------------------------------------------
+    # 정찰(2026-09-24): '취소 · 재주문 정산' 화면은 POST /api/v1/merchant/{store}/
+    # compensation/events (body: storeId, pageNumber, pageSize, startDate, endDate)
+    # 로 취소·재주문 사건 목록을 받는다. 원소: transactionDate, orderType(REGULAR /
+    # REORDER_DELIVERY), cancelReason, compensationStatus(WILL_BE_COMPENSATED /
+    # CLAIM_SUBMITTED / ELIGIBLE_FOR_APPEAL / NOT_ELIGIBLE_FOR_APPEAL / …),
+    # eventAmount(취소된 주문 금액). 취소 주문은 주문 목록에서 매출 0 이라, 쿠팡이
+    # 보상해 주는 금액(WILL_BE_COMPENSATED·COMPENSATED)은 여기서만 온다.
+    # 주문 목록과 같은 Akamai 우회: 페이지 자신의 POST 를 가로채 body 만 바꾼다.
+    COMP_URL = "https://store.coupangeats.com/merchant/management/compensation/{store}"
+    COMP_API_GLOB = "**/compensation/events*"
+    COMP_PAID = ("WILL_BE_COMPENSATED", "COMPENSATED", "COMPENSATION_COMPLETED")
+
+    def fetch_compensations(self, start_date, end_date, max_pages=20):
+        """[start, end] 의 취소·재주문 사건 → [{platform, day, order_no, type, reason,
+        status, amount, paid}] (paid = 쿠팡이 보상하는 건)."""
+        sd = start_date if isinstance(start_date, date) else datetime.strptime(start_date, "%Y-%m-%d").date()
+        ed = end_date if isinstance(end_date, date) else datetime.strptime(end_date, "%Y-%m-%d").date()
+        out, state = [], {"page": 0, "data": None}
+
+        def handle(route, _request=None):
+            try:
+                body = json.loads(route.request.post_data or "{}")
+            except Exception:  # noqa: BLE001
+                body = {}
+            body.update({"storeId": int(STORE_ID), "pageNumber": state["page"], "pageSize": 100,
+                         "startDate": sd.isoformat(), "endDate": ed.isoformat()})
+            route.continue_(post_data=json.dumps(body))
+
+        url = self.COMP_URL.format(store=STORE_ID)
+        for _ in range(max_pages):
+            state["data"] = None
+            self.page.route(self.COMP_API_GLOB, handle)
+            try:
+                with self.page.expect_response(lambda r: "compensation/events" in r.url,
+                                               timeout=20000) as ri:
+                    self.page.goto(url, wait_until="domcontentloaded")
+                resp = ri.value
+                if resp.status != 200:
+                    logger.warning("쿠팡 보상 API status %d", resp.status)
+                    break
+                state["data"] = (resp.json() or {}).get("data") or {}
+            except Exception as e:  # noqa: BLE001
+                logger.warning("쿠팡 보상 응답 캡처 실패(page %d): %s", state["page"], e)
+                break
+            finally:
+                self.page.unroute(self.COMP_API_GLOB, handle)
+            d = state["data"] or {}
+            for it in d.get("items") or []:
+                out.append(self._normalize_compensation(it))
+            if state["page"] + 1 >= (d.get("totalPages") or 1):
+                break
+            state["page"] += 1
+            human_pause(2.0, 3.5)
+        logger.info("쿠팡 취소·재주문 사건 %d건 (%s~%s), 보상 %d건",
+                    len(out), sd, ed, sum(1 for x in out if x["paid"]))
+        return out
+
+    @classmethod
+    def _normalize_compensation(cls, it):
+        amt = it.get("eventAmount")
+        amt = int((amt or {}).get("units") or 0) if isinstance(amt, dict) else int(amt or 0)
+        status = it.get("compensationStatus") or ""
+        return {"platform": "coupang", "day": (it.get("transactionDate") or "")[:10],
+                "order_no": it.get("abbrOrderId"), "type": it.get("orderType"),
+                "reason": it.get("cancelReason"), "status": status, "amount": amt,
+                "paid": status in cls.COMP_PAID}
+
     @staticmethod
     def _normalize_order(o):
         """쿠팡 주문 JSON 원소를 공용 스키마(배민과 동일) dict 로 정규화한다.

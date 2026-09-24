@@ -164,19 +164,50 @@ def settlements_to_ad_daily(settles: list, platform="baemin") -> tuple[list, lis
         st_rows.append({"platform": platform, "give_id": s["give_id"], "start_date": s.get("start"),
                         "end_date": s.get("end"), "deposit": s.get("deposit"), "cpc_total": s.get("cpc_total"),
                         "raw": s.get("raw"), "updated_at": now})
+        by_day = {}
         daily = {d: int(v) for d, v in (s.get("cpc_daily") or {}).items() if v}
-        if not daily:
-            continue
-        total = sum(daily.values())
-        vat = int(s.get("cpc_vat") or 0)
-        days = sorted(daily)
-        given = 0
-        for i, d in enumerate(days):
-            v = vat - given if i == len(days) - 1 else int(round(vat * daily[d] / total))
-            given += v
-            ad_rows.append({"platform": platform, "day": d, "ad_fee": daily[d], "ad_vat": v,
-                            "source": "settle:cpcDetails", "give_id": s["give_id"], "updated_at": now})
+        if daily:
+            total = sum(daily.values())
+            vat = int(s.get("cpc_vat") or 0)
+            days = sorted(daily)
+            given = 0
+            for i, d in enumerate(days):
+                v = vat - given if i == len(days) - 1 else int(round(vat * daily[d] / total))
+                given += v
+                by_day[d] = {"ad_fee": daily[d], "ad_vat": v}
+        # 지원·조정(+)과 부분환불(−)은 명세 단위 → 정산기간 날짜에 고르게(잔여는 마지막 날)
+        sup, ref = int(s.get("support") or 0), int(s.get("refund") or 0)
+        if (sup or ref) and s.get("start") and s.get("end"):
+            a, b = date.fromisoformat(str(s["start"])[:10]), date.fromisoformat(str(s["end"])[:10])
+            period = [(a + timedelta(days=i)).isoformat() for i in range((b - a).days + 1)] or [a.isoformat()]
+            n = len(period)
+            for i, d in enumerate(period):
+                last = i == n - 1
+                row = by_day.setdefault(d, {})
+                row["support"] = (sup - (sup // n) * (n - 1)) if last else sup // n
+                row["refund"] = (ref - (ref // n) * (n - 1)) if last else ref // n
+        for d, row in sorted(by_day.items()):
+            ad_rows.append({"platform": platform, "day": d, "source": "settle", "give_id": s["give_id"],
+                            "updated_at": now} | row)
     return ad_rows, st_rows
+
+
+def compensations_to_daily(items: list) -> list:
+    """crawler.coupang.fetch_compensations 결과 → platform_ad_daily 행(comp = 보상 수입)."""
+    now = datetime.now(timezone.utc).isoformat()
+    acc = defaultdict(int)
+    for it in items:
+        if it.get("paid") and it.get("day"):
+            acc[it["day"]] += int(it.get("amount") or 0)
+    return [{"platform": "coupang", "day": d, "comp": v, "source": "compensation", "updated_at": now}
+            for d, v in sorted(acc.items())]
+
+
+def save_compensations(items: list) -> int:
+    rows = compensations_to_daily(items)
+    if rows:
+        get_client().table("platform_ad_daily").upsert(rows, on_conflict="platform,day").execute()
+    return len(rows)
 
 
 def save_settlements(settles: list, platform="baemin") -> int:
@@ -190,11 +221,14 @@ def save_settlements(settles: list, platform="baemin") -> int:
 
 
 def ad_daily(start: date, end: date, platform="baemin") -> dict:
-    """{day: 광고비(공급가+부가세)} — rebuild 가 platform_fees_daily.ad_fee 에 얹는다."""
-    rows = _all_rows(lambda: get_client().table("platform_ad_daily").select("day,ad_fee,ad_vat")
+    """{day: {ad, support, comp, refund}} — rebuild 가 platform_fees_daily 에 얹는다.
+    ad = 광고비(공급가+부가세)."""
+    rows = _all_rows(lambda: get_client().table("platform_ad_daily").select("day,ad_fee,ad_vat,support,comp,refund")
                      .eq("platform", platform)
                      .gte("day", start.isoformat()).lte("day", end.isoformat()).order("day"))
-    return {str(r["day"])[:10]: int(r.get("ad_fee") or 0) + int(r.get("ad_vat") or 0) for r in rows}
+    return {str(r["day"])[:10]: {"ad": int(r.get("ad_fee") or 0) + int(r.get("ad_vat") or 0),
+                                 "support": int(r.get("support") or 0), "comp": int(r.get("comp") or 0),
+                                 "refund": int(r.get("refund") or 0)} for r in rows}
 
 
 def rebuild(start: date, end: date) -> int:
@@ -211,15 +245,22 @@ def rebuild(start: date, end: date) -> int:
                      .gte("ordered_date", start.isoformat()).lte("ordered_date", end.isoformat())
                      .order("ordered_date"))
     agg = summarize(rows)
-    try:
-        ads = ad_daily(start, end, "baemin")
-    except Exception as e:  # noqa: BLE001 — 광고 표가 없어도 수수료 집계는 살아야 한다
-        logger.warning("배민 광고비 읽기 실패(집계는 계속): %s", e)
-        ads = {}
-    for d, won in ads.items():
-        acc = agg.setdefault(("baemin", d), {c: 0 for c in COLS})
-        acc["ad_fee"] += won
-        acc["net"] -= won
+    for platform in ("baemin", "coupang"):
+        try:
+            extra = ad_daily(start, end, platform)
+        except Exception as e:  # noqa: BLE001 — 부가 표가 없어도 수수료 집계는 살아야 한다
+            logger.warning("%s 광고·보상 읽기 실패(집계는 계속): %s", platform, e)
+            extra = {}
+        for d, x in extra.items():
+            if not any(x.values()):
+                continue
+            acc = agg.setdefault((platform, d), {c: 0 for c in COLS})
+            # 광고비(배민 클릭광고)는 광고비 칸에, 지원금은 가게 부담 할인을 줄이고,
+            # 보상(쿠팡 취소 손실보상)은 매출로 돌아오고, 부분환불은 매출에서 빠진다.
+            acc["ad_fee"] += x["ad"];      acc["net"] -= x["ad"]
+            acc["coupon"] -= x["support"]; acc["net"] += x["support"]
+            acc["sales"] += x["comp"];     acc["net"] += x["comp"]
+            acc["sales"] -= x["refund"];   acc["net"] -= x["refund"]
     now = datetime.now(timezone.utc).isoformat()
     payload = [{"platform": p, "day": d, "updated_at": now} | v for (p, d), v in agg.items()]
     if payload:

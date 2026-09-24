@@ -1461,12 +1461,32 @@ def _collect_baemin_settlements(days=14) -> int:
         return 0
 
 
+def _collect_coupang_compensations(days=30) -> int:
+    """쿠팡 취소·재주문 정산(손실보상)을 최근 며칠치 받아 저장한다. 실패는 삼킨다.
+    보상 상태가 며칠 뒤 바뀌므로 30일을 다시 본다(upsert)."""
+    try:
+        from crawler.coupang import CoupangCrawler
+        from database import platform_fees
+        end = datetime.now().date()
+        with CoupangCrawler() as c:
+            items = c.fetch_compensations(end - timedelta(days=days), end)
+        n = platform_fees.save_compensations(items)
+        logger.info("쿠팡 취소·재주문 %d건, 보상 있는 날 %d", len(items), n)
+        return n
+    except Exception as e:  # noqa: BLE001
+        logger.warning("쿠팡 보상 수집 실패: %s", e)
+        db.log_error("worker", f"쿠팡 보상 수집 실패: {e}", kind=type(e).__name__,
+                     path="_collect_coupang_compensations")
+        return 0
+
+
 def _rebuild_platform_fees(days=None):
     """주문을 긁은 뒤 수수료 일별 집계를 같이 갱신한다(실패해도 수집은 유지)."""
     try:
         from database import platform_fees
         _collect_baemin_settlements()
-        platform_fees.rebuild_recent(max(days or ORDER_DAYS + 2, 16))
+        _collect_coupang_compensations()
+        platform_fees.rebuild_recent(max(days or ORDER_DAYS + 2, 31))
     except Exception as e:  # noqa: BLE001
         logger.warning("플랫폼 수수료 집계 실패: %s", e)
         db.log_error("worker", f"플랫폼 수수료 집계 실패: {e}", kind=type(e).__name__,

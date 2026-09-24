@@ -356,7 +356,7 @@ class BaeminCrawler:
                 gid = it.get("giveId")
                 rec = {"give_id": gid, "start": it.get("giveStartDate"), "end": it.get("giveEndDate"),
                        "deposit": it.get("giveAmount"), "cpc_total": None, "cpc_daily": {}, "cpc_vat": 0,
-                       "raw": {"summary": it}}
+                       "support": 0, "refund": 0, "raw": {"summary": it}}
                 state["detail_id"], state["detail"] = gid, None
                 try:
                     row.click(timeout=8000)
@@ -370,6 +370,18 @@ class BaeminCrawler:
                     logger.warning("배민 정산 명세 %s 열기 실패: %s", gid, e)
                 d = state["detail"][1] if (state["detail"] and str(state["detail"][0]) == str(gid)) else None
                 if isinstance(d, dict):
+                    # 지원·조정(수입, +)과 부분환불(매출 차감, −): 명세 단위라 날짜로는 나눠 넣는다
+                    etc = d.get("etcDetails") or {}
+                    adj = etc.get("adjustment") or {}
+                    rec["support"] = int((etc.get("adSupport") or {}).get("total") or 0) \
+                        + int(etc.get("deliveryFeeSupportAmount") or 0) \
+                        + int(etc.get("deliveryFeePromotionAmount") or 0) \
+                        + int(adj.get("adjustmentTotal") or 0) + int(adj.get("rewardTotal") or 0)
+                    rec["refund"] = -sum(int(((d.get(k) or {}).get("orderBrokerage") or {}).get("partialRefundAmount") or 0)
+                                         for k in ("baemin1Details", "baeminDetails"))
+                    rec["raw"]["detail_etc"] = {"etcDetails": etc,
+                                                "partialRefund": {k: ((d.get(k) or {}).get("orderBrokerage") or {}).get("partialRefundAmount")
+                                                                  for k in ("baemin1Details", "baeminDetails")}}
                     cpc = d.get("cpcDetails") or {}
                     rec["cpc_total"] = cpc.get("total")
                     rec["cpc_vat"] = -int(cpc.get("cpcVat") or 0)

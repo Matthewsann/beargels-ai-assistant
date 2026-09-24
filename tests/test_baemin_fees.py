@@ -94,12 +94,36 @@ def test_rebuild는_배민_광고비를_그날_ad_fee에_얹는다(monkeypatch):
             if self.name == "orders":
                 return type("R", (), {"data": [{"platform": "baemin", "ordered_date": "2026-09-18", "status": "배달완료", "raw": ITEM}]})()
             if self.name == "platform_ad_daily":
-                return type("R", (), {"data": [{"day": "2026-09-18", "ad_fee": 104, "ad_vat": 10},
+                return type("R", (), {"data": [{"day": "2026-09-18", "ad_fee": 104, "ad_vat": 10, "support": 1000, "refund": 500},
                                                {"day": "2026-09-19", "ad_fee": 1716, "ad_vat": 172}]})()
             return type("R", (), {"data": []})()
 
     monkeypatch.setattr(pf, "get_client", lambda: type("C", (), {"table": lambda s, n: T(n)})())
     pf.rebuild(date(2026, 9, 18), date(2026, 9, 19))
-    by = {r["day"]: r for r in seen["rows"]}
-    assert by["2026-09-18"]["ad_fee"] == 114 and by["2026-09-18"]["net"] == 12320 - 114
+    by = {r["day"]: r for r in seen["rows"] if r["platform"] == "baemin"}   # 가짜 표는 플랫폼을 안 가린다
+    assert by["2026-09-18"]["ad_fee"] == 114 and by["2026-09-18"]["net"] == 12320 - 114 + 1000 - 500
+    assert by["2026-09-18"]["coupon"] == 3000 - 1000 and by["2026-09-18"]["sales"] == 21100 - 500
     assert by["2026-09-19"]["orders"] == 0 and by["2026-09-19"]["ad_fee"] == 1888   # 주문 없는 날도 광고비는 남긴다
+
+
+def test_지원금과_부분환불은_정산기간_날짜에_고르게_나눈다():
+    s = dict(SETTLE, cpc_daily={}, cpc_vat=0, support=6312, refund=2500)
+    ads, _ = pf.settlements_to_ad_daily([s])
+    assert [a["day"] for a in ads] == ["2026-09-18", "2026-09-19", "2026-09-20"]
+    assert sum(a["support"] for a in ads) == 6312 and sum(a["refund"] for a in ads) == 2500
+    assert ads[0]["support"] == 2104 and ads[-1]["support"] == 2104 and "ad_fee" not in ads[0]
+
+
+def test_쿠팡_보상은_보상_예정건만_날짜별로():
+    from crawler.coupang import CoupangCrawler
+    items = [CoupangCrawler._normalize_compensation({"transactionDate": "2026-09-20T17:32:00+09:00", "abbrOrderId": "A",
+                                                      "orderType": "REGULAR", "cancelReason": "배달지연",
+                                                      "compensationStatus": "WILL_BE_COMPENSATED",
+                                                      "eventAmount": {"currencyCode": "KRW", "units": 31000}}),
+             CoupangCrawler._normalize_compensation({"transactionDate": "2026-09-20T10:00:00+09:00", "abbrOrderId": "B",
+                                                      "orderType": "REGULAR", "cancelReason": "고객 취소",
+                                                      "compensationStatus": "NOT_ELIGIBLE_FOR_APPEAL",
+                                                      "eventAmount": {"units": 15600}})]
+    assert items[0]["paid"] and not items[1]["paid"]
+    rows = pf.compensations_to_daily(items)
+    assert rows == [{"platform": "coupang", "day": "2026-09-20", "comp": 31000, "source": "compensation", "updated_at": rows[0]["updated_at"]}]
