@@ -59,3 +59,47 @@ def test_api_원소_정규화():
     assert o["price"] == 18100 and o["pay_type"] == "바로결제" and o["ad_service"] == "배민배달"
     assert json.loads(o["raw"])["settle"]["total"] == 12320
     assert BaeminCrawler._normalize_api_order({"order": {}}) is None
+
+
+SETTLE = {"give_id": 538297677, "start": "2026-09-18", "end": "2026-09-20", "deposit": 464541, "cpc_total": -6178,
+          "cpc_daily": {"2026-09-20": 3796, "2026-09-19": 1716, "2026-09-18": 104}, "cpc_vat": 562,
+          "raw": {"summary": {}}}
+
+
+def test_정산_명세의_클릭광고를_날짜별로_나누고_부가세도_비율로():
+    ads, sts = pf.settlements_to_ad_daily([SETTLE, dict(SETTLE, give_id=1, cpc_daily={}, cpc_total=None)])
+    assert len(sts) == 2 and sts[0]["give_id"] == 538297677 and sts[0]["deposit"] == 464541
+    assert [a["day"] for a in ads] == ["2026-09-18", "2026-09-19", "2026-09-20"]   # 클릭 없는 명세는 광고 행 없음
+    by = {a["day"]: a for a in ads}
+    assert by["2026-09-20"]["ad_fee"] == 3796 and by["2026-09-18"]["ad_fee"] == 104
+    assert sum(a["ad_vat"] for a in ads) == 562                    # 부가세 합이 맞는다
+    assert by["2026-09-20"]["ad_vat"] == round(562 * 3796 / 5616)
+
+
+def test_rebuild는_배민_광고비를_그날_ad_fee에_얹는다(monkeypatch):
+    from datetime import date
+    seen = {}
+
+    class T:
+        def __init__(self, name): self.name = name
+        def select(self, *a): return self
+        def in_(self, *a): return self
+        def eq(self, *a): return self
+        def gte(self, *a): return self
+        def lte(self, *a): return self
+        def order(self, *a): return self
+        def range(self, *a): return self
+        def upsert(self, rows, on_conflict=None): seen["rows"] = rows; return self
+        def execute(self):
+            if self.name == "orders":
+                return type("R", (), {"data": [{"platform": "baemin", "ordered_date": "2026-09-18", "status": "배달완료", "raw": ITEM}]})()
+            if self.name == "platform_ad_daily":
+                return type("R", (), {"data": [{"day": "2026-09-18", "ad_fee": 104, "ad_vat": 10},
+                                               {"day": "2026-09-19", "ad_fee": 1716, "ad_vat": 172}]})()
+            return type("R", (), {"data": []})()
+
+    monkeypatch.setattr(pf, "get_client", lambda: type("C", (), {"table": lambda s, n: T(n)})())
+    pf.rebuild(date(2026, 9, 18), date(2026, 9, 19))
+    by = {r["day"]: r for r in seen["rows"]}
+    assert by["2026-09-18"]["ad_fee"] == 114 and by["2026-09-18"]["net"] == 12320 - 114
+    assert by["2026-09-19"]["orders"] == 0 and by["2026-09-19"]["ad_fee"] == 1888   # 주문 없는 날도 광고비는 남긴다

@@ -152,17 +152,74 @@ def _all_rows(make_query) -> list:
         off += PAGE
 
 
+def settlements_to_ad_daily(settles: list, platform="baemin") -> tuple[list, list]:
+    """crawler.fetch_settlements 결과 → (platform_ad_daily 행들, platform_settlements 행들).
+
+    명세의 부가세(cpcVat)는 그 명세 안 날짜별 공급가 비율로 나눈다(원 단위 반올림,
+    마지막 날이 잔여를 받아 합이 맞는다). 클릭 광고가 없는 명세는 광고 행을 안 만든다.
+    """
+    ad_rows, st_rows = [], []
+    now = datetime.now(timezone.utc).isoformat()
+    for s in settles:
+        st_rows.append({"platform": platform, "give_id": s["give_id"], "start_date": s.get("start"),
+                        "end_date": s.get("end"), "deposit": s.get("deposit"), "cpc_total": s.get("cpc_total"),
+                        "raw": s.get("raw"), "updated_at": now})
+        daily = {d: int(v) for d, v in (s.get("cpc_daily") or {}).items() if v}
+        if not daily:
+            continue
+        total = sum(daily.values())
+        vat = int(s.get("cpc_vat") or 0)
+        days = sorted(daily)
+        given = 0
+        for i, d in enumerate(days):
+            v = vat - given if i == len(days) - 1 else int(round(vat * daily[d] / total))
+            given += v
+            ad_rows.append({"platform": platform, "day": d, "ad_fee": daily[d], "ad_vat": v,
+                            "source": "settle:cpcDetails", "give_id": s["give_id"], "updated_at": now})
+    return ad_rows, st_rows
+
+
+def save_settlements(settles: list, platform="baemin") -> int:
+    """정산 명세와 날짜별 클릭 광고비를 저장하고 광고 행 수를 돌려준다."""
+    ad_rows, st_rows = settlements_to_ad_daily(settles, platform)
+    if st_rows:
+        get_client().table("platform_settlements").upsert(st_rows, on_conflict="platform,give_id").execute()
+    if ad_rows:
+        get_client().table("platform_ad_daily").upsert(ad_rows, on_conflict="platform,day").execute()
+    return len(ad_rows)
+
+
+def ad_daily(start: date, end: date, platform="baemin") -> dict:
+    """{day: 광고비(공급가+부가세)} — rebuild 가 platform_fees_daily.ad_fee 에 얹는다."""
+    rows = _all_rows(lambda: get_client().table("platform_ad_daily").select("day,ad_fee,ad_vat")
+                     .eq("platform", platform)
+                     .gte("day", start.isoformat()).lte("day", end.isoformat()).order("day"))
+    return {str(r["day"])[:10]: int(r.get("ad_fee") or 0) + int(r.get("ad_vat") or 0) for r in rows}
+
+
 def rebuild(start: date, end: date) -> int:
     """orders 에서 [start, end] 를 읽어 platform_fees_daily 에 upsert. 행 수 반환.
 
     주문이 하나도 없는 날은 행을 안 만든다(장부 없는 날은 빈 채로 — 대시보드
     원칙). 취소만 있는 날은 orders=0 인 행이 생기고 그건 그대로 둔다.
+    배민 클릭 광고비(platform_ad_daily, 부가세 포함)는 그날 ad_fee 에 더한다 —
+    사장님(2026-09-24) "기간에 맞춰서 광고료에 같이 포함". 광고비만 있고 주문이
+    없는 날은 주문 0건 행을 만들어 광고비가 사라지지 않게 한다.
     """
     rows = _all_rows(lambda: get_client().table("orders").select("platform,ordered_date,status,raw")
                      .in_("platform", ["coupang", "baemin"])
                      .gte("ordered_date", start.isoformat()).lte("ordered_date", end.isoformat())
                      .order("ordered_date"))
     agg = summarize(rows)
+    try:
+        ads = ad_daily(start, end, "baemin")
+    except Exception as e:  # noqa: BLE001 — 광고 표가 없어도 수수료 집계는 살아야 한다
+        logger.warning("배민 광고비 읽기 실패(집계는 계속): %s", e)
+        ads = {}
+    for d, won in ads.items():
+        acc = agg.setdefault(("baemin", d), {c: 0 for c in COLS})
+        acc["ad_fee"] += won
+        acc["net"] -= won
     now = datetime.now(timezone.utc).isoformat()
     payload = [{"platform": p, "day": d, "updated_at": now} | v for (p, d), v in agg.items()]
     if payload:

@@ -280,6 +280,112 @@ class BaeminCrawler:
         logger.info("배민 주문 %d건 수집(API, %s~%s)", len(orders), start_date, end_date)
         return orders
 
+    # -- 정산 명세(우리가게클릭 광고비) -----------------------------------------
+    # 정찰(2026-09-24): 정산내역 화면은 /v3/settle/history/summary?startDate&endDate&
+    # page&size(최대 10) 로 정산 목록(giveId·정산기간·입금액)을 받고, 항목을 누르면
+    # /v3/settle/history/details/{giveId} 를 부른다. 그 안의 cpcDetails.dailyDetails 에
+    # 날짜별 클릭 광고비(공급가, 음수)와 cpcVat 가 있다. 주문에는 안 붙는 값이라
+    # 이 길로만 얻는다. 목록은 쿼리 재작성, 명세는 첫 행 클릭 + giveId 경로 재작성.
+    SETTLE_URL = "https://self.baemin.com/orders/billing"
+    SETTLE_SUMMARY_GLOB = "**/v3/settle/history/summary?*"
+    SETTLE_DETAIL_GLOB = "**/v3/settle/history/details/*"
+
+    def fetch_settlements(self, start_date, end_date, max_pages=30):
+        """[start, end] 에 입금된 정산 명세 목록 → [{give_id, start, end, deposit, cpc_total,
+        cpc_daily: {date: 공급가(양수)}, cpc_vat, raw}]. 명세를 못 받은 항목은 cpc 없이."""
+        import json
+        import re as _re
+        from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+        if isinstance(start_date, str):
+            start_date = date.fromisoformat(start_date)
+        if isinstance(end_date, str):
+            end_date = date.fromisoformat(end_date)
+        state = {"page": 0, "detail_id": None, "summary": None, "detail": None}
+
+        def h_sum(route, _request=None):
+            u = urlsplit(route.request.url)
+            q = dict(parse_qsl(u.query))
+            q.update({"startDate": start_date.isoformat(), "endDate": end_date.isoformat(),
+                      "size": "10", "page": str(state["page"])})
+            route.continue_(url=urlunsplit(u._replace(query=urlencode(q))))
+
+        def h_det(route, _request=None):
+            u = route.request.url
+            if state["detail_id"]:
+                u = _re.sub(r"/details/\d+", f"/details/{state['detail_id']}", u)
+            route.continue_(url=u)
+
+        def on_resp(r):
+            try:
+                if "/v3/settle/history/summary" in r.url and r.status == 200:
+                    state["summary"] = r.json()
+                elif "/v3/settle/history/details/" in r.url and r.status == 200:
+                    state["detail"] = (r.url.rsplit("/", 1)[-1], r.json())
+            except Exception:  # noqa: BLE001
+                pass
+
+        self.page.route(self.SETTLE_SUMMARY_GLOB, h_sum)
+        self.page.route(self.SETTLE_DETAIL_GLOB, h_det)
+        self.page.on("response", on_resp)
+        out = []
+        try:
+            items = []
+            for _ in range(max_pages):
+                state["summary"] = None
+                self._open_authed(self.SETTLE_URL)
+                for _ in range(40):                      # 목록 응답은 로드 뒤 몇 초 걸린다(실측 ~5초)
+                    self.page.wait_for_timeout(300)
+                    if state["summary"] is not None:
+                        break
+                s = state["summary"] or {}
+                content = s.get("contents") or []
+                items.extend(content)
+                total = s.get("totalSize") or 0
+                if not content or len(items) >= total:
+                    break
+                state["page"] += 1
+                human_pause(1.5, 2.5)
+            if not items:
+                return out
+            # 명세: 첫 행을 눌러 열되, 요청 경로의 giveId 를 바꿔치기한다
+            row = self.page.locator("text=입금완료").first
+            if row.count() == 0:
+                row = self.page.locator("text=정산기간").first
+            for it in items:
+                gid = it.get("giveId")
+                rec = {"give_id": gid, "start": it.get("giveStartDate"), "end": it.get("giveEndDate"),
+                       "deposit": it.get("giveAmount"), "cpc_total": None, "cpc_daily": {}, "cpc_vat": 0,
+                       "raw": {"summary": it}}
+                state["detail_id"], state["detail"] = gid, None
+                try:
+                    row.click(timeout=8000)
+                    for _ in range(20):
+                        self.page.wait_for_timeout(300)
+                        if state["detail"] and str(state["detail"][0]) == str(gid):
+                            break
+                    self.page.keyboard.press("Escape")
+                    self.page.wait_for_timeout(600)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("배민 정산 명세 %s 열기 실패: %s", gid, e)
+                d = state["detail"][1] if (state["detail"] and str(state["detail"][0]) == str(gid)) else None
+                if isinstance(d, dict):
+                    cpc = d.get("cpcDetails") or {}
+                    rec["cpc_total"] = cpc.get("total")
+                    rec["cpc_vat"] = -int(cpc.get("cpcVat") or 0)
+                    rec["cpc_daily"] = {x["date"]: -int(x.get("cpcAmount") or 0)
+                                        for x in (cpc.get("dailyDetails") or []) if x.get("date")}
+                    rec["raw"]["detail"] = {"giveAmount": d.get("giveAmount"), "cpcDetails": cpc}
+                out.append(rec)
+                human_pause(0.8, 1.5)
+        finally:
+            self.page.remove_listener("response", on_resp)
+            self.page.unroute(self.SETTLE_SUMMARY_GLOB, h_sum)
+            self.page.unroute(self.SETTLE_DETAIL_GLOB, h_det)
+        logger.info("배민 정산 명세 %d건 (%s~%s), 클릭광고 있는 것 %d",
+                    len(out), start_date, end_date, sum(1 for r in out if r["cpc_daily"]))
+        return out
+
     @classmethod
     def _normalize_api_order(cls, x):
         """v4/orders 원소 {order, settle} → 공용 스키마 dict."""

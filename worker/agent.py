@@ -1339,8 +1339,11 @@ def run_orders_backfill_job(job) -> None:
             with BaeminCrawler() as c:
                 orders = c.fetch_orders_api(start_date=start, end_date=end)
                 saved = db.save_orders(orders)
+                db.worker_ping("working", f"배민 정산 명세 받는 중 {start}~{end}")
+                settles = c.fetch_settlements(start, end + timedelta(days=7))   # 입금은 며칠 뒤
+            n_ad = platform_fees.save_settlements(settles)
             n_days = platform_fees.rebuild(start, end)
-            db.finish_job(jid, "done", f"배민 주문 {saved}건 되긁음 · 수수료 집계 {n_days}일 ({start}~{end})", saved)
+            db.finish_job(jid, "done", f"배민 주문 {saved}건 되긁음 · 정산 명세 {len(settles)}건(광고비 {n_ad}일) · 수수료 집계 {n_days}일 ({start}~{end})", saved)
             return
         # 실측(2026-09-23 첫 되긁기): 한 주(10쪽)를 받자마자 다음 주를 두드리면
         # 레이트리밋(10056)에 걸려 그 주가 통째로 0건이 됐다(9주 중 5주). 그래서
@@ -1436,11 +1439,34 @@ def maybe_fee_backfill() -> None:
             db.worker_ping("idle", "대기 중")
 
 
+def _collect_baemin_settlements(days=14) -> int:
+    """배민 정산 명세(클릭 광고비 날짜별)를 최근 며칠치 받아 저장한다. 실패는 삼킨다.
+
+    입금은 거래 2~5일 뒤라 14일을 본다(같은 명세를 다시 받아도 upsert). 클릭
+    광고비는 주문에 안 붙어 이 길로만 온다(사장님 2026-09-24 "광고료에 포함").
+    """
+    try:
+        from crawler.baemin import BaeminCrawler
+        from database import platform_fees
+        end = datetime.now().date()
+        with BaeminCrawler() as c:
+            settles = c.fetch_settlements(end - timedelta(days=days), end)
+        n = platform_fees.save_settlements(settles)
+        logger.info("배민 정산 명세 %d건 저장, 광고비 %d일", len(settles), n)
+        return n
+    except Exception as e:  # noqa: BLE001
+        logger.warning("배민 정산 명세 수집 실패: %s", e)
+        db.log_error("worker", f"배민 정산 명세 수집 실패: {e}", kind=type(e).__name__,
+                     path="_collect_baemin_settlements")
+        return 0
+
+
 def _rebuild_platform_fees(days=None):
     """주문을 긁은 뒤 수수료 일별 집계를 같이 갱신한다(실패해도 수집은 유지)."""
     try:
         from database import platform_fees
-        platform_fees.rebuild_recent(days or ORDER_DAYS + 2)
+        _collect_baemin_settlements()
+        platform_fees.rebuild_recent(max(days or ORDER_DAYS + 2, 16))
     except Exception as e:  # noqa: BLE001
         logger.warning("플랫폼 수수료 집계 실패: %s", e)
         db.log_error("worker", f"플랫폼 수수료 집계 실패: {e}", kind=type(e).__name__,

@@ -274,8 +274,16 @@ httpx 로 HTML/`__APOLLO_STATE__` 를 받거나 집 PC 디버그 크롬(CDP 9222
   `crawler/baemin.py fetch_orders_api` 가 페이지 자신의 요청을 가로채(page.route) 기간·100건씩
   받는다 — 화면 주소의 startDate/endDate 는 무시되고, 스크립트 fetch 는 'Failed to fetch'.
   ⚠ Playwright route 핸들러는 `(route, request)` 두 인자 — 두 번째 자리에 다른 값을 기본인자로
-  두면 offset 에 Request 객체가 들어가 400('잘못된 offset'). 클릭 광고비(우리가게클릭)는
-  주문에 안 붙어 배민 ad_fee 는 0. 일꾼 `collect_orders` 는 API 를 먼저, 실패하면 옛 표 읽기.
+  두면 offset 에 Request 객체가 들어가 400('잘못된 offset'). 일꾼 `collect_orders` 는 API 를
+  먼저, 실패하면 옛 표 읽기.
+  **배민 클릭 광고비(우리가게클릭)는 정산 명세에서**(2026-09-24, 사장님 "기간에 맞춰 광고료에
+  포함"): 정산내역 화면의 `/v3/settle/history/summary`(size 최대 10, 쿼리 재작성)로 정산 목록을
+  받고, 첫 행을 클릭하며 `/v3/settle/history/details/{giveId}` 경로의 giveId 를 바꿔치기해 명세를
+  받는다(`fetch_settlements`; 명세 시트는 Escape 로 닫는다). `cpcDetails.dailyDetails` 의
+  날짜별 공급가 + `cpcVat`(날짜 비율로 나눔)를 `platform_ad_daily`(schema_v17)에 넣고,
+  `platform_fees.rebuild` 가 그날 배민 ad_fee 에 더한다(주문 없는 날은 0건 행을 만들어 남긴다).
+  입금이 거래 2~5일 뒤라 일꾼은 매일 최근 14일 명세를 다시 받는다(`_collect_baemin_settlements`).
+  목록 응답은 로드 뒤 ~5초 걸린다 — 2.5초만 기다리면 0건.
   옛 배민 raw(표 텍스트)로는 수수료를 못 만들어 `missing_week(platform='baemin')` 은 raw 가
   `{"order"` 로 시작하는 행만 '있음'으로 친다.
   **화면(비용 탭 '배달 매출은 어디로 가나', 2026-09-23)은 쿠팡·배민 나란히, 3칸만**(사장님 지시): 수수료 =
