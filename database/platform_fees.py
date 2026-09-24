@@ -187,8 +187,10 @@ def settlements_to_ad_daily(settles: list, platform="baemin") -> tuple[list, lis
                 row["support"] = (sup - (sup // n) * (n - 1)) if last else sup // n
                 row["refund"] = (ref - (ref // n) * (n - 1)) if last else ref // n
         for d, row in sorted(by_day.items()):
+            # PostgREST upsert 는 행마다 키가 다르면 빠진 열을 null 로 보낸다(not-null 위반,
+            # 2026-09-24 실측) — 네 열을 항상 채운다. comp 는 쿠팡 몫이라 여기선 안 건드린다.
             ad_rows.append({"platform": platform, "day": d, "source": "settle", "give_id": s["give_id"],
-                            "updated_at": now} | row)
+                            "updated_at": now, "ad_fee": 0, "ad_vat": 0, "support": 0, "refund": 0} | row)
     return ad_rows, st_rows
 
 

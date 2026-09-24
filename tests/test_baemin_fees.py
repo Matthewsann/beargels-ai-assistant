@@ -111,7 +111,7 @@ def test_지원금과_부분환불은_정산기간_날짜에_고르게_나눈다
     ads, _ = pf.settlements_to_ad_daily([s])
     assert [a["day"] for a in ads] == ["2026-09-18", "2026-09-19", "2026-09-20"]
     assert sum(a["support"] for a in ads) == 6312 and sum(a["refund"] for a in ads) == 2500
-    assert ads[0]["support"] == 2104 and ads[-1]["support"] == 2104 and "ad_fee" not in ads[0]
+    assert ads[0]["support"] == 2104 and ads[-1]["support"] == 2104 and ads[0]["ad_fee"] == 0   # 빠진 열은 0 으로
 
 
 def test_쿠팡_보상은_보상_예정건만_날짜별로():
