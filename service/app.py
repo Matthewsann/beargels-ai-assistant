@@ -142,6 +142,27 @@ def root():
     abort(404)
 
 
+@app.route("/privacy")
+def privacy():
+    """공개 개인정보처리방침 — 구글 OAuth 앱을 '프로덕션'으로 게시하려면 홈페이지·
+    개인정보처리방침 URL 이 있어야 해서 둔다(2026-09-25, 테스트 상태 앱은 토큰이 7일마다
+    만료돼 장부 시트 자동 반영이 끊겼다). 가게 내부용 도구라 내용은 짧다. 비밀 주소와
+    무관한 유일한 공개 페이지."""
+    html = (
+        "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
+        "<title>베어글스 AI 비서 개인정보처리방침</title>"
+        "<body style='font-family:sans-serif;max-width:640px;margin:40px auto;padding:0 16px;line-height:1.7'>"
+        "<h1>베어글스 AI 비서 개인정보처리방침</h1>"
+        "<p>이 서비스는 베어글스 송도타임스페이스점 내부 운영 도구입니다. 일반 이용자에게 "
+        "제공되지 않으며, 가게 운영자와 직원만 사용합니다.</p>"
+        "<p>구글 계정 연동은 운영자 본인의 구글 드라이브에 있는 장부·소재 파일을 읽고 쓰기 "
+        "위해서만 쓰이며, 그 외 목적으로 데이터를 수집·보관·제3자에게 제공하지 않습니다.</p>"
+        "<p>연동을 해제하려면 구글 계정의 '연결된 앱'에서 접근 권한을 삭제하면 됩니다.</p>"
+        "<p>문의: beargelssongdo@gmail.com</p></body>"
+    )
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
 def check(path_key: str) -> None:
     if not SERVICE_PATH or path_key != SERVICE_PATH:
         abort(404)
