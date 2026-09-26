@@ -1402,6 +1402,8 @@ def generate_review_reply(review):
             bad.append("주문서의 상품명을 그대로 옮겨 적었다")
         if _MISSING_MENTION.search(draft):
             bad.append(_MISSING_MSG)
+        if _CASUAL_ENDING.search(draft):
+            bad.append(_CASUAL_MSG)
         if len(draft) < target * 0.7:
             bad.append(f"너무 짧다({len(draft)}자) — {target}자에 가깝게 채워라")
         # 분량이 모자라면 '다시 쓰기'보다 **넓히기**가 잘 듣는다. 처음부터
@@ -1458,6 +1460,8 @@ def generate_review_reply(review):
                 bad.append("주문서의 상품명을 그대로 옮겨 적었다")
             if _MISSING_MENTION.search(draft):
                 bad.append(_MISSING_MSG)
+            if _CASUAL_ENDING.search(draft):
+                bad.append(_CASUAL_MSG)
             if len(draft) < target * 0.75:
                 bad.append(f"너무 짧다({len(draft)}자) — {target}자에 가깝게 채워라")
         # 마지막 방어선 — 어떤 모델을 쓰든 '[SET]' 같은 꼬리표가 손님에게
@@ -1483,6 +1487,13 @@ _MISSING_MENTION = re.compile(
     r"|별점만|사진만\s*남")
 _MISSING_MSG = ("'글은 없지만/별점만 남겨주셨는데'처럼 손님이 안 남긴 것을 "
                 "짚었다 — 그 얘기는 아예 꺼내지 말고 있는 것에만 반응하라")
+
+
+# 해요체 종결이 합니다체 초안에 섞이는 것('챙기셨네요' 등, 실측 2026-09-26).
+# '~세요'(주문 주세요/보내세요)는 허용이라 목록에 없다.
+_CASUAL_ENDING = re.compile(r"(?:어요|네요|예요|게요|나요|지요|죠)(?=[^가-힣]|$)")
+_CASUAL_MSG = ("'~네요/~어요' 같은 해요체 종결이 섞였다 — 모든 문장을 "
+               "정중한 합니다체('~습니다/입니다')로 통일하라")
 
 
 # 생성 후 최종 검문 — 모델이 프롬프트의 금지 규칙을 흘리는 일이 실제로 있다

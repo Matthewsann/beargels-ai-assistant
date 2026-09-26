@@ -86,6 +86,20 @@ def test_no_mention_of_missing_text():
         assert not _MISSING_MENTION.search(s), s
 
 
+def test_casual_ending_detector():
+    """해요체 종결 감지기 — 합니다체 초안에 '챙기셨네요'가 섞인 실사례
+    (2026-09-26, 리뷰 20863·22344)의 회귀 테스트."""
+    from assistant.beargels import _CASUAL_ENDING
+    for s in ("담백하게 챙기셨네요. 감사합니다.",
+              "정말 맛있었어요!",
+              "다음에도 준비할게요"):
+        assert _CASUAL_ENDING.search(s), s
+    # '~세요' 인사와 합니다체는 걸리면 안 된다
+    for s in ("또 주문 주세요", "좋은 하루 보내세요", "진심으로 감사합니다.",
+              "요즘 날씨가 쌀쌀합니다"):
+        assert not _CASUAL_ENDING.search(s), s
+
+
 def test_persona_has_new_tone_rules():
     from assistant.beargels import REPLY_PERSONA
     assert "합니다체" in REPLY_PERSONA               # 2026-09-26 사장님 지시
