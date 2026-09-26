@@ -1,7 +1,11 @@
-"""답글 말투 회귀 테스트 — AI/공지 말투 금지(사장님 피드백 2026-07-24).
+"""답글 말투 회귀 테스트.
 
-'~바라요', '되셨으면 좋겠어요', '정성껏 준비하겠습니다' 등은 사람이 안 쓰는
-말투라 금지. 템플릿 폴백이 이 표현을 절대 만들지 않는지 검증한다.
+- AI/공지 말투 금지(사장님 피드백 2026-07-24): '~바라요', '정성껏
+  준비하겠습니다' 등은 사람이 안 쓰는 클리셰라 금지.
+- 말투는 정중한 **합니다체**(사장님 지시 2026-09-26 — 예전 '해요체 통일'을
+  뒤집음). '~어요/~네요' 종결 금지, '~세요' 인사("주문 주세요")는 허용.
+- '글이 없다'는 말 금지(사장님 지시 2026-09-26): "글은 없지만", "별점만
+  남겨주셨는데"처럼 손님이 안 남긴 것을 짚지 않는다.
 """
 
 import pytest
@@ -16,9 +20,9 @@ BANNED = [
     # 방문 표현 — 배달이라 '주문 주세요'로(방문 아님)
     "들러주세요", "놀러오세요", "오시면", "와주셔", "또 오세요",
 ]
-# 격식체 종결 — 일반 답글은 해요체 통일이라 금지. 단 '불만 답글'은 정중한
-# 격식체+다짐형('점검하겠습니다')이 규칙(사장님 확정 2026-07-26)이라 예외.
-FORMAL_ENDINGS = ["입니다", "습니다", "드립니다"]
+# 합니다체가 규칙이므로 격식 종결이 있어야 하고, 해요체 종결은 금지.
+FORMAL_ENDINGS = ["습니다", "입니다", "합니다", "드립니다"]
+CASUAL_ENDINGS = ["어요", "네요", "예요", "게요", "나요", "지요"]
 
 REVIEWS = [
     {"platform": "coupang", "review_no": "1", "author": "김손님", "rating": 5,
@@ -40,10 +44,10 @@ def test_template_reply_has_no_ai_phrases(review):
                             review["order_count"], review["rating"], 500)
     for bad in BANNED:
         assert bad not in reply, f"금지 표현 '{bad}' 포함: {reply}"
-    # 격식체는 불만(complaint) 답글에서만 허용.
-    if typ != "complaint":
-        for bad in FORMAL_ENDINGS:
-            assert bad not in reply, f"일반 답글에 격식체 '{bad}': {reply}"
+    # 합니다체 통일(사장님 지시 2026-09-26) — 격식 종결이 있고 해요체가 없다.
+    assert any(e in reply for e in FORMAL_ENDINGS), f"합니다체 종결 없음: {reply}"
+    for bad in CASUAL_ENDINGS:
+        assert bad not in reply, f"해요체 종결 '{bad}': {reply}"
 
 
 def test_complaint_reply_is_formal_pledge():
@@ -60,8 +64,32 @@ def test_complaint_reply_is_formal_pledge():
 
 def test_thanks_variants_clean():
     joined = " ".join(_THANKS_VARIANTS)
-    for bad in BANNED + FORMAL_ENDINGS:
+    for bad in BANNED + CASUAL_ENDINGS:
         assert bad not in joined, f"_THANKS_VARIANTS 에 금지 표현 '{bad}'"
+    for v in _THANKS_VARIANTS:
+        assert any(e in v for e in FORMAL_ENDINGS) or "주세요" in v, \
+            f"합니다체가 아니다: {v}"
+
+
+def test_no_mention_of_missing_text():
+    """'글은 없지만/별점만 남겨주셨는데' 감지기 — 사장님이 몇 번을 지워도
+    초안이 다시 만들어 넣어서 금지했다(사장님 지시 2026-09-26)."""
+    from assistant.beargels import _MISSING_MENTION
+    for s in ("남겨주신 말씀은 없지만 별점으로 마음이 느껴집니다",
+              "글은 없지만 다섯 개의 별이 반갑습니다",
+              "별점만 남겨주셨는데도 감사합니다",
+              "사진만 남겨주셨네요"):
+        assert _MISSING_MENTION.search(s), s
+    # 정상 문장은 걸리면 안 된다
+    for s in ("남겨주신 사진 덕분에 저희도 즐겁습니다",
+              "좋게 봐주셔서 감사합니다. 다음에 또 주문 주세요"):
+        assert not _MISSING_MENTION.search(s), s
+
+
+def test_persona_has_new_tone_rules():
+    from assistant.beargels import REPLY_PERSONA
+    assert "합니다체" in REPLY_PERSONA               # 2026-09-26 사장님 지시
+    assert "글이 없다" in REPLY_PERSONA              # 안 남긴 것 짚기 금지
 
 
 def test_persona_forbids_unkeepable_promises():
@@ -137,7 +165,8 @@ def test_local_fix_keeps_meaning():
     """치환 결과가 문장으로 읽혀야 한다(토막나면 안 됨)."""
     import assistant.beargels as bg
     out = bg._fix_banned_locally("맛있게 드셨길 바랍니다. 또 오세요.")
-    assert "드셨길요" in out and "또 주문 주세요" in out
+    # 치환 결과도 합니다체(사장님 지시 2026-09-26)
+    assert "드셨으면 좋겠습니다" in out and "또 주문 주세요" in out
     assert "맛있게 맛있게" not in out   # 이중 치환 방지
 
 

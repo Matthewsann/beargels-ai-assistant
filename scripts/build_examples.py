@@ -15,6 +15,7 @@
 실행: python scripts/build_examples.py   (재료가 늘면 다시 돌리면 된다)
 """
 import json
+import re
 import pathlib
 import sys
 
@@ -40,21 +41,27 @@ def _clean(reply: str) -> str:
 
 
 # 지금 말투 규칙에 어긋나는 옛 답글은 예시로 쓰면 안 된다 — 약한 모델은
-# 예시를 그대로 베끼므로, 격식체 예시를 주면 격식체 답글이 나온다
-# (실제로 '감사드립니다·준비하겠습니다' 예시가 뽑혔다, 2026-08-18).
-# 불만·민감 답글만 정중한 격식체가 규칙이라 예외.
-_FORMAL_ENDINGS = ("습니다", "입니다", "드립니다", "됩니다")
+# 예시를 그대로 베끼므로, 다른 말투의 예시를 주면 그 말투가 나온다.
+# 지금 규칙은 정중한 합니다체(사장님 지시 2026-09-26 — 예전 해요체를 뒤집음):
+# 격식 종결이 하나는 있어야 하고, 편한 해요체 종결('~어요/~네요')이 섞이면 뺀다.
+_FORMAL_ENDINGS = ("습니다", "입니다", "합니다", "드립니다", "됩니다")
+_CASUAL_ENDINGS = ("어요", "네요", "예요", "죠.", "죠!", "게요", "나요")
 # 금지 표현의 '변형'까지 막는다(정확히 일치하지 않아 걸러지지 않던 것들).
 _SOFT_BANNED = ("보답", "정성을 다해", "정성으로 준비", "큰 힘을",
                 "찾아뵙겠", "맞이하겠", "바라며", "기원합니다")
 
 
+# '안 남긴 것'을 짚는 문장 — 예시로 주면 그대로 배운다(사장님 지시 2026-09-26).
+_MISSING_RE = re.compile(r"글[은이도]?\s*없|말씀[은이]?\s*없|후기[는가]?\s*없"
+                         r"|내용[은이]?\s*없|별점만|사진만\s*남")
+
+
 def _tone_ok(reply: str, kind: str) -> bool:
-    if kind in ("complaint", "escalate"):
-        return True                     # 이 유형은 격식체가 규칙
-    if any(e in reply for e in _FORMAL_ENDINGS):
+    if any(b in reply for b in _SOFT_BANNED) or _MISSING_RE.search(reply):
         return False
-    return not any(b in reply for b in _SOFT_BANNED)
+    if not any(e in reply for e in _FORMAL_ENDINGS):
+        return False                    # 합니다체 종결이 하나도 없다
+    return not any(c in reply for c in _CASUAL_ENDINGS)
 
 
 def _fetch_all_replies(page_size=1000, max_rows=5000):
@@ -85,7 +92,7 @@ def main() -> int:
     print(f"사장님 답글 후보 {len(rows)}건")
 
     banks: dict[str, list] = {}
-    # 지금 말투 규칙엔 안 맞지만(옛 격식체) 금지 표현은 없는 답글 —
+    # 지금 말투 규칙엔 안 맞지만(옛 해요체 등) 금지 표현은 없는 답글 —
     # 예시가 거의 없는 유형(질문·민감 등)에서 '내용은 어떻게 짚었는지'만
     # 참고하도록 따로 보관한다. 말투를 베끼면 안 되므로 창고를 분리한다.
     refs: dict[str, list] = {}
@@ -130,7 +137,7 @@ def main() -> int:
     OUT.write_text(json.dumps(banks, ensure_ascii=False, indent=1), encoding="utf-8")
     OUT_REF.write_text(json.dumps(refs, ensure_ascii=False, indent=1),
                        encoding="utf-8")
-    print(f"금지어 제외 {skipped_banned}건 · 옛 말투(격식체 등) 제외 {skipped_tone}건")
+    print(f"금지어 제외 {skipped_banned}건 · 옛 말투(해요체 등) 제외 {skipped_tone}건")
     for k, v in sorted(banks.items(), key=lambda x: -len(x[1])):
         print(f"  {k}: {len(v)}건")
     print("저장:", OUT)
