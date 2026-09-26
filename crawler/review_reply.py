@@ -323,6 +323,47 @@ def _baemin_wait_posted(page, review_no, reply, timeout_s=6.0):
     return False
 
 
+# 배민이 게시를 거부하는 금칙어 — 실측으로 확인된 것만 쌓는다.
+# 2026-09-26 리뷰 22368: "'새기' 키워드는 입력하실 수 없습니다"(초안의
+# "깊이 새기고"에 걸림). 생성 쪽(_REPLY_BANNED)도 막지만, 직원이 손으로
+# 고친 답글이 다시 넣을 수 있어 등록 직전에 한 번 더 본다.
+BAEMIN_BLOCKED_WORDS = ("새기",)
+
+
+def baemin_blocked_word_in(reply):
+    """배민 금칙어가 답글에 있으면 그 단어를(없으면 None) 돌려준다."""
+    for w in BAEMIN_BLOCKED_WORDS:
+        if w in (reply or ""):
+            return w
+    return None
+
+
+def _baemin_error_text(page):
+    """등록 실패 직후 화면의 오류 팝업/토스트 문구를 읽는다(없으면 "").
+
+    배민은 금칙어 등으로 게시를 거부할 때 안내창을 띄우는데, 예전엔 그걸
+    안 읽고 '답글이 화면에 나타나지 않았어요'라고만 보고해 사장님이 원인을
+    몰랐다(2026-09-26 실사고 — 실제 원인은 금칙어 '새기').
+    """
+    for sel in _BAEMIN_MODAL_SELECTORS + ('[class*="Toast"]',
+                                          '[class*="toast"]'):
+        try:
+            layers = page.locator(sel)
+            for li in range(min(layers.count(), 5)):
+                layer = layers.nth(li)
+                if not layer.is_visible():
+                    continue
+                text = " ".join((layer.inner_text(timeout=800) or "").split())
+                # 오류 안내다운 문구만 — 확인창('삭제하시겠습니까') 오인 방지.
+                if text and any(k in text for k in
+                                ("입력하실 수 없습니다", "금칙", "변경해 주세요",
+                                 "등록할 수 없습니다", "실패했습니다")):
+                    return text[:200]
+        except Exception:  # noqa: BLE001 — 원인 읽기가 게시 보고를 막으면 안 된다
+            continue
+    return ""
+
+
 def _baemin_confirm_delete(page, timeout_ms=5000):
     """'삭제' 뒤에 뜨는 확인창의 [삭제/확인]을 눌러 준다(없으면 False).
 
@@ -794,6 +835,14 @@ class ReplyToReviewAction(WriteAction):
                 "답글 입력칸이 나타나지 않았습니다 — 작성기가 열리지 않았거나 "
                 f"배민 화면 구조가 바뀌었을 수 있어요. [화면 상태: "
                 f"{_baemin_editor_report(page)}]")
+        # 금칙어는 눌러 봐야 거부된다 — 입력 전에 잡아 이유를 바로 알려준다.
+        blocked = baemin_blocked_word_in(reply)
+        if blocked:
+            raise ReplyPostError(
+                f"배민 금칙어 '{blocked}' 가 답글에 들어 있어요 — 배민이 "
+                "게시를 거부합니다. 그 단어만 다른 표현으로 고쳐서 다시 "
+                "등록해 주세요. (예: '새기고' → '담고')")
+
         _baemin_fill_editor(editor, kind, reply)
         human_pause(0.5, 1.0)
 
@@ -813,6 +862,12 @@ class ReplyToReviewAction(WriteAction):
         # 조용한 클릭 실패는 여기서 잡혀 카드가 직원 화면에 되살아난다
         # (agent 가 ReplyPostError → drafted 복귀 → 재시도 가능).
         if not _baemin_wait_posted(page, self.review.get("review_no"), reply):
+            # 왜 안 달렸는지 화면의 오류 안내부터 읽는다(금칙어 등).
+            why = _baemin_error_text(page)
+            if why:
+                raise ReplyPostError(
+                    f"배민이 게시를 거부했습니다: \"{why}\" — 안내에 나온 "
+                    "표현을 초안에서 고친 뒤 다시 등록해 주세요.")
             raise ReplyPostError(
                 f"'{submit_name}'을 눌렀지만 답글이 화면에 나타나지 않았어요 — "
                 "게시가 안 됐을 수 있습니다. 한 번 더 등록해 주세요"

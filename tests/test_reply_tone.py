@@ -100,6 +100,19 @@ def test_casual_ending_detector():
         assert not _CASUAL_ENDING.search(s), s
 
 
+def test_baemin_forbidden_word_is_fixed_locally():
+    """배민 금칙어 '새기'(실사고 2026-09-26, 리뷰 22368) — 생성 검문이
+    AI 없이도 걷어내고, 등록 직전 경비도 잡아낸다."""
+    import assistant.beargels as bg
+    out = bg._fix_banned_locally("주신 말씀 주방 식구들과 깊이 새기고 있습니다.")
+    assert "새기" not in out and "담고" in out
+    out2 = bg._fix_banned_locally("말씀을 되새기며 준비하겠습니다.")
+    assert "새기" not in out2 and "다시 떠올리며" in out2
+    from crawler.review_reply import baemin_blocked_word_in
+    assert baemin_blocked_word_in("깊이 새기겠습니다") == "새기"
+    assert baemin_blocked_word_in("마음에 담겠습니다") is None
+
+
 def test_persona_has_new_tone_rules():
     from assistant.beargels import REPLY_PERSONA
     assert "합니다체" in REPLY_PERSONA               # 2026-09-26 사장님 지시
